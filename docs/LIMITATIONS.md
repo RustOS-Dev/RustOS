@@ -324,116 +324,15 @@ Insert all USB drives before booting RustOS.
 
 ---
 
-### Limited WiFi Hardware Support
+### No Networking
 
-**Limitation:** Only Intel AX210 (and variants) WiFi adapters supported.
+**Limitation:** RustOS has no network stack and no network drivers, wired or
+wireless. The earlier AX210 WiFi integration via the external `tcp-ip`
+submodule was removed.
 
-**Supported Devices:**
-- Intel AX210 (0x2725, 0x51F0, 0x54F0, 0x7F70)
-- Other Intel AXE devices (same driver family)
-
-**Unsupported:**
-- Broadcom BCM94360, BCM43xx
-- Qualcomm Atheros QCA, QCN devices
-- USB WiFi dongles (not via PCI)
-- Realtek RTL8xxxU
-
-**Impact:**
-- System may not have WiFi on unsupported hardware
-- Network stack initialized but no driver
-
-**Workaround:**
-1. Check hardware:
-   ```bash
-   lspci | grep -i wireless
-   ```
-
-2. If not AX210:
-   - Use Ethernet if available
-   - Switch to compatible hardware
-   - Use QEMU emulation (loopback only)
-
-**Future Work:**
-- Phase 6+: Additional driver support (Broadcom, Realtek)
-- Phase 7+: USB WiFi dongle support
-
----
-
-### No Ethernet Support
-
-**Limitation:** Only WiFi (802.11) supported; no wired Ethernet.
-
-```bash
-# ✗ NOT SUPPORTED
-# Plugging in Ethernet cable
-# (Will not be detected or configured)
-```
-
-**Impact:**
-- Systems without WiFi cannot connect to network
-- No DHCP over Ethernet
-- No USB-to-Ethernet adapters
-
-**Workaround:**
-1. Use WiFi with AX210 adapter
-2. Use QEMU with network bridge (emulation only)
-3. Wait for future Ethernet driver
-
-**Future Work:** Phase 7+: Ethernet driver support.
-
----
-
-### Limited Network Protocol Support
-
-**Limitation:** Only IPv4 supported; IPv6 not implemented.
-
-```bash
-# ✓ SUPPORTED
-ping 8.8.8.8
-ping 192.168.1.1
-
-# ✗ NOT SUPPORTED
-ping 2001:4860:4860::8888  # IPv6 address
-```
-
-**Impact:**
-- Cannot connect to IPv6-only services
-- Modern networks increasingly IPv6-based
-- Dual-stack may work (IPv4 fallback)
-
-**Workaround:**
-Use IPv4 addresses and services.
-
-**Future Work:** IPv6 support planned for Phase 7+.
-
----
-
-### DHCP-Only Network Configuration
-
-**Limitation:** Manual IP configuration not exposed; DHCP required.
-
-```bash
-# ✗ NOT SUPPORTED
-ifconfig wlan0 192.168.1.100
-route add default gw 192.168.1.1
-
-# ✓ SUPPORTED
-wifi connect "SSID"
-# (Waits for DHCP)
-ifconfig
-# (Shows DHCP-assigned IP)
-```
-
-**Impact:**
-- Networks without DHCP cannot be used
-- Cannot statically assign IP from shell
-- Kernel defaults can be changed with code
-
-**Workaround:**
-1. Enable DHCP on your network
-2. Modify kernel code to hardcode IP (advanced)
-
-**Future Work:** Static IP configuration CLI support.
+**Future Work:** An in-tree network stack, wired NIC drivers (virtio-net,
+e1000/e1000e/I219, igc, r8169) and Intel AX210 WiFi with WPA2/WPA3 are
+planned. See [ROADMAP.md](ROADMAP.md), milestones M5–M7.
 
 ---
 
@@ -663,7 +562,7 @@ Keep directory structures reasonably shallow.
 | Symlinks | ✗ No | ✓ Yes |
 | Hot-plug | ✗ No | ✓ Yes |
 | Multitasking | ✓ Yes (kernel) | ✓ Yes (both) |
-| Networking | ✓ Partial | ✓ Full |
+| Networking | ✗ No | ✓ Full |
 | ELF Loader | ✓ Basic | ✓ Full |
 | Memory Protection | ✗ No | ✓ Yes |
 
@@ -671,23 +570,7 @@ Keep directory structures reasonably shallow.
 
 ## Timeline for Limitation Fixes
 
-### Phase 6 (Current)
-- [x] Documentation of limitations
-- [x] Integration tests
-- [ ] Possible LFN write support
-
-### Phase 7 (Planned)
-- [ ] Shell improvements (pipes, redirection, variables)
-- [ ] Hot-plug USB support
-- [ ] Ethernet driver
-- [ ] Process creation (`fork`)
-- [ ] Dynamic linking support
-
-### Phase 8+ (Future)
-- [ ] IPv6 support
-- [ ] Memory protection (ring 3 userspace)
-- [ ] Job control
-- [ ] Advanced filesystem features
+The phased timeline now lives in [ROADMAP.md](ROADMAP.md).
 
 ---
 

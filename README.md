@@ -28,7 +28,7 @@ tutorial series, extended with modern drivers, networking, and a modular archite
 - **Hot-plug support** — `usbscan` command detects and mounts new devices
 
 ### Networking
-- *(Networking support removed)*
+- *(Networking support removed; being rebuilt in-tree, see [docs/ROADMAP.md](docs/ROADMAP.md))*
 
 ### Display & I/O
 - **UEFI GOP framebuffer** — Native graphics output with 8x16 bitmap font
@@ -102,7 +102,8 @@ Use [Rufus](https://rufus.ie/) in DD Image mode.
 ### Reference
 - **[docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md)** — Complete shell command reference with flags, examples, and limitations
 - **[docs/SYSCALLS.md](docs/SYSCALLS.md)** — Full syscall documentation (file I/O, process)
-- **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** — Known limitations, workarounds, and development roadmap
+- **[docs/LIMITATIONS.md](docs/LIMITATIONS.md)** — Known limitations and workarounds
+- **[docs/ROADMAP.md](docs/ROADMAP.md)** — Plan for full PCIe, USB, storage, process model, networking and WiFi support
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — Common issues, solutions, and error messages
 
 ### Architecture and Development
@@ -155,7 +156,7 @@ For a complete command reference with flags, options, and examples, see **[docs/
 - `umount <path>` — Unmount filesystem
 
 **Network:**
-- *(Networking support removed)*
+- *(Networking support removed; being rebuilt in-tree, see [docs/ROADMAP.md](docs/ROADMAP.md))*
 
 ### USB Storage Workflow
 

@@ -6,3 +6,5 @@ crates/create-image/target
 /userland/target
 crates/fat-format/target
 crates/fat-format/Cargo.lock
+crates/usb-desc/target
+crates/usb-desc/Cargo.lock

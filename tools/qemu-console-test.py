@@ -36,6 +36,8 @@ if ovmf is None:
 cmd = ["qemu-system-x86_64", "-drive", f"if=pflash,format=raw,readonly=on,file={ovmf}",
        "-drive", f"format=raw,file={img}", "-machine", "q35", "-m", "512M", "-cpu", "max", "-smp", os.environ.get("RUSTOS_SMP", "1"),
        "-serial", "stdio", "-display", "none", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"] + extra
+mon_path = tempfile.mktemp(suffix=".mon")
+cmd += ["-monitor", f"unix:{mon_path},server,nowait"]
 p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 buf = b""
 def read_until(rx, timeout):
@@ -78,6 +80,27 @@ for line in open(script):
     elif op == "raw":
         p.stdin.write(arg.encode().decode('unicode_escape').encode('latin-1'))
         p.stdin.flush()
+    elif op == "monitor":
+        # HMP command, e.g. 'monitor sendkey a' or 'monitor device_del u1'.
+        import socket
+        arg = re.sub(r"@(EXT2|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, arg)
+        m = socket.socket(socket.AF_UNIX)
+        m.connect(mon_path)
+        m.settimeout(2)
+        time.sleep(0.2)
+        try:
+            m.recv(65536)
+        except OSError:
+            pass
+        m.sendall(arg.encode() + b"\n")
+        time.sleep(0.5)
+        try:
+            reply = m.recv(65536).decode(errors="replace")
+        except OSError:
+            reply = ""
+        reply = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", reply).split("\n", 1)[-1].replace("(qemu)", "").strip()
+        log += f"[monitor] {arg}{': ' + reply if reply else ''}\n".encode()
+        m.close()
     elif op == "sleep":
         time.sleep(float(arg))
 if ok:
@@ -91,6 +114,8 @@ if os.environ.get("RUSTOS_KEEP_DISKS"):
     print("*** kept image", img)
 else:
     os.unlink(img)
+if os.path.exists(mon_path):
+    os.unlink(mon_path)
 for f in scratch:
     if os.environ.get("RUSTOS_KEEP_DISKS"):
         print("*** kept disk", f)

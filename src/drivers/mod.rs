@@ -21,6 +21,7 @@ pub fn shutdown() {
     crate::vfs::sync_all();
     crate::block::sync_all();
     block::nvme::shutdown_all();
+    crate::usb::shutdown();
 }
 
 /// Probe every bus for devices with drivers (storage, USB, network, ...).
@@ -38,5 +39,6 @@ pub fn probe_all() {
             block::virtio_blk::probe(&dev);
         }
     }
+    crate::usb::init();
     crate::block::automount();
 }

@@ -49,7 +49,7 @@ pub fn read_tail(out: &mut [u8]) -> usize {
 
 /// Total number of bytes currently retained.
 pub fn len() -> usize {
-    KLOG.lock().head.min(KLOG_SIZE)
+    x86_64::instructions::interrupts::without_interrupts(|| KLOG.lock().head.min(KLOG_SIZE))
 }
 
 /// `fmt::Write` adapter that appends to the kernel log.

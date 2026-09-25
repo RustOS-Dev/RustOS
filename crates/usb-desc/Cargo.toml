@@ -1,0 +1,8 @@
+[package]
+name = "usb-desc"
+version = "0.1.0"
+edition = "2021"
+description = "no_std USB descriptor parsing and HID boot-protocol helpers"
+
+[lib]
+path = "src/lib.rs"

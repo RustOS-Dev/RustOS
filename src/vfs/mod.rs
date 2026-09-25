@@ -325,7 +325,8 @@ impl File {
                 Ok(n)
             }
             FileObject::Stream(s) => {
-                if let Some(r) = s.read_at(*self.offset.lock(), buf) {
+                let off = *self.offset.lock();
+                if let Some(r) = s.read_at(off, buf) {
                     let n = r?;
                     *self.offset.lock() += n as u64;
                     return Ok(n);
@@ -350,7 +351,8 @@ impl File {
                 Ok(n)
             }
             FileObject::Stream(s) => {
-                if let Some(r) = s.write_at(*self.offset.lock(), buf) {
+                let off = *self.offset.lock();
+                if let Some(r) = s.write_at(off, buf) {
                     let n = r?;
                     *self.offset.lock() += n as u64;
                     return Ok(n);

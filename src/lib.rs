@@ -27,6 +27,7 @@ pub mod syscall;
 pub mod task;
 pub mod time;
 pub mod tty;
+pub mod usb;
 pub mod vfs;
 
 pub use arch::x86_64::{acpi, apic, cpu, gdt, idt};

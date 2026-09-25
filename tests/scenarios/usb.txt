@@ -1,0 +1,42 @@
+wait # $ 240
+send sleep 2; lsusb
+wait Hub
+wait Keyboard
+wait Mouse
+wait # $
+send cat /proc/mounts | grep sd; ls /mnt/sdb
+wait /mnt/sdb ext2
+wait seed
+wait # $
+send seq 1 3000 > /mnt/sdb/f && sync && wc -l /mnt/sdb/f
+wait 3000 /mnt/sdb/f
+wait # $
+# Type through the USB keyboard (PS/2 keyboard stays idle in QEMU when a USB one is active)
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey u
+monitor sendkey s
+monitor sendkey b
+monitor sendkey ret
+wait usb\r\n
+wait # $
+# Hot-unplug the stick, then plug a new one in
+monitor device_del stor0
+sleep 2
+send cat /proc/mounts | grep -c sdb; lsblk
+wait # $
+monitor drive_add 0 if=none,id=u1,format=raw,file=@EXT2:16:second@
+monitor device_add usb-storage,bus=xhci.0,port=3,drive=u1,id=stor1
+sleep 4
+send ls /mnt/sdc && dmesg | grep -i "usb" | tail -5
+wait lost\+found
+wait # $
+# Mouse movement reaches /dev/input/mice
+monitor mouse_move 20 -10
+sleep 1
+send dd if=/dev/input/mice bs=3 count=1 2>/dev/null | xxd
+wait 00000000  08 14 0a
+wait # $

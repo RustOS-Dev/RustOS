@@ -1,0 +1,6 @@
+-device qemu-xhci,id=xhci
+-device usb-hub,bus=xhci.0,port=1,id=hub1
+-device usb-kbd,bus=xhci.0,port=1.1
+-device usb-mouse,bus=xhci.0,port=1.2
+-drive if=none,id=u0,format=raw,file=@EXT2:32:usbdisk@
+-device usb-storage,bus=xhci.0,port=2,drive=u0,id=stor0

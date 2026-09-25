@@ -12,5 +12,9 @@
     "panic-strategy": "abort",
     "disable-redzone": true,
     "features": "-mmx,-sse,+soft-float",
-    "rustc-abi": "softfloat"
-  }
+    "rustc-abi": "x86-softfloat",
+    "position-independent-executables": true,
+    "static-position-independent-executables": true,
+    "relocation-model": "pic",
+    "code-model": "small"
+}

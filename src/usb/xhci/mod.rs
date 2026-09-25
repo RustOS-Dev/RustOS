@@ -12,7 +12,7 @@
 pub mod ring;
 pub mod trb;
 
-use crate::memory::{dma_alloc, map_mmio_region};
+use crate::mm::{dma_alloc, map_mmio as map_mmio_region};
 use crate::pci::PciDevice;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};

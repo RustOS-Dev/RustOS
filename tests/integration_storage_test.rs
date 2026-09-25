@@ -8,9 +8,11 @@ use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 extern crate rustos;
 
-entry_point!(main);
+entry_point!(main, config = &rustos::BOOTLOADER_CONFIG);
 
-fn main(_boot_info: &'static mut BootInfo) -> ! {
+fn main(boot_info: &'static mut BootInfo) -> ! {
+    rustos::kernel_init(boot_info);
+    rustos::vfs::init();
     test_main();
     loop {}
 }

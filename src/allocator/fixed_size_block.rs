@@ -69,6 +69,18 @@ impl FixedSizeBlockAllocator {
 
 unsafe impl GlobalAlloc for Locked<FixedSizeBlockAllocator> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        x86_64::instructions::interrupts::without_interrupts(|| unsafe { self.alloc_inner(layout) })
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        x86_64::instructions::interrupts::without_interrupts(|| unsafe {
+            self.dealloc_inner(ptr, layout)
+        })
+    }
+}
+
+impl Locked<FixedSizeBlockAllocator> {
+    unsafe fn alloc_inner(&self, layout: Layout) -> *mut u8 {
         let mut allocator = self.lock();
         match list_index(&layout) {
             Some(index) => {
@@ -91,7 +103,7 @@ unsafe impl GlobalAlloc for Locked<FixedSizeBlockAllocator> {
         }
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    unsafe fn dealloc_inner(&self, ptr: *mut u8, layout: Layout) {
         let mut allocator = self.lock();
         match list_index(&layout) {
             Some(index) => {

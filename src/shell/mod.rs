@@ -2,7 +2,7 @@
 
 pub mod commands;
 
-use crate::drivers::vga::Color;
+use crate::drivers::console::Color;
 use alloc::string::{String, ToString};
 
 /// The interactive shell state: current directory, input line buffer, and current colors.

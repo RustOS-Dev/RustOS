@@ -4,7 +4,7 @@
 //! format, same error messages where practical.
 
 use super::Shell;
-use crate::drivers::vga::Color;
+use crate::drivers::console::Color;
 use crate::vfs::{NodeType, VFS};
 use alloc::{
     string::{String, ToString},
@@ -176,7 +176,7 @@ fn interpret_escape_sequences(s: &str) -> String {
 // ---------------------------------------------------------------------------
 
 fn cmd_clear() {
-    crate::drivers::vga::clear_screen();
+    crate::drivers::console::clear_screen();
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +270,7 @@ fn cmd_color(shell: &mut Shell, args: &[&str]) {
     };
     shell.fg_color = fg;
     shell.bg_color = bg;
-    crate::drivers::vga::set_color(fg, bg);
+    crate::drivers::console::set_color(fg, bg);
 }
 
 // ---------------------------------------------------------------------------
@@ -917,8 +917,8 @@ fn cmd_meminfo() {
     crate::println!("Heap start: 0x{:016x}", crate::allocator::HEAP_START);
     crate::println!(
         "Heap size:  {} KiB ({} bytes)",
-        crate::allocator::HEAP_SIZE / 1024,
-        crate::allocator::HEAP_SIZE,
+        crate::allocator::heap_size() / 1024,
+        crate::allocator::heap_size(),
     );
 }
 
@@ -1167,10 +1167,8 @@ fn cmd_exec(shell: &mut Shell, args: &[&str]) {
             }
         }
     };
-    match crate::process::exec(&data) {
-        Ok(code) => crate::println!("exec: process exited with code {}", code),
-        Err(e) => crate::println!("exec: load error: {}", e),
-    }
+    let _ = data;
+    crate::println!("exec: user processes are started by init; use the userland shell");
 }
 
 // ---------------------------------------------------------------------------
@@ -1188,11 +1186,11 @@ fn cmd_usbscan() {
 }
 
 fn cmd_reboot() {
-    crate::reboot::reboot();
+    crate::acpi::reboot();
 }
 
 fn cmd_shutdown() {
-    crate::reboot::shutdown();
+    crate::acpi::shutdown();
 }
 
 // ---------------------------------------------------------------------------
@@ -1317,9 +1315,15 @@ pub fn cmd_lspci(args: &[&str]) {
                 d.subclass,
                 pci_class_name(d.class, d.subclass, d.prog_if)
             );
-            for (i, &bar) in d.bars.iter().enumerate() {
-                if bar != 0 {
-                    crate::println!("\tBAR{}:      {:#010x}", i, bar);
+            for (i, bar) in d.bars.iter().enumerate() {
+                match *bar {
+                    crate::pci::Bar::Mmio { addr, size, .. } => {
+                        crate::println!("\tBAR{}:      mem {:#x} [size {:#x}]", i, addr, size)
+                    }
+                    crate::pci::Bar::Io { port, size } => {
+                        crate::println!("\tBAR{}:      io  {:#x} [size {:#x}]", i, port, size)
+                    }
+                    crate::pci::Bar::None => {}
                 }
             }
         }
@@ -1791,24 +1795,16 @@ pub fn cmd_ps(args: &[&str]) {
     let full = args.iter().any(|&a| a == "-f" || a == "-ef");
     let all = args.iter().any(|&a| a == "-e" || a == "-A") || aux;
 
-    if full || aux {
-        crate::println!("USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND");
+    let _ = (full, aux, all);
+    crate::println!("  TID STATE    TYPE   NAME");
+    for (tid, name, state, user) in crate::sched::thread_list() {
         crate::println!(
-            "root         0  0.0  0.0      0     0 ?        S    00:00   0:00 [kernel]"
+            "{:5} {:8} {:6} {}",
+            tid,
+            alloc::format!("{:?}", state),
+            if user { "user" } else { "kernel" },
+            name
         );
-        let exec_rsp = crate::process::EXEC_LONGJMP_RSP.load(core::sync::atomic::Ordering::SeqCst);
-        if exec_rsp != 0 {
-            crate::println!(
-                "root         1  0.0  0.0      0     0 ?        R    00:00   0:00 [exec]"
-            );
-        }
-    } else {
-        crate::println!("  PID TTY          TIME CMD");
-        crate::println!("    0 ?        00:00:00 kernel");
-        let exec_rsp = crate::process::EXEC_LONGJMP_RSP.load(core::sync::atomic::Ordering::SeqCst);
-        if exec_rsp != 0 || all {
-            crate::println!("    1 ?        00:00:00 exec");
-        }
     }
 }
 

@@ -21,7 +21,7 @@ use alloc::{
 };
 use x86_64::instructions::port::Port;
 
-use crate::memory::PHYS_MEM_OFFSET;
+use crate::mm::PHYS_MEM_OFFSET;
 use core::sync::atomic::Ordering;
 
 // ---------------------------------------------------------------------------

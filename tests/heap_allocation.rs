@@ -8,36 +8,15 @@ extern crate alloc;
 
 use alloc::{boxed::Box, vec::Vec};
 use core::panic::PanicInfo;
-use rustos::allocator::HEAP_SIZE;
 
-use bootloader_api::config::Mapping;
-use bootloader_api::{BootInfo, BootloaderConfig, entry_point};
+use bootloader_api::{BootInfo, entry_point};
 
-const BOOTLOADER_CONFIG: BootloaderConfig = {
-    let mut config = BootloaderConfig::new_default();
-    config.mappings.physical_memory = Some(Mapping::Dynamic);
-    config.kernel_stack_size = 2 * 1024 * 1024;
-    config
-};
+entry_point!(main, config = &rustos::BOOTLOADER_CONFIG);
 
-entry_point!(main, config = &BOOTLOADER_CONFIG);
+const HEAP_SIZE: u64 = 1 << 20;
 
 fn main(boot_info: &'static mut BootInfo) -> ! {
-    use rustos::allocator;
-    use rustos::memory::{self, BootInfoFrameAllocator};
-    use x86_64::VirtAddr;
-
-    rustos::init();
-    let phys_mem_offset = VirtAddr::new(
-        boot_info
-            .physical_memory_offset
-            .into_option()
-            .expect("physical memory mapping not configured"),
-    );
-    let mut mapper = unsafe { memory::init(phys_mem_offset) };
-    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_regions) };
-    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
-
+    rustos::kernel_init(boot_info);
     test_main();
     loop {}
 }

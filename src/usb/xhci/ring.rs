@@ -5,7 +5,7 @@
 //! empty and to wrap around without a separate head/tail counter.
 
 use super::trb::{Trb, link_trb};
-use crate::memory::dma_alloc;
+use crate::mm::dma_alloc;
 
 /// Number of TRBs per ring segment (excluding the Link TRB for producer rings).
 pub const RING_SIZE: usize = 64;

@@ -112,7 +112,7 @@ fn cmd_echo() -> i64 {
 }
 
 fn cmd_clear() -> i64 {
-    crate::drivers::vga::WRITER.lock().clear_screen();
+    crate::drivers::console::clear_screen();
     0
 }
 
@@ -151,8 +151,8 @@ fn cmd_meminfo() -> i64 {
     crate::println!("Heap start: 0x{:016x}", crate::allocator::HEAP_START);
     crate::println!(
         "Heap size:  {} KiB ({} bytes)",
-        crate::allocator::HEAP_SIZE / 1024,
-        crate::allocator::HEAP_SIZE,
+        crate::allocator::heap_size() / 1024,
+        crate::allocator::heap_size(),
     );
     0
 }
@@ -185,10 +185,10 @@ fn cmd_usbscan() -> i64 {
 
 /// Triggers an immediate system reboot via keyboard controller reset and never returns.
 fn cmd_reboot() -> ! {
-    crate::reboot::reboot();
+    crate::acpi::reboot();
 }
 
 /// Attempts an ACPI S5 power-off and never returns.
 fn cmd_shutdown() -> ! {
-    crate::reboot::shutdown();
+    crate::acpi::shutdown();
 }

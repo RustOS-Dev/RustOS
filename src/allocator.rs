@@ -1,60 +1,34 @@
-use alloc::alloc::{GlobalAlloc, Layout};
-use core::ptr::null_mut;
 use fixed_size_block::FixedSizeBlockAllocator;
-use x86_64::{
-    VirtAddr,
-    structures::paging::{
-        FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB, mapper::MapToError,
-    },
-};
+use x86_64::structures::paging::{PageTableFlags, Size4KiB, mapper::MapToError};
 
-pub mod bump;
 pub mod fixed_size_block;
-pub mod linked_list;
 
-pub const HEAP_START: usize = 0x_4444_4444_0000;
-pub const HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MiB (shadow framebuffer ~8 MiB + drivers + VFS)
+pub use crate::mm::HEAP_START;
+
+/// Smallest and largest kernel heap. The actual size is a quarter of usable
+/// RAM, clamped to this range.
+const HEAP_MIN: u64 = 32 * 1024 * 1024;
+const HEAP_MAX: u64 = 512 * 1024 * 1024;
+
+static HEAP_SIZE_BYTES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 #[global_allocator]
 static ALLOCATOR: Locked<FixedSizeBlockAllocator> = Locked::new(FixedSizeBlockAllocator::new());
 
-pub fn init_heap(
-    mapper: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-) -> Result<(), MapToError<Size4KiB>> {
-    let page_range = {
-        let heap_start = VirtAddr::new(HEAP_START as u64);
-        let heap_end = heap_start + HEAP_SIZE - 1u64;
-        let heap_start_page = Page::containing_address(heap_start);
-        let heap_end_page = Page::containing_address(heap_end);
-        Page::range_inclusive(heap_start_page, heap_end_page)
-    };
-
-    for page in page_range {
-        let frame = frame_allocator
-            .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)?;
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        unsafe { mapper.map_to(page, frame, flags, frame_allocator)?.flush() };
-    }
-
-    unsafe {
-        ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
-    }
-
-    Ok(())
+/// Size of the kernel heap in bytes (0 before initialisation).
+pub fn heap_size() -> u64 {
+    HEAP_SIZE_BYTES.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-pub struct Dummy;
-
-unsafe impl GlobalAlloc for Dummy {
-    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
-        null_mut()
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        panic!("dealloc should be never called")
-    }
+/// Map and initialise the kernel heap. Called by [`crate::mm::init`].
+pub fn init_heap() -> Result<(), MapToError<Size4KiB>> {
+    let (free, _) = crate::mm::memory_stats();
+    let size = (free / 4).clamp(HEAP_MIN, HEAP_MAX) & !0xfff;
+    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+    crate::mm::map_kernel_pages(HEAP_START, size, flags)?;
+    unsafe { ALLOCATOR.lock().init(HEAP_START as usize, size as usize) };
+    HEAP_SIZE_BYTES.store(size, core::sync::atomic::Ordering::Relaxed);
+    Ok(())
 }
 
 /// A wrapper around spin::Mutex to permit trait implementations.
@@ -72,11 +46,4 @@ impl<A> Locked<A> {
     pub fn lock(&self) -> spin::MutexGuard<'_, A> {
         self.inner.lock()
     }
-}
-
-/// Align the given address `addr` upwards to alignment `align`.
-///
-/// Requires that `align` is a power of two.
-fn align_up(addr: usize, align: usize) -> usize {
-    (addr + align - 1) & !(align - 1)
 }

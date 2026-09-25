@@ -1,4 +1,9 @@
+pub mod acpi;
+pub mod apic;
+pub mod cpu;
+pub mod exceptions;
 pub mod gdt;
-pub mod interrupts;
-pub mod memory;
-pub mod reboot;
+pub mod idt;
+pub mod rtc;
+pub mod smp;
+pub mod syscall_entry;

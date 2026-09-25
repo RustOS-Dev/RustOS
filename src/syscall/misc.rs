@@ -181,7 +181,7 @@ pub fn reboot(magic1: u32, magic2: u32, cmd: u32) -> SysResult {
     if magic1 != 0xfee1_dead || !matches!(magic2, 672274793 | 85072278 | 369367448 | 537993216) {
         return Err(EINVAL);
     }
-    crate::vfs::sync_all();
+    crate::drivers::shutdown();
     match cmd {
         0x0123_4567 => crate::acpi::reboot(),
         0x4321_FEDC | 0xCDEF_0123 => crate::acpi::shutdown(),

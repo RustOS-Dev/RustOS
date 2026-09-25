@@ -1,0 +1,11 @@
+# Override the kernel build settings so this host binary compiles normally.
+[build]
+target = "x86_64-unknown-linux-gnu"
+
+[unstable]
+json-target-spec = false
+# Cargo merges build-std arrays from parent configs; adding "std" here ensures
+# the full standard library is built from source so all crates share the same
+# core and there are no duplicate lang-item conflicts with the prebuilt std.
+build-std = ["std"]
+build-std-features = []

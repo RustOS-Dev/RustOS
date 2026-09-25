@@ -10,6 +10,23 @@ elf, script = os.path.abspath(sys.argv[1]), sys.argv[2]
 extra = sys.argv[3:]
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 img = tempfile.mktemp(suffix=".img")
+# Extra disk images: @EXT2:<MiB>[:label]@ (mke2fs), @BLANK:<MiB>@ (zeros).
+scratch = []
+def _disk(m):
+    kind, size = m.group(1), int(m.group(2))
+    path = tempfile.mktemp(suffix=".disk")
+    scratch.append(path)
+    with open(path, "wb") as f:
+        f.truncate(size * 1024 * 1024)
+    if kind in ("EXT2", "EXT4"):
+        fs = "ext2" if kind == "EXT2" else "ext4"
+        label = m.group(3) or "data"
+        subprocess.run(["mke2fs", "-q", "-F", "-t", fs, "-L", label, path], check=True)
+        # Seed a file so read paths are exercised before any write.
+        subprocess.run(["debugfs", "-w", "-R", "mkdir seed", path], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return path
+extra = [re.sub(r"@(EXT2|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, a) for a in extra]
 subprocess.run(["cargo", "run", "--quiet", "--", elf, img], cwd=f"{root}/crates/create-image", check=True,
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 ovmf = next((c for c in ["/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_CODE.fd",
@@ -70,6 +87,14 @@ if ok:
         buf += os.read(p.stdout.fileno(), 65536)
     sys.stdout.buffer.write(log + buf)
 p.kill()
-os.unlink(img)
+if os.environ.get("RUSTOS_KEEP_DISKS"):
+    print("*** kept image", img)
+else:
+    os.unlink(img)
+for f in scratch:
+    if os.environ.get("RUSTOS_KEEP_DISKS"):
+        print("*** kept disk", f)
+    else:
+        os.unlink(f)
 print("\n*** RESULT:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)

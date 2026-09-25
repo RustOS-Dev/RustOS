@@ -4,3 +4,5 @@ crates/create-image/target
 
 .vscode
 /userland/target
+crates/fat-format/target
+crates/fat-format/Cargo.lock

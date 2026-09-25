@@ -11,6 +11,7 @@
 //! until its context has been fully saved, so another CPU never resumes a
 //! thread whose registers are still being written.
 
+pub mod mutex;
 pub mod wait;
 
 use crate::arch::x86_64::{cpu, idt::TrapFrame};

@@ -1,0 +1,8 @@
+[package]
+name = "fat-format"
+version = "0.1.0"
+edition = "2021"
+description = "no_std FAT12/16/32 formatter shared by create-image, the kernel tests and userland mkfs"
+
+[lib]
+path = "src/lib.rs"

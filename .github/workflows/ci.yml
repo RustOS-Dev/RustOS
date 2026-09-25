@@ -73,6 +73,21 @@ jobs:
       - name: cargo clippy
         run: cargo clippy -- -D warnings
 
+  host-crates:
+    name: Host crate tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: cargo test (crates/*)
+        run: |
+          for c in crates/fat-format; do
+            (cd "$c" && cargo test)
+          done
+
   test:
     name: Integration Tests (QEMU + UEFI)
     runs-on: ubuntu-latest
@@ -99,7 +114,7 @@ jobs:
       - name: Install QEMU and OVMF
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 ovmf
+          sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs
 
       - name: Make runner script executable
         run: chmod +x run-qemu-uefi.sh

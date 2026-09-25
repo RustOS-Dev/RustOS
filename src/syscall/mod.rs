@@ -280,6 +280,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         FSYNC | FDATASYNC => v(fs::fsync(a[0] as i32)),
         SYNC => {
             crate::vfs::sync_all();
+            crate::block::sync_all();
             Ok(Ret::Value(0))
         }
         TRUNCATE => v(fs::truncate(a[0], a[1])),

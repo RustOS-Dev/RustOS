@@ -447,7 +447,15 @@ fn gen_cpuinfo() -> String {
 fn gen_mounts() -> String {
     let mut s = String::new();
     for (path, fs, src) in super::mounts() {
-        let _ = writeln!(s, "{} {} {} rw 0 0", src, path, fs);
+        let ro = super::mount_fs(&path).is_some_and(|f| f.read_only());
+        let _ = writeln!(
+            s,
+            "{} {} {} {} 0 0",
+            src,
+            path,
+            fs,
+            if ro { "ro" } else { "rw" }
+        );
     }
     s
 }

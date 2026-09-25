@@ -12,3 +12,4 @@ path = "src/main.rs"
 bootloader = { version = "0.11", features = ["uefi"] }
 gpt = "4"
 uuid = "1"
+fat-format = { path = "../fat-format" }

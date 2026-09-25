@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "fat-format"
+version = "0.1.0"
+
+[[package]]
 name = "init"
 version = "0.1.0"
 dependencies = [
@@ -26,6 +30,7 @@ dependencies = [
 name = "rbox"
 version = "0.1.0"
 dependencies = [
+ "fat-format",
  "rustos-rt",
 ]
 

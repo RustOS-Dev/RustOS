@@ -11,8 +11,10 @@ use core::panic::PanicInfo;
 
 pub mod allocator;
 pub mod arch;
+pub mod block;
 pub mod drivers;
 pub mod errno;
+pub mod firmware;
 pub mod fs;
 pub mod initramfs;
 pub mod klog;

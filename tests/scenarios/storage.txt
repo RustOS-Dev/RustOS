@@ -1,0 +1,58 @@
+wait # $ 240
+send lsblk
+wait nvme0n1 .*\r\n
+wait # $
+send cat /proc/mounts
+wait /storage vfat
+wait # $
+# FAT: long names, nested dirs, append, rename, delete
+send mkdir -p "/storage/Long Directory Name/sub" && echo first > "/storage/Long Directory Name/sub/a file.txt"
+wait # $
+send echo second >> "/storage/Long Directory Name/sub/a file.txt"; cat "/storage/Long Directory Name/sub/a file.txt"
+wait first\r\nsecond
+wait # $
+send seq 1 20000 > /storage/big.txt; wc -l /storage/big.txt; sha256sum /storage/big.txt
+wait 20000 /storage/big.txt
+wait # $
+send mv /storage/big.txt "/storage/Long Directory Name/Big Renamed.TXT" && ls "/storage/Long Directory Name"
+wait Big Renamed.TXT
+wait # $
+send rm "/storage/Long Directory Name/sub/a file.txt" && rmdir "/storage/Long Directory Name/sub" && ls "/storage/Long Directory Name"
+wait # $
+send df /storage
+wait # $
+# ext2 on NVMe (mounted at /mnt/nvme0n1)
+send ls /mnt/nvme0n1
+wait seed
+wait # $
+send mkdir /mnt/nvme0n1/d && seq 1 5000 > /mnt/nvme0n1/d/n && ln -s d/n /mnt/nvme0n1/link && cat /mnt/nvme0n1/link | tail -1
+wait 5000\r\n
+wait # $
+send ln /mnt/nvme0n1/d/n /mnt/nvme0n1/hard; stat /mnt/nvme0n1/hard | grep -i links
+wait # $
+send mv /mnt/nvme0n1/hard /mnt/nvme0n1/d/moved && rm /mnt/nvme0n1/d/n && wc -l /mnt/nvme0n1/d/moved
+wait 5000 /mnt/nvme0n1/d/moved
+wait # $
+# ext4 on virtio: read-only
+send cat /proc/mounts | grep vda; ls /mnt/vda; touch /mnt/vda/x
+wait ext4
+wait seed
+wait Read-only
+wait # $
+# mkfs on a blank disk, mount and use
+send mkfs.vfat -n SCRATCH /dev/vdb && mount /dev/vdb /mnt/scratch && echo hi > /mnt/scratch/hello && cat /mnt/scratch/hello
+wait FAT16
+wait hi\r\n
+wait # $
+send umount /mnt/scratch && mount -t vfat /dev/vdb /mnt/s2 && cat /mnt/s2/hello
+wait hi\r\n
+wait # $
+# persistence across reboot
+send sync; reboot
+wait # $ 240
+send cat "/storage/Long Directory Name/Big Renamed.TXT" | tail -1; wc -l /mnt/nvme0n1/d/moved; readlink /mnt/nvme0n1/link; cat /mnt/vdb/hello
+wait 20000\r\n
+wait 5000 /mnt/nvme0n1/d/moved
+wait d/n
+wait hi\r\n
+wait # $

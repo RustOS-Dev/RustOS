@@ -295,6 +295,7 @@ pub fn lsusb(_: &[String]) -> i32 {
 
 pub fn mount(args: &[String]) -> i32 {
     let mut ty = String::from("auto");
+    let mut ro = false;
     let mut ops = Vec::new();
     let mut i = 1;
     while i < args.len() {
@@ -305,12 +306,19 @@ pub fn mount(args: &[String]) -> i32 {
                 continue;
             }
             "-o" => {
+                if let Some(o) = args.get(i + 1) {
+                    ro |= o.split(',').any(|x| x == "ro");
+                }
                 i += 2;
                 continue;
             }
+            "-r" => ro = true,
             a => ops.push(a.to_string()),
         }
         i += 1;
+    }
+    if ro {
+        ty.push_str(",ro");
     }
     if ops.is_empty() {
         print!("{}", fs::read_to_string("/proc/mounts").unwrap_or_default());
@@ -603,4 +611,80 @@ pub fn which(args: &[String]) -> i32 {
         }
     }
     st
+}
+
+/// mkfs[.vfat] [-t vfat] [-F 12|16|32] [-n LABEL] DEVICE
+pub fn mkfs(args: &[String]) -> i32 {
+    let mut label = String::from("NO NAME");
+    let mut kind = None;
+    let mut dev = None;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-n" | "-L" => {
+                label = args.get(i + 1).cloned().unwrap_or(label);
+                i += 1;
+            }
+            "-F" => {
+                kind = match args.get(i + 1).map(|s| s.as_str()) {
+                    Some("12") => Some(fat_format::FatType::Fat12),
+                    Some("16") => Some(fat_format::FatType::Fat16),
+                    Some("32") => Some(fat_format::FatType::Fat32),
+                    _ => {
+                        eprintln!("mkfs: -F must be 12, 16 or 32");
+                        return 1;
+                    }
+                };
+                i += 1;
+            }
+            "-t" => {
+                let t = args.get(i + 1).map(|s| s.as_str()).unwrap_or("");
+                if !matches!(t, "vfat" | "fat" | "msdos") {
+                    eprintln!("mkfs: unsupported filesystem type '{}' (only vfat)", t);
+                    return 1;
+                }
+                i += 1;
+            }
+            a => dev = Some(a.to_string()),
+        }
+        i += 1;
+    }
+    let Some(dev) = dev else {
+        eprintln!("usage: mkfs.vfat [-F 12|16|32] [-n LABEL] DEVICE");
+        return 1;
+    };
+    let f = match fs::File::open_with(&dev, fs::O_RDWR, 0) {
+        Ok(f) => f,
+        Err(e) => return err("mkfs", &dev, e),
+    };
+    let mut size = 0u64;
+    if f.ioctl(0x8008_1272, &mut size as *mut u64 as usize).is_err() {
+        size = f.metadata().map(|m| m.size).unwrap_or(0);
+    }
+    let sectors = size / 512;
+    let serial = time::now() as u32;
+    let opts = fat_format::Options { label: &label, serial, fat_type: kind, hidden_sectors: 0 };
+    match fat_format::format(sectors, &opts, |lba, s| f.write_at(lba * 512, s).map(|_| ())) {
+        Ok(l) => {
+            let _ = f.sync();
+            println!(
+                "{}: {}, {} clusters of {} bytes, label {}",
+                dev,
+                match l.fat_type {
+                    fat_format::FatType::Fat12 => "FAT12",
+                    fat_format::FatType::Fat16 => "FAT16",
+                    fat_format::FatType::Fat32 => "FAT32",
+                },
+                l.clusters,
+                l.sectors_per_cluster * 512,
+                label.to_uppercase()
+            );
+            0
+        }
+        Err(fat_format::Error::Io(e)) => err("mkfs", &dev, e),
+        Err(e) => {
+            eprintln!("mkfs: {}: {:?}", dev, e);
+            1
+        }
+    }
 }

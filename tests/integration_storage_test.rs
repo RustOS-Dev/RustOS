@@ -42,7 +42,12 @@ fn test_write_read_file() {
 
 #[test_case]
 fn test_open_file_offsets_and_append() {
-    let f = vfs::open("/tmp/b.txt", vfs::O_RDWR | vfs::O_CREAT | vfs::O_TRUNC, 0o644).unwrap();
+    let f = vfs::open(
+        "/tmp/b.txt",
+        vfs::O_RDWR | vfs::O_CREAT | vfs::O_TRUNC,
+        0o644,
+    )
+    .unwrap();
     f.write(b"0123456789").unwrap();
     f.seek(2, 0).unwrap();
     let mut buf = [0u8; 3];
@@ -73,8 +78,17 @@ fn test_symlinks_and_dotdot() {
     vfs::write_all("/tmp/s/real/file", b"via link").unwrap();
     vfs::symlink("real", "/tmp/s/link").unwrap();
     assert_eq!(vfs::read_all("/tmp/s/link/file").unwrap(), b"via link");
-    assert_eq!(vfs::read_all("/tmp/s/link/../real/file").unwrap(), b"via link");
-    assert_eq!(vfs::lookup_nofollow("/tmp/s/link").unwrap().readlink().unwrap(), "real");
+    assert_eq!(
+        vfs::read_all("/tmp/s/link/../real/file").unwrap(),
+        b"via link"
+    );
+    assert_eq!(
+        vfs::lookup_nofollow("/tmp/s/link")
+            .unwrap()
+            .readlink()
+            .unwrap(),
+        "real"
+    );
 }
 
 #[test_case]
@@ -106,7 +120,19 @@ fn test_initramfs_unpack() {
     let mut add = |name: &str, mode: u32, data: &[u8]| {
         let hdr = alloc::format!(
             "070701{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}",
-            1, mode, 0, 0, 1, 0, data.len(), 0, 0, 0, 0, name.len() + 1, 0
+            1,
+            mode,
+            0,
+            0,
+            1,
+            0,
+            data.len(),
+            0,
+            0,
+            0,
+            0,
+            name.len() + 1,
+            0
         );
         ar.extend_from_slice(hdr.as_bytes());
         ar.extend_from_slice(name.as_bytes());

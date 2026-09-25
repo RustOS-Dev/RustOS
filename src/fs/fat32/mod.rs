@@ -530,7 +530,7 @@ impl Fat32Fs {
         name: &str,
     ) -> Option<(usize, FatDirEntry)> {
         let data = self.read_chain(dir_cluster);
-        for (idx, raw) in data.chunks_exact(32).enumerate() {
+        for (idx, raw) in data.as_chunks::<32>().0.iter().enumerate() {
             if raw[0] == 0x00 {
                 break;
             }
@@ -561,7 +561,7 @@ impl Fat32Fs {
     /// the chain, and returns the index of its first (now free) entry.
     fn find_or_expand_dir(&mut self, dir_cluster: u32) -> Option<usize> {
         let data = self.read_chain(dir_cluster);
-        for (idx, raw) in data.chunks_exact(32).enumerate() {
+        for (idx, raw) in data.as_chunks::<32>().0.iter().enumerate() {
             if raw[0] == 0x00 || raw[0] == 0xE5 {
                 return Some(idx);
             }

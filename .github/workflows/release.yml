@@ -28,7 +28,7 @@ jobs:
       - name: Install nightly Rust + components
         uses: dtolnay/rust-toolchain@nightly
         with:
-          components: rust-src, llvm-tools-preview
+          components: rust-src, llvm-tools
 
       - name: Cache cargo registry
         uses: actions/cache@v4

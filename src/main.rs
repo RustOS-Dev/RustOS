@@ -133,7 +133,9 @@ fn init_usb_storage() {
     }
 
     if !rustos::usb::mount_boot_storage_root() {
-        panic!("[init] FATAL: no FAT32 root partition found on USB device 0 — cannot boot without persistent storage");
+        panic!(
+            "[init] FATAL: no FAT32 root partition found on USB device 0 — cannot boot without persistent storage"
+        );
     }
 
     // Mount all found devices under /usb* (device 0 → /usb, device 1 → /usb1, …).

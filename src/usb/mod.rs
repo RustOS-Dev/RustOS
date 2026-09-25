@@ -262,7 +262,11 @@ fn mbr_partitions_for_device(dev_idx: usize) -> alloc::vec::Vec<PartitionInfo> {
             Some(v) if v > 0 => v as u64,
             _ => continue,
         };
-        out.push(PartitionInfo { start_lba, sector_count, is_efi: false });
+        out.push(PartitionInfo {
+            start_lba,
+            sector_count,
+            is_efi: false,
+        });
     }
     out
 }
@@ -296,7 +300,11 @@ pub fn mount_boot_storage_root() -> bool {
 
     // 1. Try GPT partitions.
     let gpt = gpt_partitions_for_device(0);
-    let mut result = if !gpt.is_empty() { try_fat32(gpt) } else { None };
+    let mut result = if !gpt.is_empty() {
+        try_fat32(gpt)
+    } else {
+        None
+    };
 
     // 2. Try MBR partitions if GPT yielded nothing.
     if result.is_none() {
@@ -306,9 +314,15 @@ pub fn mount_boot_storage_root() -> bool {
     if let Some((part, fat32)) = result {
         let mut vfs = crate::vfs::VFS.lock();
         if let Some(vfs) = vfs.as_mut() {
-            vfs.set_root(Box::new(crate::vfs::Fat32Mount(fat32)), "fat32 RUSTOS_ROOT persistent");
+            vfs.set_root(
+                Box::new(crate::vfs::Fat32Mount(fat32)),
+                "fat32 RUSTOS_ROOT persistent",
+            );
             *ROOT_PARTITION.lock() = Some((0, part.start_lba));
-            crate::println!("[usb] mounted device0 lba{} FAT32 as root '/'", part.start_lba);
+            crate::println!(
+                "[usb] mounted device0 lba{} FAT32 as root '/'",
+                part.start_lba
+            );
             return true;
         }
     }
@@ -318,7 +332,10 @@ pub fn mount_boot_storage_root() -> bool {
     if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(block_dev) {
         let mut vfs = crate::vfs::VFS.lock();
         if let Some(vfs) = vfs.as_mut() {
-            vfs.set_root(Box::new(crate::vfs::Fat32Mount(fat32)), "fat32 RUSTOS_ROOT persistent");
+            vfs.set_root(
+                Box::new(crate::vfs::Fat32Mount(fat32)),
+                "fat32 RUSTOS_ROOT persistent",
+            );
             *ROOT_PARTITION.lock() = Some((0, 0));
             crate::println!("[usb] mounted device0 whole-device FAT32 as root '/'");
             return true;
@@ -360,14 +377,15 @@ pub fn mount_storage_devices(from_idx: usize) {
         // Try the whole device as a FAT32 volume (for raw, partition-less drives).
         // Skip if this device+offset is already the root partition.
         let skip_whole = root_part == Some((dev_idx, 0));
-        if !skip_whole {
-            if let Some(fat32) = crate::fs::fat32::Fat32Fs::new(Box::new(XhciBlockDevice { dev_idx })) {
-                let mut vfs = crate::vfs::VFS.lock();
-                if let Some(vfs) = vfs.as_mut() {
-                    vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
-                    crate::println!("[usb] FAT32 volume mounted at {}", mount_path);
-                    mounted = true;
-                }
+        if !skip_whole
+            && let Some(fat32) =
+                crate::fs::fat32::Fat32Fs::new(Box::new(XhciBlockDevice { dev_idx }))
+        {
+            let mut vfs = crate::vfs::VFS.lock();
+            if let Some(vfs) = vfs.as_mut() {
+                vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
+                crate::println!("[usb] FAT32 volume mounted at {}", mount_path);
+                mounted = true;
             }
         }
 
@@ -389,7 +407,11 @@ pub fn mount_storage_devices(from_idx: usize) {
                     let mut vfs = crate::vfs::VFS.lock();
                     if let Some(vfs) = vfs.as_mut() {
                         vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
-                        crate::println!("[usb] FAT32 partition lba{} mounted at {}", part.start_lba, mount_path);
+                        crate::println!(
+                            "[usb] FAT32 partition lba{} mounted at {}",
+                            part.start_lba,
+                            mount_path
+                        );
                         mounted = true;
                         break;
                     }
@@ -412,7 +434,11 @@ pub fn mount_storage_devices(from_idx: usize) {
                     let mut vfs = crate::vfs::VFS.lock();
                     if let Some(vfs) = vfs.as_mut() {
                         vfs.mount(&mount_path, Box::new(crate::vfs::Fat32Mount(fat32)));
-                        crate::println!("[usb] FAT32 MBR partition lba{} mounted at {}", part.start_lba, mount_path);
+                        crate::println!(
+                            "[usb] FAT32 MBR partition lba{} mounted at {}",
+                            part.start_lba,
+                            mount_path
+                        );
                         mounted = true;
                         break;
                     }

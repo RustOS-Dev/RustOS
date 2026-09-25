@@ -298,7 +298,8 @@ impl Vfs {
             for mp in &self.mounts {
                 let mp_name = mp.prefix.trim_start_matches('/');
                 // Only inject top-level mount points (no '/' in the stripped name).
-                if !mp_name.contains('/') && !mp_name.is_empty()
+                if !mp_name.contains('/')
+                    && !mp_name.is_empty()
                     && !entries.iter().any(|e| e.name == mp_name)
                 {
                     entries.push(DirEntry {

@@ -1,452 +1,867 @@
-//! Virtual File System (VFS) abstraction.
+//! Virtual file system.
 //!
-//! The VFS layer provides:
-//! - A `Filesystem` trait that external filesystems (e.g. FAT32 on USB) implement
-//! - A global mount table routing paths to the correct filesystem
-//! - Synthetic entries for virtual directories (`/bin`) and active mount points
+//! * [`Inode`]: a file, directory, symlink or device node inside a
+//!   [`FileSystem`]. Inodes offer offset-based `read_at`/`write_at`.
+//! * [`FileLike`]: objects with stream semantics (pipes, sockets, TTYs,
+//!   character devices) that an open file can wrap instead of an inode.
+//! * [`File`]: an open file description (object + offset + status flags),
+//!   shared between file descriptors after `dup`/`fork`.
+//! * A mount table and path resolution that follows `..`, mount points and
+//!   symbolic links.
 
-pub mod ramfs;
-pub use ramfs::RamFs;
+pub mod devfs;
+pub mod pipe;
+pub mod procfs;
+pub mod tmpfs;
 
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
-use spin::Mutex;
+use crate::errno::*;
+use crate::sched::WaitQueue;
+use alloc::string::{String, ToString};
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::any::Any;
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use spin::{Mutex, RwLock};
 
 // ---------------------------------------------------------------------------
-// Error and result types
+// Types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VfsError {
-    NotFound,
-    AlreadyExists,
-    NotADirectory,
-    NotAFile,
-    DirectoryNotEmpty,
-    InvalidPath,
-    IoError,
-    ReadOnly,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileType {
+    Regular,
+    Directory,
+    Symlink,
+    CharDevice,
+    BlockDevice,
+    Fifo,
+    Socket,
 }
 
-impl core::fmt::Display for VfsError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl FileType {
+    /// `S_IFMT` bits.
+    pub fn mode_bits(self) -> u32 {
         match self {
-            VfsError::NotFound => write!(f, "not found"),
-            VfsError::AlreadyExists => write!(f, "already exists"),
-            VfsError::NotADirectory => write!(f, "not a directory"),
-            VfsError::NotAFile => write!(f, "not a file"),
-            VfsError::DirectoryNotEmpty => write!(f, "directory not empty"),
-            VfsError::InvalidPath => write!(f, "invalid path"),
-            VfsError::IoError => write!(f, "I/O error"),
-            VfsError::ReadOnly => write!(f, "read-only filesystem"),
+            FileType::Regular => 0o100000,
+            FileType::Directory => 0o040000,
+            FileType::Symlink => 0o120000,
+            FileType::CharDevice => 0o020000,
+            FileType::BlockDevice => 0o060000,
+            FileType::Fifo => 0o010000,
+            FileType::Socket => 0o140000,
+        }
+    }
+
+    /// `d_type` value for getdents64.
+    pub fn dirent_type(self) -> u8 {
+        match self {
+            FileType::Fifo => 1,
+            FileType::CharDevice => 2,
+            FileType::Directory => 4,
+            FileType::BlockDevice => 6,
+            FileType::Regular => 8,
+            FileType::Symlink => 10,
+            FileType::Socket => 12,
         }
     }
 }
 
-pub type VfsResult<T> = Result<T, VfsError>;
+#[derive(Debug, Clone, Copy)]
+pub struct Metadata {
+    pub dev: u64,
+    pub ino: u64,
+    pub kind: FileType,
+    /// Permission bits (without the file-type bits).
+    pub mode: u32,
+    pub nlink: u32,
+    pub uid: u32,
+    pub gid: u32,
+    pub size: u64,
+    pub blksize: u32,
+    pub blocks: u64,
+    pub rdev: u64,
+    pub atime: u64,
+    pub mtime: u64,
+    pub ctime: u64,
+}
 
-#[derive(Debug, Clone)]
-pub enum NodeType {
-    File,
-    Directory,
+impl Metadata {
+    pub fn new(kind: FileType, mode: u32) -> Metadata {
+        Metadata {
+            dev: 0,
+            ino: 0,
+            kind,
+            mode,
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            size: 0,
+            blksize: 4096,
+            blocks: 0,
+            rdev: 0,
+            atime: 0,
+            mtime: 0,
+            ctime: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct DirEntry {
     pub name: String,
-    pub node_type: NodeType,
+    pub ino: u64,
+    pub kind: FileType,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StatFs {
+    pub fs_type: u64,
+    pub block_size: u64,
+    pub blocks: u64,
+    pub blocks_free: u64,
+    pub files: u64,
+    pub files_free: u64,
+    pub name_max: u64,
+}
+
+pub trait FileSystem: Send + Sync {
+    fn root(&self) -> Arc<dyn Inode>;
+    fn name(&self) -> &'static str;
+    fn sync(&self) -> KResult<()> {
+        Ok(())
+    }
+    fn statfs(&self) -> StatFs {
+        StatFs::default()
+    }
+    fn read_only(&self) -> bool {
+        false
+    }
+}
+
+/// A node in a filesystem. Unsupported operations default to sensible errors.
+pub trait Inode: Send + Sync + Any {
+    fn metadata(&self) -> KResult<Metadata>;
+
+    fn lookup(&self, _name: &str) -> KResult<Arc<dyn Inode>> {
+        Err(ENOTDIR)
+    }
+    fn create(&self, _name: &str, _kind: FileType, _mode: u32) -> KResult<Arc<dyn Inode>> {
+        Err(ENOTDIR)
+    }
+    fn link(&self, _name: &str, _target: &Arc<dyn Inode>) -> KResult<()> {
+        Err(EPERM)
+    }
+    fn unlink(&self, _name: &str) -> KResult<()> {
+        Err(ENOTDIR)
+    }
+    fn rmdir(&self, _name: &str) -> KResult<()> {
+        Err(ENOTDIR)
+    }
+    /// Rename `old` in this directory to `new` in `new_dir` (same filesystem).
+    fn rename(&self, _old: &str, _new_dir: &Arc<dyn Inode>, _new: &str) -> KResult<()> {
+        Err(EPERM)
+    }
+    fn readdir(&self) -> KResult<Vec<DirEntry>> {
+        Err(ENOTDIR)
+    }
+    fn read_at(&self, _off: u64, _buf: &mut [u8]) -> KResult<usize> {
+        Err(EISDIR)
+    }
+    fn write_at(&self, _off: u64, _buf: &[u8]) -> KResult<usize> {
+        Err(EISDIR)
+    }
+    fn truncate(&self, _size: u64) -> KResult<()> {
+        Err(EINVAL)
+    }
+    fn symlink(&self, _name: &str, _target: &str) -> KResult<()> {
+        Err(EPERM)
+    }
+    fn readlink(&self) -> KResult<String> {
+        Err(EINVAL)
+    }
+    fn chmod(&self, _mode: u32) -> KResult<()> {
+        Ok(())
+    }
+    fn chown(&self, _uid: u32, _gid: u32) -> KResult<()> {
+        Ok(())
+    }
+    fn set_times(&self, _atime: Option<u64>, _mtime: Option<u64>) -> KResult<()> {
+        Ok(())
+    }
+    fn sync(&self) -> KResult<()> {
+        Ok(())
+    }
+    /// Device and special nodes return a stream object to use instead of
+    /// `read_at`/`write_at`.
+    fn open(&self, _flags: u32) -> KResult<Option<Arc<dyn FileLike>>> {
+        Ok(None)
+    }
+    /// Identifies the filesystem instance (for cross-device checks).
+    fn fs_id(&self) -> usize;
+    fn as_any(&self) -> &dyn Any;
+}
+
+/// Readiness bits for poll/select.
+pub const POLLIN: u16 = 0x001;
+pub const POLLPRI: u16 = 0x002;
+pub const POLLOUT: u16 = 0x004;
+pub const POLLERR: u16 = 0x008;
+pub const POLLHUP: u16 = 0x010;
+pub const POLLNVAL: u16 = 0x020;
+
+/// Stream-like file objects (pipes, sockets, TTYs, devices).
+pub trait FileLike: Send + Sync + Any {
+    fn read(&self, buf: &mut [u8], nonblock: bool) -> KResult<usize>;
+    fn write(&self, buf: &[u8], nonblock: bool) -> KResult<usize>;
+    fn poll(&self) -> u16 {
+        POLLIN | POLLOUT
+    }
+    fn ioctl(&self, _cmd: u64, _arg: u64) -> KResult<i64> {
+        Err(ENOTTY)
+    }
+    fn stat(&self) -> KResult<Metadata> {
+        Ok(Metadata::new(FileType::CharDevice, 0o666))
+    }
+    /// Offset-addressed access for seekable devices (e.g. block devices).
+    fn read_at(&self, _off: u64, _buf: &mut [u8]) -> Option<KResult<usize>> {
+        None
+    }
+    fn write_at(&self, _off: u64, _buf: &[u8]) -> Option<KResult<usize>> {
+        None
+    }
+    fn size(&self) -> Option<u64> {
+        None
+    }
+    /// Called when the last descriptor referring to the object closes.
+    fn close(&self) {}
+    fn as_any(&self) -> &dyn Any;
 }
 
 // ---------------------------------------------------------------------------
-// Filesystem trait
+// Poll wake-ups
 // ---------------------------------------------------------------------------
 
-/// Any filesystem that can be mounted into the VFS must implement this trait.
-pub trait Filesystem: Send {
-    fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>>;
-    fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>>;
-    fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()>;
-    fn mkdir(&mut self, path: &str) -> VfsResult<()>;
-    fn remove(&mut self, path: &str) -> VfsResult<()>;
-    fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()>;
-    fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()>;
-    fn is_dir(&mut self, path: &str) -> bool;
-    fn exists(&mut self, path: &str) -> bool;
+/// Woken whenever any file may have become ready; poll/select sleep here.
+pub static POLL_WQ: WaitQueue = WaitQueue::new();
+static POLL_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+pub fn notify_poll() {
+    POLL_EPOCH.fetch_add(1, Ordering::SeqCst);
+    POLL_WQ.wake_all();
 }
 
-// ---------------------------------------------------------------------------
-// RamFs adapter (implements Filesystem)
-// ---------------------------------------------------------------------------
-
-impl Filesystem for RamFs {
-    fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
-        let s: &Self = self; // coerce to &Self so inherent (&self) methods are chosen
-        s.list_dir(path)
-    }
-    fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>> {
-        let s: &Self = self;
-        s.read_file(path)
-    }
-    fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()> {
-        self.write_file(path, data)
-    }
-    fn mkdir(&mut self, path: &str) -> VfsResult<()> {
-        self.mkdir(path)
-    }
-    fn remove(&mut self, path: &str) -> VfsResult<()> {
-        self.remove(path)
-    }
-    fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()> {
-        self.rename(src, dst)
-    }
-    fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()> {
-        self.copy(src, dst)
-    }
-    fn is_dir(&mut self, path: &str) -> bool {
-        let s: &Self = self;
-        s.is_dir(path)
-    }
-    fn exists(&mut self, path: &str) -> bool {
-        let s: &Self = self;
-        s.exists(path)
-    }
+pub fn poll_epoch() -> u64 {
+    POLL_EPOCH.load(Ordering::SeqCst)
 }
 
 // ---------------------------------------------------------------------------
-// FAT32 adapter
+// Open file descriptions
 // ---------------------------------------------------------------------------
 
-use crate::fs::fat32::Fat32Fs;
+pub const O_RDONLY: u32 = 0;
+pub const O_WRONLY: u32 = 1;
+pub const O_RDWR: u32 = 2;
+pub const O_ACCMODE: u32 = 3;
+pub const O_CREAT: u32 = 0o100;
+pub const O_EXCL: u32 = 0o200;
+pub const O_NOCTTY: u32 = 0o400;
+pub const O_TRUNC: u32 = 0o1000;
+pub const O_APPEND: u32 = 0o2000;
+pub const O_NONBLOCK: u32 = 0o4000;
+pub const O_DIRECTORY: u32 = 0o200000;
+pub const O_NOFOLLOW: u32 = 0o400000;
+pub const O_CLOEXEC: u32 = 0o2000000;
 
-pub struct Fat32Mount(pub Fat32Fs);
-
-impl Filesystem for Fat32Mount {
-    fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
-        let norm = normalize(path);
-        if norm == "/bin" {
-            return Ok(virtual_bin_entries());
-        }
-        let entries = self.0.list(path).ok_or(VfsError::NotFound)?;
-        Ok(entries
-            .into_iter()
-            .map(|e| DirEntry {
-                name: e.name,
-                node_type: if e.is_dir {
-                    NodeType::Directory
-                } else {
-                    NodeType::File
-                },
-            })
-            .collect())
-    }
-    fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>> {
-        self.0.read_file(path).ok_or(VfsError::IoError)
-    }
-    fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()> {
-        self.0.write_file(path, data).ok_or(VfsError::IoError)
-    }
-    fn mkdir(&mut self, path: &str) -> VfsResult<()> {
-        self.0.mkdir(path).ok_or(VfsError::IoError)
-    }
-    fn remove(&mut self, path: &str) -> VfsResult<()> {
-        self.0.remove(path).ok_or(VfsError::IoError)
-    }
-    fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()> {
-        self.0.rename(src, dst).ok_or(VfsError::IoError)
-    }
-    fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()> {
-        let data = self.0.read_file(src).ok_or(VfsError::IoError)?;
-        self.0.write_file(dst, &data).ok_or(VfsError::IoError)
-    }
-    fn is_dir(&mut self, path: &str) -> bool {
-        self.0.list(path).is_some()
-    }
-    fn exists(&mut self, path: &str) -> bool {
-        self.0.lookup(path).is_some()
-    }
+pub enum FileObject {
+    Inode(Arc<dyn Inode>),
+    Stream(Arc<dyn FileLike>),
 }
 
-// ---------------------------------------------------------------------------
-// Global mount table
-// ---------------------------------------------------------------------------
-
-/// A mount point maps a path prefix to a filesystem.
-struct MountPoint {
-    prefix: String,
-    fs: Box<dyn Filesystem>,
+pub struct File {
+    pub object: FileObject,
+    /// The inode the file was opened from (also set for device nodes).
+    pub inode: Option<Arc<dyn Inode>>,
+    pub offset: Mutex<u64>,
+    pub flags: AtomicU32,
+    pub path: String,
 }
 
-/// Global VFS state: the root filesystem + any additional mount points.
-pub struct Vfs {
-    root: Box<dyn Filesystem>,
-    root_name: String,
-    mounts: Vec<MountPoint>,
-}
-
-impl Vfs {
-    pub fn new() -> Self {
-        Vfs {
-            root: Box::new(RamFs::new()),
-            root_name: String::from("ramfs"),
-            mounts: Vec::new(),
-        }
-    }
-}
-
-impl Default for Vfs {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Vfs {
-    /// Replace the root filesystem mounted at `/`.
-    pub fn set_root(&mut self, fs: Box<dyn Filesystem>, name: &str) {
-        self.root = fs;
-        self.root_name = name.to_string();
-    }
-
-    pub fn root_name(&self) -> &str {
-        &self.root_name
-    }
-
-    /// Mount `fs` at `mount_path` (e.g. "/usb").
-    pub fn mount(&mut self, mount_path: &str, fs: Box<dyn Filesystem>) {
-        // Ensure the mount point directory exists in root
-        let _ = self.root.mkdir(mount_path);
-        self.mounts.push(MountPoint {
-            prefix: normalize(mount_path),
-            fs,
-        });
-    }
-
-    fn find_mount(&self, norm_path: &str) -> Option<usize> {
-        let mut best_len = 0usize;
-        let mut best_idx: Option<usize> = None;
-        for (i, mp) in self.mounts.iter().enumerate() {
-            let prefix = &mp.prefix;
-            if (norm_path == prefix.as_str()
-                || norm_path.starts_with(&alloc::format!("{}/", prefix)))
-                && prefix.len() > best_len
-            {
-                best_len = prefix.len();
-                best_idx = Some(i);
-            }
-        }
-        best_idx
-    }
-
-    /// Route a path: if it falls under a mount point prefix, use that filesystem;
-    /// otherwise use the current root filesystem.
-    fn route(&mut self, path: &str) -> (&mut dyn Filesystem, String) {
-        let norm = normalize(path);
-        // Find the most-specific mount (longest prefix match)
-        let mut best_len = 0usize;
-        let mut best_idx: Option<usize> = None;
-        for (i, mp) in self.mounts.iter().enumerate() {
-            let prefix = &mp.prefix;
-            if (norm == *prefix || norm.starts_with(&alloc::format!("{}/", prefix)))
-                && prefix.len() > best_len
-            {
-                best_len = prefix.len();
-                best_idx = Some(i);
-            }
-        }
-        if let Some(idx) = best_idx {
-            let prefix = self.mounts[idx].prefix.clone();
-            let rel = if norm == prefix {
-                String::from("/")
-            } else {
-                norm[prefix.len()..].to_string()
-            };
-            (&mut *self.mounts[idx].fs, rel)
-        } else {
-            let norm2 = norm.clone();
-            (&mut *self.root, norm2)
-        }
-    }
-
-    pub fn list_dir(&mut self, path: &str) -> VfsResult<Vec<DirEntry>> {
-        let norm = normalize(path);
-        if norm == "/bin" {
-            let mut entries = virtual_bin_entries();
-            // Also include any real files stored in the root FS under /bin/.
-            if let Ok(real) = self.root.list_dir("/bin") {
-                for e in real {
-                    if !entries.iter().any(|v| v.name == e.name) {
-                        entries.push(e);
-                    }
-                }
-            }
-            return Ok(entries);
-        }
-        let (fs, rel) = self.route(path);
-        let mut entries = fs.list_dir(&rel)?;
-        if norm == "/" {
-            // Inject the virtual /bin directory if not already present.
-            if !entries.iter().any(|e| e.name == "bin") {
-                entries.push(DirEntry {
-                    name: String::from("bin"),
-                    node_type: NodeType::Directory,
-                });
-            }
-            // Inject mount point directories so that `ls /` shows them even when
-            // they have not been physically created on the root filesystem.
-            for mp in &self.mounts {
-                let mp_name = mp.prefix.trim_start_matches('/');
-                // Only inject top-level mount points (no '/' in the stripped name).
-                if !mp_name.contains('/')
-                    && !mp_name.is_empty()
-                    && !entries.iter().any(|e| e.name == mp_name)
-                {
-                    entries.push(DirEntry {
-                        name: String::from(mp_name),
-                        node_type: NodeType::Directory,
-                    });
-                }
-            }
-        }
-        Ok(entries)
-    }
-
-    pub fn read_file(&mut self, path: &str) -> VfsResult<Vec<u8>> {
-        if crate::bin_commands::is_virtual_bin_path(&normalize(path)).is_some() {
-            return Err(VfsError::ReadOnly);
-        }
-        let (fs, rel) = self.route(path);
-        fs.read_file(&rel)
-    }
-
-    pub fn write_file(&mut self, path: &str, data: &[u8]) -> VfsResult<()> {
-        let (fs, rel) = self.route(path);
-        fs.write_file(&rel, data)
-    }
-
-    pub fn mkdir(&mut self, path: &str) -> VfsResult<()> {
-        let (fs, rel) = self.route(path);
-        fs.mkdir(&rel)
-    }
-
-    pub fn remove(&mut self, path: &str) -> VfsResult<()> {
-        let (fs, rel) = self.route(path);
-        fs.remove(&rel)
-    }
-
-    pub fn rename(&mut self, src: &str, dst: &str) -> VfsResult<()> {
-        // Determine which mount handles each path
-        let norm_src = normalize(src);
-        let norm_dst = normalize(dst);
-
-        let src_idx = self.find_mount(&norm_src);
-        let dst_idx = self.find_mount(&norm_dst);
-
-        if src_idx != dst_idx {
-            // Cross-filesystem rename: read + write + delete
-            let data = {
-                let (fs, rel) = self.route(&norm_src);
-                fs.read_file(&rel)?
-            };
-            {
-                let (fs, rel) = self.route(&norm_dst);
-                fs.write_file(&rel, &data)?;
-            }
-            let (fs, rel) = self.route(&norm_src);
-            fs.remove(&rel)
-        } else {
-            // Same filesystem — use native rename
-            let (rel_src, rel_dst) = if let Some(idx) = src_idx {
-                let prefix = &self.mounts[idx].prefix;
-                let rs = if norm_src == *prefix {
-                    String::from("/")
-                } else {
-                    norm_src[prefix.len()..].to_string()
-                };
-                let rd = if norm_dst == *prefix {
-                    String::from("/")
-                } else {
-                    norm_dst[prefix.len()..].to_string()
-                };
-                (rs, rd)
-            } else {
-                (norm_src, norm_dst)
-            };
-            if let Some(idx) = src_idx {
-                self.mounts[idx].fs.rename(&rel_src, &rel_dst)
-            } else {
-                self.root.as_mut().rename(&rel_src, &rel_dst)
-            }
-        }
-    }
-
-    pub fn copy(&mut self, src: &str, dst: &str) -> VfsResult<()> {
-        let norm_src = normalize(src);
-        let norm_dst = normalize(dst);
-        // Read from source
-        let data = {
-            let (fs, rel) = self.route(&norm_src);
-            fs.read_file(&rel)?
-        };
-        // Write to destination
-        let (fs, rel) = self.route(&norm_dst);
-        fs.write_file(&rel, &data)
-    }
-
-    pub fn is_dir(&mut self, path: &str) -> bool {
-        if normalize(path) == "/bin" {
-            return true;
-        }
-        let (fs, rel) = self.route(path);
-        fs.is_dir(&rel)
-    }
-
-    pub fn exists(&mut self, path: &str) -> bool {
-        let norm = normalize(path);
-        if norm == "/bin" || crate::bin_commands::is_virtual_bin_path(&norm).is_some() {
-            return true;
-        }
-        let (fs, rel) = self.route(path);
-        fs.exists(&rel)
-    }
-
-    pub fn list_mounts(&self) -> Vec<String> {
-        self.mounts.iter().map(|m| m.prefix.clone()).collect()
-    }
-
-    /// Unmount the filesystem at `mount_path`. Returns true if it was mounted.
-    pub fn umount(&mut self, mount_path: &str) -> bool {
-        let norm = normalize(mount_path);
-        if let Some(pos) = self.mounts.iter().position(|m| m.prefix == norm) {
-            self.mounts.remove(pos);
-            true
-        } else {
-            false
-        }
-    }
-}
-
-fn normalize(path: &str) -> String {
-    crate::vfs::ramfs::RamFs::pub_normalize(path)
-}
-
-fn virtual_bin_entries() -> Vec<DirEntry> {
-    crate::bin_commands::virtual_bin_commands()
-        .iter()
-        .map(|name| DirEntry {
-            name: (*name).to_string(),
-            node_type: NodeType::File,
+impl File {
+    pub fn from_stream(obj: Arc<dyn FileLike>, flags: u32, path: &str) -> Arc<File> {
+        Arc::new(File {
+            object: FileObject::Stream(obj),
+            inode: None,
+            offset: Mutex::new(0),
+            flags: AtomicU32::new(flags),
+            path: path.to_string(),
         })
+    }
+
+    pub fn flags(&self) -> u32 {
+        self.flags.load(Ordering::Relaxed)
+    }
+
+    pub fn readable(&self) -> bool {
+        self.flags() & O_ACCMODE != O_WRONLY
+    }
+
+    pub fn writable(&self) -> bool {
+        self.flags() & O_ACCMODE != O_RDONLY
+    }
+
+    fn nonblock(&self) -> bool {
+        self.flags() & O_NONBLOCK != 0
+    }
+
+    pub fn read(&self, buf: &mut [u8]) -> KResult<usize> {
+        if !self.readable() {
+            return Err(EBADF);
+        }
+        match &self.object {
+            FileObject::Inode(i) => {
+                let mut off = self.offset.lock();
+                let n = i.read_at(*off, buf)?;
+                *off += n as u64;
+                Ok(n)
+            }
+            FileObject::Stream(s) => {
+                if let Some(r) = s.read_at(*self.offset.lock(), buf) {
+                    let n = r?;
+                    *self.offset.lock() += n as u64;
+                    return Ok(n);
+                }
+                s.read(buf, self.nonblock())
+            }
+        }
+    }
+
+    pub fn write(&self, buf: &[u8]) -> KResult<usize> {
+        if !self.writable() {
+            return Err(EBADF);
+        }
+        match &self.object {
+            FileObject::Inode(i) => {
+                let mut off = self.offset.lock();
+                if self.flags() & O_APPEND != 0 {
+                    *off = i.metadata()?.size;
+                }
+                let n = i.write_at(*off, buf)?;
+                *off += n as u64;
+                Ok(n)
+            }
+            FileObject::Stream(s) => {
+                if let Some(r) = s.write_at(*self.offset.lock(), buf) {
+                    let n = r?;
+                    *self.offset.lock() += n as u64;
+                    return Ok(n);
+                }
+                s.write(buf, self.nonblock())
+            }
+        }
+    }
+
+    pub fn pread(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
+        match &self.object {
+            FileObject::Inode(i) => i.read_at(off, buf),
+            FileObject::Stream(s) => s.read_at(off, buf).unwrap_or(Err(ESPIPE)),
+        }
+    }
+
+    pub fn pwrite(&self, off: u64, buf: &[u8]) -> KResult<usize> {
+        match &self.object {
+            FileObject::Inode(i) => i.write_at(off, buf),
+            FileObject::Stream(s) => s.write_at(off, buf).unwrap_or(Err(ESPIPE)),
+        }
+    }
+
+    /// `whence`: 0 = SET, 1 = CUR, 2 = END.
+    pub fn seek(&self, off: i64, whence: u32) -> KResult<u64> {
+        let size = match &self.object {
+            FileObject::Inode(i) => i.metadata()?.size,
+            FileObject::Stream(s) => match s.size() {
+                Some(sz) => sz,
+                None => return Err(ESPIPE),
+            },
+        };
+        let mut cur = self.offset.lock();
+        let base = match whence {
+            0 => 0i64,
+            1 => *cur as i64,
+            2 => size as i64,
+            _ => return Err(EINVAL),
+        };
+        let new = base.checked_add(off).ok_or(EINVAL)?;
+        if new < 0 {
+            return Err(EINVAL);
+        }
+        *cur = new as u64;
+        Ok(new as u64)
+    }
+
+    pub fn stat(&self) -> KResult<Metadata> {
+        if let Some(i) = &self.inode {
+            let mut m = i.metadata()?;
+            if let FileObject::Stream(s) = &self.object
+                && let Some(sz) = s.size()
+            {
+                m.size = sz;
+            }
+            return Ok(m);
+        }
+        match &self.object {
+            FileObject::Inode(i) => i.metadata(),
+            FileObject::Stream(s) => s.stat(),
+        }
+    }
+
+    pub fn poll(&self) -> u16 {
+        match &self.object {
+            FileObject::Inode(_) => POLLIN | POLLOUT,
+            FileObject::Stream(s) => s.poll(),
+        }
+    }
+
+    pub fn ioctl(&self, cmd: u64, arg: u64) -> KResult<i64> {
+        match &self.object {
+            FileObject::Inode(_) => Err(ENOTTY),
+            FileObject::Stream(s) => s.ioctl(cmd, arg),
+        }
+    }
+
+    pub fn stream(&self) -> Option<&Arc<dyn FileLike>> {
+        match &self.object {
+            FileObject::Stream(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn dir_inode(&self) -> KResult<&Arc<dyn Inode>> {
+        match &self.object {
+            FileObject::Inode(i) => Ok(i),
+            _ => Err(ENOTDIR),
+        }
+    }
+}
+
+impl Drop for File {
+    fn drop(&mut self) {
+        if let FileObject::Stream(s) = &self.object {
+            s.close();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mount table and path resolution
+// ---------------------------------------------------------------------------
+
+pub struct Mount {
+    pub path: String,
+    pub fs: Arc<dyn FileSystem>,
+    pub source: String,
+    pub root: Arc<dyn Inode>,
+}
+
+static MOUNTS: RwLock<Vec<Mount>> = RwLock::new(Vec::new());
+
+/// Mount `fs` at `path` (the directory must exist, except for "/").
+pub fn mount(path: &str, fs: Arc<dyn FileSystem>, source: &str) -> KResult<()> {
+    let path = normalize(path);
+    if path != "/" {
+        let node = lookup(&path)?;
+        if node.metadata()?.kind != FileType::Directory {
+            return Err(ENOTDIR);
+        }
+    }
+    let mut m = MOUNTS.write();
+    if m.iter().any(|x| x.path == path) {
+        return Err(EBUSY);
+    }
+    let root = fs.root();
+    m.push(Mount {
+        path,
+        fs,
+        source: source.to_string(),
+        root,
+    });
+    Ok(())
+}
+
+pub fn umount(path: &str) -> KResult<()> {
+    let path = normalize(path);
+    if path == "/" {
+        return Err(EBUSY);
+    }
+    let mut m = MOUNTS.write();
+    if m.iter().any(|x| {
+        x.path.starts_with(&path)
+            && x.path.len() > path.len()
+            && x.path.as_bytes()[path.len()] == b'/'
+    }) {
+        return Err(EBUSY);
+    }
+    let idx = m.iter().position(|x| x.path == path).ok_or(EINVAL)?;
+    let fs = m[idx].fs.clone();
+    let _ = fs.sync();
+    m.remove(idx);
+    Ok(())
+}
+
+/// (mount path, fs name, source) for every mount.
+pub fn mounts() -> Vec<(String, &'static str, String)> {
+    MOUNTS
+        .read()
+        .iter()
+        .map(|m| (m.path.clone(), m.fs.name(), m.source.clone()))
         .collect()
 }
 
+pub fn mount_fs(path: &str) -> Option<Arc<dyn FileSystem>> {
+    let path = normalize(path);
+    MOUNTS
+        .read()
+        .iter()
+        .filter(|m| {
+            path == m.path
+                || path.starts_with(&(m.path.clone() + if m.path == "/" { "" } else { "/" }))
+        })
+        .max_by_key(|m| m.path.len())
+        .map(|m| m.fs.clone())
+}
+
+pub fn sync_all() {
+    for m in MOUNTS.read().iter() {
+        let _ = m.fs.sync();
+    }
+}
+
+fn mounted_root(path: &str) -> Option<Arc<dyn Inode>> {
+    MOUNTS
+        .read()
+        .iter()
+        .rev()
+        .find(|m| m.path == path)
+        .map(|m| m.root.clone())
+}
+
+/// Collapse `.`, `..` and duplicate slashes in an absolute path.
+pub fn normalize(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for c in path.split('/') {
+        match c {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            c => parts.push(c),
+        }
+    }
+    let mut s = String::from("/");
+    s.push_str(&parts.join("/"));
+    s
+}
+
+/// Join `path` onto `cwd` (if relative) and normalise lexically.
+pub fn absolute(cwd: &str, path: &str) -> String {
+    if path.starts_with('/') {
+        normalize(path)
+    } else {
+        normalize(&alloc::format!("{}/{}", cwd, path))
+    }
+}
+
+fn split_parent(path: &str) -> (String, String) {
+    let p = normalize(path);
+    match p.rfind('/') {
+        Some(0) => (String::from("/"), p[1..].to_string()),
+        Some(i) => (p[..i].to_string(), p[i + 1..].to_string()),
+        None => (String::from("/"), p),
+    }
+}
+
+/// Resolve an absolute path to (inode, canonical path).
+fn resolve(path: &str, follow_last: bool, depth: u32) -> KResult<(Arc<dyn Inode>, String)> {
+    if depth > 40 {
+        return Err(ELOOP);
+    }
+    let root = mounted_root("/").ok_or(ENOENT)?;
+    let mut stack: Vec<(Arc<dyn Inode>, String)> = alloc::vec![(root, String::from("/"))];
+    let comps: Vec<&str> = path
+        .split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    let n = comps.len();
+    for (i, comp) in comps.iter().enumerate() {
+        if comp.len() > 255 {
+            return Err(ENAMETOOLONG);
+        }
+        if *comp == ".." {
+            if stack.len() > 1 {
+                stack.pop();
+            }
+            continue;
+        }
+        let (cur, cur_path) = stack.last().unwrap().clone();
+        if cur.metadata()?.kind != FileType::Directory {
+            return Err(ENOTDIR);
+        }
+        let child_path = if cur_path == "/" {
+            alloc::format!("/{}", comp)
+        } else {
+            alloc::format!("{}/{}", cur_path, comp)
+        };
+        let child = match mounted_root(&child_path) {
+            Some(r) => r,
+            None => cur.lookup(comp)?,
+        };
+        let is_last = i + 1 == n;
+        if child.metadata()?.kind == FileType::Symlink && (!is_last || follow_last) {
+            let target = child.readlink()?;
+            let mut rest = String::new();
+            for c in &comps[i + 1..] {
+                rest.push('/');
+                rest.push_str(c);
+            }
+            let new_path = if target.starts_with('/') {
+                alloc::format!("{}{}", target, rest)
+            } else {
+                alloc::format!("{}/{}{}", cur_path, target, rest)
+            };
+            return resolve(&normalize(&new_path), follow_last, depth + 1);
+        }
+        stack.push((child, child_path));
+    }
+    Ok(stack.pop().unwrap())
+}
+
+/// Look up an absolute path, following symlinks.
+pub fn lookup(path: &str) -> KResult<Arc<dyn Inode>> {
+    resolve(&normalize(path), true, 0).map(|(i, _)| i)
+}
+
+/// Look up without following a final symlink.
+pub fn lookup_nofollow(path: &str) -> KResult<Arc<dyn Inode>> {
+    resolve(&normalize(path), false, 0).map(|(i, _)| i)
+}
+
+/// Canonical path (symlinks resolved).
+pub fn canonicalize(path: &str) -> KResult<String> {
+    resolve(&normalize(path), true, 0).map(|(_, p)| p)
+}
+
+/// Resolve the parent directory of `path`, returning it and the final name.
+pub fn lookup_parent(path: &str) -> KResult<(Arc<dyn Inode>, String)> {
+    let (parent, name) = split_parent(path);
+    if name.is_empty() {
+        return Err(EEXIST);
+    }
+    let dir = lookup(&parent)?;
+    if dir.metadata()?.kind != FileType::Directory {
+        return Err(ENOTDIR);
+    }
+    Ok((dir, name))
+}
+
+/// Open an absolute path.
+pub fn open(path: &str, flags: u32, mode: u32) -> KResult<Arc<File>> {
+    let path = normalize(path);
+    let inode = match if flags & O_NOFOLLOW != 0 {
+        lookup_nofollow(&path)
+    } else {
+        lookup(&path)
+    } {
+        Ok(i) => {
+            if flags & O_CREAT != 0 && flags & O_EXCL != 0 {
+                return Err(EEXIST);
+            }
+            i
+        }
+        Err(ENOENT) if flags & O_CREAT != 0 => {
+            let (dir, name) = lookup_parent(&path)?;
+            dir.create(&name, FileType::Regular, mode & 0o7777)?
+        }
+        Err(e) => return Err(e),
+    };
+    let meta = inode.metadata()?;
+    if flags & O_DIRECTORY != 0 && meta.kind != FileType::Directory {
+        return Err(ENOTDIR);
+    }
+    if meta.kind == FileType::Directory && flags & O_ACCMODE != O_RDONLY {
+        return Err(EISDIR);
+    }
+    if meta.kind == FileType::Symlink {
+        return Err(ELOOP);
+    }
+    if flags & O_TRUNC != 0 && meta.kind == FileType::Regular && flags & O_ACCMODE != O_RDONLY {
+        inode.truncate(0)?;
+    }
+    let object = match inode.open(flags)? {
+        Some(stream) => FileObject::Stream(stream),
+        None => FileObject::Inode(inode.clone()),
+    };
+    Ok(Arc::new(File {
+        object,
+        inode: Some(inode),
+        offset: Mutex::new(0),
+        flags: AtomicU32::new(flags & !(O_CREAT | O_EXCL | O_TRUNC | O_NOCTTY)),
+        path,
+    }))
+}
+
 // ---------------------------------------------------------------------------
-// Global VFS singleton
+// Convenience operations on absolute paths (kernel use and syscalls)
 // ---------------------------------------------------------------------------
 
-pub static VFS: Mutex<Option<Vfs>> = Mutex::new(None);
+pub fn read_all(path: &str) -> KResult<Vec<u8>> {
+    let inode = lookup(path)?;
+    let meta = inode.metadata()?;
+    if meta.kind == FileType::Directory {
+        return Err(EISDIR);
+    }
+    // Sizes of generated files (e.g. /proc) are unknown: read until EOF.
+    let mut out = Vec::with_capacity(meta.size as usize);
+    let mut chunk = alloc::vec![0u8; 64 * 1024];
+    loop {
+        let n = inode.read_at(out.len() as u64, &mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&chunk[..n]);
+    }
+    Ok(out)
+}
 
+pub fn write_all(path: &str, data: &[u8]) -> KResult<()> {
+    let f = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)?;
+    let mut done = 0;
+    while done < data.len() {
+        let n = f.write(&data[done..])?;
+        if n == 0 {
+            return Err(EIO);
+        }
+        done += n;
+    }
+    Ok(())
+}
+
+pub fn mkdir(path: &str, mode: u32) -> KResult<()> {
+    let (dir, name) = lookup_parent(path)?;
+    if dir.lookup(&name).is_ok() {
+        return Err(EEXIST);
+    }
+    dir.create(&name, FileType::Directory, mode).map(|_| ())
+}
+
+pub fn mkdir_p(path: &str) -> KResult<()> {
+    let norm = normalize(path);
+    let mut cur = String::new();
+    for c in norm.split('/').filter(|c| !c.is_empty()) {
+        cur.push('/');
+        cur.push_str(c);
+        match mkdir(&cur, 0o755) {
+            Ok(()) | Err(EEXIST) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+pub fn unlink(path: &str) -> KResult<()> {
+    let (dir, name) = lookup_parent(path)?;
+    let node = dir.lookup(&name)?;
+    if node.metadata()?.kind == FileType::Directory {
+        return Err(EISDIR);
+    }
+    dir.unlink(&name)
+}
+
+pub fn rmdir(path: &str) -> KResult<()> {
+    let norm = normalize(path);
+    if MOUNTS.read().iter().any(|m| m.path == norm) {
+        return Err(EBUSY);
+    }
+    let (dir, name) = lookup_parent(path)?;
+    dir.rmdir(&name)
+}
+
+pub fn rename(old: &str, new: &str) -> KResult<()> {
+    let (od, on) = lookup_parent(old)?;
+    let (nd, nn) = lookup_parent(new)?;
+    if od.fs_id() != nd.fs_id() {
+        return Err(EXDEV);
+    }
+    let old_norm = normalize(old);
+    let new_norm = normalize(new);
+    if new_norm.starts_with(&(old_norm.clone() + "/")) {
+        return Err(EINVAL);
+    }
+    od.rename(&on, &nd, &nn)
+}
+
+pub fn symlink(target: &str, linkpath: &str) -> KResult<()> {
+    let (dir, name) = lookup_parent(linkpath)?;
+    if dir.lookup(&name).is_ok() {
+        return Err(EEXIST);
+    }
+    dir.symlink(&name, target)
+}
+
+pub fn link(old: &str, new: &str) -> KResult<()> {
+    let target = lookup_nofollow(old)?;
+    let (dir, name) = lookup_parent(new)?;
+    if dir.fs_id() != target.fs_id() {
+        return Err(EXDEV);
+    }
+    dir.link(&name, &target)
+}
+
+pub fn readdir(path: &str) -> KResult<Vec<DirEntry>> {
+    lookup(path)?.readdir()
+}
+
+pub fn stat(path: &str) -> KResult<Metadata> {
+    lookup(path)?.metadata()
+}
+
+pub fn exists(path: &str) -> bool {
+    lookup(path).is_ok()
+}
+
+pub fn is_dir(path: &str) -> bool {
+    stat(path).is_ok_and(|m| m.kind == FileType::Directory)
+}
+
+/// Copy a file (possibly across filesystems).
+pub fn copy_file(src: &str, dst: &str) -> KResult<()> {
+    let data = read_all(src)?;
+    write_all(dst, &data)
+}
+
+/// Mount a fresh tmpfs as the root filesystem plus the standard pseudo
+/// filesystems.
 pub fn init() {
-    *VFS.lock() = Some(Vfs::new());
+    if mounted_root("/").is_some() {
+        return;
+    }
+    let root = tmpfs::TmpFs::new();
+    mount("/", root, "rootfs").expect("mount root");
+    for d in [
+        "/dev",
+        "/proc",
+        "/tmp",
+        "/mnt",
+        "/bin",
+        "/etc",
+        "/lib",
+        "/lib/firmware",
+        "/root",
+        "/home",
+        "/var",
+        "/var/log",
+        "/sys",
+    ] {
+        let _ = mkdir_p(d);
+    }
+    mount("/dev", devfs::DevFs::new(), "devfs").expect("mount devfs");
+    mount("/proc", procfs::ProcFs::new(), "proc").expect("mount procfs");
 }

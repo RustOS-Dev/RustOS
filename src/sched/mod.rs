@@ -67,6 +67,8 @@ pub struct Thread {
     quantum: AtomicU8,
     /// Set by `kill` to make blocking syscalls return early.
     pub interrupted: AtomicBool,
+    /// Absolute deadline of an interrupted nanosleep (for restart).
+    pub restart_deadline: AtomicU64,
 }
 
 unsafe impl Send for Thread {}
@@ -193,6 +195,7 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         wakeup_pending: AtomicBool::new(false),
         quantum: AtomicU8::new(QUANTUM_TICKS as u8),
         interrupted: AtomicBool::new(false),
+        restart_deadline: AtomicU64::new(0),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t

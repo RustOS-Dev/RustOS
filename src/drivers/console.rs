@@ -1,11 +1,12 @@
-//! Kernel console: routes `print!` output to the UEFI framebuffer when one is
-//! present, always mirrors it to COM1, and records it in the kernel log ring
-//! buffer read by `dmesg`.
-//!
-//! Legacy VGA text mode (0xb8000) is not used: bootloader 0.11 boots through
-//! UEFI, which never leaves the adapter in text mode.
+//! Kernel console: routes output to the framebuffer terminal (when present),
+//! COM1, and the kernel log ring buffer read by `dmesg`. Also keeps the
+//! scrollback history for the framebuffer view.
 
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 use core::fmt;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use spin::Mutex;
 use x86_64::instructions::interrupts;
 
 /// Console colour palette (the classic 16 VGA colours).
@@ -31,11 +32,8 @@ pub enum Color {
     White = 15,
 }
 
-// The framebuffer console only has an 8-colour palette, so light/dark variants
-// collapse to the nearest base colour.
 fn to_framebuffer_color(color: Color) -> crate::drivers::framebuffer::Color {
     use crate::drivers::framebuffer::Color as FbColor;
-
     match color {
         Color::Black => FbColor::BLACK,
         Color::Blue | Color::LightBlue => FbColor::BLUE,
@@ -48,29 +46,100 @@ fn to_framebuffer_color(color: Color) -> crate::drivers::framebuffer::Color {
     }
 }
 
+const HISTORY_MAX: usize = 1000;
+static HISTORY: Mutex<VecDeque<Vec<u8>>> = Mutex::new(VecDeque::new());
+static VIEW_OFFSET: AtomicUsize = AtomicUsize::new(0);
+
+/// Record a line that scrolled off the top of the screen.
+pub(crate) fn push_history(line: &[u8]) {
+    if crate::allocator::heap_size() == 0 {
+        return;
+    }
+    let mut h = HISTORY.lock();
+    if h.len() >= HISTORY_MAX {
+        h.pop_front();
+    }
+    let end = line.iter().rposition(|&c| c != b' ').map_or(0, |i| i + 1);
+    h.push_back(line[..end].to_vec());
+}
+
+pub fn view_is_live() -> bool {
+    VIEW_OFFSET.load(Ordering::Relaxed) == 0
+}
+
+fn redraw_view() {
+    interrupts::without_interrupts(|| {
+        let h = HISTORY.lock();
+        let lines: Vec<&[u8]> = h.iter().map(|l| l.as_slice()).collect();
+        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+            c.show_history(&lines, VIEW_OFFSET.load(Ordering::Relaxed));
+        }
+    });
+}
+
+/// Scroll the framebuffer view back by half a screen.
+pub fn scroll_view_up() {
+    let rows = crate::drivers::framebuffer::console_size().map_or(25, |s| s.1);
+    let max = HISTORY.lock().len();
+    let cur = VIEW_OFFSET.load(Ordering::Relaxed);
+    VIEW_OFFSET.store((cur + rows / 2).min(max), Ordering::Relaxed);
+    redraw_view();
+}
+
+/// Scroll the framebuffer view forward (towards the live screen).
+pub fn scroll_view_down() {
+    let rows = crate::drivers::framebuffer::console_size().map_or(25, |s| s.1);
+    let cur = VIEW_OFFSET.load(Ordering::Relaxed);
+    VIEW_OFFSET.store(cur.saturating_sub(rows / 2), Ordering::Relaxed);
+    redraw_view();
+}
+
+/// Return to the live view if scrolled back.
+pub fn reset_view() {
+    if !view_is_live() {
+        VIEW_OFFSET.store(0, Ordering::Relaxed);
+        redraw_view();
+    }
+}
+
+/// Write raw bytes to the framebuffer terminal and serial port (no klog).
+pub fn write_bytes(bytes: &[u8]) {
+    interrupts::without_interrupts(|| {
+        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+            c.write_bytes(bytes);
+        }
+    });
+    crate::drivers::serial::write_bytes(bytes);
+}
+
+struct ConsoleWriter;
+
+impl fmt::Write for ConsoleWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+            c.write_bytes(s.as_bytes());
+        }
+        crate::klog::write_bytes(s.as_bytes());
+        Ok(())
+    }
+}
+
 /// Writes formatted output to the framebuffer (if present), serial, and the
 /// kernel log.
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-
     interrupts::without_interrupts(|| {
-        use crate::drivers::framebuffer::FRAMEBUFFER_WRITER;
-        if let Some(fb_writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
-            let _ = fb_writer.write_fmt(args);
-        }
-        let _ = crate::klog::KlogWriter.write_fmt(args);
+        let _ = ConsoleWriter.write_fmt(args);
     });
-
     crate::serial_print!("{}", args);
 }
 
 /// Clear the framebuffer console (no-op without a framebuffer).
 pub fn clear_screen() {
     interrupts::without_interrupts(|| {
-        use crate::drivers::framebuffer::FRAMEBUFFER_WRITER;
-        if let Some(fb_writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
-            fb_writer.clear_screen();
+        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+            c.clear();
         }
     });
 }
@@ -78,9 +147,8 @@ pub fn clear_screen() {
 /// Set foreground/background colours on the framebuffer console.
 pub fn set_color(fg: Color, bg: Color) {
     interrupts::without_interrupts(|| {
-        use crate::drivers::framebuffer::FRAMEBUFFER_WRITER;
-        if let Some(fb_writer) = FRAMEBUFFER_WRITER.lock().as_mut() {
-            fb_writer.set_colors(to_framebuffer_color(fg), to_framebuffer_color(bg));
+        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+            c.set_colors(to_framebuffer_color(fg), to_framebuffer_color(bg));
         }
     });
 }

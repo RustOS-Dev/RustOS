@@ -108,3 +108,8 @@ jobs:
         env:
           RUSTOS_TEST_TIMEOUT: "600"
         run: cargo test
+
+      - name: Boot scenarios (drive the shell over the serial console)
+        run: |
+          cargo build
+          tools/run-scenarios.sh

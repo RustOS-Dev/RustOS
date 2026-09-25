@@ -290,3 +290,45 @@ pub fn dma_alloc(size: usize, _align: usize) -> (*mut u8, u64) {
     unsafe { core::ptr::write_bytes(virt as *mut u8, 0, frames * FRAME_SIZE as usize) };
     (virt as *mut u8, phys)
 }
+
+// ---------------------------------------------------------------------------
+// Shared-frame reference counts (copy-on-write)
+// ---------------------------------------------------------------------------
+
+/// Extra references to frames shared between address spaces. A frame not in
+/// the map has exactly one owner.
+static FRAME_REFS: Mutex<alloc::collections::BTreeMap<u64, u32>> =
+    Mutex::new(alloc::collections::BTreeMap::new());
+
+/// Record one more owner of `phys`.
+pub fn frame_share(phys: u64) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        *FRAME_REFS.lock().entry(phys).or_insert(0) += 1;
+    });
+}
+
+/// Drop one owner of `phys`, freeing the frame when it was the last.
+pub fn frame_release(phys: u64) {
+    let free = x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut refs = FRAME_REFS.lock();
+        match refs.get_mut(&phys) {
+            Some(n) if *n > 1 => {
+                *n -= 1;
+                false
+            }
+            Some(_) => {
+                refs.remove(&phys);
+                false
+            }
+            None => true,
+        }
+    });
+    if free {
+        with_frames(|f| f.free(phys));
+    }
+}
+
+/// Whether `phys` has more than one owner.
+pub fn frame_is_shared(phys: u64) -> bool {
+    x86_64::instructions::interrupts::without_interrupts(|| FRAME_REFS.lock().contains_key(&phys))
+}

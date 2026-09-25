@@ -4,15 +4,17 @@
 #![test_runner(rustos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+
 use bootloader_api::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-extern crate rustos;
+use rustos::errno::*;
+use rustos::vfs;
 
 entry_point!(main, config = &rustos::BOOTLOADER_CONFIG);
 
 fn main(boot_info: &'static mut BootInfo) -> ! {
     rustos::kernel_init(boot_info);
-    rustos::vfs::init();
     test_main();
     loop {}
 }
@@ -22,96 +24,104 @@ fn panic(info: &PanicInfo) -> ! {
     rustos::test_panic_handler(info)
 }
 
-/// Test that VFS can be initialized
 #[test_case]
-fn test_vfs_initialization() {
-    let vfs = rustos::vfs::VFS.lock();
-    assert!(vfs.is_some(), "VFS should be initialized");
+fn test_root_and_pseudo_filesystems_mounted() {
+    let mounts = vfs::mounts();
+    for m in ["/", "/dev", "/proc"] {
+        assert!(mounts.iter().any(|(p, _, _)| p == m), "{} not mounted", m);
+    }
+    assert!(vfs::is_dir("/tmp"));
 }
 
-/// Test reading a file from RamFS
 #[test_case]
-fn test_ramfs_read_file() {
-    let mut vfs = rustos::vfs::VFS.lock();
-    let vfs = vfs.as_mut().expect("VFS not initialized");
-
-    let test_content = b"RamFS test content";
-    let _ = vfs.write_file("/test.txt", test_content);
-
-    let read_result = vfs.read_file("/test.txt");
-    assert!(read_result.is_ok(), "Should read file from RamFS");
+fn test_write_read_file() {
+    vfs::write_all("/tmp/a.txt", b"hello vfs").unwrap();
+    assert_eq!(vfs::read_all("/tmp/a.txt").unwrap(), b"hello vfs");
+    assert_eq!(vfs::stat("/tmp/a.txt").unwrap().size, 9);
 }
 
-/// Test writing a file to RamFS
 #[test_case]
-fn test_ramfs_write_file() {
-    let mut vfs = rustos::vfs::VFS.lock();
-    let vfs = vfs.as_mut().expect("VFS not initialized");
-
-    let test_path = "/write_test.txt";
-    let test_data = b"Write test data";
-
-    let result = vfs.write_file(test_path, test_data);
-    assert!(result.is_ok(), "Should successfully write file");
+fn test_open_file_offsets_and_append() {
+    let f = vfs::open("/tmp/b.txt", vfs::O_RDWR | vfs::O_CREAT | vfs::O_TRUNC, 0o644).unwrap();
+    f.write(b"0123456789").unwrap();
+    f.seek(2, 0).unwrap();
+    let mut buf = [0u8; 3];
+    assert_eq!(f.read(&mut buf).unwrap(), 3);
+    assert_eq!(&buf, b"234");
+    let a = vfs::open("/tmp/b.txt", vfs::O_WRONLY | vfs::O_APPEND, 0).unwrap();
+    a.write(b"XY").unwrap();
+    assert_eq!(vfs::read_all("/tmp/b.txt").unwrap(), b"0123456789XY");
 }
 
-/// Test file existence check
 #[test_case]
-fn test_file_exists() {
-    let mut vfs = rustos::vfs::VFS.lock();
-    let vfs = vfs.as_mut().expect("VFS not initialized");
-
-    let test_path = "/exists_test.txt";
-
-    let _ = vfs.write_file(test_path, b"content");
-    let exists = vfs.exists(test_path);
-    assert!(exists, "File should exist after creation");
+fn test_directories_rename_unlink() {
+    vfs::mkdir_p("/tmp/d1/d2").unwrap();
+    vfs::write_all("/tmp/d1/d2/f", b"x").unwrap();
+    assert_eq!(vfs::rmdir("/tmp/d1"), Err(ENOTEMPTY));
+    vfs::rename("/tmp/d1/d2/f", "/tmp/d1/g").unwrap();
+    assert!(!vfs::exists("/tmp/d1/d2/f"));
+    assert!(vfs::exists("/tmp/d1/g"));
+    vfs::unlink("/tmp/d1/g").unwrap();
+    vfs::rmdir("/tmp/d1/d2").unwrap();
+    vfs::rmdir("/tmp/d1").unwrap();
+    assert!(!vfs::exists("/tmp/d1"));
 }
 
-/// Test directory type checking
 #[test_case]
-fn test_is_directory() {
-    let mut vfs = rustos::vfs::VFS.lock();
-    let vfs = vfs.as_mut().expect("VFS not initialized");
-
-    let dir_path = "/is_dir_test";
-    let file_path = "/is_file_test.txt";
-
-    let _ = vfs.mkdir(dir_path);
-    let _ = vfs.write_file(file_path, b"content");
-
-    assert!(vfs.is_dir(dir_path), "Should recognize directory");
-    assert!(
-        !vfs.is_dir(file_path),
-        "Should recognize file is not directory"
-    );
+fn test_symlinks_and_dotdot() {
+    vfs::mkdir_p("/tmp/s/real").unwrap();
+    vfs::write_all("/tmp/s/real/file", b"via link").unwrap();
+    vfs::symlink("real", "/tmp/s/link").unwrap();
+    assert_eq!(vfs::read_all("/tmp/s/link/file").unwrap(), b"via link");
+    assert_eq!(vfs::read_all("/tmp/s/link/../real/file").unwrap(), b"via link");
+    assert_eq!(vfs::lookup_nofollow("/tmp/s/link").unwrap().readlink().unwrap(), "real");
 }
 
-/// Test file removal
 #[test_case]
-fn test_remove_file() {
-    let mut vfs = rustos::vfs::VFS.lock();
-    let vfs = vfs.as_mut().expect("VFS not initialized");
-
-    let test_path = "/remove_test.txt";
-
-    let _ = vfs.write_file(test_path, b"to remove");
-    assert!(vfs.exists(test_path), "File should exist after creation");
-
-    let result = vfs.remove(test_path);
-    assert!(result.is_ok(), "Should remove file");
-    assert!(
-        !vfs.exists(test_path),
-        "File should not exist after removal"
-    );
+fn test_devices_and_proc() {
+    let z = vfs::open("/dev/zero", vfs::O_RDONLY, 0).unwrap();
+    let mut buf = [1u8; 8];
+    z.read(&mut buf).unwrap();
+    assert_eq!(buf, [0; 8]);
+    let n = vfs::open("/dev/null", vfs::O_WRONLY, 0).unwrap();
+    assert_eq!(n.write(b"discard").unwrap(), 7);
+    let meminfo = vfs::read_all("/proc/meminfo").unwrap();
+    assert!(core::str::from_utf8(&meminfo).unwrap().contains("MemTotal"));
 }
 
-/// Test error handling for invalid paths
 #[test_case]
-fn test_invalid_path_handling() {
-    let mut vfs = rustos::vfs::VFS.lock();
-    let vfs = vfs.as_mut().expect("VFS not initialized");
+fn test_pipe_roundtrip() {
+    let (r, w) = vfs::pipe::pipe();
+    w.write(b"through a pipe", false).unwrap();
+    let mut buf = [0u8; 32];
+    let n = r.read(&mut buf, false).unwrap();
+    assert_eq!(&buf[..n], b"through a pipe");
+    assert_eq!(r.read(&mut buf, true), Err(EAGAIN));
+}
 
-    let result = vfs.read_file("/nonexistent.txt");
-    assert!(result.is_err(), "Should error on non-existent file");
+#[test_case]
+fn test_initramfs_unpack() {
+    // A tiny cpio archive with one directory and one file.
+    let mut ar = alloc::vec::Vec::new();
+    let mut add = |name: &str, mode: u32, data: &[u8]| {
+        let hdr = alloc::format!(
+            "070701{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}",
+            1, mode, 0, 0, 1, 0, data.len(), 0, 0, 0, 0, name.len() + 1, 0
+        );
+        ar.extend_from_slice(hdr.as_bytes());
+        ar.extend_from_slice(name.as_bytes());
+        ar.push(0);
+        while ar.len() % 4 != 0 {
+            ar.push(0);
+        }
+        ar.extend_from_slice(data);
+        while ar.len() % 4 != 0 {
+            ar.push(0);
+        }
+    };
+    add("tmp/cpio", 0o040755, b"");
+    add("tmp/cpio/f", 0o100644, b"cpio data");
+    add("TRAILER!!!", 0, b"");
+    assert_eq!(rustos::initramfs::unpack_archive(&ar), 2);
+    assert_eq!(vfs::read_all("/tmp/cpio/f").unwrap(), b"cpio data");
 }

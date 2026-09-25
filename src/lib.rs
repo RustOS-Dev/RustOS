@@ -11,21 +11,20 @@ use core::panic::PanicInfo;
 
 pub mod allocator;
 pub mod arch;
-pub mod bin_commands;
-pub mod block;
 pub mod drivers;
+pub mod errno;
 pub mod fs;
+pub mod initramfs;
 pub mod klog;
 pub mod mm;
+pub mod net;
 pub mod pci;
 pub mod process;
 pub mod sched;
-pub mod shell;
 pub mod syscall;
 pub mod task;
 pub mod time;
 pub mod tty;
-pub mod usb;
 pub mod vfs;
 
 pub use arch::x86_64::{acpi, apic, cpu, gdt, idt};
@@ -88,6 +87,39 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
     drivers::ps2::init();
 
     x86_64::instructions::interrupts::enable();
+
+    vfs::init();
+    tty::start_input_thread();
+    drivers::serial::enable_rx_interrupts();
+}
+
+/// Bring up devices and filesystems, then start `/sbin/init` (never returns).
+pub fn start_userspace() -> ! {
+    let n = initramfs::unpack();
+    println!("[init] initramfs: {} entries", n);
+    drivers::probe_all();
+
+    if option_env!("RUSTOS_STRACE").is_some() {
+        syscall::TRACE.store(true, core::sync::atomic::Ordering::Relaxed);
+    }
+    let candidates = ["/sbin/init", "/bin/init", "/bin/sh"];
+    for path in candidates {
+        if vfs::exists(path) {
+            match process::spawn_init(
+                path,
+                &[path],
+                &["PATH=/bin:/sbin:/usr/bin", "HOME=/root", "TERM=vt100"],
+            ) {
+                Ok(p) => {
+                    println!("[init] started {} (pid {})", path, p.pid);
+                    drop(p);
+                    sched::exit_current();
+                }
+                Err(e) => println!("[init] {}: {}", path, e),
+            }
+        }
+    }
+    panic!("no init program found (tried /sbin/init, /bin/init, /bin/sh)");
 }
 
 pub trait Testable {

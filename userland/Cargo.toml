@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["init", "sh", "rbox", "nettools"]
+
+[workspace.dependencies]
+rustos-rt = { path = "../crates/rustos-rt" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = false
+strip = true
+
+[profile.dev]
+panic = "abort"

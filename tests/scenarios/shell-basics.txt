@@ -1,0 +1,16 @@
+wait # $ 180
+send echo hello world
+wait hello world\r\n
+wait # $
+send ls /
+wait # $
+send uname -a; cat /proc/meminfo | head -3
+wait # $
+send x=5; echo $((x * 7)) "$(echo sub)" ${x:-none}
+wait # $
+send ls /bin | wc -l; echo done > /tmp/f; cat /tmp/f && echo ok || echo bad
+wait # $
+send for i in 1 2 3; do echo n$i; done | grep -c n
+wait # $
+send ps aux
+wait # $

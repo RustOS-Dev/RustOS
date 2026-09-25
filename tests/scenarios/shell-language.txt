@@ -1,0 +1,26 @@
+wait # $ 180
+send true; true; ls / > /dev/null; ps
+wait # $
+send sleep 30 &
+wait # $
+send jobs
+wait Running
+wait # $
+send kill %1; sleep 1; jobs
+wait # $
+send cat > /tmp/h <<EOF
+send line one $((2+3))
+send EOF
+wait # $
+send cat /tmp/h; echo *.txt /proc/1/st*; cd /tmp && pwd && cd - 
+wait # $
+send f() { echo "fn $1 $#"; return 3; }; f a b; echo rc=$?
+wait # $
+send case abc in a*) echo matched;; *) echo no;; esac; [ -d /tmp ] && echo isdir
+wait # $
+send if false; then echo x; elif true; then echo elif-ok; fi; i=0; while [ $i -lt 3 ]; do i=$((i+1)); done; echo i=$i
+wait # $
+send echo err 2>&1 >/dev/null | cat; echo nope 2>/dev/null >&2; ls /nonexistent 2>&1 | head -1
+wait # $
+send sh -c 'exit 7'; echo st=$?; echo $(( 7 % 3 )) ${#PATH}
+wait # $

@@ -1,0 +1,28 @@
+wait # $ 180
+send sleep 100
+sleep 1
+raw \x03
+wait # $ 10
+send echo after-int $?
+wait after-int 130
+wait # $
+send sleep 100
+sleep 1
+raw \x1a
+wait Stopped
+wait # $ 10
+send jobs
+wait # $
+send bg %1; jobs
+wait # $
+send kill -9 %1; sleep 1; jobs; echo done
+wait done
+wait # $
+send cat
+sleep 1
+send typed-line
+wait typed-line\r\ntyped-line
+raw \x04
+wait # $ 10
+send echo end
+wait end

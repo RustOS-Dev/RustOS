@@ -381,5 +381,8 @@ extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
     }
 
     // Returning to user mode is the safe point for preemption and signals.
+    // Interrupts must stay off from here to `iretq` (swapgs window).
+    x86_64::instructions::interrupts::disable();
     crate::sched::on_trap_exit(frame);
+    x86_64::instructions::interrupts::disable();
 }

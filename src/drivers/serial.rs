@@ -56,6 +56,63 @@ pub fn _print(args: ::core::fmt::Arguments) {
     });
 }
 
+/// Write bytes exactly as given (terminal output already has CR/LF).
+pub fn write_raw(bytes: &[u8]) {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        let _guard = SERIAL_LOCK.lock();
+        init();
+        for &b in bytes {
+            write_byte(b);
+        }
+    });
+}
+
+/// Enable receive interrupts on COM1 and route IRQ 4 to the TTY.
+pub fn enable_rx_interrupts() {
+    let Some(v) = crate::arch::x86_64::idt::alloc_vector(|_f| {
+        unsafe {
+            let mut lsr = Port::<u8>::new(COM1_PORT + LINE_STATUS_OFFSET);
+            let mut data = Port::<u8>::new(COM1_PORT + DATA_OFFSET);
+            let mut guard = 0;
+            while lsr.read() & 1 != 0 && guard < 64 {
+                let b = data.read();
+                crate::tty::serial_input(b);
+                guard += 1;
+            }
+        }
+        crate::arch::x86_64::apic::eoi();
+    }) else {
+        return;
+    };
+    unsafe {
+        // Absent UART: the scratch register does not hold a value.
+        let mut scratch = Port::<u8>::new(COM1_PORT + 7);
+        scratch.write(0x5A);
+        if scratch.read() != 0x5A {
+            return;
+        }
+        Port::<u8>::new(COM1_PORT + INTERRUPT_ENABLE_OFFSET).write(0x01);
+        Port::<u8>::new(COM1_PORT + MODEM_CONTROL_OFFSET).write(0x0B);
+    }
+    crate::arch::x86_64::apic::route_isa_irq(4, v);
+}
+
+/// Write raw bytes (translating `\n` to `\r\n`).
+pub fn write_bytes(bytes: &[u8]) {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        let _guard = SERIAL_LOCK.lock();
+        init();
+        for &b in bytes {
+            if b == b'\n' {
+                write_byte(b'\r');
+            }
+            write_byte(b);
+        }
+    });
+}
+
 struct SerialWriter;
 
 impl fmt::Write for SerialWriter {

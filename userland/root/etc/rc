@@ -1,0 +1,5 @@
+# System startup script (run by init).
+mkdir -p /tmp /var/log /mnt
+if [ -f /etc/network.conf ]; then
+    . /etc/network.conf
+fi

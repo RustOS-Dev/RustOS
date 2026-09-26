@@ -5,6 +5,11 @@ wait # $
 send ip addr
 wait inet 10\.0\.2\.15/24
 wait # $
+# sysfs view of the interface and CPUs
+send cat /sys/class/net/eth0/address /sys/class/net/eth0/operstate /sys/class/net/eth0/carrier /sys/devices/system/cpu/online; ls /sys/class/net | cat
+wait 52:54:00:12:34:56\s+up\s+1\s+0(-\d+)?
+wait eth0\s+lo
+wait # $
 send cat /etc/resolv.conf; ip route
 wait nameserver 10\.0\.2\.3
 wait default +10\.0\.2\.2

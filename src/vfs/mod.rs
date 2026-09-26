@@ -12,6 +12,7 @@
 pub mod devfs;
 pub mod pipe;
 pub mod procfs;
+pub mod sysfs;
 pub mod tmpfs;
 
 use crate::errno::*;
@@ -866,4 +867,5 @@ pub fn init() {
     }
     mount("/dev", devfs::DevFs::new(), "devfs").expect("mount devfs");
     mount("/proc", procfs::ProcFs::new(), "proc").expect("mount procfs");
+    mount("/sys", sysfs::SysFs::new(), "sysfs").expect("mount sysfs");
 }

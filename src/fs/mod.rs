@@ -18,6 +18,7 @@ pub fn mount_by_type(fstype: &str, source: &str, target: &str) -> KResult<()> {
     match fstype {
         "tmpfs" | "ramfs" => crate::vfs::mount(target, crate::vfs::tmpfs::TmpFs::new(), "tmpfs"),
         "proc" => crate::vfs::mount(target, crate::vfs::procfs::ProcFs::new(), "proc"),
+        "sysfs" => crate::vfs::mount(target, crate::vfs::sysfs::SysFs::new(), "sysfs"),
         "devtmpfs" | "devfs" => {
             crate::vfs::mount(target, crate::vfs::devfs::DevFs::new(), "devtmpfs")
         }

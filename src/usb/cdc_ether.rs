@@ -1,5 +1,6 @@
-//! USB Ethernet: CDC ECM (Ethernet dongles, QEMU `usb-net`) and RNDIS
-//! (Android USB tethering and many older gadgets).
+//! USB Ethernet: CDC ECM (Ethernet dongles, QEMU `usb-net`), CDC NCM
+//! (newer phones and 2.5G/5G dongles) and RNDIS (Android USB tethering and
+//! many older gadgets).
 
 use super::UsbDevice;
 use crate::errno::*;
@@ -11,13 +12,26 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
+use usb_desc::ncm::{self, NtbParams};
 use usb_desc::{CLASS_CDC, CLASS_CDC_DATA, Interface, TransferType};
 
 const CS_INTERFACE: u8 = 0x24;
 const SUBTYPE_UNION: u8 = 0x06;
 const SUBTYPE_ETHERNET: u8 = 0x0F;
 const SET_ETHERNET_PACKET_FILTER: u8 = 0x43;
+const GET_NTB_PARAMETERS: u8 = 0x80;
+const SET_NTB_INPUT_SIZE: u8 = 0x86;
+const SUBCLASS_ECM: u8 = 0x06;
+const SUBCLASS_NCM: u8 = 0x0D;
 const FRAME_MAX: usize = 1600 + 64;
+const NCM_IN_MAX: u32 = 16384;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Proto {
+    Ecm,
+    Ncm(NtbParams),
+    Rndis,
+}
 
 pub struct CdcEther {
     dev: Arc<UsbDevice>,
@@ -26,7 +40,7 @@ pub struct CdcEther {
     txq: spin::Mutex<VecDeque<Vec<u8>>>,
     tx_wq: WaitQueue,
     link: AtomicBool,
-    rndis: bool,
+    proto: Proto,
 }
 
 impl NetDevice for CdcEther {
@@ -37,10 +51,10 @@ impl NetDevice for CdcEther {
         self.link.load(Ordering::SeqCst) && !self.dev.is_gone()
     }
     fn driver(&self) -> &'static str {
-        if self.rndis {
-            "rndis_host"
-        } else {
-            "cdc_ether"
+        match self.proto {
+            Proto::Rndis => "rndis_host",
+            Proto::Ncm(_) => "cdc_ncm",
+            Proto::Ecm => "cdc_ether",
         }
     }
     fn transmit(&self, frame: &[u8]) -> KResult<()> {
@@ -112,7 +126,8 @@ fn is_rndis(i: &Interface) -> bool {
 
 pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
     let rndis = is_rndis(iface);
-    if !(rndis || (iface.class == CLASS_CDC && iface.subclass == 6)) {
+    let ncm = iface.class == CLASS_CDC && iface.subclass == SUBCLASS_NCM;
+    if !(rndis || ncm || (iface.class == CLASS_CDC && iface.subclass == SUBCLASS_ECM)) {
         return false;
     }
     let (union_if, mac_idx) = functional(iface);
@@ -133,6 +148,7 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
     if dev.configure_endpoints(&[ep_in, ep_out]).is_err() {
         return false;
     }
+    let mut proto = if rndis { Proto::Rndis } else { Proto::Ecm };
     let mac = if rndis {
         match rndis_init(dev, iface.number) {
             Some(m) => m,
@@ -142,6 +158,28 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
             }
         }
     } else {
+        if ncm {
+            // Negotiate transfer block sizes while the data interface is
+            // still in its idle alternate setting.
+            let Some(p) = dev
+                .control_in(0xA1, GET_NTB_PARAMETERS, 0, iface.number as u16, 28)
+                .ok()
+                .and_then(|b| NtbParams::parse(&b))
+            else {
+                crate::println!("[usb] {}: NCM: no NTB parameters", dev.name());
+                return false;
+            };
+            if p.in_max > NCM_IN_MAX {
+                let _ = dev.control_out(
+                    0x21,
+                    SET_NTB_INPUT_SIZE,
+                    0,
+                    iface.number as u16,
+                    &NCM_IN_MAX.to_le_bytes(),
+                );
+            }
+            proto = Proto::Ncm(p);
+        }
         if data.alternate != 0
             && dev
                 .control_out(
@@ -167,7 +205,7 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
             .and_then(|s| parse_mac(&s))
             .unwrap_or_else(random_mac)
     };
-    start(dev, mac, ep_in, ep_out, rndis)
+    start(dev, mac, ep_in, ep_out, proto)
 }
 
 // ---------------------------------------------------------------------------
@@ -250,8 +288,9 @@ fn start(
     mac: [u8; 6],
     ep_in: usb_desc::Endpoint,
     ep_out: usb_desc::Endpoint,
-    rndis: bool,
+    proto: Proto,
 ) -> bool {
+    let rndis = proto == Proto::Rndis;
     let nic = Arc::new(CdcEther {
         dev: dev.clone(),
         mac,
@@ -259,7 +298,7 @@ fn start(
         txq: spin::Mutex::new(VecDeque::new()),
         tx_wq: WaitQueue::new(),
         link: AtomicBool::new(true),
-        rndis,
+        proto,
     });
     let name: String = net::register(nic.clone());
     let n = name.clone();
@@ -271,14 +310,25 @@ fn start(
     // Receive thread: one bulk IN transfer per frame.
     let rx = nic.clone();
     crate::sched::spawn(&alloc::format!("{}-rx", name), move || {
-        // RNDIS devices may batch several packets per transfer.
-        let rx_len = if rndis { 16384 } else { FRAME_MAX };
+        // RNDIS and NCM devices batch several packets per transfer.
+        let rx_len = match proto {
+            Proto::Ecm => FRAME_MAX,
+            Proto::Ncm(p) => (p.in_max.min(NCM_IN_MAX) as usize).max(2048),
+            Proto::Rndis => 16384,
+        };
         let Some(buf) = DmaBuffer::new(rx_len) else {
             return;
         };
         while !rx.dev.is_gone() {
             match rx.dev.transfer(&ep_in, &buf, rx_len, None) {
                 Ok(n) if rndis => rndis_unwrap(&buf.as_slice()[..n], &rx.rxq),
+                Ok(n) if matches!(proto, Proto::Ncm(_)) => {
+                    for f in ncm::parse_ntb16(&buf.as_slice()[..n]) {
+                        if f.len() >= 14 {
+                            rx.rxq.push(f.to_vec());
+                        }
+                    }
+                }
                 Ok(n) if n >= 14 => rx.rxq.push(buf.as_slice()[..n].to_vec()),
                 Ok(_) => {}
                 Err(ENODEV) => break,
@@ -294,6 +344,7 @@ fn start(
         };
         let Some(zlp) = DmaBuffer::new(8) else { return };
         let mps = ep_out.packet_size().max(1) as usize;
+        let mut seq: u16 = 0;
         loop {
             tx.tx_wq
                 .wait_until(|| !tx.txq.lock().is_empty() || tx.dev.is_gone());
@@ -311,6 +362,9 @@ fn start(
                     let mut v = h.to_vec();
                     v.extend_from_slice(&frame);
                     frame = v;
+                } else if let Proto::Ncm(p) = proto {
+                    frame = ncm::build_ntb16(&[&frame], seq, &p).0;
+                    seq = seq.wrapping_add(1);
                 }
                 let n = frame.len().min(FRAME_MAX);
                 unsafe {
@@ -328,7 +382,11 @@ fn start(
     crate::println!(
         "[usb] {}: {} Ethernet as {}",
         dev.name(),
-        if rndis { "RNDIS" } else { "CDC" },
+        match proto {
+            Proto::Rndis => "RNDIS",
+            Proto::Ncm(_) => "CDC NCM",
+            Proto::Ecm => "CDC ECM",
+        },
         name
     );
     true

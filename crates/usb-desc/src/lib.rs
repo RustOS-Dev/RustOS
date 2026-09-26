@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+pub mod ncm;
+
 use alloc::vec::Vec;
 
 pub const DT_DEVICE: u8 = 1;

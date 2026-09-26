@@ -459,7 +459,7 @@ fn enumerate(dev: &Arc<UsbDevice>) -> KResult<()> {
                 if want_rndis {
                     i.class == 0xE0 || (i.class == usb_desc::CLASS_CDC && i.subclass == 2)
                 } else {
-                    i.class == usb_desc::CLASS_CDC && i.subclass == 6
+                    i.class == usb_desc::CLASS_CDC && matches!(i.subclass, 6 | 0x0D)
                 }
             })
         })

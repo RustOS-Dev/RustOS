@@ -114,7 +114,9 @@ jobs:
       - name: Install QEMU and OVMF
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs curl
+          # e2fsprogs: ext2/ext4 test disks; openssl + python3: HTTPS test
+          # server; gcc: dynamic-linking test programs
+          sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs curl openssl python3 gcc
 
       - name: Make runner script executable
         run: chmod +x run-qemu-uefi.sh

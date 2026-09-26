@@ -1,0 +1,3 @@
+# ext2 data disk for the stress tests (automounted at /mnt/vda)
+-drive if=none,id=vd0,format=raw,file=@EXT2:320:stress@
+-device virtio-blk-pci,drive=vd0

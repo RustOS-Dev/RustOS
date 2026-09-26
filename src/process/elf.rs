@@ -1,10 +1,14 @@
 //! ELF64 program loader.
 //!
-//! Loads static executables (ET_EXEC) and static position-independent
+//! Loads static executables (ET_EXEC), static position-independent
 //! executables (ET_DYN, relocated by a fixed bias with R_X86_64_RELATIVE
-//! relocations applied). PT_LOAD segments are copied into anonymous memory
-//! with their requested permissions. The initial stack follows the System V
-//! ABI: argc, argv, envp, auxv.
+//! relocations applied) and dynamically linked programs: for those the
+//! PT_INTERP interpreter (the RustOS ld.so, a static PIE) is loaded as well
+//! and started with AT_BASE / AT_ENTRY / AT_PHDR describing the program; it
+//! maps the shared libraries and performs the program's relocations.
+//! PT_LOAD segments are copied into anonymous memory with their requested
+//! permissions. The initial stack follows the System V ABI: argc, argv,
+//! envp, auxv.
 
 use super::vm::{self, AddressSpace, Area, Backing, PROT_EXEC, PROT_READ, PROT_WRITE};
 use crate::errno::*;
@@ -21,6 +25,8 @@ const ET_EXEC: u16 = 2;
 const ET_DYN: u16 = 3;
 const EM_X86_64: u16 = 62;
 const PIE_BIAS: u64 = 0x0000_5555_5555_0000;
+/// Where a position-independent interpreter (ld.so) is placed.
+const INTERP_BIAS: u64 = 0x0000_6fff_0000_0000;
 
 const AT_NULL: u64 = 0;
 const AT_PHDR: u64 = 3;
@@ -80,18 +86,110 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
         new_argv.extend(argv.iter().skip(1).cloned());
         return load(interp, &new_argv, envp);
     }
+    let (etype, entry0, phoff, phnum, phdrs) = parse_elf(&data)?;
+    let bias = if etype == ET_DYN { PIE_BIAS } else { 0 };
+    let entry = entry0 + bias;
+    let interp = phdrs.iter().find(|p| p.kind == PT_INTERP).map(|p| {
+        let raw = data
+            .get(p.offset as usize..(p.offset + p.filesz) as usize)
+            .unwrap_or(&[]);
+        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+        String::from_utf8_lossy(&raw[..end]).into_owned()
+    });
+
+    let mut space = AddressSpace::new()?;
+    let (max_end, mut phdr_addr) = map_segments(&mut space, &data, &phdrs, bias, phoff)?;
+    if interp.is_some() && phdr_addr == 0 {
+        return Err(ENOEXEC); // ld.so needs the program headers
+    }
+    let (run_entry, at_base) = match &interp {
+        // Dynamically linked: ld.so relocates the program.
+        Some(ipath) => {
+            let idata = crate::vfs::read_all(ipath).map_err(|_| ENOENT)?;
+            let (itype, ientry, iphoff, _, iphdrs) = parse_elf(&idata)?;
+            if iphdrs.iter().any(|p| p.kind == PT_INTERP) {
+                return Err(ELIBBAD);
+            }
+            let ibias = if itype == ET_DYN { INTERP_BIAS } else { 0 };
+            map_segments(&mut space, &idata, &iphdrs, ibias, iphoff)?;
+            if ibias != 0
+                && let Some(dynph) = iphdrs.iter().find(|p| p.kind == PT_DYNAMIC)
+            {
+                apply_relocations(&mut space, &idata, dynph, ibias)?;
+            }
+            (ientry + ibias, ibias)
+        }
+        None => {
+            // Apply relative relocations for static PIE.
+            if bias != 0
+                && let Some(dynph) = phdrs.iter().find(|p| p.kind == PT_DYNAMIC)
+            {
+                apply_relocations(&mut space, &data, dynph, bias)?;
+            }
+            (entry, 0)
+        }
+    };
+    if phdr_addr < FRAME_SIZE {
+        phdr_addr = 0;
+    }
+
+    space.brk_start = max_end + FRAME_SIZE;
+    space.brk = space.brk_start;
+    space.add_area(Area {
+        start: space.brk_start,
+        end: space.brk_start + FRAME_SIZE,
+        prot: PROT_READ | PROT_WRITE,
+        flags: vm::MAP_PRIVATE,
+        backing: Backing::Anon,
+        name: "[heap]",
+    })?;
+
+    // Stack.
+    let stack_prot = if phdrs
+        .iter()
+        .any(|p| p.kind == PT_GNU_STACK && p.flags & 1 != 0)
+    {
+        PROT_READ | PROT_WRITE | PROT_EXEC
+    } else {
+        PROT_READ | PROT_WRITE
+    };
+    space.add_area(Area {
+        start: vm::STACK_TOP - vm::STACK_SIZE,
+        end: vm::STACK_TOP,
+        prot: stack_prot,
+        flags: vm::MAP_PRIVATE,
+        backing: Backing::Anon,
+        name: "[stack]",
+    })?;
+    let aux = AuxInfo {
+        entry,
+        phdr: phdr_addr,
+        phnum: phnum as u64,
+        base: at_base,
+    };
+    let stack = build_stack(&mut space, argv, envp, path, &aux)?;
+    Ok(Image {
+        space,
+        entry: run_entry,
+        stack,
+    })
+}
+
+type ElfInfo = (u16, u64, usize, usize, Vec<Phdr>);
+
+/// Check the ELF header; returns (type, entry, phoff, phnum, program headers).
+fn parse_elf(data: &[u8]) -> KResult<ElfInfo> {
     if data.len() < 64 || &data[..4] != b"\x7fELF" || data[4] != 2 || data[5] != 1 {
         return Err(ENOEXEC);
     }
-    let etype = u16_at(&data, 16);
-    if u16_at(&data, 18) != EM_X86_64 || (etype != ET_EXEC && etype != ET_DYN) {
+    let etype = u16_at(data, 16);
+    if u16_at(data, 18) != EM_X86_64 || (etype != ET_EXEC && etype != ET_DYN) {
         return Err(ENOEXEC);
     }
-    let bias = if etype == ET_DYN { PIE_BIAS } else { 0 };
-    let entry = u64_at(&data, 24) + bias;
-    let phoff = u64_at(&data, 32) as usize;
-    let phentsize = u16_at(&data, 54) as usize;
-    let phnum = u16_at(&data, 56) as usize;
+    let entry = u64_at(data, 24);
+    let phoff = u64_at(data, 32) as usize;
+    let phentsize = u16_at(data, 54) as usize;
+    let phnum = u16_at(data, 56) as usize;
     if phentsize < 56 || phoff + phentsize * phnum > data.len() {
         return Err(ENOEXEC);
     }
@@ -99,21 +197,27 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
         .map(|i| {
             let o = phoff + i * phentsize;
             Phdr {
-                kind: u32_at(&data, o),
-                flags: u32_at(&data, o + 4),
-                offset: u64_at(&data, o + 8),
-                vaddr: u64_at(&data, o + 16),
-                filesz: u64_at(&data, o + 32),
-                memsz: u64_at(&data, o + 40),
+                kind: u32_at(data, o),
+                flags: u32_at(data, o + 4),
+                offset: u64_at(data, o + 8),
+                vaddr: u64_at(data, o + 16),
+                filesz: u64_at(data, o + 32),
+                memsz: u64_at(data, o + 40),
             }
         })
         .collect();
-    if phdrs.iter().any(|p| p.kind == PT_INTERP) {
-        // Dynamically linked programs need ld.so, which RustOS does not ship.
-        return Err(ENOEXEC);
-    }
+    Ok((etype, entry, phoff, phnum, phdrs))
+}
 
-    let mut space = AddressSpace::new()?;
+/// Map and fill every PT_LOAD segment at `bias`. Returns the end of the
+/// highest segment and the run-time address of the program headers.
+fn map_segments(
+    space: &mut AddressSpace,
+    data: &[u8],
+    phdrs: &[Phdr],
+    bias: u64,
+    phoff: usize,
+) -> KResult<(u64, u64)> {
     let mut max_end = 0u64;
     let mut phdr_addr = 0u64;
     for ph in phdrs.iter() {
@@ -172,7 +276,7 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
         }
         // Temporarily writable while copying.
         let file = &data[ph.offset as usize..(ph.offset + ph.filesz) as usize];
-        write_forced(&mut space, vaddr, file)?;
+        write_forced(space, vaddr, file)?;
         if phdr_addr == 0 && ph.offset == 0 {
             phdr_addr = vaddr + phoff as u64;
         }
@@ -181,48 +285,7 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
     if max_end == 0 {
         return Err(ENOEXEC);
     }
-
-    // Apply relative relocations for static PIE.
-    if bias != 0
-        && let Some(dynph) = phdrs.iter().find(|p| p.kind == PT_DYNAMIC)
-    {
-        apply_relocations(&mut space, &data, dynph, bias)?;
-    }
-
-    space.brk_start = max_end + FRAME_SIZE;
-    space.brk = space.brk_start;
-    space.add_area(Area {
-        start: space.brk_start,
-        end: space.brk_start + FRAME_SIZE,
-        prot: PROT_READ | PROT_WRITE,
-        flags: vm::MAP_PRIVATE,
-        backing: Backing::Anon,
-        name: "[heap]",
-    })?;
-
-    // Stack.
-    let stack_prot = if phdrs
-        .iter()
-        .any(|p| p.kind == PT_GNU_STACK && p.flags & 1 != 0)
-    {
-        PROT_READ | PROT_WRITE | PROT_EXEC
-    } else {
-        PROT_READ | PROT_WRITE
-    };
-    space.add_area(Area {
-        start: vm::STACK_TOP - vm::STACK_SIZE,
-        end: vm::STACK_TOP,
-        prot: stack_prot,
-        flags: vm::MAP_PRIVATE,
-        backing: Backing::Anon,
-        name: "[stack]",
-    })?;
-    let stack = build_stack(&mut space, argv, envp, path, entry, phdr_addr, phnum as u64)?;
-    Ok(Image {
-        space,
-        entry,
-        stack,
-    })
+    Ok((max_end, phdr_addr))
 }
 
 /// Write into possibly read-only areas during loading.
@@ -315,14 +378,20 @@ fn vaddr_to_offset(data: &[u8], vaddr: u64) -> Option<u64> {
     None
 }
 
+/// Program description passed to the new process in the aux vector.
+struct AuxInfo {
+    entry: u64,
+    phdr: u64,
+    phnum: u64,
+    base: u64,
+}
+
 fn build_stack(
     space: &mut AddressSpace,
     argv: &[String],
     envp: &[String],
     path: &str,
-    entry: u64,
-    phdr: u64,
-    phnum: u64,
+    aux_info: &AuxInfo,
 ) -> KResult<u64> {
     let mut sp = vm::STACK_TOP;
     let push_bytes = |space: &mut AddressSpace, sp: &mut u64, b: &[u8]| -> KResult<u64> {
@@ -354,12 +423,12 @@ fn build_stack(
     let rnd_p = sp;
 
     let aux: [(u64, u64); 13] = [
-        (AT_PHDR, phdr),
+        (AT_PHDR, aux_info.phdr),
         (AT_PHENT, 56),
-        (AT_PHNUM, phnum),
+        (AT_PHNUM, aux_info.phnum),
         (AT_PAGESZ, 4096),
-        (AT_BASE, 0),
-        (AT_ENTRY, entry),
+        (AT_BASE, aux_info.base),
+        (AT_ENTRY, aux_info.entry),
         (AT_UID, 0),
         (AT_EUID, 0),
         (AT_GID, 0),

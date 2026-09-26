@@ -20,6 +20,11 @@ pub fn heap_size() -> u64 {
     HEAP_SIZE_BYTES.load(core::sync::atomic::Ordering::Relaxed)
 }
 
+/// Free bytes in the kernel heap (a lower bound).
+pub fn heap_free() -> u64 {
+    x86_64::instructions::interrupts::without_interrupts(|| ALLOCATOR.lock().free_bytes() as u64)
+}
+
 /// Map and initialise the kernel heap. Called by [`crate::mm::init`].
 pub fn init_heap() -> Result<(), MapToError<Size4KiB>> {
     let (free, _) = crate::mm::memory_stats();

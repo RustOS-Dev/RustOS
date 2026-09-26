@@ -58,6 +58,12 @@ impl FixedSizeBlockAllocator {
         }
     }
 
+    /// Bytes never handed out or returned to the general-purpose heap
+    /// (blocks cached in the size-class lists are not counted).
+    pub fn free_bytes(&self) -> usize {
+        self.fallback_allocator.free()
+    }
+
     /// Allocates using the fallback allocator.
     fn fallback_alloc(&mut self, layout: Layout) -> *mut u8 {
         match self.fallback_allocator.allocate_first_fit(layout) {

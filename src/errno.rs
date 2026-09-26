@@ -73,6 +73,7 @@ errnos! {
     EILSEQ = 84, "Invalid or incomplete multibyte or wide character";
     ENOTSOCK = 88, "Socket operation on non-socket";
     EDESTADDRREQ = 89, "Destination address required";
+    ELIBBAD = 80, "Accessing a corrupted shared library";
     EMSGSIZE = 90, "Message too long";
     EPROTOTYPE = 91, "Protocol wrong type for socket";
     ENOPROTOOPT = 92, "Protocol not available";

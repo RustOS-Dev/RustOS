@@ -1,0 +1,20 @@
+wait # $ 240
+send ls -l /lib/ld-rustos.so.1 /lib/libgreet.so | cat
+wait libgreet\.so
+wait # $
+send dyntest
+wait hello from libgreet\.so, dyntest
+wait dynamic linking OK \(libgreet 1\.0\)
+wait # $
+send dyntest-nopie && echo nopie-exit-$?
+wait dynamic linking OK
+wait nopie-exit-0
+wait # $
+# A missing library is reported by the dynamic linker.
+send mv /lib/libgreet.so /tmp/ && dyntest; echo exit-$?
+wait ld-rustos: cannot find library: libgreet\.so
+wait exit-127
+wait # $
+send mv /tmp/libgreet.so /lib/ && dyntest | tail -1
+wait dynamic linking OK
+wait # $

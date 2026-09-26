@@ -102,7 +102,107 @@ fn build_userland(userland: &Path, root: &Path) -> Result<Vec<(String, Entry)>, 
             out.push((l, Entry::Symlink(format!("/{first}"))));
         }
     }
+    out.push(("lib".into(), Entry::Dir));
+    out.push((
+        "lib/ld-rustos.so.1".into(),
+        Entry::File(build_ldso(userland, root)?, 0o755),
+    ));
+    out.extend(build_dyntest(userland, root));
     Ok(out)
+}
+
+/// The dynamic linker: a static PIE built in its own workspace.
+fn build_ldso(userland: &Path, root: &Path) -> Result<Vec<u8>, String> {
+    let target_dir = root.join("target").join("ldso");
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let mut cmd = Command::new(cargo);
+    cmd.current_dir(userland.join("ldso"))
+        .args(["build", "--release", "--target", "x86_64-unknown-none"])
+        .arg("--target-dir")
+        .arg(&target_dir);
+    for (k, _) in std::env::vars() {
+        if k.starts_with("CARGO_") && k != "CARGO_HOME"
+            || k == "RUSTFLAGS"
+            || k == "RUSTC_WRAPPER"
+            || k == "RUSTC_WORKSPACE_WRAPPER"
+        {
+            cmd.env_remove(&k);
+        }
+    }
+    let status = cmd.status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("ld.so build: cargo exited with {status}"));
+    }
+    std::fs::read(target_dir.join("x86_64-unknown-none/release/ldso")).map_err(|e| e.to_string())
+}
+
+/// libc-free C programs exercising the dynamic linker (skipped without a
+/// host C compiler).
+fn build_dyntest(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
+    let src = userland.join("dyntest");
+    let out = root.join("target").join("dyntest");
+    let _ = std::fs::create_dir_all(&out);
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".into());
+    let common = [
+        "-O2",
+        "-nostdlib",
+        "-fno-stack-protector",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-mno-sse",
+        "-mno-red-zone",
+    ];
+    let lib = out.join("libgreet.so");
+    let steps: [(&[&str], &Path, &str); 3] = [
+        (
+            &["-fPIC", "-shared", "-Wl,-soname,libgreet.so"],
+            &lib,
+            "greet.c",
+        ),
+        (
+            &["-fPIE", "-pie", "-Wl,--dynamic-linker=/lib/ld-rustos.so.1"],
+            &out.join("dyntest"),
+            "main.c",
+        ),
+        (
+            &[
+                "-fno-pie",
+                "-no-pie",
+                "-Wl,--dynamic-linker=/lib/ld-rustos.so.1",
+            ],
+            &out.join("dyntest-nopie"),
+            "main.c",
+        ),
+    ];
+    for (flags, dst, file) in steps {
+        let mut cmd = Command::new(&cc);
+        cmd.args(common)
+            .args(flags)
+            .arg("-o")
+            .arg(dst)
+            .arg(src.join(file));
+        if file == "main.c" {
+            cmd.arg("-L").arg(&out).arg("-lgreet");
+        }
+        match cmd.status() {
+            Ok(st) if st.success() => {}
+            _ => {
+                println!("cargo:warning=no host C compiler: dynamic linking tests not installed");
+                return Vec::new();
+            }
+        }
+    }
+    let mut v = Vec::new();
+    for (name, dst, mode) in [
+        ("libgreet.so", "lib/libgreet.so", 0o644),
+        ("dyntest", "bin/dyntest", 0o755),
+        ("dyntest-nopie", "bin/dyntest-nopie", 0o755),
+    ] {
+        if let Ok(d) = std::fs::read(out.join(name)) {
+            v.push((dst.to_string(), Entry::File(d, mode)));
+        }
+    }
+    v
 }
 
 fn add_tree(dir: &Path, prefix: &str, out: &mut Vec<(String, Entry)>) {

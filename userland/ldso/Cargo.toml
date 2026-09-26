@@ -1,0 +1,16 @@
+[package]
+name = "ldso"
+version = "0.1.0"
+edition = "2024"
+description = "RustOS dynamic linker (/lib/ld-rustos.so.1)"
+
+# Built on its own as a static PIE (the userland workspace links static
+# executables at a fixed address).
+[workspace]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+
+[profile.dev]
+panic = "abort"

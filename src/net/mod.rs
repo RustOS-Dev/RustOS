@@ -531,6 +531,8 @@ pub fn register(dev: Arc<dyn NetDevice>) -> String {
     let mac = dev.mac();
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
     config.random_seed = random_seed();
+    // IPv6 stateless autoconfiguration from router advertisements.
+    config.slaac = true;
     let now = Instant::from_millis(crate::time::millis() as i64);
     let mut stats = Stats::default();
     let mut p = Phy {

@@ -35,6 +35,7 @@ features = [
     "medium-ip",
     "proto-ipv4",
     "proto-ipv6",
+    "proto-ipv6-slaac",
     "socket-tcp",
     "socket-udp",
     "socket-icmp",

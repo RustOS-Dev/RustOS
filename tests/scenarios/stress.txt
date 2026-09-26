@@ -1,0 +1,38 @@
+wait # $ 240
+send ls /mnt/vda
+wait seed
+wait # $
+# 120-level directory tree on ext2 and in tmpfs
+send d=/mnt/vda/deep; i=0; while [ $i -lt 120 ]; do d=$d/level$i; i=$((i+1)); done; mkdir -p $d && echo bottom > $d/f && cat $d/f && find /mnt/vda/deep -name f | grep -c level119/f
+wait bottom\r\n1\r\n
+wait # $ 120
+send d=/tmp/deep; i=0; while [ $i -lt 150 ]; do d=$d/n$i; i=$((i+1)); done; mkdir -p $d && touch $d/leaf && find /tmp/deep -type d | wc -l
+wait \b151\b
+wait # $ 60
+send rm -r /mnt/vda/deep /tmp/deep && ls /mnt/vda
+wait seed
+wait # $ 120
+# 112 MiB file: 1 MiB of random data repeated, checksummed before and after a remount
+send dd if=/dev/urandom of=/tmp/chunk bs=1024 count=1024 2>/dev/null; i=0; while [ $i -lt 112 ]; do cat /tmp/chunk; i=$((i+1)); done > /mnt/vda/big.bin; ls -l /mnt/vda/big.bin
+wait 117440512
+wait # $ 900
+send sha256sum /mnt/vda/big.bin > /tmp/sum1 && cat /tmp/sum1
+wait [0-9a-f]{64}
+wait # $ 600
+send sync && umount /mnt/vda && mount /dev/vda /mnt/vda && sha256sum /mnt/vda/big.bin > /tmp/sum2 && cmp /tmp/sum1 /tmp/sum2 && echo BIG-FILE-OK
+wait BIG-FILE-OK
+wait # $ 600
+send rm /mnt/vda/big.bin && df /mnt/vda | tail -1
+wait # $ 60
+# Repeated mount/umount cycles
+send i=0; while [ $i -lt 25 ]; do umount /mnt/vda || break; mount /dev/vda /mnt/vda || break; i=$((i+1)); done; echo cycles=$i; ls /mnt/vda
+wait cycles=25
+wait seed
+wait # $ 300
+# Memory pressure: fill tmpfs until the allocator refuses, then recover
+send dd if=/dev/zero of=/tmp/fill bs=1M count=2000 2>/dev/null; ls -l /tmp/fill | cat; rm /tmp/fill; free | head -2
+wait Mem:
+wait # $ 600
+send echo still-alive && ls / | wc -l
+wait still-alive
+wait # $

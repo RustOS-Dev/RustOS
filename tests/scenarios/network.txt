@@ -10,6 +10,10 @@ send cat /sys/class/net/eth0/address /sys/class/net/eth0/operstate /sys/class/ne
 wait 52:54:00:12:34:56\s+up\s+1\s+0(-\d+)?
 wait eth0\s+lo
 wait # $
+# IPv6: SLAAC address from QEMU's router advertisement (prefix fec0::/64)
+send sleep 4; ip addr | grep inet6 | cat
+wait inet6 fec0:
+wait # $
 send cat /etc/resolv.conf; ip route
 wait nameserver 10\.0\.2\.3
 wait default +10\.0\.2\.2

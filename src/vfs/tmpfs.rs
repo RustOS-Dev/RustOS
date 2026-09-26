@@ -318,7 +318,7 @@ impl Inode for TmpInode {
                 let off = off as usize;
                 let end = off.checked_add(buf.len()).ok_or(EFBIG)?;
                 if end > d.len() {
-                    d.try_reserve(end - d.len()).map_err(|_| ENOSPC)?;
+                    grow(d, end)?;
                     d.resize(end, 0);
                 }
                 d[off..end].copy_from_slice(buf);
@@ -436,4 +436,24 @@ fn test_tmpfs_basic_ops() {
     root.rmdir("dir").unwrap();
     root.symlink("ln", "/target").unwrap();
     assert_eq!(root.lookup("ln").unwrap().readlink().unwrap(), "/target");
+}
+
+/// Grow a file buffer to at least `end` bytes without eating the kernel
+/// heap's reserve: tmpfs data lives on the heap, and the rest of the kernel
+/// must still be able to allocate when /tmp is full.
+fn grow(d: &mut Vec<u8>, end: usize) -> KResult<()> {
+    if end <= d.capacity() {
+        return Ok(());
+    }
+    let reserve = (crate::allocator::heap_size() / 8).max(8 << 20);
+    let free = crate::allocator::heap_free();
+    // A reallocation briefly needs the new block next to the old one.
+    let doubled = end.max(d.capacity() * 2);
+    if doubled as u64 + reserve <= free {
+        return d.try_reserve(end - d.len()).map_err(|_| ENOSPC);
+    }
+    if end as u64 + reserve <= free {
+        return d.try_reserve_exact(end - d.len()).map_err(|_| ENOSPC);
+    }
+    Err(ENOSPC)
 }

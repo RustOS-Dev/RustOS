@@ -13,6 +13,6 @@ rustflags = ["--cfg", "aes_force_soft"]
 
 [env]
 # smoltcp compile-time limits: addresses and routes per interface.
-SMOLTCP_IFACE_MAX_ADDR_COUNT = "4"
+SMOLTCP_IFACE_MAX_ADDR_COUNT = "6"
 SMOLTCP_IFACE_MAX_ROUTE_COUNT = "16"
 SMOLTCP_IFACE_NEIGHBOR_CACHE_COUNT = "32"

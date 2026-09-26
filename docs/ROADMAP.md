@@ -5,16 +5,25 @@ partly implemented. Tick items off here as they land.
 
 ## Status checklist
 
-- [ ] **M0** Correctness fixes, CI device profiles, kernel log, driver model, DMA/MMIO helpers, timekeeping
-- [ ] **M1** ACPI (RSDP/MADT/MCFG/HPET/FADT), LAPIC + IOAPIC, PCIe ECAM, capabilities, MSI/MSI-X, RTC
-- [ ] **M2** Per-process address spaces, ring 3, `syscall`/`sysret`, preemptive scheduler, fork/execve(argv)/wait, fd table, pipes, TTY, devfs
-- [ ] **M3** Block layer + buffer cache, NVMe I/O queues R/W, AHCI R/W, virtio-blk, unified GPT/MBR, FAT32 LFN write, ext2 R/W, ext4 R/O
-- [ ] **M4** Interrupt-driven xHCI, hotplug, USB core + class drivers, hubs, HID keyboard/mouse, hardened BOT mass storage, CDC-ECM/NCM/RNDIS
-- [ ] **M5** In-tree network core (`NetDevice`, smoltcp-backed stack), DHCP, DNS, BSD sockets, network tools
-- [ ] **M6** Wired NICs: virtio-net, e1000/e1000e/I219, igc (I225/I226), r8169 (RTL8111/8168/8125)
-- [ ] **M7** Intel AX210 WiFi: firmware provisioning, PCIe gen2 transport, MVM, `crates/wlan` 802.11 core, WPA2-PSK + WPA3-SAE supplicant
-- [ ] **M8** SMP, ACPI AML shutdown, device shutdown hooks, docs rewrite and hardware matrix
-- [ ] **M9** Userland and shell: pipes, redirection, variables, globbing, job control, command-audit leftovers, symlinks, permissions, TLS, dynamic linking
+All milestones are implemented on `claude/comprehensive-implementation-plan-eg7p8k`.
+"QEMU" means covered by the boot scenarios in CI; "hardware pending" means
+written but not yet run on a real machine (see [HARDWARE.md](HARDWARE.md)).
+
+- [x] **M0** Correctness fixes, CI device profiles, kernel log, driver model, DMA/MMIO helpers, timekeeping
+- [x] **M1** ACPI (RSDP/MADT/MCFG/HPET/FADT), LAPIC + IOAPIC, PCIe ECAM, capabilities, MSI/MSI-X, RTC
+- [x] **M2** Per-process address spaces, ring 3, `syscall`/`sysret`, preemptive scheduler, fork/execve(argv)/wait, fd table, pipes, TTY, devfs
+- [x] **M3** Block layer + buffer cache, NVMe I/O queues R/W, AHCI R/W, virtio-blk, unified GPT/MBR, FAT32 LFN write, ext2 R/W, ext4 R/O
+- [x] **M4** Interrupt-driven xHCI, hotplug, USB core + class drivers, hubs, HID keyboard/mouse, hardened BOT mass storage, CDC-ECM/NCM/RNDIS (NCM: hardware pending)
+- [x] **M5** In-tree network core (`NetDevice`, smoltcp-backed stack), DHCP, DNS, BSD sockets, network tools
+- [x] **M6** Wired NICs: virtio-net, e1000/e1000e (QEMU); I219, igc (I225/I226), r8169 (RTL8111/8168/8125) (hardware pending)
+- [x] **M7** Intel AX210 WiFi: firmware provisioning, PCIe gen3 context-info transport, MVM, `crates/wlan` 802.11 core, WPA2-PSK + WPA3-SAE supplicant (host-tested; hardware pending)
+- [x] **M8** SMP, ACPI AML shutdown, device shutdown hooks, docs rewrite and hardware matrix
+- [x] **M9** Userland and shell: pipes, redirection, variables, globbing, job control, command-audit leftovers, symlinks, permissions, TLS (`wget https`), `/sys`, stress tests, dynamic linking
+
+Deviations from the original plan: SMP uses one global run queue (per-CPU
+queues were not needed for correctness); IPv6 has SLAAC but no DHCPv6;
+Wi-Fi uses legacy rates (no HT/VHT/HE yet). See
+[LIMITATIONS.md](LIMITATIONS.md) for the full list of gaps.
 
 ## Context
 

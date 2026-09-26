@@ -4,7 +4,7 @@
 usage: qemu_session.py KERNEL_ELF SCRIPT_FILE [extra qemu args...]
 SCRIPT_FILE lines: 'wait <regex> [timeout]', 'send <text>', 'sleep <s>'
 """
-import os, re, subprocess, sys, time, select, tempfile
+import atexit, os, re, subprocess, sys, time, select, tempfile
 
 elf, script = os.path.abspath(sys.argv[1]), sys.argv[2]
 extra = sys.argv[3:]
@@ -39,6 +39,8 @@ cmd = ["qemu-system-x86_64", "-drive", f"if=pflash,format=raw,readonly=on,file={
 mon_path = tempfile.mktemp(suffix=".mon")
 cmd += ["-monitor", f"unix:{mon_path},server,nowait"]
 p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+# Never leave QEMU (and its host port forwards) behind, even on a crash.
+atexit.register(p.kill)
 buf = b""
 def read_until(rx, timeout):
     global buf
@@ -108,11 +110,15 @@ for line in open(script):
         time.sleep(0.5)
     elif op == "hostrun":
         # Run a host command; its output goes to the log and must succeed.
-        r = subprocess.run(arg, shell=True, capture_output=True, timeout=60)
-        log += f"[host] {arg}\n".encode() + r.stdout + r.stderr
-        if r.returncode != 0:
+        try:
+            r = subprocess.run(arg, shell=True, capture_output=True, timeout=60)
+            code, out = r.returncode, r.stdout + r.stderr
+        except subprocess.TimeoutExpired as e:
+            code, out = "timeout", (e.stdout or b"") + (e.stderr or b"")
+        log += f"[host] {arg}\n".encode() + out
+        if code != 0:
             sys.stdout.buffer.write(log + buf)
-            print(f"\n*** host command failed: {arg!r} (exit {r.returncode})")
+            print(f"\n*** host command failed: {arg!r} (exit {code})")
             ok = False
             break
     elif op == "sleep":

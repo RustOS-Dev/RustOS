@@ -619,6 +619,10 @@ fn netd() {
         let ms = delay.unwrap_or(100).min(100);
         if ms > 0 {
             NET_WQ.wait_timeout(ms, || KICK.load(Ordering::SeqCst));
+        } else {
+            // Let woken socket users run (and drain buffers) before the
+            // next poll.
+            crate::sched::yield_now();
         }
     }
 }

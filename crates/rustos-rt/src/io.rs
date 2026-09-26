@@ -280,3 +280,24 @@ macro_rules! eprintln {
     () => ($crate::eprint!("\n"));
     ($($arg:tt)*) => {{ let _ = $crate::io::write_fmt_fd(2, format_args!("{}\n", format_args!($($arg)*))); }};
 }
+
+pub const POLLIN: i16 = 0x001;
+pub const POLLOUT: i16 = 0x004;
+pub const POLLERR: i16 = 0x008;
+pub const POLLHUP: i16 = 0x010;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PollFd {
+    pub fd: i32,
+    pub events: i16,
+    pub revents: i16,
+}
+
+/// poll(2): wait for events on `fds` (timeout in ms, -1 = forever).
+pub fn poll(fds: &mut [PollFd], timeout_ms: i32) -> crate::Result<usize> {
+    crate::sys::check(crate::sys::syscall(
+        crate::sys::nr::POLL,
+        &[fds.as_mut_ptr() as usize, fds.len(), timeout_ms as isize as usize],
+    ))
+}

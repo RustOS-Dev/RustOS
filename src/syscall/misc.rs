@@ -89,6 +89,31 @@ pub fn gettimeofday(tv: u64) -> SysResult {
     Ok(0)
 }
 
+fn require_root() -> KResult<()> {
+    let uid =
+        crate::process::current().map_or(0, |p| p.uid.load(core::sync::atomic::Ordering::Relaxed));
+    if uid == 0 { Ok(()) } else { Err(EPERM) }
+}
+
+pub fn settimeofday(tv: u64) -> SysResult {
+    require_root()?;
+    if tv != 0 {
+        let v: [i64; 2] = uaccess::read_user(tv)?;
+        crate::time::set_unix_time(v[0].max(0) as u64);
+    }
+    Ok(0)
+}
+
+pub fn clock_settime(clock: u32, ts: u64) -> SysResult {
+    if clock != 0 {
+        return Err(EINVAL);
+    }
+    require_root()?;
+    let v: [i64; 2] = uaccess::read_user(ts)?;
+    crate::time::set_unix_time(v[0].max(0) as u64);
+    Ok(0)
+}
+
 pub fn time(t: u64) -> SysResult {
     let now = crate::time::unix_time() as i64;
     if t != 0 {

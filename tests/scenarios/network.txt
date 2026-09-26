@@ -1,0 +1,49 @@
+wait # $ 240
+send dhcp eth0 -t 20
+wait leased 10\.0\.2\.15/24 gateway 10\.0\.2\.2 30
+wait # $
+send ip addr
+wait inet 10\.0\.2\.15/24
+wait # $
+send cat /etc/resolv.conf; ip route
+wait nameserver 10\.0\.2\.3
+wait default +10\.0\.2\.2
+wait # $
+send ping -c 3 -i 0.2 10.0.2.2
+wait 3 packets transmitted, 3 received
+wait # $
+send ping -c 2 127.0.0.1
+wait 2 received
+wait # $
+# TCP client against a host web server (slirp maps 10.0.2.2 to the host)
+hostbg cd /tmp && echo hello from the host > rustos-net-test.txt && exec python3 -m http.server 18081 --bind 127.0.0.1
+send wget -O /tmp/got.txt http://10.0.2.2:18081/rustos-net-test.txt && cat /tmp/got.txt
+wait hello from the host
+wait # $
+# TCP server reachable from the host through a port forward
+send mkdir -p /srv/www && echo served by rustos > /srv/www/index.html && httpd -p 8080 &
+wait # $
+sleep 1
+hostrun curl -s --max-time 10 http://127.0.0.1:18080/ | grep "served by rustos"
+send netstat -tln
+wait 0\.0\.0\.0:8080
+wait # $
+# UDP and TCP over loopback with nc
+send nc -l -p 7000 > /tmp/nc.out &
+wait # $
+sleep 0.5
+send echo loopback-tcp | nc 127.0.0.1 7000; sleep 1; cat /tmp/nc.out
+wait nc.out\s+loopback-tcp
+wait # $
+send nslookup localhost; arp
+wait Address: 127\.0\.0\.1
+wait 10\.0\.2\.2
+wait # $
+send ifconfig eth0 10.0.2.99 netmask 255.255.255.0 && ip route add default via 10.0.2.2 && ping -c 1 10.0.2.2
+wait 1 received
+wait # $
+# UDP round trip through slirp to a host echo server
+hostbg exec python3 -c "import socket;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.bind(('127.0.0.1',18082));[s.sendto(d.upper(),a) for d,a in iter(lambda:s.recvfrom(2048),None)]"
+send echo udp-roundtrip | nc -u -w 2 10.0.2.2 18082
+wait UDP-ROUNDTRIP
+wait # $

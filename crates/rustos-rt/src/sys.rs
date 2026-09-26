@@ -13,6 +13,7 @@ pub mod nr {
     pub const FSTAT: usize = 5;
     pub const LSTAT: usize = 6;
     pub const POLL: usize = 7;
+    pub const SETTIMEOFDAY: usize = 164;
     pub const LSEEK: usize = 8;
     pub const MMAP: usize = 9;
     pub const MPROTECT: usize = 10;

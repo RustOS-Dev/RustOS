@@ -245,6 +245,14 @@ pub fn unix_time() -> u64 {
     BOOT_UNIX.load(Ordering::Relaxed) + nanos() / 1_000_000_000
 }
 
+/// Set the wall clock (seconds since the Unix epoch).
+pub fn set_unix_time(secs: u64) {
+    BOOT_UNIX.store(
+        secs.saturating_sub(nanos() / 1_000_000_000),
+        Ordering::Relaxed,
+    );
+}
+
 /// (seconds, nanoseconds) since the Unix epoch.
 pub fn realtime() -> (u64, u64) {
     let n = nanos();

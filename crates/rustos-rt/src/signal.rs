@@ -149,3 +149,26 @@ pub fn parse(s: &str) -> Option<i32> {
         _ => return None,
     })
 }
+
+static INTERRUPTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn on_interrupt(_sig: i32) {
+    INTERRUPTED.store(true, core::sync::atomic::Ordering::SeqCst);
+}
+
+/// Set by SIGINT once [`interrupted_flag`] has installed the handler.
+pub struct Interrupted;
+
+impl Interrupted {
+    pub fn get(&self) -> bool {
+        INTERRUPTED.load(core::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// Catch Ctrl-C so a long-running command can finish cleanly (e.g. print
+/// statistics) instead of being killed.
+pub fn interrupted_flag() -> Interrupted {
+    INTERRUPTED.store(false, core::sync::atomic::Ordering::SeqCst);
+    handle(SIGINT, on_interrupt);
+    Interrupted
+}

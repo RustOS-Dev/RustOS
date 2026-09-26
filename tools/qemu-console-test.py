@@ -59,6 +59,7 @@ def read_until(rx, timeout):
     return None
 ok = True
 log = b""
+hostprocs = []
 for line in open(script):
     line = line.rstrip("\n")
     if not line or line.startswith("#"):
@@ -101,6 +102,19 @@ for line in open(script):
         reply = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", reply).split("\n", 1)[-1].replace("(qemu)", "").strip()
         log += f"[monitor] {arg}{': ' + reply if reply else ''}\n".encode()
         m.close()
+    elif op == "hostbg":
+        # Start a helper process on the host (killed when the test ends).
+        hostprocs.append(subprocess.Popen(arg, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        time.sleep(0.5)
+    elif op == "hostrun":
+        # Run a host command; its output goes to the log and must succeed.
+        r = subprocess.run(arg, shell=True, capture_output=True, timeout=60)
+        log += f"[host] {arg}\n".encode() + r.stdout + r.stderr
+        if r.returncode != 0:
+            sys.stdout.buffer.write(log + buf)
+            print(f"\n*** host command failed: {arg!r} (exit {r.returncode})")
+            ok = False
+            break
     elif op == "sleep":
         time.sleep(float(arg))
 if ok:
@@ -110,6 +124,8 @@ if ok:
         buf += os.read(p.stdout.fileno(), 65536)
     sys.stdout.buffer.write(log + buf)
 p.kill()
+for hp in hostprocs:
+    hp.kill()
 if os.environ.get("RUSTOS_KEEP_DISKS"):
     print("*** kept image", img)
 else:

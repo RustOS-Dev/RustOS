@@ -100,6 +100,7 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
 pub fn start_userspace() -> ! {
     let n = initramfs::unpack();
     println!("[init] initramfs: {} entries", n);
+    net::init();
     drivers::probe_all();
 
     if option_env!("RUSTOS_STRACE").is_some() {

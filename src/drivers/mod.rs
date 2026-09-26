@@ -3,6 +3,7 @@ pub mod console;
 pub mod fbdev;
 pub mod framebuffer;
 pub mod mouse;
+pub mod net;
 pub mod ps2;
 pub mod random;
 pub mod serial;
@@ -37,6 +38,11 @@ pub fn probe_all() {
             && matches!(dev.device_id, 0x1001 | 0x1042)
         {
             block::virtio_blk::probe(&dev);
+        }
+        if dev.vendor_id == crate::pci::ids::VENDOR_REDHAT
+            && matches!(dev.device_id, 0x1000 | 0x1041)
+        {
+            net::virtio_net::probe(&dev);
         }
     }
     crate::usb::init();

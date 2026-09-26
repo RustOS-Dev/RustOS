@@ -428,9 +428,172 @@ pub fn resolve_addr(s: &str, default_port: u16) -> Result<SocketAddr> {
     Ok(SocketAddr { ip, port })
 }
 
-/// Interface information reported by the kernel (see `/proc/net/dev`).
-pub fn interfaces() -> Vec<String> {
-    crate::fs::read_dir("/sys/class/net")
-        .map(|v| v.into_iter().map(|e| e.name).collect())
-        .unwrap_or_default()
+/// One network interface as reported by /proc/net/if_addrs.
+#[derive(Debug, Clone, Default)]
+pub struct IfInfo {
+    pub name: String,
+    pub index: u32,
+    pub up: bool,
+    pub mtu: u32,
+    pub mac: String,
+    pub link: bool,
+    pub dhcp: bool,
+    pub driver: String,
+    pub gateway: Option<Ipv4>,
+    /// "a.b.c.d/p" and IPv6 "x::y/p" strings.
+    pub addrs: Vec<String>,
+}
+
+impl IfInfo {
+    /// First IPv4 address and prefix length.
+    pub fn ipv4(&self) -> Option<(Ipv4, u8)> {
+        self.addrs.iter().find_map(|a| {
+            let (ip, p) = a.split_once('/')?;
+            Some((Ipv4::parse(ip)?, p.parse().ok()?))
+        })
+    }
+}
+
+pub fn interfaces() -> Vec<IfInfo> {
+    let data = crate::fs::read_to_string("/proc/net/if_addrs").unwrap_or_default();
+    data.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            if f.len() < 10 {
+                return None;
+            }
+            Some(IfInfo {
+                name: f[0].into(),
+                index: f[1].parse().unwrap_or(0),
+                up: f[2] == "up",
+                mtu: f[3].parse().unwrap_or(0),
+                mac: f[4].into(),
+                link: f[5] == "link",
+                dhcp: f[6] == "dhcp",
+                driver: f[7].into(),
+                gateway: Ipv4::parse(f[8]),
+                addrs: f[9..].iter().map(|s| String::from(*s)).collect(),
+            })
+        })
+        .collect()
+}
+
+pub fn interface(name: &str) -> Option<IfInfo> {
+    interfaces().into_iter().find(|i| i.name == name)
+}
+
+pub const SIOCADDRT: u64 = 0x890B;
+pub const SIOCDELRT: u64 = 0x890C;
+pub const SIOCGIFFLAGS: u64 = 0x8913;
+pub const SIOCSIFFLAGS: u64 = 0x8914;
+pub const SIOCSIFADDR: u64 = 0x8916;
+pub const SIOCSIFNETMASK: u64 = 0x891C;
+pub const SIOCRDHCP: u64 = 0x89F0;
+pub const SIOCRGATEWAY: u64 = 0x89F1;
+pub const SIOCRDNS: u64 = 0x89F2;
+pub const SIOCRWIFI: u64 = 0x89F8;
+
+/// struct ifreq: 16-byte name + 24-byte union.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IfReq {
+    pub name: [u8; 16],
+    pub data: [u8; 24],
+}
+
+impl IfReq {
+    pub fn new(name: &str) -> IfReq {
+        let mut r = IfReq { name: [0; 16], data: [0; 24] };
+        let n = name.len().min(15);
+        r.name[..n].copy_from_slice(&name.as_bytes()[..n]);
+        r
+    }
+    pub fn set_sockaddr(&mut self, ip: Ipv4) {
+        let sa = SockaddrIn::from(SocketAddr { ip, port: 0 });
+        let b: [u8; 16] = unsafe { core::mem::transmute(sa) };
+        self.data[..16].copy_from_slice(&b);
+    }
+}
+
+/// Issue an interface ioctl through a throwaway datagram socket.
+pub fn if_ioctl(cmd: u64, req: &mut IfReq) -> Result<()> {
+    let s = Socket::new(AF_INET, SOCK_DGRAM, 0)?;
+    s.ioctl(cmd, req as *mut IfReq as usize).map(|_| ())
+}
+
+pub fn set_up(name: &str, up: bool) -> Result<()> {
+    let mut r = IfReq::new(name);
+    if_ioctl(SIOCGIFFLAGS, &mut r)?;
+    let mut f = u16::from_ne_bytes([r.data[0], r.data[1]]);
+    if up {
+        f |= 1;
+    } else {
+        f &= !1;
+    }
+    r.data[..2].copy_from_slice(&f.to_ne_bytes());
+    if_ioctl(SIOCSIFFLAGS, &mut r)
+}
+
+/// Assign a static IPv4 address (disables DHCP on the interface).
+pub fn set_address(name: &str, ip: Ipv4, prefix: u8) -> Result<()> {
+    let mut r = IfReq::new(name);
+    r.set_sockaddr(ip);
+    if_ioctl(SIOCSIFADDR, &mut r)?;
+    if ip == Ipv4::ANY {
+        return Ok(());
+    }
+    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix as u32) };
+    let mut r = IfReq::new(name);
+    r.set_sockaddr(Ipv4(mask.to_be_bytes()));
+    if_ioctl(SIOCSIFNETMASK, &mut r)
+}
+
+pub fn set_gateway(name: &str, gw: Option<Ipv4>) -> Result<()> {
+    let mut r = IfReq::new(name);
+    r.set_sockaddr(gw.unwrap_or(Ipv4::ANY));
+    if_ioctl(SIOCRGATEWAY, &mut r)
+}
+
+pub fn set_dhcp(name: &str, on: bool) -> Result<()> {
+    let mut r = IfReq::new(name);
+    r.data[..4].copy_from_slice(&(on as i32).to_ne_bytes());
+    if_ioctl(SIOCRDHCP, &mut r)
+}
+
+/// Add or delete a route (`dst`/`prefix` via `gw`); prefix 0 = default.
+pub fn route(add: bool, dst: Ipv4, prefix: u8, gw: Ipv4, dev: Option<&str>) -> Result<()> {
+    let mut rt = [0u8; 120];
+    let enc = |ip: Ipv4| -> [u8; 16] { unsafe { core::mem::transmute(SockaddrIn::from(SocketAddr { ip, port: 0 })) } };
+    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix as u32) };
+    rt[8..24].copy_from_slice(&enc(dst));
+    rt[24..40].copy_from_slice(&enc(gw));
+    rt[40..56].copy_from_slice(&enc(Ipv4(mask.to_be_bytes())));
+    rt[56..58].copy_from_slice(&3u16.to_ne_bytes());
+    let mut devname = [0u8; 16];
+    if let Some(d) = dev {
+        let n = d.len().min(15);
+        devname[..n].copy_from_slice(&d.as_bytes()[..n]);
+        rt[104..112].copy_from_slice(&(devname.as_ptr() as u64).to_ne_bytes());
+    }
+    let s = Socket::new(AF_INET, SOCK_DGRAM, 0)?;
+    s.ioctl(if add { SIOCADDRT } else { SIOCDELRT }, rt.as_mut_ptr() as usize)
+        .map(|_| ())
+}
+
+/// Parse "a.b.c.d/p" (prefix defaults to `def`).
+pub fn parse_cidr(s: &str, def: u8) -> Option<(Ipv4, u8)> {
+    match s.split_once('/') {
+        Some((ip, p)) => Some((Ipv4::parse(ip)?, p.parse().ok().filter(|&p: &u8| p <= 32)?)),
+        None => Some((Ipv4::parse(s)?, def)),
+    }
+}
+
+/// Prefix length of a dotted netmask.
+pub fn mask_prefix(mask: Ipv4) -> u8 {
+    u32::from_be_bytes(mask.0).count_ones() as u8
+}
+
+pub fn prefix_mask(p: u8) -> Ipv4 {
+    let m = if p == 0 { 0 } else { u32::MAX << (32 - p as u32) };
+    Ipv4(m.to_be_bytes())
 }

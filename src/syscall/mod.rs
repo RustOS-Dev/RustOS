@@ -96,6 +96,8 @@ pub mod nr {
     pub const LCHOWN: u64 = 94;
     pub const UMASK: u64 = 95;
     pub const GETTIMEOFDAY: u64 = 96;
+    pub const SETTIMEOFDAY: u64 = 164;
+    pub const CLOCK_SETTIME: u64 = 227;
     pub const GETRLIMIT: u64 = 97;
     pub const GETRUSAGE: u64 = 98;
     pub const SYSINFO: u64 = 99;
@@ -383,6 +385,8 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         CLOCK_GETTIME => v(misc::clock_gettime(a[0] as u32, a[1])),
         CLOCK_GETRES => v(misc::clock_getres(a[1])),
         GETTIMEOFDAY => v(misc::gettimeofday(a[0])),
+        SETTIMEOFDAY => v(misc::settimeofday(a[0])),
+        CLOCK_SETTIME => v(misc::clock_settime(a[0] as u32, a[1])),
         TIME => v(misc::time(a[0])),
         ALARM => v(misc::alarm(a[0])),
 

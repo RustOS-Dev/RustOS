@@ -25,6 +25,19 @@ fn main() {
         }
     }
     add_tree(&userland.join("root"), "", &mut files);
+    // Trust store for `wget https://`: the build host's CA bundle, or the
+    // file named by RUSTOS_CA_BUNDLE (empty to leave it out).
+    println!("cargo:rerun-if-env-changed=RUSTOS_CA_BUNDLE");
+    let ca = std::env::var("RUSTOS_CA_BUNDLE")
+        .unwrap_or_else(|_| "/etc/ssl/certs/ca-certificates.crt".into());
+    if let Ok(data) = std::fs::read(&ca) {
+        files.push(("etc/ssl".into(), Entry::Dir));
+        files.push(("etc/ssl/certs".into(), Entry::Dir));
+        files.push((
+            "etc/ssl/certs/ca-certificates.crt".into(),
+            Entry::File(data, 0o644),
+        ));
+    }
     std::fs::write(&cpio, make_cpio(&files)).expect("write initramfs");
 }
 
@@ -56,7 +69,7 @@ fn build_userland(userland: &Path, root: &Path) -> Result<Vec<(String, Entry)>, 
     cmd.env(
         "RUSTFLAGS",
         format!(
-            "-C relocation-model=static -C link-arg=-T{} -C link-arg=--no-pie",
+            "-C relocation-model=static -C link-arg=-T{} -C link-arg=--no-pie --cfg aes_force_soft --cfg polyval_force_soft",
             userland.join("userland.ld").display()
         ),
     );

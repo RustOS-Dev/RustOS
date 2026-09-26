@@ -12,6 +12,7 @@ mod nc;
 mod netstat;
 mod ntp;
 mod ping;
+mod tls;
 mod wifi;
 
 use rustos_rt::prelude::*;

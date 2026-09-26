@@ -1,4 +1,4 @@
-//! wget (HTTP/1.1 client) and httpd (static file server).
+//! wget (HTTP/1.1 and HTTPS client) and httpd (static file server).
 
 use crate::err;
 use rustos_rt::net::{self, Ipv4, Socket, SocketAddr};
@@ -6,18 +6,19 @@ use rustos_rt::prelude::*;
 use rustos_rt::{fs, io, time};
 
 struct Url {
+    https: bool,
     host: String,
     port: u16,
     path: String,
 }
 
 fn parse_url(u: &str) -> Option<Url> {
-    let rest = if let Some(r) = u.strip_prefix("http://") {
-        r
-    } else if u.starts_with("https://") {
-        return None;
+    let (https, rest) = if let Some(r) = u.strip_prefix("http://") {
+        (false, r)
+    } else if let Some(r) = u.strip_prefix("https://") {
+        (true, r)
     } else {
-        u
+        (false, u)
     };
     let (hostport, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
@@ -25,21 +26,55 @@ fn parse_url(u: &str) -> Option<Url> {
     };
     let (host, port) = match hostport.rsplit_once(':') {
         Some((h, p)) => (h, p.parse().ok()?),
-        None => (hostport, 80),
+        None => (hostport, if https { 443 } else { 80 }),
     };
     if host.is_empty() {
         return None;
     }
     Some(Url {
+        https,
         host: host.to_string(),
         port,
         path: path.to_string(),
     })
 }
 
-/// Buffered reader over a socket.
+enum Transport {
+    Plain(Socket),
+    Tls(alloc::boxed::Box<crate::tls::Tls>),
+}
+
+impl Transport {
+    fn recv(&mut self, buf: &mut [u8]) -> rustos_rt::Result<usize> {
+        match self {
+            Transport::Plain(s) => s.recv(buf),
+            Transport::Tls(t) => match t.read(buf) {
+                Ok(n) => Ok(n),
+                // close_notify or a truncated stream both end the body.
+                Err(embedded_tls::TlsError::ConnectionClosed) => Ok(0),
+                Err(_) => Err(rustos_rt::Error(5)),
+            },
+        }
+    }
+
+    fn send_all(&mut self, d: &[u8]) -> rustos_rt::Result<()> {
+        match self {
+            Transport::Plain(s) => s.send_all(d),
+            Transport::Tls(t) => {
+                let mut d = d;
+                while !d.is_empty() {
+                    let n = t.write(d).map_err(|_| rustos_rt::Error(5))?;
+                    d = &d[n..];
+                }
+                t.flush().map_err(|_| rustos_rt::Error(5))
+            }
+        }
+    }
+}
+
+/// Buffered reader over a connection.
 struct Conn {
-    s: Socket,
+    s: Transport,
     buf: Vec<u8>,
     pos: usize,
     eof: bool,
@@ -108,6 +143,7 @@ impl Sink {
 pub fn wget(args: &[String]) -> i32 {
     let mut out: Option<String> = None;
     let mut quiet = false;
+    let mut insecure = false;
     let mut timeout = 30u64;
     let mut url = None;
     let mut i = 1;
@@ -118,6 +154,7 @@ pub fn wget(args: &[String]) -> i32 {
                 out = args.get(i).cloned();
             }
             "-q" => quiet = true,
+            "-k" | "--no-check-certificate" => insecure = true,
             "-T" => {
                 i += 1;
                 timeout = args.get(i).and_then(|t| t.parse().ok()).unwrap_or(timeout);
@@ -127,12 +164,12 @@ pub fn wget(args: &[String]) -> i32 {
         i += 1;
     }
     let Some(mut url_s) = url else {
-        eprintln!("usage: wget [-q] [-O FILE] [-T SECS] http://HOST[:PORT]/PATH");
+        eprintln!("usage: wget [-q] [-k] [-O FILE] [-T SECS] http[s]://HOST[:PORT]/PATH");
         return 2;
     };
     for _redirect in 0..6 {
         let Some(u) = parse_url(&url_s) else {
-            eprintln!("wget: unsupported URL '{}' (only http:// is supported)", url_s);
+            eprintln!("wget: unsupported URL '{}'", url_s);
             return 1;
         };
         let addr = match net::resolve(&u.host) {
@@ -147,7 +184,33 @@ pub fn wget(args: &[String]) -> i32 {
             Err(e) => return err("wget", &format!("{}", addr), e),
         };
         let _ = s.set_timeout(timeout * 1000);
-        let host_hdr = if u.port == 80 { u.host.clone() } else { format!("{}:{}", u.host, u.port) };
+        let default_port = if u.https { 443 } else { 80 };
+        let host_hdr = if u.port == default_port { u.host.clone() } else { format!("{}:{}", u.host, u.port) };
+        let mut s = if u.https {
+            let cas = if insecure {
+                None
+            } else {
+                match crate::tls::system_cas() {
+                    Some(c) => Some(c),
+                    None => {
+                        eprintln!(
+                            "wget: no CA certificates ({}); use --no-check-certificate to skip verification",
+                            crate::tls::CA_BUNDLES[1]
+                        );
+                        return 1;
+                    }
+                }
+            };
+            match crate::tls::connect(s, &u.host, cas) {
+                Ok(t) => Transport::Tls(alloc::boxed::Box::new(t)),
+                Err(e) => {
+                    eprintln!("wget: {}: {}", u.host, e);
+                    return 1;
+                }
+            }
+        } else {
+            Transport::Plain(s)
+        };
         let req = format!(
             "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: RustOS-wget/1.0\r\nAccept: */*\r\nConnection: close\r\n\r\n",
             u.path, host_hdr
@@ -187,7 +250,7 @@ pub fn wget(args: &[String]) -> i32 {
         if (300..400).contains(&code) {
             if let Some(l) = location {
                 url_s = if l.starts_with('/') {
-                    format!("http://{}{}", host_hdr, l)
+                    format!("{}://{}{}", if u.https { "https" } else { "http" }, host_hdr, l)
                 } else {
                     l
                 };
@@ -303,7 +366,7 @@ fn respond(s: &Socket, code: &str, ctype: &str, body: &[u8], head: bool) {
 
 fn serve(s: Socket, root: &str) {
     let _ = s.set_timeout(10_000);
-    let mut c = Conn { s, buf: Vec::new(), pos: 0, eof: false };
+    let mut c = Conn { s: Transport::Plain(s), buf: Vec::new(), pos: 0, eof: false };
     let Ok(Some(req)) = c.line() else { return };
     while let Ok(Some(h)) = c.line() {
         if h.is_empty() {
@@ -313,7 +376,7 @@ fn serve(s: Socket, root: &str) {
     let mut parts = req.split_whitespace();
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/").split('?').next().unwrap_or("/");
-    let s = &c.s;
+    let Transport::Plain(s) = &c.s else { return };
     if method != "GET" && method != "HEAD" {
         respond(s, "405 Method Not Allowed", "text/plain", b"method not allowed\n", false);
         return;

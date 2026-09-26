@@ -10,3 +10,4 @@ crates/usb-desc/target
 crates/usb-desc/Cargo.lock
 crates/wlan/target
 crates/wlan/Cargo.lock
+__pycache__/

@@ -8,3 +8,5 @@ crates/fat-format/target
 crates/fat-format/Cargo.lock
 crates/usb-desc/target
 crates/usb-desc/Cargo.lock
+crates/wlan/target
+crates/wlan/Cargo.lock

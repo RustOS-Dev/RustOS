@@ -84,7 +84,7 @@ jobs:
         run: rustup toolchain install
       - name: cargo test (crates/*)
         run: |
-          for c in crates/fat-format crates/usb-desc; do
+          for c in crates/fat-format crates/usb-desc crates/wlan; do
             (cd "$c" && cargo test)
           done
 

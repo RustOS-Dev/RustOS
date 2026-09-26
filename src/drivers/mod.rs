@@ -39,10 +39,8 @@ pub fn probe_all() {
         {
             block::virtio_blk::probe(&dev);
         }
-        if dev.vendor_id == crate::pci::ids::VENDOR_REDHAT
-            && matches!(dev.device_id, 0x1000 | 0x1041)
-        {
-            net::virtio_net::probe(&dev);
+        if dev.class == 0x02 {
+            net::probe(&dev);
         }
     }
     crate::usb::init();

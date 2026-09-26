@@ -47,3 +47,11 @@ hostbg exec python3 -c "import socket;s=socket.socket(socket.AF_INET,socket.SOCK
 send echo udp-roundtrip | nc -u -w 2 10.0.2.2 18082
 wait UDP-ROUNDTRIP
 wait # $
+# Static configuration from the persistent network.conf
+send mkdir -p /storage/etc && echo "eth0 static 10.0.2.77/24 10.0.2.2 10.0.2.3" > /storage/etc/network.conf && ifup eth0 && ip -br addr && ping -c 1 10.0.2.2
+wait ifup: eth0 static
+wait 10\.0\.2\.77/24
+wait 1 received
+wait # $
+send rm /storage/etc/network.conf
+wait # $

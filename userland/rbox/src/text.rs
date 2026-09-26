@@ -497,17 +497,54 @@ pub fn head(args: &[String]) -> i32 {
         if files.len() > 1 {
             println!("{}==> {} <==", if k > 0 { "\n" } else { "" }, f);
         }
-        let data = match read_input(f) {
-            Ok(d) => d,
-            Err(e) => return err("head", f, e),
+        // Stream the input so endless sources (/dev/zero, pipes) work.
+        let fd = if f == "-" {
+            io::STDIN
+        } else {
+            match rustos_rt::fs::File::open(f) {
+                Ok(file) => file.into_raw(),
+                Err(e) => return err("head", f, e),
+            }
         };
-        if bytes {
-            io::flush();
-            let _ = io::write_all(1, &data[..n.min(data.len())]);
-            continue;
+        io::flush();
+        let mut left = n;
+        let mut buf = alloc::vec![0u8; 65536];
+        while left > 0 {
+            let got = match io::read(fd, &mut buf) {
+                Ok(0) => break,
+                Ok(g) => g,
+                Err(e) => {
+                    if f != "-" {
+                        rustos_rt::process::close(fd);
+                    }
+                    return err("head", f, e);
+                }
+            };
+            let take = if bytes {
+                got.min(left)
+            } else {
+                // Up to and including the n-th remaining newline.
+                let mut end = got;
+                for (i, &b) in buf[..got].iter().enumerate() {
+                    if b == b'\n' {
+                        left -= 1;
+                        if left == 0 {
+                            end = i + 1;
+                            break;
+                        }
+                    }
+                }
+                end
+            };
+            if bytes {
+                left -= take;
+            }
+            if io::write_all(1, &buf[..take]).is_err() {
+                break;
+            }
         }
-        for l in lines_of(&data).iter().take(n) {
-            println!("{}", l);
+        if f != "-" {
+            rustos_rt::process::close(fd);
         }
     }
     0

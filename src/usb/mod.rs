@@ -5,6 +5,7 @@
 //! Class drivers (hub, HID, mass storage, and whatever registers through
 //! [`register_driver`], e.g. USB networking) bind per interface.
 
+pub mod cdc_ether;
 pub mod hid;
 pub mod hub;
 pub mod storage;
@@ -311,10 +312,11 @@ fn bind(dev: &Arc<UsbDevice>) {
         .map(|c| c.default_interfaces().cloned().collect())
         .unwrap_or_default();
     for iface in &ifaces {
-        let builtin: [(&'static str, DriverProbe); 3] = [
+        let builtin: [(&'static str, DriverProbe); 4] = [
             ("hub", hub::probe),
             ("usbhid", hid::probe),
             ("usb-storage", storage::probe),
+            ("cdc_ether", cdc_ether::probe),
         ];
         let extra = DRIVERS.lock().clone();
         for (name, probe) in builtin.iter().chain(extra.iter()) {
@@ -434,13 +436,38 @@ fn enumerate(dev: &Arc<UsbDevice>) -> KResult<()> {
     *dev.manufacturer.lock() = dev.string(desc.manufacturer_idx).unwrap_or_default();
     *dev.product.lock() = dev.string(desc.product_idx).unwrap_or_default();
     *dev.serial.lock() = dev.string(desc.serial_idx).unwrap_or_default();
-    let head = dev.get_descriptor(usb_desc::DT_CONFIG, 0, 0, 9)?;
-    if head.len() < 4 {
+    // Read every configuration; prefer one with a class we drive natively
+    // over vendor/RNDIS alternatives (e.g. CDC ECM over RNDIS).
+    let mut configs = Vec::new();
+    for idx in 0..desc.num_configs.clamp(1, 8) {
+        let head = dev.get_descriptor(usb_desc::DT_CONFIG, idx, 0, 9)?;
+        if head.len() < 4 {
+            return Err(EIO);
+        }
+        let total = u16::from_le_bytes([head[2], head[3]]) as usize;
+        let raw = dev.get_descriptor(usb_desc::DT_CONFIG, idx, 0, total)?;
+        if let Some(c) = Configuration::parse(&raw) {
+            configs.push(c);
+        }
+    }
+    // RUSTOS_USB_PREFER_RNDIS (build-time) exercises the RNDIS path in tests.
+    let want_rndis = option_env!("RUSTOS_USB_PREFER_RNDIS").is_some();
+    let preferred = configs
+        .iter()
+        .position(|c| {
+            c.interfaces.iter().any(|i| {
+                if want_rndis {
+                    i.class == 0xE0 || (i.class == usb_desc::CLASS_CDC && i.subclass == 2)
+                } else {
+                    i.class == usb_desc::CLASS_CDC && i.subclass == 6
+                }
+            })
+        })
+        .unwrap_or(0);
+    if configs.is_empty() {
         return Err(EIO);
     }
-    let total = u16::from_le_bytes([head[2], head[3]]) as usize;
-    let raw = dev.get_descriptor(usb_desc::DT_CONFIG, 0, 0, total)?;
-    let cfg = Configuration::parse(&raw).ok_or(EIO)?;
+    let cfg = configs.swap_remove(preferred);
     dev.control_out(0x00, REQ_SET_CONFIGURATION, cfg.value as u16, 0, &[])?;
     *dev.config.lock() = Some(cfg);
     Ok(())

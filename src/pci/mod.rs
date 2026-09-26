@@ -456,6 +456,17 @@ impl PciDevice {
         Some(v)
     }
 
+    /// MSI, falling back to INTx (for devices whose MSI-X mode needs
+    /// extra vector routing setup).
+    pub fn enable_msi_or_intx(
+        &self,
+        handler: alloc::sync::Arc<dyn Fn() + Send + Sync>,
+    ) -> Option<u8> {
+        let h = handler.clone();
+        self.enable_msi(alloc::boxed::Box::new(move || h()))
+            .or_else(|| self.enable_intx(alloc::boxed::Box::new(move || handler())))
+    }
+
     /// Best available interrupt: MSI-X (1 vector), then MSI, then INTx.
     pub fn enable_irq(&self, handler: alloc::sync::Arc<dyn Fn() + Send + Sync>) -> Option<u8> {
         let h1 = handler.clone();

@@ -1,5 +1,5 @@
 # System startup script (run by init).
 mkdir -p /tmp /var/log /mnt
-if [ -f /etc/network.conf ]; then
-    . /etc/network.conf
-fi
+# Apply /storage/etc/network.conf (persistent) or /etc/network.conf.
+# Interfaces not listed there keep the kernel's automatic DHCP.
+ifup -a -q

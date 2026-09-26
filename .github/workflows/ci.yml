@@ -114,7 +114,7 @@ jobs:
       - name: Install QEMU and OVMF
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs
+          sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs curl
 
       - name: Make runner script executable
         run: chmod +x run-qemu-uefi.sh
@@ -128,3 +128,6 @@ jobs:
         run: |
           cargo build
           tools/run-scenarios.sh
+          # USB tethering over RNDIS (QEMU usb-net's second configuration)
+          RUSTOS_USB_PREFER_RNDIS=1 cargo build
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/eth-usb.txt

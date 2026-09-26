@@ -365,3 +365,70 @@ pub fn dhcp(args: &[String]) -> i32 {
     eprintln!("{}: no DHCP lease after {} s", name, timeout);
     1
 }
+
+/// ifup [-a | IFACE] [-q]: apply /etc/network.conf.
+pub fn ifup(args: &[String]) -> i32 {
+    let quiet = args.iter().any(|a| a == "-q");
+    let all = args.iter().any(|a| a == "-a");
+    let only: Option<&String> = args[1..].iter().find(|a| !a.starts_with('-'));
+    if !all && only.is_none() {
+        eprintln!("usage: ifup -a | ifup IFACE");
+        return 2;
+    }
+    let conf = fs::read_to_string("/storage/etc/network.conf")
+        .or_else(|_| fs::read_to_string("/etc/network.conf"))
+        .unwrap_or_default();
+    let mut dns: Vec<Ipv4> = Vec::new();
+    let mut status = 0;
+    for line in conf.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        let w: Vec<&str> = line.split_whitespace().collect();
+        if w.len() < 2 || only.is_some_and(|o| o != w[0]) {
+            continue;
+        }
+        let name = w[0];
+        if net::interface(name).is_none() {
+            if !quiet {
+                eprintln!("ifup: {}: no such interface", name);
+            }
+            continue;
+        }
+        let r = match w[1] {
+            "dhcp" => net::set_up(name, true).and_then(|_| net::set_dhcp(name, true)),
+            "down" => net::set_up(name, false),
+            "static" => {
+                let Some((ip, p)) = w.get(2).and_then(|c| net::parse_cidr(c, 24)) else {
+                    eprintln!("ifup: {}: bad address", name);
+                    status = 1;
+                    continue;
+                };
+                let gw = w.get(3).and_then(|g| Ipv4::parse(g));
+                dns.extend(w.iter().skip(4).filter_map(|d| Ipv4::parse(d)));
+                net::set_up(name, true)
+                    .and_then(|_| net::set_address(name, ip, p))
+                    .and_then(|_| net::set_gateway(name, gw))
+            }
+            m => {
+                eprintln!("ifup: {}: unknown method '{}'", name, m);
+                status = 1;
+                continue;
+            }
+        };
+        match r {
+            Ok(()) => {
+                if !quiet {
+                    println!("ifup: {} {}", name, w[1]);
+                }
+            }
+            Err(e) => status = err("ifup", name, e),
+        }
+    }
+    if !dns.is_empty() {
+        let mut s = String::from("# written by ifup from network.conf\n");
+        for d in dns {
+            s.push_str(&format!("nameserver {}\n", d));
+        }
+        let _ = fs::write("/etc/resolv.conf", s.as_bytes());
+    }
+    status
+}

@@ -1,0 +1,20 @@
+wait # $ 240
+send dhcp -t 30
+wait leased 10\.0\.2\.15/24 40
+wait # $
+send ip -br addr; cat /proc/net/if_addrs | grep eth0
+wait eth0 +UP
+wait # $
+send ping -c 3 -i 0.3 10.0.2.2
+wait 3 received
+wait # $
+hostbg mkdir -p /tmp/rustos-eth && cd /tmp/rustos-eth && head -c 4194304 /dev/urandom > big.bin && sha256sum big.bin | cut -d' ' -f1 > big.sha && exec python3 -m http.server 18091 --bind 127.0.0.1
+sleep 1
+send cd /tmp && wget -q http://10.0.2.2:18091/big.bin && wget -q http://10.0.2.2:18091/big.sha && sha256sum big.bin | cut -d' ' -f1 > got.sha && cmp got.sha big.sha && echo HASH-OK
+wait HASH-OK 180
+wait # $
+send mkdir -p /srv/www && cp /tmp/big.bin /srv/www/ && httpd -p 8080 &
+wait serving /srv/www 60
+hostrun curl -s --retry 5 --retry-connrefused --retry-delay 1 --max-time 60 http://127.0.0.1:18092/big.bin | sha256sum | cut -d' ' -f1 | diff - /tmp/rustos-eth/big.sha
+send cat /proc/net/dev | grep eth0
+wait # $

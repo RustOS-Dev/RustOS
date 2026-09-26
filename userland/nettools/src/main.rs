@@ -27,6 +27,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("host", dns::nslookup),
     ("httpd", http::httpd),
     ("ifconfig", ifcfg::ifconfig),
+    ("ifup", ifcfg::ifup),
     ("ip", ifcfg::ip),
     ("nc", nc::nc),
     ("netstat", netstat::netstat),

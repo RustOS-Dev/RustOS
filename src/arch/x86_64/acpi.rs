@@ -369,6 +369,7 @@ pub fn shutdown() -> ! {
         });
     }
     x86_64::instructions::interrupts::disable();
+    super::smp::halt_others();
     const SLP_EN: u16 = 1 << 13;
     match (s5, info.pm1a_cnt) {
         (Some(v), Some(pm1a)) if !v.is_empty() => {
@@ -400,6 +401,7 @@ pub fn shutdown() -> ! {
 /// triple fault.
 pub fn reboot() -> ! {
     x86_64::instructions::interrupts::disable();
+    super::smp::halt_others();
     if let Some((reg, val)) = platform().reset_reg {
         match reg.space {
             1 => unsafe { Port::<u8>::new(reg.address as u16).write(val) },

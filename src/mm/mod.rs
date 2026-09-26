@@ -49,6 +49,16 @@ static KSTACK_NEXT: AtomicU64 = AtomicU64::new(KSTACK_START);
 static BOOT_REGIONS: AtomicU64 = AtomicU64::new(0);
 
 /// Run `f` with the global frame allocator, interrupts disabled.
+/// Allocate a frame below 1 MiB (real-mode trampolines). Never freed.
+pub fn alloc_low_frame() -> Option<u64> {
+    let r = BOOT_REGIONS.load(Ordering::SeqCst);
+    if r == 0 {
+        return None;
+    }
+    let regions = unsafe { &*(r as *const bootloader_api::info::MemoryRegions) };
+    with_frames(|f| f.alloc_low(regions))
+}
+
 pub fn with_frames<R>(f: impl FnOnce(&mut frame::FrameAllocator) -> R) -> R {
     x86_64::instructions::interrupts::without_interrupts(|| {
         let mut g = FRAMES.lock();
@@ -208,6 +218,7 @@ pub fn unmap_kernel_pages(virt: u64, size: u64) {
             }
         }
     });
+    crate::arch::x86_64::smp::tlb_shootdown(0);
 }
 
 /// A kernel stack with an unmapped guard page below it.
@@ -219,6 +230,15 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new(size: u64) -> Option<KernelStack> {
         let size = size.next_multiple_of(FRAME_SIZE);
+        let reused = x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut free = FREE_KSTACKS.lock();
+            free.iter()
+                .position(|&(_, s)| s == size)
+                .map(|i| free.swap_remove(i))
+        });
+        if let Some((base, size)) = reused {
+            return Some(KernelStack { base, size });
+        }
         let guard = FRAME_SIZE;
         let region = KSTACK_NEXT.fetch_add(size + guard, Ordering::SeqCst);
         if region + size + guard >= KSTACK_END {
@@ -235,9 +255,23 @@ impl KernelStack {
     }
 }
 
+/// Stacks of exited threads, kept mapped for reuse: unmapping would need
+/// a TLB shootdown from the scheduler's context-switch path.
+static FREE_KSTACKS: spin::Mutex<alloc::vec::Vec<(u64, u64)>> =
+    spin::Mutex::new(alloc::vec::Vec::new());
+
 impl Drop for KernelStack {
     fn drop(&mut self) {
-        unmap_kernel_pages(self.base, self.size);
+        let (base, size) = (self.base, self.size);
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut free = FREE_KSTACKS.lock();
+            if free.len() < 256 {
+                free.push((base, size));
+                return;
+            }
+            drop(free);
+            unmap_kernel_pages(base, size);
+        });
     }
 }
 

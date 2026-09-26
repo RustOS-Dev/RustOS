@@ -308,6 +308,10 @@ pub fn alloc_vector_block(n: u8) -> Option<u8> {
 }
 
 /// Number of times each vector fired (for `/proc/interrupts`-style output).
+pub fn interrupt_count(v: u8) -> usize {
+    COUNTS[v as usize].load(Ordering::Relaxed)
+}
+
 pub fn interrupt_counts() -> alloc::vec::Vec<(u8, usize)> {
     (0..256)
         .filter_map(|v| {

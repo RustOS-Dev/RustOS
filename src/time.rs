@@ -54,6 +54,7 @@ pub fn tsc_hz() -> u64 {
 pub fn delay_us(us: u64) {
     let end = nanos() + us * 1_000;
     while nanos() < end {
+        crate::arch::x86_64::smp::poll();
         core::hint::spin_loop();
     }
 }
@@ -96,6 +97,7 @@ pub fn wait_until(ms: u64, mut cond: impl FnMut() -> bool) -> bool {
         if d.expired() {
             return cond();
         }
+        crate::arch::x86_64::smp::poll();
         core::hint::spin_loop();
     }
 }

@@ -91,6 +91,12 @@ pub fn set_kernel_stack(top: u64) {
     }
 }
 
+/// Record the local APIC id once the APIC is up (the BSP's per-CPU block
+/// is created before it).
+pub fn set_lapic_id(id: u32) {
+    unsafe { (*(this() as *const PerCpu as *mut PerCpu)).lapic_id = id };
+}
+
 pub fn cpu_count() -> u32 {
     CPU_COUNT.load(Ordering::SeqCst)
 }

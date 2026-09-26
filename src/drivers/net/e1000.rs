@@ -168,6 +168,9 @@ impl E1000 {
 }
 
 impl NetDevice for E1000 {
+    fn shutdown(&self) {
+        w32(self.mmio + CTRL, r32(self.mmio + CTRL) | CTRL_RST);
+    }
     fn mac(&self) -> [u8; 6] {
         self.mac
     }

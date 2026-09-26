@@ -342,6 +342,7 @@ pub fn make_ready(t: Arc<Thread>) {
         t.set_state(State::Ready);
         RUN_QUEUE.lock().push_back(t);
     });
+    crate::arch::x86_64::smp::kick_idle();
 }
 
 /// Wake a blocked thread (no-op if it is not blocked).
@@ -358,6 +359,7 @@ pub fn wake(t: &Arc<Thread>) {
         {
             t.wake_at.store(0, Ordering::SeqCst);
             RUN_QUEUE.lock().push_back(t.clone());
+            crate::arch::x86_64::smp::kick_idle();
         } else {
             t.wakeup_pending.store(true, Ordering::SeqCst);
         }
@@ -639,8 +641,22 @@ fn finish_switch() {
     if !prev.is_null() {
         unsafe { Arc::decrement_strong_count(prev) };
     }
-    let mut dead = DEAD.lock();
-    dead.retain(|t| t.on_cpu.load(Ordering::SeqCst) != 0);
+    // Free finished threads outside the lock: dropping a kernel stack
+    // unmaps it, which waits for the other CPUs (TLB shootdown).
+    let reaped: Vec<Arc<Thread>> = {
+        let mut dead = DEAD.lock();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < dead.len() {
+            if dead[i].on_cpu.load(Ordering::SeqCst) == 0 {
+                out.push(dead.swap_remove(i));
+            } else {
+                i += 1;
+            }
+        }
+        out
+    };
+    drop(reaped);
 }
 
 /// Snapshot of all live threads: (tid, name, state, is_user).

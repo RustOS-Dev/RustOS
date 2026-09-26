@@ -79,6 +79,7 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
 
     acpi::init(rsdp);
     apic::init_local();
+    cpu::set_lapic_id(apic::id());
     apic::init_io();
     idt::register(idt::VEC_APIC_ERROR, apic::apic_error_handler);
     time::calibrate();
@@ -87,6 +88,8 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
     sched::init_cpu("kmain");
     time::start_tick();
     arch::x86_64::syscall_entry::init();
+    arch::x86_64::smp::init_ipis();
+    arch::x86_64::smp::start_aps();
     drivers::ps2::init();
 
     x86_64::instructions::interrupts::enable();

@@ -79,6 +79,11 @@ impl Igc {
 }
 
 impl NetDevice for Igc {
+    fn shutdown(&self) {
+        self.w(RCTL, 0);
+        self.w(TCTL, 0);
+        self.w(CTRL, self.r(CTRL) | CTRL_DEV_RST);
+    }
     fn mac(&self) -> [u8; 6] {
         self.mac
     }

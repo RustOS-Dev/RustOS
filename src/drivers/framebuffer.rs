@@ -233,6 +233,8 @@ impl FbConsole {
                 for x in 0..self.cols {
                     self.render_cell(x, y, false);
                 }
+                // Redraws run with interrupts off; keep other CPUs going.
+                crate::arch::x86_64::smp::poll();
             }
         }
         if self.cursor_visible && crate::drivers::console::view_is_live() {

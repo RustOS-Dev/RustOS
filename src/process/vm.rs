@@ -190,6 +190,7 @@ impl AddressSpace {
             }
             addr += FRAME_SIZE;
         }
+        crate::arch::x86_64::smp::tlb_shootdown(self.pml4);
     }
 
     /// Change protection on `[start, end)`.
@@ -243,6 +244,7 @@ impl AddressSpace {
                 addr += FRAME_SIZE;
             }
         }
+        crate::arch::x86_64::smp::tlb_shootdown(self.pml4);
         Ok(())
     }
 
@@ -296,6 +298,8 @@ impl AddressSpace {
                             Ok(f) => f.flush(),
                             Err(_) => return false,
                         }
+                        // Other threads may still cache the old frame.
+                        crate::arch::x86_64::smp::tlb_shootdown(self.pml4);
                     } else if let Ok(f) = unsafe { m.update_flags(page, new_flags) } {
                         f.flush();
                     }
@@ -453,8 +457,10 @@ impl AddressSpace {
                 }
             }
         }
-        // The parent lost write access to shared pages: flush its TLB.
+        // The parent lost write access to shared pages: flush its TLB
+        // (on every CPU running one of its threads).
         x86_64::instructions::tlb::flush_all();
+        crate::arch::x86_64::smp::tlb_shootdown(self.pml4);
         Ok(child)
     }
 

@@ -84,6 +84,9 @@ fn w32(a: u64, v: u32) {
 }
 
 impl NetDevice for Rtl {
+    fn shutdown(&self) {
+        w8(self.mmio + CHIP_CMD, CMD_RESET);
+    }
     fn mac(&self) -> [u8; 6] {
         self.mac
     }

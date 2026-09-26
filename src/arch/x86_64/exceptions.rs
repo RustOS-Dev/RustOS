@@ -15,6 +15,12 @@ pub fn handle(frame: &mut TrapFrame) {
         }
         14 => {
             let addr = Cr2::read_raw();
+            // Resolve faults with interrupts on when the faulting context had
+            // them on: COW and demand paging may wait for other CPUs (TLB
+            // shootdown) and must not stall timer ticks.
+            if frame.rflags & 0x200 != 0 {
+                x86_64::instructions::interrupts::enable();
+            }
             if crate::process::handle_page_fault(frame, addr) {
                 return;
             }
@@ -35,7 +41,27 @@ pub fn handle(frame: &mut TrapFrame) {
             crate::process::user_fault(frame, sig, 0);
         }
         2 => {
-            crate::serial_println!("[trap] NMI received");
+            if super::smp::NMI_DUMP.load(core::sync::atomic::Ordering::SeqCst) {
+                let mut trace = alloc::string::String::new();
+                let mut rbp = frame.rbp;
+                for _ in 0..12 {
+                    if rbp < 0xffff_8000_0000_0000 || rbp & 7 != 0 {
+                        break;
+                    }
+                    let ret = unsafe { *((rbp + 8) as *const u64) };
+                    trace.push_str(&alloc::format!(" {:#x}", ret));
+                    rbp = unsafe { *(rbp as *const u64) };
+                }
+                crate::serial_println!(
+                    "[nmi] cpu{} rip {:#x} if={} trace{}",
+                    super::cpu::this().cpu_id,
+                    frame.rip,
+                    frame.rflags & 0x200 != 0,
+                    trace
+                );
+            } else {
+                crate::serial_println!("[trap] NMI received");
+            }
         }
         _ => fatal(frame, None),
     }

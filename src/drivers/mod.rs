@@ -23,6 +23,7 @@ pub fn shutdown() {
     crate::vfs::sync_all();
     crate::block::sync_all();
     block::nvme::shutdown_all();
+    crate::net::shutdown_devices();
     crate::usb::shutdown();
 }
 

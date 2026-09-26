@@ -316,6 +316,14 @@ impl NetDevice for Iwl {
     fn driver(&self) -> &'static str {
         "iwlwifi"
     }
+    fn shutdown(&self) {
+        // Stop interrupts and DMA; the firmware dies with the reset.
+        let w = |reg: u64, v: u32| unsafe {
+            core::ptr::write_volatile((self.mmio + reg) as *mut u32, v)
+        };
+        w(trans::CSR_INT_MASK, 0);
+        w(trans::CSR_RESET, 0x80);
+    }
 
     fn transmit(&self, eth: &[u8]) -> KResult<()> {
         let mut l = self.link.lock();
@@ -1311,6 +1319,3 @@ impl Driver {
         }
     }
 }
-
-/// Stop every AX210 before reboot / power-off.
-pub fn shutdown() {}

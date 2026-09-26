@@ -57,6 +57,9 @@ impl VirtioNet {
 }
 
 impl NetDevice for VirtioNet {
+    fn shutdown(&self) {
+        self.pci.reset();
+    }
     fn mac(&self) -> [u8; 6] {
         self.mac
     }

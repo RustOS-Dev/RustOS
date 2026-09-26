@@ -65,6 +65,8 @@ pub trait NetDevice: Send + Sync {
     fn status(&self) -> String {
         String::new()
     }
+    /// Stop DMA before reboot / power-off.
+    fn shutdown(&self) {}
 }
 
 #[derive(Default, Clone, Copy)]
@@ -477,6 +479,15 @@ static KICK: AtomicBool = AtomicBool::new(false);
 
 /// Wake the network thread (from drivers' receive interrupts or after a
 /// socket operation queued data). Interrupt-safe.
+/// Quiesce every network device (reboot / power-off).
+pub fn shutdown_devices() {
+    let devs: Vec<Arc<dyn NetDevice>> =
+        with(|net| net.ifaces.iter().filter_map(|i| i.dev.clone()).collect()).unwrap_or_default();
+    for d in devs {
+        d.shutdown();
+    }
+}
+
 pub fn kick() {
     KICK.store(true, Ordering::SeqCst);
     NET_WQ.wake_all();

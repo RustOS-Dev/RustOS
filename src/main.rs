@@ -24,6 +24,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     x86_64::instructions::interrupts::disable();
+    rustos::arch::x86_64::smp::halt_others();
     rustos::println!("\nKERNEL PANIC: {}", info);
     rustos::hlt_loop();
 }

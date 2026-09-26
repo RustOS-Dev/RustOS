@@ -72,6 +72,7 @@ QEMU_ARGS=(
     -device isa-debug-exit,iobase=0xf4,iosize=0x04
     -machine q35
     -m 512M
+    -smp "${RUSTOS_SMP:-2}"
     "${ACCEL[@]}"
 )
 

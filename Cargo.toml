@@ -21,6 +21,10 @@ linked_list_allocator = "0.9.0"
 acpi = "6.1"
 log = "0.4"
 usb-desc = { path = "crates/usb-desc" }
+wlan = { path = "crates/wlan" }
+# The kernel runs without SSE: force the portable crypto backends.
+sha1 = { version = "0.10", default-features = false, features = ["force-soft"] }
+sha2 = { version = "0.10", default-features = false, features = ["force-soft"] }
 
 [dependencies.smoltcp]
 version = "0.14"
@@ -56,3 +60,22 @@ features = ["alloc"]
 [dependencies.conquer-once]
 version = "0.2.0"
 default-features = false
+
+# WPA2 key derivation and WPA3-SAE group math are slow unoptimized; keep
+# them fast in debug kernels too.
+[profile.dev.package.wlan]
+opt-level = 3
+[profile.dev.package.sha1]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.p256]
+opt-level = 3
+[profile.dev.package.primeorder]
+opt-level = 3
+[profile.dev.package.elliptic-curve]
+opt-level = 3
+[profile.dev.package.crypto-bigint]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3

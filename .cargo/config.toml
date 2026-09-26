@@ -8,6 +8,8 @@ target = "x86_64-rustos.json"
 
 [target.'cfg(target_os = "none")']
 runner = "./run-qemu-uefi.sh"
+# No SSE in the kernel: use the table-free software AES.
+rustflags = ["--cfg", "aes_force_soft"]
 
 [env]
 # smoltcp compile-time limits: addresses and routes per interface.

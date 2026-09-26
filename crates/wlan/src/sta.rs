@@ -386,6 +386,10 @@ impl Station {
         ]
     }
 
+    /// Management frame protection negotiated with the AP.
+    pub fn pmf(&self) -> bool {
+        self.pmf
+    }
     pub fn pmf_required(&self) -> bool {
         self.pmf_required
     }

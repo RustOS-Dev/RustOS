@@ -8,6 +8,7 @@ pub mod ps2;
 pub mod random;
 pub mod serial;
 pub mod virtio;
+pub mod wifi;
 
 /// Physical memory behind a mappable device (for mmap).
 pub fn mmap_phys(obj: &dyn crate::vfs::FileLike) -> Option<(u64, u64)> {
@@ -39,8 +40,8 @@ pub fn probe_all() {
         {
             block::virtio_blk::probe(&dev);
         }
-        if dev.class == 0x02 {
-            net::probe(&dev);
+        if dev.class == 0x02 && !net::probe(&dev) {
+            wifi::probe(&dev);
         }
     }
     crate::usb::init();

@@ -14,8 +14,6 @@ set -euo pipefail
 DRIVE=""
 AX210_FIRMWARE_SOURCE="${RUSTOS_AX210_FIRMWARE:-}"
 PARTITION_SYNC_DELAY_SECONDS=1
-AX210_FIRMWARE_PRIMARY="iwlwifi-ty-a0-gf-a0-72.ucode"
-AX210_FIRMWARE_FALLBACK="iwlwifi-ty-a0-gf-a0-71.ucode"
 AX210_FIRMWARE_SEARCH_DIRS=(
     /lib/firmware
     /usr/lib/firmware
@@ -65,69 +63,114 @@ populate_rootfs_skeleton() {
         "$mount_point/var/log"
 }
 
-auto_detect_ax210_firmware_source() {
-    local candidate
-    local firmware_name
+# Firmware files the iwlwifi driver looks for (newest supported API first),
+# plus the platform NVM. AX211/AX201 (CNVi) parts use the "so" images.
+AX210_FIRMWARE_PATTERNS=(
+    "iwlwifi-ty-a0-gf-a0-7[12].ucode"
+    "iwlwifi-ty-a0-gf-a0-6[0-9].ucode"
+    "iwlwifi-ty-a0-gf-a0-59.ucode"
+    "iwlwifi-ty-a0-gf-a0.pnvm"
+    "iwlwifi-so-a0-gf-a0-7[12].ucode"
+    "iwlwifi-so-a0-gf-a0-6[0-9].ucode"
+    "iwlwifi-so-a0-gf-a0.pnvm"
+    "iwlwifi-so-a0-hr-b0-7[12].ucode"
+    "iwlwifi-so-a0-hr-b0-6[0-9].ucode"
+)
 
-    for candidate in "${AX210_FIRMWARE_SEARCH_DIRS[@]}"; do
-        [[ -d "$candidate" ]] || continue
-        for firmware_name in "$AX210_FIRMWARE_PRIMARY" "$AX210_FIRMWARE_FALLBACK"; do
-            if [[ -f "$candidate/$firmware_name" ]]; then
-                printf '%s\n' "$candidate"
-                return 0
-            fi
+# Print "<file>" for every matching firmware blob in directory $1
+# (plain, .xz or .zst - distributions ship compressed firmware).
+find_ax210_firmware_files() {
+    local dir="$1" pattern f
+    shopt -s nullglob
+    for pattern in "${AX210_FIRMWARE_PATTERNS[@]}"; do
+        for f in "$dir"/$pattern "$dir"/$pattern.xz "$dir"/$pattern.zst; do
+            [[ -f "$f" ]] && printf '%s\n' "$f"
         done
     done
+    shopt -u nullglob
+}
 
+auto_detect_ax210_firmware_source() {
+    local candidate
+    for candidate in "${AX210_FIRMWARE_SEARCH_DIRS[@]}"; do
+        [[ -d "$candidate" ]] || continue
+        if [[ -n "$(find_ax210_firmware_files "$candidate")" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
     return 1
+}
+
+# Copy one firmware blob into $2, decompressing .xz/.zst.
+install_firmware_file() {
+    local src="$1" dir="$2" name
+    name="${src##*/}"
+    case "$src" in
+        *.xz)
+            name="${name%.xz}"
+            xz -dc "$src" | run_as_root tee "$dir/$name" >/dev/null
+            ;;
+        *.zst)
+            name="${name%.zst}"
+            zstd -qdc "$src" | run_as_root tee "$dir/$name" >/dev/null
+            ;;
+        *)
+            run_as_root cp "$src" "$dir/$name"
+            ;;
+    esac
+    echo "Provisioned WiFi firmware: /lib/firmware/$name"
 }
 
 provision_ax210_firmware() {
     local mount_point="$1"
     local source="$2"
     local firmware_dir="$mount_point/lib/firmware"
+    local f copied=0
 
     run_as_root mkdir -p "$firmware_dir"
 
     if [[ -z "$source" ]]; then
         if source="$(auto_detect_ax210_firmware_source)"; then
-            echo "Auto-detected AX210 firmware source: $source"
+            echo "Auto-detected Intel WiFi firmware source: $source"
         else
-            echo "AX210 firmware not provided and no host copy was auto-detected. Expected runtime path(s):"
-            echo "  /lib/firmware/$AX210_FIRMWARE_PRIMARY"
-            echo "  /lib/firmware/$AX210_FIRMWARE_FALLBACK"
-            echo "Re-run with --ax210-firmware <file-or-dir> or set RUSTOS_AX210_FIRMWARE to copy a local blob."
+            echo "Intel WiFi firmware not provided and no host copy was auto-detected."
+            echo "Copy iwlwifi-ty-a0-gf-a0-72.ucode and iwlwifi-ty-a0-gf-a0.pnvm (from linux-firmware)"
+            echo "into /lib/firmware on the RUSTOS_ROOT partition, or re-run with"
+            echo "--ax210-firmware <file-or-dir> / RUSTOS_AX210_FIRMWARE."
             return 0
         fi
     fi
 
     if [[ -d "$source" ]]; then
-        local copied=0
-        for firmware_name in "$AX210_FIRMWARE_PRIMARY" "$AX210_FIRMWARE_FALLBACK"; do
-            if [[ -f "$source/$firmware_name" ]]; then
-                run_as_root cp "$source/$firmware_name" "$firmware_dir/$firmware_name"
-                echo "Provisioned AX210 firmware: /lib/firmware/$firmware_name"
-                copied=1
-            fi
-        done
+        while IFS= read -r f; do
+            [[ -n "$f" ]] || continue
+            install_firmware_file "$f" "$firmware_dir"
+            copied=1
+        done < <(find_ax210_firmware_files "$source")
         if [[ "$copied" -eq 1 ]]; then
             return 0
         fi
-        echo "Error: no AX210 firmware blobs were found in '$source'." >&2
-        echo "Expected $AX210_FIRMWARE_PRIMARY and/or $AX210_FIRMWARE_FALLBACK." >&2
+        echo "Error: no Intel WiFi firmware blobs were found in '$source'." >&2
+        echo "Expected e.g. iwlwifi-ty-a0-gf-a0-72.ucode and iwlwifi-ty-a0-gf-a0.pnvm." >&2
         return 1
     fi
 
     if [[ -f "$source" ]]; then
-        local firmware_name="${source##*/}"
-        case "$firmware_name" in
-            "$AX210_FIRMWARE_PRIMARY"|"$AX210_FIRMWARE_FALLBACK")
-                run_as_root cp "$source" "$firmware_dir/$firmware_name"
-                echo "Provisioned AX210 firmware: /lib/firmware/$firmware_name"
+        case "${source##*/}" in
+            iwlwifi-*.ucode|iwlwifi-*.pnvm|iwlwifi-*.xz|iwlwifi-*.zst)
+                install_firmware_file "$source" "$firmware_dir"
+                # Pick up the matching .pnvm next to a single .ucode.
+                local dir="${source%/*}" base
+                base="${source##*/}"
+                base="${base%%-[0-9]*}"
+                for f in "$dir/$base.pnvm" "$dir/$base.pnvm.xz" "$dir/$base.pnvm.zst"; do
+                    [[ -f "$f" ]] && install_firmware_file "$f" "$firmware_dir"
+                done
                 return 0
                 ;;
             *)
-                echo "Error: AX210 firmware file must be named '$AX210_FIRMWARE_PRIMARY' or '$AX210_FIRMWARE_FALLBACK'." >&2
+                echo "Error: '$source' is not an iwlwifi firmware file." >&2
                 return 1
                 ;;
         esac

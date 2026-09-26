@@ -113,6 +113,9 @@ pub struct Ext2Inode {
     fs: Arc<Ext2Fs>,
     ino: u32,
     st: Mutex<RawInode>,
+    /// Last block allocated for this file: the next allocation starts
+    /// there so files grow contiguously (and allocation stays O(1)).
+    alloc_hint: AtomicU64,
 }
 
 impl RawInode {
@@ -417,6 +420,7 @@ impl Ext2Fs {
             fs: self.arc(),
             ino,
             st: Mutex::new(raw),
+            alloc_hint: AtomicU64::new(0),
         });
         let mut t = self.inodes.lock();
         if let Some(existing) = t.get(&ino).and_then(|w| w.upgrade()) {
@@ -450,9 +454,15 @@ impl Ext2Fs {
     fn bitmap_alloc(&self, bitmap_block: u64, limit: u32, start: u32) -> KResult<Option<u32>> {
         let mut bm = vec![0u8; self.block_size as usize];
         self.read_block(bitmap_block, &mut bm)?;
-        for k in 0..limit {
+        let mut k = 0;
+        while k < limit {
             let i = (start + k) % limit;
             let (byte, bit) = ((i / 8) as usize, i % 8);
+            // Skip fully used bytes in one step.
+            if bit == 0 && bm[byte] == 0xFF && k + 8 <= limit {
+                k += 8;
+                continue;
+            }
             if bm[byte] & (1 << bit) == 0 {
                 bm[byte] |= 1 << bit;
                 self.dev.write_bytes(
@@ -461,6 +471,7 @@ impl Ext2Fs {
                 )?;
                 return Ok(Some(i));
             }
+            k += 1;
         }
         Ok(None)
     }
@@ -709,11 +720,18 @@ impl Ext2Inode {
             return fs.extent_lookup(&node, l as u32);
         }
         let p = fs.ptrs_per_block();
-        let goal = st.block[0] as u64;
         let mut new_blocks = 0u64;
+        let hint = &self.alloc_hint;
+        let first = st.block[0] as u64;
         let mut alloc = |fs: &Ext2Fs| -> KResult<u32> {
             new_blocks += 1;
-            fs.alloc_block(goal)
+            let goal = match hint.load(Ordering::Relaxed) {
+                0 => first,
+                h => h + 1,
+            };
+            let b = fs.alloc_block(goal)?;
+            hint.store(b as u64, Ordering::Relaxed);
+            Ok(b)
         };
         let result = if l < 12 {
             if st.block[l as usize] == 0 {

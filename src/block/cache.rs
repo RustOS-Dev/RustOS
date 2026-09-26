@@ -67,17 +67,22 @@ impl Cache {
     }
 
     fn make_room(&mut self, need: usize) -> KResult<()> {
-        while self.blocks.len() + need > self.capacity && !self.blocks.is_empty() {
-            let victim = self
-                .blocks
-                .iter()
-                .min_by_key(|(_, e)| e.used)
-                .map(|(k, _)| *k)
-                .unwrap();
-            if self.blocks[&victim].dirty {
-                self.write_back(Some(victim))?;
-            }
-            self.blocks.remove(&victim);
+        if self.blocks.len() + need <= self.capacity || self.blocks.is_empty() {
+            return Ok(());
+        }
+        // Evict in batches (the least recently used eighth of the cache)
+        // so the LRU scan and the write-back of dirty victims, coalesced
+        // into multi-block runs, are amortised over many insertions.
+        let excess = self.blocks.len() + need - self.capacity;
+        let count = excess.max(self.capacity / 8).min(self.blocks.len());
+        let mut by_age: Vec<(u64, u64)> = self.blocks.iter().map(|(k, e)| (e.used, *k)).collect();
+        by_age.select_nth_unstable(count - 1);
+        let victims = &by_age[..count];
+        if victims.iter().any(|(_, k)| self.blocks[k].dirty) {
+            self.write_back()?;
+        }
+        for (_, k) in victims {
+            self.blocks.remove(k);
         }
         Ok(())
     }
@@ -101,20 +106,17 @@ impl Cache {
         Ok(e)
     }
 
-    /// Write dirty blocks (all, or the run containing `only`).
-    fn write_back(&mut self, only: Option<u64>) -> KResult<()> {
+    /// Write all dirty blocks, coalescing adjacent ones into runs.
+    fn write_back(&mut self) -> KResult<()> {
         let spb = self.spb();
         let ss = self.dev.sector_size() as u64;
         let total_sectors = self.dev.sector_count();
-        let mut dirty: Vec<u64> = self
+        let dirty: Vec<u64> = self
             .blocks
             .iter()
             .filter(|(_, e)| e.dirty)
             .map(|(k, _)| *k)
             .collect();
-        if let Some(b) = only {
-            dirty.retain(|&k| k == b);
-        }
         let mut i = 0;
         while i < dirty.len() {
             let start = dirty[i];
@@ -259,14 +261,14 @@ impl CachedDevice {
     /// Write back dirty blocks and flush the device's write cache.
     pub fn sync(&self) -> KResult<()> {
         let mut c = self.cache.lock();
-        c.write_back(None)?;
+        c.write_back()?;
         c.dev.flush()
     }
 
     /// Drop all cached data (after the device changed underneath).
     pub fn invalidate(&self) {
         let mut c = self.cache.lock();
-        let _ = c.write_back(None);
+        let _ = c.write_back();
         c.blocks.clear();
     }
 }

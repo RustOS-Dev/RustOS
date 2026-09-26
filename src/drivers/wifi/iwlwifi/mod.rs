@@ -330,11 +330,16 @@ impl NetDevice for Iwl {
         if !l.connected {
             return Err(ENETDOWN);
         }
-        let Some(frame) = wlan::frame::data_from_ethernet(eth, l.bssid, l.qos) else {
+        let Some(mut frame) = wlan::frame::data_from_ethernet(eth, l.bssid, l.qos) else {
             return Err(EINVAL);
         };
         let hdrlen = hdr_len(&frame);
         let encrypt = l.ptk;
+        if encrypt {
+            // The firmware inserts the CCMP/GCMP header and encrypts frames
+            // marked Protected (as mac80211 marks them).
+            frame[1] |= 0x40;
+        }
         let (cmd, tb1) = tx_command(&frame, hdrlen, None, encrypt, false);
         let mmio = self.mmio;
         let q = l.data_q.as_mut().ok_or(ENETDOWN)?;
@@ -1137,9 +1142,12 @@ impl Driver {
         eth.extend_from_slice(&self.dev.mac);
         eth.extend_from_slice(&[0x88, 0x8E]);
         eth.extend_from_slice(body);
-        let frame = wlan::frame::data_from_ethernet(&eth, l.bssid, l.qos).ok_or(EINVAL)?;
+        let mut frame = wlan::frame::data_from_ethernet(&eth, l.bssid, l.qos).ok_or(EINVAL)?;
         let rate = basic_rate(l.band_5g, l.tx_ant);
         let encrypt = l.ptk;
+        if encrypt {
+            frame[1] |= 0x40;
+        }
         let (cmd, tb1) = tx_command(&frame, hdr_len(&frame), Some(rate), encrypt, true);
         let q = l.data_q.as_mut().ok_or(ENETDOWN)?;
         Trans::tx(q, self.dev.mmio, &cmd, tb1, frame.len() as u16)

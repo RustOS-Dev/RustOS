@@ -40,3 +40,22 @@ sleep 1
 send dd if=/dev/input/mice bs=3 count=1 2>/dev/null | xxd
 wait 00000000  08 14 0a
 wait # $
+# Repeated hot-plug cycles: each stick is automounted, then unmounted on removal
+monitor device_del stor1
+wait sdc removed 30
+monitor drive_add 0 if=none,id=h1,format=raw,file=@EXT2:8:cyc1@
+monitor device_add usb-storage,bus=xhci.0,port=3,drive=h1,id=hs1
+wait mounted /dev/sd[a-z]+ \(ext2\) 30
+monitor device_del hs1
+wait removed; unmounted 30
+monitor drive_add 0 if=none,id=h2,format=raw,file=@EXT2:8:cyc2@
+monitor device_add usb-storage,bus=xhci.0,port=3,drive=h2,id=hs2
+wait mounted /dev/sd[a-z]+ \(ext2\) 30
+monitor device_del hs2
+wait removed; unmounted 30
+monitor drive_add 0 if=none,id=h3,format=raw,file=@EXT2:8:cyc3@
+monitor device_add usb-storage,bus=xhci.0,port=3,drive=h3,id=hs3
+wait mounted /dev/sd[a-z]+ \(ext2\) 30
+send grep -c " /mnt/sd" /proc/mounts; dmesg | grep -c "removed; unmounted"
+wait \r\n1\r\n[4-9]\r\n
+wait # $

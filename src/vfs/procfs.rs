@@ -504,6 +504,48 @@ fn gen_pci() -> String {
     s
 }
 
+/// Config space (first 256 bytes, plus the PCIe extended header list)
+/// of network and wireless controllers, for bug reports.
+fn gen_pci_config() -> String {
+    let mut s = String::new();
+    for d in crate::pci::enumerate() {
+        if d.class != 0x02 && d.class != 0x0d {
+            continue;
+        }
+        let _ = writeln!(s, "{} {:04x}:{:04x}", d.name(), d.vendor_id, d.device_id);
+        for row in 0..16u16 {
+            let _ = write!(s, "{:03x}:", row * 16);
+            for w in 0..4u16 {
+                let v = d.read32(row * 16 + w * 4);
+                for b in v.to_le_bytes() {
+                    let _ = write!(s, " {:02x}", b);
+                }
+            }
+            s.push('\n');
+        }
+        // Extended capabilities: id/version/next at 0x100 onwards.
+        let mut off = 0x100u16;
+        let mut guard = 0;
+        while off >= 0x100 && guard < 48 {
+            let h = d.read32(off);
+            if h == 0 || h == 0xFFFF_FFFF {
+                break;
+            }
+            let _ = writeln!(
+                s,
+                "ext cap {:#06x} v{} at {:#05x}",
+                h & 0xFFFF,
+                (h >> 16) & 15,
+                off
+            );
+            off = (h >> 20) as u16 & 0xFFC;
+            guard += 1;
+        }
+        s.push('\n');
+    }
+    s
+}
+
 fn gen_filesystems() -> String {
     String::from("nodev\ttmpfs\nnodev\tproc\nnodev\tdevtmpfs\n\tvfat\n\text2\n\text4\n")
 }
@@ -524,7 +566,12 @@ fn gen_threads() -> String {
 }
 
 fn gen_cmdline() -> String {
-    String::from("root=auto\n")
+    let p = crate::params::cmdline();
+    if p.is_empty() {
+        String::from("root=auto\n")
+    } else {
+        alloc::format!("root=auto {}\n", p)
+    }
 }
 
 fn register_builtin() {
@@ -537,6 +584,7 @@ fn register_builtin() {
     register("stat", gen_stat);
     register("loadavg", gen_loadavg);
     register("bus/pci/devices", gen_pci);
+    register("bus/pci/config", gen_pci_config);
     register("filesystems", gen_filesystems);
     register("threads", gen_threads);
     register("cmdline", gen_cmdline);

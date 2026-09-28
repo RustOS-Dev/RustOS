@@ -237,6 +237,7 @@ pub fn probe(dev: &PciDevice) {
             scan_for_connect: false,
             last_tick: 0,
             fw_attempts: 0,
+            err_tables: (0, 0),
         }
         .run()
     });
@@ -441,6 +442,8 @@ struct Driver {
     scan_for_connect: bool,
     last_tick: u64,
     fw_attempts: u32,
+    /// SRAM addresses of the LMAC and UMAC error tables (from ALIVE).
+    err_tables: (u32, u32),
 }
 
 fn now() -> u64 {
@@ -574,6 +577,9 @@ impl Driver {
                 .get(o..o + 4)
                 .map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()))
         };
+        // iwl_alive_ntf_v6: status, flags, lmac_data[2] (48 bytes each,
+        // error_event_table_ptr at +16), umac_data (error_info_addr at +8).
+        self.err_tables = (le(20), le(108));
         let sku = [le(116), le(120), le(124)];
         if sku != [0; 3] {
             self.load_pnvm(sku)?;
@@ -707,6 +713,7 @@ impl Driver {
             let ints = self.trans.ack_interrupts();
             if ints & (trans::INT_SW_ERR | trans::INT_HW_ERR) != 0 {
                 crate::println!("[iwlwifi] firmware error (CSR_INT {:#x})", ints);
+                self.dump_error_tables();
                 return Err(EIO);
             }
             if ints & trans::INT_RF_KILL != 0 {
@@ -776,7 +783,53 @@ impl Driver {
         Ok(())
     }
 
+    /// Print the firmware's LMAC/UMAC error tables after an assert.
+    fn dump_error_tables(&self) {
+        let (lmac, umac) = self.err_tables;
+        if lmac != 0 {
+            let t = self.trans.read_mem(lmac, 32);
+            crate::println!(
+                "[iwlwifi] LMAC error {:#010x} blink2 {:#x} ilink1 {:#x} ilink2 {:#x} data {:#x} {:#x} {:#x} fw {}.{} hcmd {:#x}",
+                t[1],
+                t[4],
+                t[5],
+                t[6],
+                t[7],
+                t[8],
+                t[9],
+                t[16],
+                t[17],
+                t[23]
+            );
+            crate::println!("[iwlwifi] LMAC table {:08x?}", t);
+        }
+        if umac != 0 {
+            let t = self.trans.read_mem(umac, 16);
+            crate::println!(
+                "[iwlwifi] UMAC error {:#010x} blink1 {:#x} blink2 {:#x} ilink1 {:#x} ilink2 {:#x} data {:#x} {:#x} {:#x} cmd {:#x}",
+                t[1],
+                t[2],
+                t[3],
+                t[4],
+                t[5],
+                t[6],
+                t[7],
+                t[8],
+                t[13]
+            );
+        }
+    }
+
     fn packet(&mut self, p: Packet) -> KResult<()> {
+        if crate::params::IWL_DEBUG.load(Ordering::Relaxed) && p.cmd != RX_MPDU {
+            crate::println!(
+                "[iwlwifi] notif {:#04x}:{:#04x} len {} {:02x?}",
+                p.group,
+                p.cmd,
+                p.data.len(),
+                &p.data[..p.data.len().min(32)]
+            );
+        }
         match (p.group, p.cmd) {
             (0 | 1, RX_MPDU) => self.rx_mpdu(&p.data)?,
             (0 | 1, TX_CMD) => self.tx_status(&p),

@@ -327,6 +327,59 @@ struct Phy<'a> {
     arp: Option<&'a mut BTreeMap<[u8; 4], [u8; 6]>>,
 }
 
+/// One-line description of an Ethernet frame (`net.debug=1`).
+fn frame_summary(f: &[u8]) -> String {
+    if f.len() < 14 {
+        return format!("runt {} bytes", f.len());
+    }
+    let et = u16::from_be_bytes([f[12], f[13]]);
+    let p = &f[14..];
+    let mac = |m: &[u8]| {
+        format!(
+            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            m[0], m[1], m[2], m[3], m[4], m[5]
+        )
+    };
+    let body = match et {
+        0x0800 if p.len() >= 20 => {
+            let ihl = ((p[0] & 15) as usize) * 4;
+            let ports = if (p[9] == 6 || p[9] == 17) && p.len() >= ihl + 4 {
+                format!(
+                    " {}->{}",
+                    u16::from_be_bytes([p[ihl], p[ihl + 1]]),
+                    u16::from_be_bytes([p[ihl + 2], p[ihl + 3]])
+                )
+            } else {
+                String::new()
+            };
+            let proto = match p[9] {
+                1 => "icmp",
+                6 => "tcp",
+                17 => "udp",
+                _ => "ip",
+            };
+            format!(
+                "{} {}.{}.{}.{} > {}.{}.{}.{}{}",
+                proto, p[12], p[13], p[14], p[15], p[16], p[17], p[18], p[19], ports
+            )
+        }
+        0x0806 if p.len() >= 28 => format!(
+            "arp op {} {}.{}.{}.{} > {}.{}.{}.{}",
+            p[7], p[14], p[15], p[16], p[17], p[24], p[25], p[26], p[27]
+        ),
+        0x86DD if p.len() >= 40 => format!("ipv6 next {}", p[6]),
+        0x888E => String::from("eapol"),
+        _ => format!("type {:#06x}", et),
+    };
+    format!(
+        "{} > {} {} ({} bytes)",
+        mac(&f[6..12]),
+        mac(&f[0..6]),
+        body,
+        f.len()
+    )
+}
+
 struct RxTok(Vec<u8>);
 struct TxTok<'a> {
     dev: &'a Arc<dyn NetDevice>,
@@ -345,6 +398,9 @@ impl phy::TxToken for TxTok<'_> {
         let r = f(&mut buf);
         // SAFETY: the stats outlive the token (both borrowed from the Phy).
         let stats = unsafe { &mut *self.stats };
+        if crate::params::NET_DEBUG.load(Ordering::Relaxed) {
+            crate::println!("[net] tx {}", frame_summary(&buf));
+        }
         match self.dev.transmit(&buf) {
             Ok(()) => {
                 stats.tx_packets += 1;
@@ -368,6 +424,9 @@ impl Device for Phy<'_> {
 
     fn receive(&mut self, _t: Instant) -> Option<(RxTok, TxTok<'_>)> {
         let frame = self.dev.receive()?;
+        if crate::params::NET_DEBUG.load(Ordering::Relaxed) {
+            crate::println!("[net] rx {}", frame_summary(&frame));
+        }
         // Learn neighbours from ARP traffic for /proc/net/arp.
         if frame.len() >= 42
             && frame[12..14] == [0x08, 0x06]

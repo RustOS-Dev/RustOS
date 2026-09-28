@@ -25,6 +25,16 @@ queues were not needed for correctness); IPv6 has SLAAC but no DHCPv6;
 Wi-Fi uses legacy rates (no HT/VHT/HE yet). See
 [LIMITATIONS.md](LIMITATIONS.md) for the full list of gaps.
 
+### Round 2
+
+- [x] **M10** Hardware bring-up kit: `hwcheck` checklist runner, `bugreport`, boot-time debug switches (`/storage/etc/kernel.conf`), persistent kernel log
+- [ ] **M11** Networking for the browser: `url`/`http` crates (cookies, forms, gzip, redirects), TLS 1.2 + 1.3 (rustls), IPv6 DNS (AAAA, DHCPv6, RDNSS), captive-portal detection
+- [ ] **M12** `browse`: lynx-like text web browser with forms, cookies, HTTPS and captive-portal login
+- [ ] **M13** Wi-Fi speed: HT/VHT/HE capabilities, 20–160 MHz, MIMO, A-MPDU/A-MSDU, reorder buffer, regulatory channel list, power save
+- [ ] **M14** Kernel: per-CPU run queues, epoll/eventfd/timerfd/signalfd, page cache and file-backed `mmap`, pseudo-terminals, virtual consoles
+- [ ] **M15** musl libc sysroot and `rustos-cc`, dynamic-linker TLS and `dlopen`, ported software
+- [ ] **M16** ext4 journal replay and read/write, USB HID report descriptors, USB Attached SCSI
+
 ## Context
 
 RustOS is a ~10.8k-line x86_64 UEFI kernel (bootloader_api 0.11). Today it has:

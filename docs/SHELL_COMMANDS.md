@@ -74,6 +74,8 @@ Built-ins: `:` `.` `[` `alias` `bg` `break` `cd` (`cd -`) `command`
 | `mkfs` / `mkfs.fat` / `mkfs.vfat` | `mkfs.vfat [-F 12|16|32] [-n LABEL] DEVICE` |
 | `lsblk` | disks, partitions, filesystems and mount points |
 | `lspci`, `lsusb` | PCI and USB devices |
+| `hwcheck` | `hwcheck [-y] [-o DIR] [--ssid S --pass P] [--open S] [--http URL] [--https URL] [--dns NAME] [--big URL] [--rekey SECS] [SECTION...]` — hardware checklist with logged results ([HARDWARE.md](HARDWARE.md)) |
+| `bugreport` | `bugreport [-o FILE \| -]` — kernel log, `/proc`, `/sys/class/net` and tool output in one file |
 
 Types for `mount -t`: `vfat`, `ext2`, `ext3`, `ext4` (read-only), `tmpfs`,
 `proc`, `sysfs`, `devtmpfs`. Partitions are mounted automatically at boot

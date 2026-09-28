@@ -68,13 +68,48 @@ xHCI). Everything above that is marked *written* is aimed at them. When
 testing on hardware:
 
 1. Build a USB stick with `./write_to_drive.sh --drive /dev/sdX` (add
-   `--ax210-firmware DIR` for Wi-Fi).
-2. Boot it in UEFI mode (Secure Boot off).
-3. Collect `dmesg > /storage/dmesg.txt` and `lspci; lsusb; lsblk; ip addr`
-   output; the storage partition is readable from any OS.
+   `--ax210-firmware DIR` for Wi-Fi; without it the script copies the
+   host's `/lib/firmware/iwlwifi-ty-a0-gf-a0*` files if present).
+2. Optional: turn on extra logging before the first boot by creating
+   `etc/kernel.conf` on the stick's storage partition (see below).
+3. Boot it in UEFI mode (Secure Boot off) and run **`hwcheck`**.
+4. Copy the `hwcheck-DATE/` directory (and any `bugreport-*.txt`) from the
+   storage partition — it is FAT32, readable from any OS — and report the
+   results (machine, component, logs) so this table can be updated.
 
-Please report results (machine, component, log) so this table can be
-updated.
+### `hwcheck`
+
+`hwcheck` walks through the whole checklist and records every step with
+its complete command output:
+
+| Section | Steps |
+|---------|-------|
+| `system` | kernel version and parameters, CPU, memory, `lspci`, PCI config of network devices, `lsusb`, `lsblk`, interfaces, interrupts |
+| `ethernet` | per wired interface: link/driver/speed, DHCP, ping gateway, DNS, HTTP, HTTPS, optional throughput (`--big URL`) |
+| `wifi` | firmware loaded, scan, open network, WPA2/WPA3 network (asks for SSID and passphrase, or `--ssid`/`--pass`/`--open`), the same connectivity steps, group-key refresh wait (`--rekey 3600`), disconnect/reconnect |
+| `storage` | 8 MiB write + sync + read-back with SHA-256 on `/storage` and every writable `/mnt/*` (throughput shown) |
+| `usb` | stick insertion and removal (interactive) |
+
+Results go to `/storage/hwcheck-DATE/` (`summary.txt`, one log per step,
+and a full `bugreport.txt`). Run one section with e.g. `hwcheck wifi`;
+`hwcheck -y` never prompts. `bugreport` alone writes the report file
+(`dmesg`, `/proc`, `/sys/class/net`, `wifi status`, PCI config dumps,
+firmware listing, and the tail of the persistent log).
+
+### Debug switches (`/storage/etc/kernel.conf`)
+
+The file holds `key=value` words (a bare `key` means `1`; `#` comments)
+and is read at boot once the storage partition is mounted;
+`/proc/cmdline` shows the active set.
+
+| Key | Effect |
+|-----|--------|
+| `log.persist=1` | mirror the kernel log to `/storage/log/kernel.log` every 2 s (rotated at 4 MiB) — survives hangs |
+| `iwlwifi.debug=1` | log every Wi-Fi firmware command and notification |
+| `net.debug=1` | log a one-line summary of every Ethernet frame sent and received |
+
+A Wi-Fi firmware crash always dumps the firmware's LMAC/UMAC error tables
+to the log.
 
 ## Not supported
 

@@ -495,6 +495,7 @@ pub fn start_input_thread() {
         let tty = console();
         loop {
             let seen = PENDING_INPUT.load(Ordering::SeqCst);
+            crate::drivers::serial::poll_rx();
             while let Some(ev) = crate::task::keyboard::read_key() {
                 use crate::task::keyboard::Key;
                 match ev {

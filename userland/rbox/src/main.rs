@@ -10,6 +10,7 @@ extern crate alloc;
 
 mod files;
 mod hash;
+mod hw;
 mod regex;
 mod sys;
 mod text;
@@ -23,6 +24,7 @@ pub type Applet = fn(&[String]) -> i32;
 
 const APPLETS: &[(&str, Applet)] = &[
     ("basename", text::basename),
+    ("bugreport", hw::bugreport),
     ("cat", files::cat),
     ("chmod", files::chmod),
     ("clear", sys::clear),
@@ -45,6 +47,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("head", text::head),
     ("hexdump", files::hexdump),
     ("hostname", sys::hostname),
+    ("hwcheck", hw::hwcheck),
     ("id", sys::id),
     ("kill", sys::kill),
     ("ln", files::ln),

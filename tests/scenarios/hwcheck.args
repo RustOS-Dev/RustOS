@@ -1,0 +1,5 @@
+# Wired NIC plus an ext2 NVMe data disk (automounted under /mnt)
+-netdev user,id=n0
+-device virtio-net-pci,netdev=n0
+-drive if=none,id=nv0,format=raw,file=@EXT2:32:hwdata@
+-device nvme,serial=hw0,drive=nv0

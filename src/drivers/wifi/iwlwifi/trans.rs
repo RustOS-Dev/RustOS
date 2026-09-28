@@ -42,6 +42,8 @@ const HBUS_TARG_PRPH_RADDR: u64 = 0x448;
 const HBUS_TARG_PRPH_WDAT: u64 = 0x44C;
 const HBUS_TARG_PRPH_RDAT: u64 = 0x450;
 const HBUS_TARG_WRPTR: u64 = 0x460;
+const HBUS_TARG_MEM_RADDR: u64 = 0x40C;
+const HBUS_TARG_MEM_RDAT: u64 = 0x41C;
 const RFH_Q0_FRBDCB_WIDX_TRG: u64 = 0x1C80;
 const CSR_MSIX_HW_INT_CAUSES_AD: u64 = 0x2808;
 
@@ -346,6 +348,17 @@ impl Trans {
         }
         v
     }
+    /// Read `words` 32-bit words of device SRAM (auto-incrementing).
+    pub fn read_mem(&self, addr: u32, words: usize) -> alloc::vec::Vec<u32> {
+        let ok = self.grab_nic();
+        self.w(HBUS_TARG_MEM_RADDR, addr);
+        let v = (0..words).map(|_| self.r(HBUS_TARG_MEM_RDAT)).collect();
+        if ok {
+            self.release_nic();
+        }
+        v
+    }
+
     pub fn write_umac_prph(&self, addr: u32, v: u32) {
         self.write_prph(addr + UMAC_PRPH_OFFSET, v)
     }
@@ -672,6 +685,16 @@ impl Trans {
     ) -> KResult<Vec<u8>> {
         let idx = self.cmdq.next_index();
         let seq = (idx & 0xFF) as u16;
+        if crate::params::IWL_DEBUG.load(core::sync::atomic::Ordering::Relaxed) {
+            crate::println!(
+                "[iwlwifi] cmd {:#04x}:{:#04x} seq {} len {} {:02x?}",
+                group,
+                cmd,
+                seq,
+                data.len(),
+                &data[..data.len().min(32)]
+            );
+        }
         let mut buf = Vec::with_capacity(8 + data.len());
         buf.push(cmd);
         buf.push(group);

@@ -20,6 +20,7 @@ pub mod initramfs;
 pub mod klog;
 pub mod mm;
 pub mod net;
+pub mod params;
 pub mod pci;
 pub mod process;
 pub mod sched;
@@ -105,6 +106,16 @@ pub fn start_userspace() -> ! {
     println!("[init] initramfs: {} entries", n);
     net::init();
     drivers::probe_all();
+    if let Some(path) = params::load() {
+        println!(
+            "[init] kernel parameters from {}: {}",
+            path,
+            params::cmdline()
+        );
+    }
+    if params::flag("log.persist") {
+        klog::start_persist();
+    }
 
     if option_env!("RUSTOS_STRACE").is_some() {
         syscall::TRACE.store(true, core::sync::atomic::Ordering::Relaxed);

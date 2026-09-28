@@ -68,9 +68,19 @@ pub fn write_raw(bytes: &[u8]) {
     });
 }
 
-/// Enable receive interrupts on COM1 and route IRQ 4 to the TTY.
-pub fn enable_rx_interrupts() {
-    let Some(v) = crate::arch::x86_64::idt::alloc_vector(|_f| {
+static RX_LOCK: Mutex<()> = Mutex::new(());
+static RX_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Move received bytes from the UART to the TTY. Called from the IRQ 4
+/// handler and, as a safety net, periodically by the TTY input thread: an
+/// edge-triggered interrupt that is missed would otherwise leave data in
+/// the FIFO (and the UART's interrupt line asserted) forever.
+pub fn poll_rx() {
+    if !RX_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let _g = RX_LOCK.lock();
         unsafe {
             let mut lsr = Port::<u8>::new(COM1_PORT + LINE_STATUS_OFFSET);
             let mut data = Port::<u8>::new(COM1_PORT + DATA_OFFSET);
@@ -81,6 +91,13 @@ pub fn enable_rx_interrupts() {
                 guard += 1;
             }
         }
+    });
+}
+
+/// Enable receive interrupts on COM1 and route IRQ 4 to the TTY.
+pub fn enable_rx_interrupts() {
+    let Some(v) = crate::arch::x86_64::idt::alloc_vector(|_f| {
+        poll_rx();
         crate::arch::x86_64::apic::eoi();
     }) else {
         return;
@@ -93,6 +110,7 @@ pub fn enable_rx_interrupts() {
             return;
         }
         Port::<u8>::new(COM1_PORT + INTERRUPT_ENABLE_OFFSET).write(0x01);
+        RX_ENABLED.store(true, Ordering::Relaxed);
         Port::<u8>::new(COM1_PORT + MODEM_CONTROL_OFFSET).write(0x0B);
     }
     crate::arch::x86_64::apic::route_isa_irq(4, v);

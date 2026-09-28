@@ -1,0 +1,37 @@
+wait # $ 240
+hostbg mkdir -p /tmp/rustos-hw && cd /tmp/rustos-hw && echo hello > index.html && head -c 2097152 /dev/urandom > big.bin && exec python3 -m http.server 18095 --bind 127.0.0.1
+sleep 1
+# Batch run of the non-Wi-Fi checklist against a host web server
+send hwcheck -y -o /storage/hw --http http://10.0.2.2:18095/ --https '' --dns '' --big http://10.0.2.2:18095/big.bin system ethernet wifi storage usb
+wait eth0 DHCP lease 60
+wait eth0 HTTP http://10\.0\.2\.2:18095/ 60
+wait eth0 throughput .* Mbit/s 90
+wait SKIP.*Wi-Fi.*no wireless interface
+wait PASS.*read/write /storage 120
+wait PASS.*read/write /mnt/ 120
+wait SKIP.*USB stick hot-plug
+wait \d+ passed, 0 failed, \d+ skipped 60
+wait # $
+send cat /storage/hw/summary.txt | head -3; ls /storage/hw | grep -c log
+wait passed, 0 failed
+wait # $
+send grep -c "===== dmesg" /storage/hw/bugreport.txt; grep -c "eth0" /proc/bus/pci/config /storage/hw/bugreport.txt | tail -1
+wait \r\n1\r\n
+wait # $
+send bugreport -o /tmp/br.txt && grep -c "/proc/meminfo" /tmp/br.txt
+wait bug report written to /tmp/br\.txt
+wait \r\n1\r\n
+wait # $
+# Boot-time parameters: persistent log and frame tracing survive a reboot
+send mkdir -p /storage/etc && echo "log.persist=1 net.debug  # test" > /storage/etc/kernel.conf && sync && reboot
+wait kernel parameters from /storage/etc/kernel.conf: log.persist=1 net.debug=1 240
+wait # $ 240
+send cat /proc/cmdline; sleep 3; grep -c "boot at unix time" /storage/log/kernel.log
+wait root=auto log\.persist=1 net\.debug=1
+wait \r\n[1-9]\r\n
+wait # $
+send ping -c 1 10.0.2.2 >/dev/null; dmesg | grep -c "\[net\] [rt]x .*icmp"
+wait \r\n[1-9][0-9]*\r\n
+wait # $
+send rm /storage/etc/kernel.conf && sync
+wait # $

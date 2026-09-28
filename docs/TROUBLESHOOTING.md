@@ -42,8 +42,10 @@ CSM/legacy boot and Secure Boot, and pick the USB stick's UEFI entry.
 
 **Black screen after the bootloader** — the GOP framebuffer console needs
 a UEFI graphics mode; the same output goes to COM1 (115200 8N1) if the
-machine has one. `dmesg > /storage/dmesg.txt` saves the log to the
-storage partition for reading on another computer.
+machine has one. `bugreport` saves the log and system state to the
+storage partition for reading on another computer; if the machine hangs,
+put `log.persist=1` into `/storage/etc/kernel.conf` so the log is written
+there continuously (see [HARDWARE.md](HARDWARE.md)).
 
 **USB keyboard does not work** — check `lsusb`; keyboards behind hubs and
 docks are supported, but some laptops route the internal keyboard through
@@ -74,6 +76,10 @@ Servers that only offer TLS 1.2 are not supported.
 `iwlwifi-ty-a0-gf-a0-72.ucode` and `iwlwifi-ty-a0-gf-a0.pnvm` into
 `/storage/lib/firmware` (see [WIFI.md](WIFI.md)); the driver retries on the
 next `wifi` command.
+
+**Wi-Fi misbehaves in a way the log does not explain** — add
+`iwlwifi.debug=1` to `/storage/etc/kernel.conf`, reboot, reproduce, and
+run `bugreport`.
 
 **`firmware start failed` / `no ALIVE`** — `dmesg | grep iwlwifi` shows
 the failing step, `CSR_INT`/`GP_CNTRL` and the secure-boot status

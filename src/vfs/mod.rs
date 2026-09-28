@@ -747,6 +747,20 @@ pub fn write_all(path: &str, data: &[u8]) -> KResult<()> {
     Ok(())
 }
 
+/// Append `data` to a file, creating it if needed.
+pub fn append(path: &str, data: &[u8]) -> KResult<()> {
+    let f = open(path, O_WRONLY | O_CREAT | O_APPEND, 0o644)?;
+    let mut done = 0;
+    while done < data.len() {
+        let n = f.write(&data[done..])?;
+        if n == 0 {
+            return Err(EIO);
+        }
+        done += n;
+    }
+    Ok(())
+}
+
 pub fn mkdir(path: &str, mode: u32) -> KResult<()> {
     let (dir, name) = lookup_parent(path)?;
     if dir.lookup(&name).is_ok() {

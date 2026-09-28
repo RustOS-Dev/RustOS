@@ -87,6 +87,8 @@ jobs:
           for c in crates/fat-format crates/usb-desc crates/wlan; do
             (cd "$c" && cargo test)
           done
+      - name: Firmware provisioning (write_to_drive.sh)
+        run: tools/test-firmware-install.sh
 
   test:
     name: Integration Tests (QEMU + UEFI)

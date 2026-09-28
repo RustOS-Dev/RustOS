@@ -100,15 +100,20 @@ User layout (lower half, per process):
 * Every thread has a kernel stack; context switches save callee-saved
   registers and swap stacks (`sched_switch`). FPU/SSE state (`fxsave`) and
   FS base are switched for user threads.
-* **Scheduler**: preemptive round robin on a global run queue shared by
-  all CPUs (quantum = 3 ticks at 250 Hz), idle thread per CPU, `on_cpu`
-  handshake so a thread is never resumed on two CPUs, reschedule IPIs to
-  idle CPUs, timed sleeps, wait queues, sleeping mutexes, preemption
-  guards.
+* **Scheduler**: preemptive round robin with a run queue per CPU (slice
+  1-7 ticks at 250 Hz by nice value); woken threads return to their last
+  CPU or an idle one (reschedule IPI), idle CPUs steal from the busiest
+  queue; CPU affinity; idle thread per CPU, `on_cpu` handshake so a
+  thread is never resumed on two CPUs. One deadline heap serves timed
+  sleeps and kernel timers (timerfd, itimers); `sched::defer` runs work
+  that timers may not do on the `kworker` thread. Wait queues, sleeping
+  mutexes, preemption guards.
 * **Processes**: `fork`/`vfork`/`clone` (threads with shared VM and fd
   table, `CLONE_SETTLS`, child TID), `execve` with argv/envp/auxv, shebang
   scripts, static, static-PIE and dynamically linked ELF programs,
-  `wait4`, process groups/sessions, `exit_group`.
+  `wait4`, process groups/sessions, `exit` of one thread with
+  `CLONE_CHILD_CLEARTID`, `exit_group`; futexes keyed by physical address
+  (`src/process/futex.rs`).
 * **Signals**: POSIX-style handlers with `sigaction` flags, masks,
   `sigreturn`, alternate stacks, job control (SIGTSTP/SIGCONT/SIGTTIN),
   faults turned into SIGSEGV/SIGFPE/SIGILL/SIGBUS.
@@ -153,17 +158,27 @@ time (`settimeofday`/`ntpdate` adjust it).
 * **VFS**: inode trait objects, mount table, path resolution with
   symlinks, permissions (mode bits, uid/gid, umask), open-file objects
   with offsets and flags, `poll`.
+* **Event files**: epoll, eventfd, timerfd, signalfd
+  (`src/syscall/event.rs`) on the same readiness notification as poll.
+* **Page cache** (`src/mm/pagecache.rs`): file pages for `mmap`, shared
+  with `MAP_SHARED` mappings, copied on write for `MAP_PRIVATE`, written
+  back by `msync`/`munmap`/`sync`/the flusher, coherent with
+  `read`/`write`; shared anonymous memory objects.
 * **tmpfs** root, **devfs** (`/dev/null`, `zero`, `urandom`, `tty`,
-  `console`, `fb0`, block devices, `input/mice`), **procfs** (processes,
+  `tty0`-`tty4`, `console`, `ptmx`, `pts/N`, `fb0`, block devices,
+  `input/mice`), **procfs** (processes,
   `meminfo`, `mounts`, `net/*`, `interrupts`, ...), **sysfs**
   (`class/net`, `class/block`, CPUs), **pipes** and FIFOs.
 * **FAT** (12/16/32, long names, read/write), **ext2** (read/write),
   **ext3/ext4** (read-only, extents).
 * **Block layer**: `BlockDevice` trait, write-back buffer cache,
   GPT/MBR partitions exposed as devices, automount rules.
-* **TTY**: one console terminal (framebuffer + COM1) with a POSIX line
-  discipline (canonical mode, echo, erase/kill, `VINTR`/`VSUSP`/`VEOF`),
-  `termios` ioctls, window size, foreground process group.
+* **TTYs** (`src/tty.rs`): a POSIX line discipline (canonical mode,
+  echo, erase/kill, `VINTR`/`VSUSP`/`VEOF`, `termios` ioctls, window size,
+  foreground process group) with an output sink: four virtual consoles
+  on the framebuffer (the first also on COM1; others replay their recent
+  output when shown) or a pseudo-terminal master (`src/tty/pty.rs`).
+  Sessions have a controlling terminal (`/dev/tty`).
 
 ## Devices
 

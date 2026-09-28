@@ -7,9 +7,13 @@
 //! reschedule; the switch happens at the next trap exit or explicit
 //! [`schedule`] call.
 //!
-//! One global run queue serves all CPUs. A thread's `on_cpu` flag stays set
-//! until its context has been fully saved, so another CPU never resumes a
-//! thread whose registers are still being written.
+//! Each CPU has its own run queue. A woken thread goes back to the CPU it
+//! last ran on (or an idle CPU its affinity allows) and that CPU is kicked
+//! with an IPI; a CPU whose queue is empty steals from the busiest one.
+//! A thread's `on_cpu` flag stays set until its context has been fully
+//! saved, so another CPU never resumes a thread whose registers are still
+//! being written. Timed wake-ups and kernel timers (timerfd, itimers) live
+//! in one deadline heap served by the timer tick.
 
 pub mod mutex;
 pub mod wait;
@@ -17,12 +21,15 @@ pub mod wait;
 use crate::arch::x86_64::{cpu, idt::TrapFrame};
 use crate::mm::KernelStack;
 use alloc::boxed::Box;
-use alloc::collections::VecDeque;
+use alloc::collections::{BinaryHeap, VecDeque};
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
+use core::cmp::Reverse;
+use core::sync::atomic::{
+    AtomicBool, AtomicI8, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+};
 use spin::Mutex;
 
 pub use wait::WaitQueue;
@@ -70,6 +77,15 @@ pub struct Thread {
     pub interrupted: AtomicBool,
     /// Absolute deadline of an interrupted nanosleep (for restart).
     pub restart_deadline: AtomicU64,
+    /// CPU this thread last ran on.
+    last_cpu: AtomicU32,
+    /// CPUs this thread may run on (bit per CPU).
+    pub affinity: AtomicU64,
+    /// Nice value (-20 .. 19): scales the time slice.
+    pub nice: AtomicI8,
+    /// User address to clear and futex-wake when the thread exits
+    /// (`set_tid_address` / `CLONE_CHILD_CLEARTID`).
+    pub clear_child_tid: AtomicU64,
 }
 
 unsafe impl Send for Thread {}
@@ -92,11 +108,28 @@ impl Thread {
     pub fn kstack_top(&self) -> u64 {
         self.kstack.top()
     }
+
+    pub fn last_cpu(&self) -> u32 {
+        self.last_cpu.load(Ordering::Relaxed)
+    }
+
+    fn allowed_on(&self, cpu: u32) -> bool {
+        cpu < 64 && self.affinity.load(Ordering::Relaxed) & (1 << cpu) != 0
+    }
+
+    /// Timer ticks per slice: 3 at nice 0, 1 at nice 19, 7 at nice -20.
+    fn slice(&self) -> u8 {
+        (3 - self.nice.load(Ordering::Relaxed) as i32 / 5).clamp(1, 7) as u8
+    }
 }
 
 static NEXT_TID: AtomicU64 = AtomicU64::new(1);
-static RUN_QUEUE: Mutex<VecDeque<Arc<Thread>>> = Mutex::new(VecDeque::new());
-static SLEEPERS: Mutex<Vec<Arc<Thread>>> = Mutex::new(Vec::new());
+/// Per-CPU run queues.
+static RUN_QUEUES: [Mutex<VecDeque<Arc<Thread>>>; cpu::MAX_CPUS] =
+    [const { Mutex::new(VecDeque::new()) }; cpu::MAX_CPUS];
+/// Deadline heap for timed wake-ups and kernel timers.
+static TIMERS: Mutex<BinaryHeap<Reverse<TimerEntry>>> = Mutex::new(BinaryHeap::new());
+static TIMER_SEQ: AtomicU64 = AtomicU64::new(0);
 static DEAD: Mutex<Vec<Arc<Thread>>> = Mutex::new(Vec::new());
 static ALL: Mutex<Vec<alloc::sync::Weak<Thread>>> = Mutex::new(Vec::new());
 static RUNNING: AtomicBool = AtomicBool::new(false);
@@ -112,6 +145,116 @@ pub fn context_switches() -> usize {
 
 fn irqsave<R>(f: impl FnOnce() -> R) -> R {
     x86_64::instructions::interrupts::without_interrupts(f)
+}
+
+fn this_cpu() -> u32 {
+    if cpu::is_initialized() {
+        cpu::this().cpu_id
+    } else {
+        0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Timers
+// ---------------------------------------------------------------------------
+
+/// Something to do at a deadline. Runs in the timer interrupt: it must
+/// only take interrupt-safe locks.
+pub trait TimerTarget: Send + Sync {
+    fn fire(self: Arc<Self>, now_ns: u64);
+}
+
+enum TimerKind {
+    /// Wake a thread blocked with this deadline in `wake_at`.
+    Wake(Arc<Thread>),
+    Call(Arc<dyn TimerTarget>),
+}
+
+struct TimerEntry {
+    deadline: u64,
+    seq: u64,
+    kind: TimerKind,
+}
+
+impl PartialEq for TimerEntry {
+    fn eq(&self, o: &Self) -> bool {
+        (self.deadline, self.seq) == (o.deadline, o.seq)
+    }
+}
+impl Eq for TimerEntry {}
+impl PartialOrd for TimerEntry {
+    fn partial_cmp(&self, o: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(o))
+    }
+}
+impl Ord for TimerEntry {
+    fn cmp(&self, o: &Self) -> core::cmp::Ordering {
+        (self.deadline, self.seq).cmp(&(o.deadline, o.seq))
+    }
+}
+
+fn push_timer(deadline: u64, kind: TimerKind) {
+    let seq = TIMER_SEQ.fetch_add(1, Ordering::Relaxed);
+    irqsave(|| {
+        TIMERS.lock().push(Reverse(TimerEntry {
+            deadline,
+            seq,
+            kind,
+        }))
+    });
+}
+
+/// Call `target.fire()` from the timer tick once `deadline_ns` (monotonic)
+/// has passed. Targets re-arm themselves for periodic timers and ignore
+/// stale firings.
+pub fn add_timer(deadline_ns: u64, target: Arc<dyn TimerTarget>) {
+    push_timer(deadline_ns, TimerKind::Call(target));
+}
+
+static DEFERRED: Mutex<VecDeque<Box<dyn FnOnce() + Send>>> = Mutex::new(VecDeque::new());
+static DEFERRED_WQ: WaitQueue = WaitQueue::new();
+
+/// Run `f` soon on the `kworker` thread (for work that timers and
+/// interrupt handlers may not do themselves, like sending signals).
+pub fn defer(f: impl FnOnce() + Send + 'static) {
+    irqsave(|| DEFERRED.lock().push_back(Box::new(f)));
+    DEFERRED_WQ.wake_all();
+}
+
+/// Start the deferred-work thread (after the scheduler is up).
+pub fn start_worker() {
+    spawn("kworker", || {
+        loop {
+            DEFERRED_WQ.wait_until(|| irqsave(|| !DEFERRED.lock().is_empty()));
+            while let Some(f) = irqsave(|| DEFERRED.lock().pop_front()) {
+                f();
+            }
+        }
+    });
+}
+
+/// Run every timer that is due.
+fn run_timers(now: u64) {
+    let mut due = Vec::new();
+    {
+        let mut h = TIMERS.lock();
+        while h.peek().is_some_and(|e| e.0.deadline <= now) {
+            due.push(h.pop().unwrap().0);
+        }
+    }
+    for e in due {
+        match e.kind {
+            TimerKind::Wake(t) => {
+                let at = t.wake_at.load(Ordering::SeqCst);
+                // Skip entries of waits that already ended or were re-armed.
+                if at != 0 && at <= now && t.state() == State::Blocked {
+                    wake(&t);
+                }
+            }
+            TimerKind::Call(c) => c.fire(now),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +343,10 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         quantum: AtomicU8::new(QUANTUM_TICKS as u8),
         interrupted: AtomicBool::new(false),
         restart_deadline: AtomicU64::new(0),
+        last_cpu: AtomicU32::new(this_cpu()),
+        affinity: AtomicU64::new(u64::MAX),
+        nice: AtomicI8::new(0),
+        clear_child_tid: AtomicU64::new(0),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t
@@ -340,12 +487,40 @@ fn enable_fpu() {
     }
 }
 
+/// Queue a runnable thread: on its last CPU if that is idle, else on an
+/// idle CPU it may use, else on its last CPU; kick the chosen CPU.
+fn enqueue(t: Arc<Thread>) {
+    let me = this_cpu();
+    let n = cpu::cpu_count().clamp(1, cpu::MAX_CPUS as u32);
+    let idle = |id: u32| {
+        cpu::cpu(id).is_some_and(|c| {
+            c.idle.load(Ordering::SeqCst) != 0
+                && c.current.load(Ordering::SeqCst) == c.idle.load(Ordering::SeqCst)
+        })
+    };
+    let last = t.last_cpu().min(n - 1);
+    let target = if t.allowed_on(last) && idle(last) {
+        last
+    } else if let Some(c) =
+        (0..n).find(|&c| t.allowed_on(c) && idle(c) && RUN_QUEUES[c as usize].lock().is_empty())
+    {
+        c
+    } else if t.allowed_on(last) {
+        last
+    } else {
+        (0..n).find(|&c| t.allowed_on(c)).unwrap_or(me)
+    };
+    RUN_QUEUES[target as usize].lock().push_back(t);
+    if target != me {
+        crate::arch::x86_64::smp::kick_cpu(target);
+    }
+}
+
 pub fn make_ready(t: Arc<Thread>) {
     irqsave(|| {
         t.set_state(State::Ready);
-        RUN_QUEUE.lock().push_back(t);
+        enqueue(t);
     });
-    crate::arch::x86_64::smp::kick_idle();
 }
 
 /// Wake a blocked thread (no-op if it is not blocked).
@@ -361,12 +536,41 @@ pub fn wake(t: &Arc<Thread>) {
             .is_ok()
         {
             t.wake_at.store(0, Ordering::SeqCst);
-            RUN_QUEUE.lock().push_back(t.clone());
-            crate::arch::x86_64::smp::kick_idle();
+            enqueue(t.clone());
         } else {
             t.wakeup_pending.store(true, Ordering::SeqCst);
         }
     });
+}
+
+/// Number of runnable threads queued on each CPU.
+pub fn queue_lengths() -> Vec<usize> {
+    let n = cpu::cpu_count().clamp(1, cpu::MAX_CPUS as u32) as usize;
+    irqsave(|| RUN_QUEUES[..n].iter().map(|q| q.lock().len()).collect())
+}
+
+/// Find a thread by id.
+pub fn find_thread(tid: Tid) -> Option<Arc<Thread>> {
+    irqsave(|| {
+        ALL.lock()
+            .iter()
+            .filter_map(|w| w.upgrade())
+            .find(|t| t.tid == tid)
+    })
+}
+
+/// Restrict `t` to the CPUs in `mask`; moves it if it runs elsewhere.
+pub fn set_affinity(t: &Arc<Thread>, mask: u64) {
+    let n = cpu::cpu_count().clamp(1, 64);
+    let mask = mask & if n >= 64 { u64::MAX } else { (1u64 << n) - 1 };
+    t.affinity.store(mask, Ordering::SeqCst);
+    if Arc::ptr_eq(t, &current()) {
+        if !t.allowed_on(this_cpu()) {
+            schedule();
+        }
+    } else if t.state() == State::Running {
+        crate::arch::x86_64::smp::kick_cpu(t.last_cpu());
+    }
 }
 
 /// Mark the current thread blocked; the caller must then call [`schedule`].
@@ -391,7 +595,7 @@ pub fn clear_pending_wakeup() {
 /// Arm a timed wakeup for the current (about to block) thread.
 pub(crate) fn arm_timeout(t: &Arc<Thread>, deadline_ns: u64) {
     t.wake_at.store(deadline_ns, Ordering::SeqCst);
-    SLEEPERS.lock().push(t.clone());
+    push_timer(deadline_ns, TimerKind::Wake(t.clone()));
 }
 
 pub(crate) fn set_blocked(t: &Thread) {
@@ -412,9 +616,8 @@ pub fn sleep_until(deadline_ns: u64) {
             return;
         }
         irqsave(|| {
-            t.wake_at.store(deadline_ns, Ordering::SeqCst);
             t.set_state(State::Blocked);
-            SLEEPERS.lock().push(t.clone());
+            arm_timeout(&t, deadline_ns);
         });
         schedule();
         if t.interrupted.load(Ordering::SeqCst) {
@@ -446,23 +649,7 @@ pub fn timer_tick() {
     if !is_running() {
         return;
     }
-    let now = crate::time::nanos();
-    {
-        let mut s = SLEEPERS.lock();
-        let mut i = 0;
-        while i < s.len() {
-            let at = s[i].wake_at.load(Ordering::SeqCst);
-            if at == 0 || s[i].state() != State::Blocked {
-                // Already woken by someone else.
-                s.swap_remove(i);
-            } else if at <= now {
-                let t = s.swap_remove(i);
-                wake(&t);
-            } else {
-                i += 1;
-            }
-        }
-    }
+    run_timers(crate::time::nanos());
     let pc = cpu::this();
     let cur = pc.current.load(Ordering::SeqCst) as *const Thread;
     if cur.is_null() {
@@ -517,18 +704,39 @@ impl Drop for PreemptGuard {
     }
 }
 
-fn pick_next() -> Option<Arc<Thread>> {
-    let mut rq = RUN_QUEUE.lock();
-    let n = rq.len();
-    for _ in 0..n {
-        let t = rq.pop_front()?;
-        match t.state() {
-            State::Ready if t.on_cpu.load(Ordering::SeqCst) == 0 => return Some(t),
-            State::Ready => rq.push_back(t), // still switching out elsewhere
-            _ => {}                          // stale entry
+/// Next thread for CPU `me`: from its own queue, else stolen from the
+/// busiest other queue.
+fn pick_next(me: u32) -> Option<Arc<Thread>> {
+    let runnable =
+        |t: &Arc<Thread>| t.state() == State::Ready && t.on_cpu.load(Ordering::SeqCst) == 0;
+    {
+        let mut rq = RUN_QUEUES[me as usize].lock();
+        let n = rq.len();
+        for _ in 0..n {
+            let t = rq.pop_front()?;
+            match t.state() {
+                State::Ready if !t.allowed_on(me) => {
+                    drop(rq);
+                    enqueue(t);
+                    rq = RUN_QUEUES[me as usize].lock();
+                }
+                State::Ready if runnable(&t) => return Some(t),
+                State::Ready => rq.push_back(t), // still switching out elsewhere
+                _ => {}                          // stale entry
+            }
         }
     }
-    None
+    let n = cpu::cpu_count().clamp(1, cpu::MAX_CPUS as u32);
+    let busiest = (0..n)
+        .filter(|&c| c != me)
+        .map(|c| (RUN_QUEUES[c as usize].lock().len(), c))
+        .max()?;
+    if busiest.0 == 0 {
+        return None;
+    }
+    let mut rq = RUN_QUEUES[busiest.1 as usize].lock();
+    let i = rq.iter().rposition(|t| runnable(t) && t.allowed_on(me))?;
+    rq.remove(i)
 }
 
 /// Switch to the next runnable thread (or keep running the current one).
@@ -546,12 +754,13 @@ pub fn schedule() {
     let idle_ptr = pc.idle.load(Ordering::SeqCst) as *const Thread;
     let cur_is_idle = cur_ptr == idle_ptr;
 
-    let next = pick_next();
+    let me = pc.cpu_id;
+    let next = pick_next(me);
     let next_ptr: *const Thread = match next {
         Some(n) => Arc::into_raw(n),
         None => {
-            if cur.state() == State::Running {
-                cur.quantum.store(QUANTUM_TICKS as u8, Ordering::Relaxed);
+            if cur.state() == State::Running && (cur_is_idle || cur.allowed_on(me)) {
+                cur.quantum.store(cur.slice(), Ordering::Relaxed);
                 if was_enabled {
                     x86_64::instructions::interrupts::enable();
                 }
@@ -576,15 +785,19 @@ pub fn schedule() {
         cur.set_state(State::Ready);
         if !cur_is_idle {
             unsafe { Arc::increment_strong_count(cur_ptr) };
-            RUN_QUEUE
-                .lock()
-                .push_back(unsafe { Arc::from_raw(cur_ptr) });
+            let t = unsafe { Arc::from_raw(cur_ptr) };
+            if cur.allowed_on(me) {
+                RUN_QUEUES[me as usize].lock().push_back(t);
+            } else {
+                enqueue(t);
+            }
         }
     }
 
     let next = unsafe { &*next_ptr };
     next.set_state(State::Running);
-    next.quantum.store(QUANTUM_TICKS as u8, Ordering::Relaxed);
+    next.quantum.store(next.slice(), Ordering::Relaxed);
+    next.last_cpu.store(me, Ordering::Relaxed);
     next.on_cpu.store(1, Ordering::SeqCst);
 
     // Architectural state for the incoming thread.

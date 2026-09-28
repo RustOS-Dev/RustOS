@@ -1,0 +1,8 @@
+[package]
+name = "unixcrypt"
+version = "0.1.0"
+edition = "2024"
+description = "no_std SHA-512 crypt ($6$) password hashing for /etc/shadow"
+
+[dependencies]
+sha2 = { version = "0.10", default-features = false }

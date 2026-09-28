@@ -60,28 +60,33 @@ pub fn mmap(addr: u64, len: u64, prot: u32, flags: u32, fd: i32, off: u64) -> Sy
         return Ok(start as i64);
     }
 
+    let backing = match &file {
+        Some(f) => match &f.object {
+            crate::vfs::FileObject::Inode(i) => Backing::File {
+                inode: i.clone(),
+                offset: off,
+            },
+            _ => return Err(ENODEV),
+        },
+        None if flags & MAP_SHARED != 0 => Backing::Shm {
+            obj: crate::mm::pagecache::ShmObject::new(),
+            offset: 0,
+        },
+        None => Backing::Anon,
+    };
+    if let Some(f) = &file
+        && (!f.readable() || (flags & MAP_SHARED != 0 && prot & PROT_WRITE != 0 && !f.writable()))
+    {
+        return Err(EACCES);
+    }
     space.add_area(Area {
         start,
         end: start + len,
         prot,
         flags,
-        backing: Backing::Anon,
+        backing,
         name: if file.is_some() { "[file]" } else { "[anon]" },
     })?;
-    // File mappings are populated eagerly (private copy).
-    if let Some(f) = file {
-        let mut buf = alloc::vec![0u8; len as usize];
-        let n = f.pread(off, &mut buf)?;
-        if n > 0 {
-            if prot & PROT_WRITE == 0 {
-                space.protect(start, start + len, prot | PROT_WRITE | PROT_READ)?;
-                space.write_bytes(start, &buf[..n])?;
-                space.protect(start, start + len, prot)?;
-            } else {
-                space.write_bytes(start, &buf[..n])?;
-            }
-        }
-    }
     Ok(start as i64)
 }
 
@@ -91,8 +96,33 @@ pub fn munmap(addr: u64, len: u64) -> SysResult {
     }
     let p = process::current().ok_or(ESRCH)?;
     let vm = p.vm().ok_or(EFAULT)?;
-    vm.lock()
-        .unmap_range(addr, addr + len.next_multiple_of(FRAME_SIZE));
+    let end = addr + len.next_multiple_of(FRAME_SIZE);
+    let files = {
+        let mut space = vm.lock();
+        let files = space.shared_files(addr, end);
+        space.unmap_range(addr, end);
+        files
+    };
+    for f in files {
+        let _ = crate::mm::pagecache::sync_inode(&f);
+    }
+    Ok(0)
+}
+
+/// msync(2): write back shared file mappings in the range.
+pub fn msync(addr: u64, len: u64, _flags: u32) -> SysResult {
+    if !addr.is_multiple_of(FRAME_SIZE) {
+        return Err(EINVAL);
+    }
+    let p = process::current().ok_or(ESRCH)?;
+    let vm = p.vm().ok_or(EFAULT)?;
+    let files = vm.lock().shared_files(
+        addr,
+        addr + len.next_multiple_of(FRAME_SIZE).max(FRAME_SIZE),
+    );
+    for f in files {
+        crate::mm::pagecache::sync_inode(&f)?;
+    }
     Ok(0)
 }
 
@@ -122,32 +152,67 @@ pub fn brk(new: u64) -> SysResult {
         .next_multiple_of(FRAME_SIZE)
         .max(space.brk_start + FRAME_SIZE);
     if new_end > old_end {
-        // Grow the heap area (fail if something is in the way).
+        // Grow the heap by a new area (the program may have replaced parts
+        // of the old one, e.g. musl's guard page at the heap start).
         let blocked = space
             .areas
             .values()
-            .any(|a| a.start >= old_end && a.start < new_end);
+            .any(|a| a.start < new_end && old_end < a.end);
         if blocked || new_end > vm::MMAP_TOP {
             return Ok(space.brk as i64);
         }
-        let start = space.brk_start;
-        if let Some(a) = space.areas.get_mut(&start) {
-            a.end = new_end;
-        }
+        space.add_area(Area {
+            start: old_end,
+            end: new_end,
+            prot: PROT_READ | PROT_WRITE,
+            flags: vm::MAP_PRIVATE,
+            backing: Backing::Anon,
+            name: "[heap]",
+        })?;
     } else if new_end < old_end {
         space.unmap_range(new_end, old_end);
-        let start = space.brk_start;
-        if !space.areas.contains_key(&start) {
-            space.add_area(Area {
-                start,
-                end: new_end,
-                prot: PROT_READ | PROT_WRITE,
-                flags: vm::MAP_PRIVATE,
-                backing: Backing::Anon,
-                name: "[heap]",
-            })?;
-        }
     }
     space.brk = new;
     Ok(new as i64)
+}
+
+/// mremap(2) (MREMAP_MAYMOVE; no MREMAP_FIXED).
+pub fn mremap(old: u64, old_len: u64, new_len: u64, flags: u32) -> SysResult {
+    const MREMAP_MAYMOVE: u32 = 1;
+    if !old.is_multiple_of(FRAME_SIZE) || new_len == 0 || flags & !MREMAP_MAYMOVE != 0 {
+        return Err(EINVAL);
+    }
+    let p = process::current().ok_or(ESRCH)?;
+    let vm = p.vm().ok_or(EFAULT)?;
+    let r = vm.lock().mremap(
+        old,
+        old_len.next_multiple_of(FRAME_SIZE),
+        new_len.next_multiple_of(FRAME_SIZE),
+        flags & MREMAP_MAYMOVE != 0,
+    )?;
+    Ok(r as i64)
+}
+
+/// membarrier(2): every command is a full barrier on every CPU running
+/// this process (an IPI, like a TLB shootdown).
+pub fn membarrier(cmd: u32) -> SysResult {
+    const QUERY: u32 = 0;
+    const GLOBAL: u32 = 1 << 0;
+    const PRIVATE_EXPEDITED: u32 = 1 << 3;
+    const REGISTER_PRIVATE_EXPEDITED: u32 = 1 << 4;
+    let supported = GLOBAL | PRIVATE_EXPEDITED | REGISTER_PRIVATE_EXPEDITED;
+    if cmd == QUERY {
+        return Ok(supported as i64);
+    }
+    if cmd & !supported != 0 || cmd.count_ones() != 1 {
+        return Err(EINVAL);
+    }
+    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+    if cmd != REGISTER_PRIVATE_EXPEDITED
+        && let Some(vm) = process::current().and_then(|p| p.vm())
+    {
+        let pml4 = vm.lock().pml4;
+        crate::arch::x86_64::smp::tlb_shootdown(pml4);
+    }
+    Ok(0)
 }

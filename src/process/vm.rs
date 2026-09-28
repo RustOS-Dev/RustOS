@@ -43,6 +43,35 @@ pub enum Backing {
     Anon,
     /// Direct mapping of physical memory (device memory such as /dev/fb0).
     Phys { base: u64 },
+    /// File pages from the page cache; `offset` is the file offset of the
+    /// area's start.
+    File {
+        inode: Arc<dyn crate::vfs::Inode>,
+        offset: u64,
+    },
+    /// Anonymous shared memory (shared across fork).
+    Shm {
+        obj: Arc<mm::pagecache::ShmObject>,
+        offset: u64,
+    },
+}
+
+impl Backing {
+    /// The backing of the part of an area starting `delta` bytes in.
+    fn advanced(&self, delta: u64) -> Backing {
+        match self {
+            Backing::Anon => Backing::Anon,
+            Backing::Phys { base } => Backing::Phys { base: base + delta },
+            Backing::File { inode, offset } => Backing::File {
+                inode: inode.clone(),
+                offset: offset + delta,
+            },
+            Backing::Shm { obj, offset } => Backing::Shm {
+                obj: obj.clone(),
+                offset: offset + delta,
+            },
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -149,6 +178,9 @@ impl AddressSpace {
     /// Remove `[start, end)` from all areas, splitting them and unmapping
     /// pages.
     pub fn unmap_range(&mut self, start: u64, end: u64) {
+        if start >= end {
+            return;
+        }
         let keys: alloc::vec::Vec<u64> = self
             .areas
             .values()
@@ -165,11 +197,7 @@ impl AddressSpace {
             if a.end > end {
                 let mut right = a.clone();
                 right.start = end;
-                if let Backing::Phys { base } = a.backing {
-                    right.backing = Backing::Phys {
-                        base: base + (end - a.start),
-                    };
-                }
+                right.backing = a.backing.advanced(end - a.start);
                 self.areas.insert(right.start, right);
             }
             let is_phys = matches!(a.backing, Backing::Phys { .. });
@@ -195,6 +223,9 @@ impl AddressSpace {
 
     /// Change protection on `[start, end)`.
     pub fn protect(&mut self, start: u64, end: u64, prot: u32) -> KResult<()> {
+        if start >= end {
+            return Ok(()); // an empty middle piece would replace the right one
+        }
         // Split areas at the boundaries, then update.
         let keys: alloc::vec::Vec<u64> = self
             .areas
@@ -217,9 +248,11 @@ impl AddressSpace {
             if a.end > mid_end {
                 let mut r = a.clone();
                 r.start = mid_end;
+                r.backing = a.backing.advanced(mid_end - a.start);
                 self.areas.insert(r.start, r);
             }
             let mut m = a.clone();
+            m.backing = a.backing.advanced(mid_start - a.start);
             m.start = mid_start;
             m.end = mid_end;
             m.prot = prot;
@@ -310,21 +343,44 @@ impl AddressSpace {
                 }
             }
             _ => {
-                let (phys, owned) = match area.backing {
+                let va = page.start_address().as_u64();
+                let shared = area.flags & MAP_SHARED != 0;
+                let mut flags = leaf_flags(area.prot);
+                // (frame, owned by this mapping alone, device memory)
+                let (phys, fresh, device) = match &area.backing {
                     Backing::Anon => match mm::with_frames(|f| f.alloc()) {
                         Some(p) => {
                             mm::zero_frame(p);
-                            (p, true)
+                            (p, true, false)
                         }
                         None => return false,
                     },
-                    Backing::Phys { base } => {
-                        (base + (page.start_address().as_u64() - area.start), false)
+                    Backing::Phys { base } => (base + (va - area.start), false, true),
+                    Backing::File { inode, offset } => {
+                        let idx = (offset + (va - area.start)) / FRAME_SIZE;
+                        let Ok(p) = mm::pagecache::get_page(inode, idx) else {
+                            return false;
+                        };
+                        if shared && area.prot & PROT_WRITE != 0 {
+                            mm::pagecache::mark_dirty(inode, idx);
+                        } else if area.prot & PROT_WRITE != 0 {
+                            // Private: the first write copies the page.
+                            flags.remove(F::WRITABLE);
+                            flags |= COW_BIT;
+                        }
+                        (p, false, false)
+                    }
+                    Backing::Shm { obj, offset } => {
+                        let Ok(p) = obj.page((offset + (va - area.start)) / FRAME_SIZE) else {
+                            return false;
+                        };
+                        (p, false, false)
                     }
                 };
-                let mut flags = leaf_flags(area.prot);
-                if !owned {
+                if device {
                     flags |= F::NO_CACHE | F::WRITE_THROUGH;
+                } else if !fresh {
+                    mm::frame_share(phys);
                 }
                 let frame = PhysFrame::containing_address(PhysAddr::new(phys));
                 match unsafe {
@@ -335,14 +391,93 @@ impl AddressSpace {
                         true
                     }
                     Err(_) => {
-                        if owned {
+                        if fresh {
                             mm::with_frames(|f| f.free(phys));
+                        } else if !device {
+                            mm::frame_release(phys);
                         }
                         false
                     }
                 }
             }
         }
+    }
+
+    /// mremap(2): resize the mapping at `old` (one area, anonymous or
+    /// file) to `new_len`, moving it when `may_move` and it cannot grow in
+    /// place. Pages move with their contents.
+    pub fn mremap(&mut self, old: u64, old_len: u64, new_len: u64, may_move: bool) -> KResult<u64> {
+        let area = self.find_area(old).cloned().ok_or(EFAULT)?;
+        if old != area.start
+            || old + old_len > area.end
+            || matches!(area.backing, Backing::Phys { .. })
+        {
+            return Err(EINVAL);
+        }
+        if new_len <= old_len {
+            self.unmap_range(old + new_len, old + old_len);
+            return Ok(old);
+        }
+        let grow_end = old + new_len;
+        let free_after = grow_end <= MMAP_TOP.max(area.end) && !self.overlaps(area.end, grow_end);
+        if old_len == area.end - area.start && free_after {
+            self.areas.get_mut(&old).unwrap().end = grow_end;
+            return Ok(old);
+        }
+        if !may_move {
+            return Err(ENOMEM);
+        }
+        let new = self.find_free(new_len).ok_or(ENOMEM)?;
+        let mut moved = area.clone();
+        moved.start = new;
+        moved.end = new + new_len;
+        // Move the page-table entries of the old range.
+        let mut m = mapper_for(self.pml4);
+        let mut off = 0;
+        while off < old_len {
+            let src = Page::<Size4KiB>::containing_address(VirtAddr::new(old + off));
+            if let TranslateResult::Mapped { frame, flags, .. } = m.translate(src.start_address())
+                && let Ok((_, f)) = m.unmap(src)
+            {
+                f.flush();
+                let dst = Page::<Size4KiB>::containing_address(VirtAddr::new(new + off));
+                let frame = PhysFrame::containing_address(frame.start_address());
+                unsafe {
+                    m.map_to_with_table_flags(dst, frame, flags, TABLE_FLAGS, &mut GlobalFrames)
+                        .map_err(|_| ENOMEM)?
+                        .flush();
+                }
+            }
+            off += FRAME_SIZE;
+        }
+        crate::arch::x86_64::smp::tlb_shootdown(self.pml4);
+        // What remains of the old area (beyond old_len) is unmapped.
+        self.areas.remove(&old);
+        if area.end > old + old_len {
+            let mut rest = area.clone();
+            rest.start = old + old_len;
+            rest.backing = area.backing.advanced(old_len);
+            self.areas.insert(rest.start, rest);
+            self.unmap_range(old + old_len, area.end);
+        }
+        self.areas.insert(new, moved);
+        Ok(new)
+    }
+
+    /// Files mapped shared in `[start, end)` (to write back).
+    pub fn shared_files(
+        &self,
+        start: u64,
+        end: u64,
+    ) -> alloc::vec::Vec<Arc<dyn crate::vfs::Inode>> {
+        self.areas
+            .values()
+            .filter(|a| a.start < end && start < a.end && a.flags & MAP_SHARED != 0)
+            .filter_map(|a| match &a.backing {
+                Backing::File { inode, .. } => Some(inode.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Ensure every page in `[addr, addr+len)` is mapped with the required

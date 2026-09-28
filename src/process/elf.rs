@@ -349,11 +349,12 @@ fn apply_relocations(
         let offset = u64_at(r, 0);
         let info = u64_at(r, 8);
         let addend = u64_at(r, 16);
+        // Only relative relocations: they make ld-rustos (a static PIE)
+        // runnable. Interpreters that relocate themselves (musl's libc.so)
+        // redo these (idempotently, RELA addends) and handle the rest.
         if info as u32 == R_X86_64_RELATIVE {
             let v = bias.wrapping_add(addend);
             write_forced(space, bias + offset, &v.to_le_bytes())?;
-        } else {
-            return Err(ENOEXEC);
         }
     }
     Ok(())

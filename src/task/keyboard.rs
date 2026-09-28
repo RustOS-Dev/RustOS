@@ -12,6 +12,7 @@ use spin::Mutex;
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static KEYBOARD_IRQ_SEEN: AtomicBool = AtomicBool::new(false);
 static SHIFT: AtomicBool = AtomicBool::new(false);
+static ALT: AtomicBool = AtomicBool::new(false);
 
 static DECODER: Mutex<Option<Keyboard<layouts::Us104Key, ScancodeSet1>>> = Mutex::new(None);
 
@@ -50,6 +51,8 @@ pub enum Key {
     ScrollUp,
     /// Shift+PageDown: scroll the console view forward.
     ScrollDown,
+    /// Alt+F1..F4: show virtual console n (0-based).
+    SwitchVc(usize),
 }
 
 fn bytes(s: &[u8]) -> Option<Key> {
@@ -76,7 +79,11 @@ fn decode(scancode: u8) -> Option<Key> {
     if matches!(ev.code, KeyCode::LShift | KeyCode::RShift) {
         SHIFT.store(ev.state == KeyState::Down, Ordering::Relaxed);
     }
+    if matches!(ev.code, KeyCode::LAlt | KeyCode::RAltGr | KeyCode::RAlt2) {
+        ALT.store(ev.state == KeyState::Down, Ordering::Relaxed);
+    }
     let shift = SHIFT.load(Ordering::Relaxed);
+    let alt = ALT.load(Ordering::Relaxed);
     let key = kb.process_keyevent(ev)?;
     match key {
         DecodedKey::Unicode('\n') | DecodedKey::Unicode('\r') => bytes(b"\r"),
@@ -97,6 +104,14 @@ fn decode(scancode: u8) -> Option<Key> {
             KeyCode::End => bytes(b"\x1b[F"),
             KeyCode::Insert => bytes(b"\x1b[2~"),
             KeyCode::Delete => bytes(b"\x1b[3~"),
+            KeyCode::F1 if alt => Some(Key::SwitchVc(0)),
+            KeyCode::F2 if alt => Some(Key::SwitchVc(1)),
+            KeyCode::F3 if alt => Some(Key::SwitchVc(2)),
+            KeyCode::F4 if alt => Some(Key::SwitchVc(3)),
+            KeyCode::F1 => bytes(b"\x1bOP"),
+            KeyCode::F2 => bytes(b"\x1bOQ"),
+            KeyCode::F3 => bytes(b"\x1bOR"),
+            KeyCode::F4 => bytes(b"\x1bOS"),
             KeyCode::PageUp if shift => Some(Key::ScrollUp),
             KeyCode::PageDown if shift => Some(Key::ScrollDown),
             KeyCode::PageUp => bytes(b"\x1b[5~"),

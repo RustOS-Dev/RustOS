@@ -69,6 +69,33 @@ dynamically linked (`PT_INTERP` → `/lib/ld-rustos.so.1`) ELF64 programs and
 | 292 | `dup3` |
 | 293 | `pipe2` |
 
+### Events
+
+| # | Name |
+|---|------|
+| 213 | `epoll_create` |
+| 232 | `epoll_wait` |
+| 233 | `epoll_ctl` |
+| 281 | `epoll_pwait` |
+| 283 | `timerfd_create` |
+| 284 | `eventfd` |
+| 286 | `timerfd_settime` |
+| 287 | `timerfd_gettime` |
+| 290 | `eventfd2` |
+| 291 | `epoll_create1` |
+| 441 | `epoll_pwait2` |
+
+epoll supports level-triggered, `EPOLLET` (it may report an edge more
+than once, never less) and `EPOLLONESHOT`. timerfd supports
+`CLOCK_REALTIME`/`MONOTONIC`/`BOOTTIME` and `TFD_TIMER_ABSTIME`.
+
+### Terminals
+
+`/dev/ptmx` and `/dev/pts/N` pseudo-terminals (`TIOCGPTN`,
+`TIOCSPTLCK`), controlling terminals (`TIOCSCTTY`, `TIOCNOTTY`, `/dev/tty`),
+virtual consoles `/dev/tty1`..`tty4` (`VT_ACTIVATE`, `VT_GETSTATE`,
+`/dev/tty0` is the visible one).
+
 ### Metadata and directories
 
 | # | Name |
@@ -123,7 +150,13 @@ dynamically linked (`PT_INTERP` → `/lib/ld-rustos.so.1`) ELF64 programs and
 | 10 | `mprotect` |
 | 11 | `munmap` |
 | 12 | `brk` |
+| 26 | `msync` |
 | 28 | `madvise` |
+
+File mappings come from the page cache: `MAP_SHARED` writes reach the
+file (on `msync`, `munmap`, `sync` and every 5 s), `MAP_PRIVATE` pages are
+copied on the first write, and `read`/`write` stay coherent with mapped
+pages. `MAP_SHARED | MAP_ANONYMOUS` memory stays shared across `fork`.
 
 ### Processes and threads
 
@@ -156,11 +189,26 @@ dynamically linked (`PT_INTERP` → `/lib/ld-rustos.so.1`) ELF64 programs and
 | 157 | `prctl` |
 | 158 | `arch_prctl` |
 | 186 | `gettid` |
+| 140 | `getpriority` |
+| 141 | `setpriority` |
+| 143 | `sched_getparam` |
+| 145 | `sched_getscheduler` |
+| 146 | `sched_get_priority_max` |
+| 147 | `sched_get_priority_min` |
 | 202 | `futex` |
+| 203 | `sched_setaffinity` |
+| 204 | `sched_getaffinity` |
 | 218 | `set_tid_address` |
 | 231 | `exit_group` |
 | 273 | `set_robust_list` |
 | 302 | `prlimit64` |
+
+`futex` supports WAIT, WAKE, REQUEUE, CMP_REQUEUE, WAKE_OP and the
+BITSET variants (private and shared, keyed by physical address).
+`exit` ends only the calling thread (clearing and waking its
+`set_tid_address`/`CLONE_CHILD_CLEARTID` word); `exit_group` ends the
+process. Each CPU has its own run queue; idle CPUs steal work;
+`setpriority` scales time slices (nice -20..19).
 
 ### Signals
 
@@ -170,13 +218,19 @@ dynamically linked (`PT_INTERP` → `/lib/ld-rustos.so.1`) ELF64 programs and
 | 14 | `rt_sigprocmask` |
 | 15 | `rt_sigreturn` |
 | 34 | `pause` |
+| 36 | `getitimer` |
 | 37 | `alarm` |
+| 38 | `setitimer` |
 | 62 | `kill` |
 | 127 | `rt_sigpending` |
 | 130 | `rt_sigsuspend` |
 | 131 | `sigaltstack` |
 | 200 | `tkill` |
 | 234 | `tgkill` |
+| 282 | `signalfd` |
+| 289 | `signalfd4` |
+
+`setitimer` supports `ITIMER_REAL` (SIGALRM).
 
 ### Time
 

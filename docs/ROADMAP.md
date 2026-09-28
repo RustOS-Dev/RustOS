@@ -31,8 +31,8 @@ Wi-Fi uses legacy rates (no HT/VHT/HE yet). See
 - [x] **M11** Networking for the browser: `url`/`http` crates (cookies, forms, gzip, redirects), TLS 1.2 + 1.3 (rustls), IPv6 DNS (AAAA, DHCPv6, RDNSS), captive-portal detection
 - [x] **M12** `browse`: lynx-like text web browser with forms, cookies, HTTPS and captive-portal login
 - [x] **M13** Wi-Fi speed: HT/VHT/HE capabilities, 20–160 MHz, MIMO, A-MPDU/A-MSDU, reorder buffer, regulatory channel list, power save
-- [ ] **M14** Kernel: per-CPU run queues, epoll/eventfd/timerfd/signalfd, page cache and file-backed `mmap`, pseudo-terminals, virtual consoles
-- [ ] **M15** musl libc sysroot and `rustos-cc`, dynamic-linker TLS and `dlopen`, ported software
+- [x] **M14** Kernel: per-CPU run queues, epoll/eventfd/timerfd/signalfd, page cache and file-backed `mmap`, pseudo-terminals, virtual consoles
+- [x] **M15** musl libc sysroot and `rustos-cc`, dynamic-linker TLS and `dlopen`, ported software
 - [ ] **M16** ext4 journal replay and read/write, USB HID report descriptors, USB Attached SCSI
 
 Round 2 deviations: M13 keeps 4 KiB receive buffers and advertises the
@@ -40,6 +40,11 @@ smallest A-MSDU/MPDU limits instead of 12 KiB buffers; receive BA
 sessions use ADD_STA (not RX_BAID_ALLOCATION_CONFIG); Wi-Fi power save
 and 6 GHz are deferred. The HE/VHT paths follow the Linux iwlwifi layouts
 (checked by a boot-time size self-test) but are unverified on hardware.
+M14 keeps one poll/epoll wake-up queue (every source notifies it) instead
+of per-object queues, and the page cache serves mmap only (read/write stay
+coherent with it but go to the filesystem); login is optional (off by
+default). M15 ships busybox and curl as optional ports (built on request
+with tools/install-port.sh) rather than in the default image.
 
 ## Context
 

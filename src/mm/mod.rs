@@ -14,6 +14,7 @@
 
 pub mod dma;
 pub mod frame;
+pub mod pagecache;
 
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;

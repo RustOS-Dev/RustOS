@@ -199,8 +199,13 @@ impl Inode for DevNodeInode {
         }
         Ok(m)
     }
-    fn open(&self, _flags: u32) -> KResult<Option<Arc<dyn FileLike>>> {
-        Ok(Some(self.node.obj.clone()))
+    fn open(&self, flags: u32) -> KResult<Option<Arc<dyn FileLike>>> {
+        Ok(Some(
+            self.node
+                .obj
+                .open_instance(flags)?
+                .unwrap_or_else(|| self.node.obj.clone()),
+        ))
     }
     fn read_at(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
         self.node.obj.read_at(off, buf).unwrap_or(Err(EINVAL))
@@ -323,10 +328,34 @@ fn register_builtin() {
     );
     register("kmsg", FileType::CharDevice, (1 << 8) | 11, Arc::new(Kmsg));
     let tty = crate::tty::console();
-    register("tty", FileType::CharDevice, 5 << 8, tty.clone());
+    register(
+        "tty",
+        FileType::CharDevice,
+        5 << 8,
+        Arc::new(crate::tty::pty::Ctty),
+    );
     register("console", FileType::CharDevice, (5 << 8) | 1, tty.clone());
-    register("tty0", FileType::CharDevice, 4 << 8, tty.clone());
+    register(
+        "tty0",
+        FileType::CharDevice,
+        4 << 8,
+        Arc::new(crate::tty::pty::ActiveVc),
+    );
+    for (i, vc) in crate::tty::vcs().iter().enumerate() {
+        register(
+            &alloc::format!("tty{}", i + 1),
+            FileType::CharDevice,
+            (4 << 8) | (i as u64 + 1),
+            vc.clone(),
+        );
+    }
     register("ttyS0", FileType::CharDevice, (4 << 8) | 64, tty);
+    register(
+        "ptmx",
+        FileType::CharDevice,
+        (5 << 8) | 2,
+        Arc::new(crate::tty::pty::Ptmx),
+    );
     if let Some(fb) = crate::drivers::fbdev::FbDev::new() {
         register("fb0", FileType::CharDevice, 29 << 8, fb);
     }

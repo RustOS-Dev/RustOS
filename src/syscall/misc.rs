@@ -124,14 +124,56 @@ pub fn time(t: u64) -> SysResult {
 
 pub fn alarm(secs: u64) -> SysResult {
     let p = crate::process::current().ok_or(ESRCH)?;
-    if secs > 0 {
-        let pid = p.pid;
-        crate::sched::spawn("alarm", move || {
-            crate::time::sleep_ms(secs * 1000);
-            if let Some(p) = crate::process::find(pid) {
-                signal::send(&p, signal::SIGALRM);
-            }
-        });
+    let (old, _) = crate::process::itimer::set(p.pid, secs * 1_000_000_000, 0);
+    Ok(old.div_ceil(1_000_000_000) as i64)
+}
+
+fn timeval_ns(tv: [i64; 2]) -> KResult<u64> {
+    if tv[0] < 0 || !(0..1_000_000).contains(&tv[1]) {
+        return Err(EINVAL);
+    }
+    Ok(tv[0] as u64 * 1_000_000_000 + tv[1] as u64 * 1000)
+}
+
+fn ns_timeval(ns: u64) -> [i64; 2] {
+    [
+        (ns / 1_000_000_000) as i64,
+        ((ns % 1_000_000_000) / 1000) as i64,
+    ]
+}
+
+fn itimerval(value: u64, interval: u64) -> [i64; 4] {
+    let (i, v) = (ns_timeval(interval), ns_timeval(value));
+    [i[0], i[1], v[0], v[1]]
+}
+
+/// getitimer(2): only ITIMER_REAL.
+pub fn getitimer(which: u64, out: u64) -> SysResult {
+    if which != 0 {
+        return Err(EINVAL);
+    }
+    let p = crate::process::current().ok_or(ESRCH)?;
+    let (v, i) = crate::process::itimer::get(p.pid);
+    uaccess::write_user(out, &itimerval(v, i))?;
+    Ok(0)
+}
+
+/// setitimer(2): only ITIMER_REAL.
+pub fn setitimer(which: u64, new: u64, old: u64) -> SysResult {
+    if which != 0 {
+        return Err(EINVAL);
+    }
+    let p = crate::process::current().ok_or(ESRCH)?;
+    let n: [i64; 4] = if new != 0 {
+        uaccess::read_user(new)?
+    } else {
+        [0; 4]
+    };
+    let interval = timeval_ns([n[0], n[1]])?;
+    let value = timeval_ns([n[2], n[3]])?;
+    let (ov, oi) = crate::process::itimer::set(p.pid, value, interval);
+    if old != 0 {
+        uaccess::write_user(old, &itimerval(ov, oi))?;
     }
     Ok(0)
 }

@@ -1,0 +1,22 @@
+wait # $ 240
+# C programs built against upstream musl (tools/rustos-cc)
+send musl-hello-static static
+wait hello from musl static \(pid \d+, HOME=/root
+wait # $
+send musl-hello dynamic
+wait hello from musl dynamic
+wait # $
+send musl-threads
+wait threads OK: total=40000 main tls=7 60
+wait # $
+send musl-dlopen
+wait dlopen OK: plugin 1\.0 says 42 after 2 calls
+wait dlerror: .*no_such_symbol
+wait # $
+send musl-libctest
+wait libctest: \d+ passed, 0 failed 120
+wait # $
+# Optional port (tools/install-port.sh --initramfs busybox)
+send if [ -x /usr/local/bin/busybox ]; then /usr/local/bin/busybox sh -c 'for i in 1 2 3; do echo bb$i; done | /usr/local/bin/busybox wc -l | /usr/local/bin/busybox sed s/^/BB-RESULT:/'; else echo BB-RESULT: skip; fi
+wait BB-RESULT:(\s*3| skip)\r\n
+wait # $

@@ -400,6 +400,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kapitest"
+version = "0.1.0"
+dependencies = [
+ "rustos-rt",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -656,6 +663,7 @@ version = "0.1.0"
 dependencies = [
  "fat-format",
  "rustos-rt",
+ "unixcrypt",
 ]
 
 [[package]]
@@ -912,6 +920,13 @@ checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
 dependencies = [
  "crypto-common",
  "subtle",
+]
+
+[[package]]
+name = "unixcrypt"
+version = "0.1.0"
+dependencies = [
+ "sha2",
 ]
 
 [[package]]

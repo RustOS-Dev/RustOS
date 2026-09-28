@@ -235,6 +235,12 @@ pub trait FileLike: Send + Sync + Any {
     }
     /// Called when the last descriptor referring to the object closes.
     fn close(&self) {}
+    /// Device nodes: the object an `open()` of the node returns, if not
+    /// this one (e.g. /dev/ptmx creates a new pseudo-terminal, /dev/tty is
+    /// the caller's controlling terminal).
+    fn open_instance(&self, _flags: u32) -> KResult<Option<Arc<dyn FileLike>>> {
+        Ok(None)
+    }
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -322,6 +328,7 @@ impl File {
             FileObject::Inode(i) => {
                 let mut off = self.offset.lock();
                 let n = i.read_at(*off, buf)?;
+                crate::mm::pagecache::read_overlay(i, *off, buf, n);
                 *off += n as u64;
                 Ok(n)
             }
@@ -348,6 +355,7 @@ impl File {
                     *off = i.metadata()?.size;
                 }
                 let n = i.write_at(*off, buf)?;
+                crate::mm::pagecache::write_through(i, *off, &buf[..n]);
                 *off += n as u64;
                 Ok(n)
             }
@@ -365,14 +373,22 @@ impl File {
 
     pub fn pread(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
         match &self.object {
-            FileObject::Inode(i) => i.read_at(off, buf),
+            FileObject::Inode(i) => {
+                let n = i.read_at(off, buf)?;
+                crate::mm::pagecache::read_overlay(i, off, buf, n);
+                Ok(n)
+            }
             FileObject::Stream(s) => s.read_at(off, buf).unwrap_or(Err(ESPIPE)),
         }
     }
 
     pub fn pwrite(&self, off: u64, buf: &[u8]) -> KResult<usize> {
         match &self.object {
-            FileObject::Inode(i) => i.write_at(off, buf),
+            FileObject::Inode(i) => {
+                let n = i.write_at(off, buf)?;
+                crate::mm::pagecache::write_through(i, off, &buf[..n]);
+                Ok(n)
+            }
             FileObject::Stream(s) => s.write_at(off, buf).unwrap_or(Err(ESPIPE)),
         }
     }

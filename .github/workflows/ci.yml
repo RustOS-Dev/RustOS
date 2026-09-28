@@ -84,7 +84,7 @@ jobs:
         run: rustup toolchain install
       - name: cargo test (crates/*)
         run: |
-          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/textlayout; do
+          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/textlayout crates/unixcrypt; do
             (cd "$c" && cargo test)
           done
       - name: Firmware provisioning (write_to_drive.sh)
@@ -135,3 +135,8 @@ jobs:
           # USB tethering over RNDIS (QEMU usb-net's second configuration)
           RUSTOS_USB_PREFER_RNDIS=1 cargo build
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/eth-usb.txt
+
+      - name: Boot scenarios on 4 CPUs
+        run: |
+          cargo build
+          RUSTOS_SMP=4 tools/run-scenarios.sh

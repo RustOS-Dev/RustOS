@@ -15,17 +15,19 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 ## Kernel
 
-* One global run queue for all CPUs (no per-CPU queues, affinity or load
-  balancing); no real-time scheduling classes or priorities (`nice`).
+* No real-time scheduling classes; `nice` only scales time slices; load
+  balancing is by idle CPUs stealing work.
 * TLB shootdowns flush the whole TLB; a CPU that keeps interrupts disabled
   for more than 500 ms is skipped with a warning (seen only under heavily
   overloaded emulators).
-* No swap, no file-backed `mmap` (only anonymous and device mappings), no
-  shared anonymous memory between unrelated processes, no huge pages.
+* No swap, no huge pages; writes through shared file mappings beyond the
+  end of the file are not stored (Linux raises SIGBUS there). The page
+  cache serves mappings only; `read`/`write` go to the filesystem.
 * No kernel modules; drivers are built in.
-* Missing system calls: `epoll`, `inotify`, `timerfd`/`eventfd`/`signalfd`,
-  `ptrace`, System V IPC, namespaces/cgroups, `setitimer` (see
-  [SYSCALLS.md](SYSCALLS.md)).
+* Missing system calls: `inotify`, `ptrace`, System V IPC,
+  namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
+  [SYSCALLS.md](SYSCALLS.md)). poll/epoll waiters share one wake-up
+  queue (sources that do not notify are re-checked every 50 ms).
 
 ## Filesystems and storage
 
@@ -76,5 +78,6 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   globbing, command substitution, functions, job control) but not fully
   POSIX: integer-only arithmetic, `trap` can only ignore or restore
   signals (no handler commands), no here-strings (`<<<`).
-* Single console terminal; no virtual terminals, no pseudo-terminals
-  (`/dev/pts`), no login authentication.
+* Virtual consoles other than the visible one keep only their last
+  32 KiB of output (replayed when shown); logins are optional and there
+  is a single user (root) by default.

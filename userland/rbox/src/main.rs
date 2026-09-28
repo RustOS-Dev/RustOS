@@ -11,6 +11,7 @@ extern crate alloc;
 mod files;
 mod hash;
 mod hw;
+mod login;
 mod regex;
 mod sys;
 mod text;
@@ -27,6 +28,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("bugreport", hw::bugreport),
     ("cat", files::cat),
     ("chmod", files::chmod),
+    ("chvt", sys::chvt),
     ("clear", sys::clear),
     ("cmp", files::cmp),
     ("cp", files::cp),
@@ -41,6 +43,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("echo", text::echo),
     ("env", sys::env),
     ("false", |_| 1),
+    ("fgconsole", sys::fgconsole),
     ("find", files::find),
     ("free", sys::free),
     ("grep", text::grep),
@@ -49,8 +52,10 @@ const APPLETS: &[(&str, Applet)] = &[
     ("hostname", sys::hostname),
     ("hwcheck", hw::hwcheck),
     ("id", sys::id),
+    ("tty", sys::tty),
     ("kill", sys::kill),
     ("ln", files::ln),
+    ("login", login::login),
     ("ls", files::ls),
     ("lsblk", sys::lsblk),
     ("lspci", sys::lspci),
@@ -66,6 +71,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("mount", sys::mount),
     ("mv", files::mv),
     ("nl", text::nl),
+    ("passwd", login::passwd),
     ("poweroff", sys::poweroff),
     ("printf", text::printf),
     ("ps", sys::ps),

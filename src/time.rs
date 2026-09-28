@@ -264,6 +264,12 @@ pub fn realtime() -> (u64, u64) {
     )
 }
 
+/// Nanoseconds since the Unix epoch.
+pub fn realtime_nanos() -> u64 {
+    let (s, ns) = realtime();
+    s * 1_000_000_000 + ns
+}
+
 /// Break a Unix timestamp into (year, month, day, hour, minute, second).
 pub fn civil_from_unix(t: u64) -> (u32, u32, u32, u32, u32, u32) {
     let days = (t / 86_400) as i64;

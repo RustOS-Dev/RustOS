@@ -1,0 +1,12 @@
+[package]
+name = "kapitest"
+version = "0.1.0"
+edition = "2024"
+description = "Kernel API self-test: epoll, eventfd, timerfd, signalfd, itimers, futexes, threads, affinity, pty, shared mmap"
+
+[[bin]]
+name = "kapitest"
+path = "src/main.rs"
+
+[dependencies]
+rustos-rt.workspace = true

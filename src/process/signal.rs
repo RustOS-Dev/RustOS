@@ -191,6 +191,8 @@ pub fn send(p: &Arc<Process>, sig: u32) {
             kill_thread(&t);
         }
     }
+    // signalfd readers.
+    crate::vfs::notify_poll();
 }
 
 /// Send to every process in a process group.

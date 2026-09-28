@@ -402,12 +402,16 @@ fn gen_uptime() -> String {
 
 fn gen_meminfo() -> String {
     let (free, total) = crate::mm::memory_stats();
+    let (cached, dirty) = crate::mm::pagecache::stats();
+    let (cached, dirty) = (cached as u64 * 4, dirty as u64 * 4);
     format!(
-        "MemTotal:       {:8} kB\nMemFree:        {:8} kB\nMemAvailable:   {:8} kB\nKernelHeap:     {:8} kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\n",
+        "MemTotal:       {:8} kB\nMemFree:        {:8} kB\nMemAvailable:   {:8} kB\nKernelHeap:     {:8} kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\nCached:         {:8} kB\nDirty:          {:8} kB\n",
         total / 1024,
         free / 1024,
-        free / 1024,
-        crate::allocator::heap_size() / 1024
+        free / 1024 + cached - dirty,
+        crate::allocator::heap_size() / 1024,
+        cached,
+        dirty
     )
 }
 

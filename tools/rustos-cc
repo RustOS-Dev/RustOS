@@ -1,0 +1,12 @@
+#!/bin/sh
+# Compile C for RustOS against the musl sysroot (like musl-gcc).
+#   tools/rustos-cc -O2 -o hello hello.c            # dynamic (ld-musl)
+#   tools/rustos-cc -static -O2 -o hello hello.c    # static
+# The sysroot is built on first use (tools/build-musl.sh).
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SYSROOT="${RUSTOS_SYSROOT:-$ROOT/target/sysroot}"
+SPECS="$SYSROOT/usr/lib/rustos-gcc.specs"
+if [ ! -f "$SPECS" ]; then
+    "$ROOT/tools/build-musl.sh" "$SYSROOT" >&2 || exit 1
+fi
+exec "${HOST_CC:-gcc}" -specs "$SPECS" "$@"

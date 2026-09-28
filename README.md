@@ -16,10 +16,12 @@ serial, ACPI with an AML interpreter (power-off, `_PRT` routing), LAPIC/
 x2APIC and IOAPIC, MSI/MSI-X, PCIe ECAM, HPET/TSC/RTC timekeeping, **SMP**
 (all cores, IPI TLB shootdown).
 
-**Processes** — per-process address spaces with demand paging and
-copy-on-write `fork`, `clone` threads, `execve` of static, PIE and
-**dynamically linked** ELF programs (`/lib/ld-rustos.so.1`), POSIX signals
-and job control, pipes, a TTY line discipline, ~150 Linux system calls.
+**Processes** — per-process address spaces with demand paging,
+copy-on-write `fork` and file-backed `mmap` (page cache), `clone` threads
+with futexes, a per-CPU scheduler with affinity and nice, `execve` of
+static, PIE and **dynamically linked** ELF programs (`ld-rustos`, musl's
+`ld-musl`), POSIX signals and job control, pipes, epoll/eventfd/timerfd/
+signalfd, pseudo-terminals, ~180 Linux system calls.
 
 **Storage** — NVMe, AHCI, virtio-blk and USB mass storage; GPT/MBR; a
 write-back buffer cache; FAT12/16/32 with long names (read/write), ext2
@@ -40,7 +42,13 @@ that can log into captive-portal Wi-Fi ([docs/BROWSER.md](docs/BROWSER.md)).
 **Userland** — `init`, `sh` (pipes, redirection, variables, globbing,
 command substitution, functions, job control), `rbox` (≈90 coreutils:
 `ls`, `cp`, `grep -E`, `sed`, `find`, `dd`, `sha256sum`, `top`, …), all on
-the `rustos-rt` runtime.
+the `rustos-rt` runtime; four virtual consoles (Alt-F1..F4) and
+pseudo-terminals; optional logins.
+
+**C programs** — upstream **musl** builds into a sysroot; `tools/rustos-cc`
+compiles C programs (static or dynamic, pthreads, `dlopen`) that run
+unchanged; BusyBox and curl are available as ports
+([docs/PORTING.md](docs/PORTING.md)).
 
 Status of every component on real hardware is tracked in
 [docs/HARDWARE.md](docs/HARDWARE.md); gaps are listed in
@@ -110,7 +118,9 @@ root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 | [docs/WIFI.md](docs/WIFI.md) | Intel Wi-Fi driver, firmware, `wifi` usage |
 | [docs/HARDWARE.md](docs/HARDWARE.md) | supported hardware and validation status |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | known gaps |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | the completion plan (M0–M9) and its status |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | the completion plan (M0–M16) and its status |
+| [docs/BROWSER.md](docs/BROWSER.md) | the `browse` text web browser and captive-portal login |
+| [docs/PORTING.md](docs/PORTING.md) | musl sysroot, `rustos-cc`, ports (BusyBox, curl) |
 | [docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md) | shell and command reference |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | contributing, debugging |
 

@@ -96,6 +96,7 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
     x86_64::instructions::interrupts::enable();
 
     vfs::init();
+    sched::start_worker();
     tty::start_input_thread();
     drivers::serial::enable_rx_interrupts();
 }

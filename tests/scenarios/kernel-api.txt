@@ -1,0 +1,37 @@
+wait # $ 240
+# epoll, eventfd, timerfd, signalfd, itimers, futexes, threads, affinity,
+# priorities, shared and file-backed mmap
+send kapitest
+wait PASS eventfd counter 30
+wait PASS epoll wakes on timerfd 30
+wait PASS setitimer SIGALRM 30
+wait PASS futex wake \+ CLEARTID join 30
+wait PASS scheduler fairness 30
+wait PASS MAP_SHARED\|MAP_ANONYMOUS across fork 30
+wait PASS msync/munmap wrote the file 30
+wait kapitest: \d+ passed, 0 failed 30
+wait # $
+send grep -c Cached /proc/meminfo
+wait \r\n1\r\n
+wait # $
+# Virtual consoles
+send chvt 3; fgconsole; chvt 1; fgconsole; ls /dev | grep -c "^tty[1-4]$"
+wait \r\n3\r\n1\r\n4\r\n
+wait # $
+send ps aux | grep -c "[-]sh$"
+wait \r\n[4-9]\r\n
+wait # $
+# Passwords and login (driven through a pipe)
+send printf 'secret\nsecret\n' | passwd root; grep -c '^root:\$6\$' /storage/etc/shadow
+wait password updated for root
+wait \r\n1\r\n
+wait # $
+send printf 'root\nwrong\n' | login; echo rc=$?
+wait Login incorrect
+wait rc=1
+wait # $
+send printf 'root\nsecret\necho LOGGED-IN as $USER in $HOME\n' | login
+wait LOGGED-IN as root in /root
+wait # $
+send rm /storage/etc/shadow
+wait # $

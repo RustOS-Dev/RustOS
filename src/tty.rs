@@ -1,9 +1,13 @@
-//! The console terminal.
+//! Terminals: virtual consoles and pseudo-terminals.
 //!
-//! One TTY serves the framebuffer console and COM1. Input comes from the
-//! PS/2 or USB keyboard (translated to terminal byte sequences) and from
-//! the serial port. A POSIX line discipline implements canonical editing,
-//! echo, and job-control signals for the foreground process group.
+//! Every terminal is a [`Tty`]: a POSIX line discipline (canonical
+//! editing, echo, job-control signals for the foreground process group)
+//! whose output goes to a sink. There are four virtual consoles on the
+//! framebuffer (`/dev/tty1`..`tty4`, switched with Alt-F1..F4 or `chvt`);
+//! the first is also COM1 (`/dev/console`, `/dev/ttyS0`). Keyboard input
+//! goes to the visible console, serial input to the first. Pseudo-terminal
+//! slaves (`/dev/pts/N`) send their output to the master side (see
+//! [`pty`]).
 
 use crate::errno::*;
 use crate::process::{self, signal, uaccess};
@@ -14,6 +18,8 @@ use alloc::sync::Arc;
 use core::any::Any;
 use core::sync::atomic::{AtomicU32, Ordering};
 use spin::{Mutex, Once};
+
+pub mod pty;
 
 // termios flags
 const ICRNL: u32 = 0o400;
@@ -75,7 +81,19 @@ impl Termios {
 
 const EOF_MARK: u16 = 0x100;
 
+/// Where a terminal's output goes.
+enum Sink {
+    /// Virtual console `n` (0-based).
+    Console(usize),
+    /// The master side of a pseudo-terminal.
+    Pty(alloc::sync::Weak<pty::Pty>),
+}
+
 pub struct Tty {
+    me: alloc::sync::Weak<Tty>,
+    sink: Sink,
+    /// The other side went away (pty master closed): reads return EOF.
+    hung_up: core::sync::atomic::AtomicBool,
     termios: Mutex<Termios>,
     /// Line being edited in canonical mode.
     line: Mutex<alloc::vec::Vec<u8>>,
@@ -86,21 +104,77 @@ pub struct Tty {
     winsize: Mutex<[u16; 4]>,
 }
 
-static TTY: Once<Arc<Tty>> = Once::new();
+pub const NUM_VCS: usize = 4;
+static VCS: Once<[Arc<Tty>; NUM_VCS]> = Once::new();
+/// Output kept per virtual console, replayed when it becomes visible.
+static VC_LOG: [Mutex<VecDeque<u8>>; NUM_VCS] = [const { Mutex::new(VecDeque::new()) }; NUM_VCS];
+const VC_LOG_MAX: usize = 32 * 1024;
+static ACTIVE_VC: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-pub fn console() -> Arc<Tty> {
-    TTY.call_once(|| {
-        let (cols, rows) = crate::drivers::framebuffer::console_size().unwrap_or((80, 25));
-        Arc::new(Tty {
+impl Tty {
+    fn new(sink: Sink, rows: u16, cols: u16) -> Arc<Tty> {
+        Arc::new_cyclic(|me| Tty {
+            me: me.clone(),
+            sink,
+            hung_up: core::sync::atomic::AtomicBool::new(false),
             termios: Mutex::new(Termios::default_cooked()),
             line: Mutex::new(alloc::vec::Vec::new()),
             ready: Mutex::new(VecDeque::new()),
             wq: WaitQueue::new(),
             fg_pgrp: AtomicU32::new(0),
-            winsize: Mutex::new([rows as u16, cols as u16, 0, 0]),
+            winsize: Mutex::new([rows, cols, 0, 0]),
         })
+    }
+
+    fn arc(&self) -> Arc<Tty> {
+        self.me.upgrade().expect("tty dropped")
+    }
+
+    /// The master side closed: wake readers (they see EOF) and send SIGHUP
+    /// to the foreground group.
+    fn hang_up(&self) {
+        self.hung_up.store(true, Ordering::SeqCst);
+        self.signal_fg(signal::SIGHUP);
+        self.notify();
+    }
+}
+
+/// The virtual consoles.
+pub fn vcs() -> &'static [Arc<Tty>; NUM_VCS] {
+    VCS.call_once(|| {
+        let (cols, rows) = crate::drivers::framebuffer::console_size().unwrap_or((80, 25));
+        core::array::from_fn(|i| Tty::new(Sink::Console(i), rows as u16, cols as u16))
     })
-    .clone()
+}
+
+/// The first virtual console (also the serial console).
+pub fn console() -> Arc<Tty> {
+    vcs()[0].clone()
+}
+
+/// The visible virtual console.
+pub fn active() -> Arc<Tty> {
+    vcs()[ACTIVE_VC.load(Ordering::SeqCst)].clone()
+}
+
+pub fn active_index() -> usize {
+    ACTIVE_VC.load(Ordering::SeqCst)
+}
+
+/// Show virtual console `n` (0-based): clear the screen and replay its
+/// recent output.
+pub fn switch_vc(n: usize) {
+    if n >= NUM_VCS || n == ACTIVE_VC.swap(n, Ordering::SeqCst) {
+        return;
+    }
+    let log: alloc::vec::Vec<u8> = VC_LOG[n].lock().iter().copied().collect();
+    crate::drivers::console::reset_view();
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+            c.write_bytes(b"\x1b[?1049l\x1b[0m\x1b[?25h\x1b[2J\x1b[H");
+            c.write_bytes(&log);
+        }
+    });
 }
 
 /// An open file for the console.
@@ -116,15 +190,45 @@ pub fn foreground() -> u32 {
     console().fg_pgrp.load(Ordering::SeqCst)
 }
 
-/// Output bytes to the screen and serial port.
-fn emit(bytes: &[u8]) {
-    crate::drivers::console::reset_view();
-    x86_64::instructions::interrupts::without_interrupts(|| {
-        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
-            c.write_bytes(bytes);
+impl Tty {
+    /// Send output bytes to this terminal's sink.
+    fn emit(&self, bytes: &[u8]) {
+        match &self.sink {
+            Sink::Console(n) => {
+                let n = *n;
+                {
+                    let mut log = VC_LOG[n].lock();
+                    log.extend(bytes);
+                    if log.len() > VC_LOG_MAX {
+                        // Drop old output up to a line boundary.
+                        let excess = log.len() - VC_LOG_MAX / 2;
+                        let cut = log
+                            .iter()
+                            .skip(excess)
+                            .position(|&b| b == b'\n')
+                            .map_or(excess, |p| excess + p + 1);
+                        log.drain(..cut);
+                    }
+                }
+                if n == ACTIVE_VC.load(Ordering::SeqCst) {
+                    crate::drivers::console::reset_view();
+                    x86_64::instructions::interrupts::without_interrupts(|| {
+                        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+                            c.write_bytes(bytes);
+                        }
+                    });
+                }
+                if n == 0 {
+                    crate::drivers::serial::write_raw(bytes);
+                }
+            }
+            Sink::Pty(m) => {
+                if let Some(m) = m.upgrade() {
+                    m.slave_output(bytes);
+                }
+            }
         }
-    });
-    crate::drivers::serial::write_raw(bytes);
+    }
 }
 
 impl Tty {
@@ -138,11 +242,15 @@ impl Tty {
                 }
                 out.push(b);
             }
-            emit(&out);
+            self.emit(&out);
         } else {
-            emit(data);
+            self.emit(data);
         }
-        // Answer device status queries (cursor position reports).
+        // Answer device status queries (cursor position reports) of the
+        // visible console.
+        if !matches!(self.sink, Sink::Console(n) if n == ACTIVE_VC.load(Ordering::SeqCst)) {
+            return;
+        }
         let mut buf = [0u8; 32];
         let n = x86_64::instructions::interrupts::without_interrupts(|| {
             crate::drivers::framebuffer::CONSOLE
@@ -166,7 +274,7 @@ impl Tty {
             return;
         }
         if b < 0x20 && b != b'\n' && b != b'\t' && t.lflag & ECHOCTL != 0 {
-            emit(&[b'^', b + 0x40]);
+            self.emit(&[b'^', b + 0x40]);
         } else {
             self.output(&[b]);
         }
@@ -228,7 +336,7 @@ impl Tty {
         let mut line = self.line.lock();
         if b == t.cc[VERASE] || b == 0x08 {
             if line.pop().is_some() && t.lflag & ECHO != 0 {
-                emit(b"\x08 \x08");
+                self.emit(b"\x08 \x08");
             }
             return;
         }
@@ -237,7 +345,7 @@ impl Tty {
             line.clear();
             if t.lflag & ECHO != 0 {
                 for _ in 0..n {
-                    emit(b"\x08 \x08");
+                    self.emit(b"\x08 \x08");
                 }
             }
             return;
@@ -245,11 +353,11 @@ impl Tty {
         if b == t.cc[VWERASE] {
             while line.last() == Some(&b' ') {
                 line.pop();
-                emit(b"\x08 \x08");
+                self.emit(b"\x08 \x08");
             }
             while line.last().is_some_and(|&c| c != b' ') {
                 line.pop();
-                emit(b"\x08 \x08");
+                self.emit(b"\x08 \x08");
             }
             return;
         }
@@ -304,6 +412,7 @@ impl FileLike for Tty {
         self.check_background_read()?;
         let t = *self.termios.lock();
         let canon = t.lflag & ICANON != 0;
+        let hung = || self.hung_up.load(Ordering::SeqCst);
         let (vmin, vtime) = (t.cc[VMIN], t.cc[VTIME]);
         loop {
             {
@@ -332,11 +441,14 @@ impl FileLike for Tty {
                     return Ok(n);
                 }
             }
+            if hung() {
+                return Ok(0);
+            }
             if nonblock || (!canon && vmin == 0 && vtime == 0) {
                 return if nonblock { Err(EAGAIN) } else { Ok(0) };
             }
             let me = self;
-            let has = || !me.ready.lock().is_empty();
+            let has = || !me.ready.lock().is_empty() || me.hung_up.load(Ordering::SeqCst);
             if !canon && vmin == 0 {
                 if !self.wq.wait_timeout(vtime as u64 * 100, has) {
                     return Ok(0);
@@ -350,16 +462,46 @@ impl FileLike for Tty {
     }
 
     fn write(&self, buf: &[u8], _nonblock: bool) -> KResult<usize> {
+        if self.hung_up.load(Ordering::SeqCst) {
+            return Err(EIO);
+        }
         self.output(buf);
         Ok(buf.len())
     }
 
     fn poll(&self) -> u16 {
+        if self.hung_up.load(Ordering::SeqCst) {
+            return vfs::POLLIN | vfs::POLLHUP;
+        }
         let mut ev = vfs::POLLOUT;
         if !self.ready.lock().is_empty() {
             ev |= vfs::POLLIN;
         }
         ev
+    }
+
+    fn open_instance(&self, flags: u32) -> KResult<Option<Arc<dyn FileLike>>> {
+        if let Sink::Pty(m) = &self.sink {
+            let m = m.upgrade().ok_or(EIO)?;
+            m.slave_opened()?;
+        }
+        // A session leader without a terminal acquires this one.
+        if flags & vfs::O_NOCTTY == 0
+            && let Some(p) = process::current()
+            && p.sid.load(Ordering::SeqCst) == p.pid
+            && p.ctty.lock().is_none()
+        {
+            *p.ctty.lock() = Some(self.arc());
+        }
+        Ok(None)
+    }
+
+    fn close(&self) {
+        if let Sink::Pty(m) = &self.sink
+            && let Some(m) = m.upgrade()
+        {
+            m.slave_closed();
+        }
     }
 
     fn ioctl(&self, cmd: u64, arg: u64) -> KResult<i64> {
@@ -376,7 +518,31 @@ impl FileLike for Tty {
         const FIONREAD: u64 = 0x541B;
         const TIOCNOTTY: u64 = 0x5422;
         const TIOCGSID: u64 = 0x5429;
+        const VT_GETSTATE: u64 = 0x5603;
+        const VT_ACTIVATE: u64 = 0x5606;
+        const VT_WAITACTIVE: u64 = 0x5607;
         match cmd {
+            VT_GETSTATE | VT_ACTIVATE | VT_WAITACTIVE if !matches!(self.sink, Sink::Console(_)) => {
+                Err(ENOTTY)
+            }
+            VT_GETSTATE => {
+                // struct vt_stat { v_active, v_signal, v_state } (u16 each).
+                let st: [u16; 3] = [
+                    active_index() as u16 + 1,
+                    0,
+                    ((1u32 << (NUM_VCS + 1)) - 2) as u16,
+                ];
+                uaccess::write_user(arg, &st)?;
+                Ok(0)
+            }
+            VT_ACTIVATE => {
+                if arg == 0 || arg as usize > NUM_VCS {
+                    return Err(ENXIO);
+                }
+                switch_vc(arg as usize - 1);
+                Ok(0)
+            }
+            VT_WAITACTIVE => Ok(0),
             TCGETS => {
                 uaccess::write_user(arg, &*self.termios.lock())?;
                 Ok(0)
@@ -414,6 +580,14 @@ impl FileLike for Tty {
             TIOCSPGRP => {
                 let pg: u32 = uaccess::read_user(arg)?;
                 self.fg_pgrp.store(pg, Ordering::SeqCst);
+                // A session leader setting the foreground group of a
+                // terminal it has no claim on yet makes it the controlling one.
+                if let Some(p) = process::current()
+                    && p.sid.load(Ordering::SeqCst) == p.pid
+                    && p.ctty.lock().is_none()
+                {
+                    *p.ctty.lock() = Some(self.arc());
+                }
                 Ok(0)
             }
             TIOCGWINSZ => {
@@ -431,7 +605,22 @@ impl FileLike for Tty {
                 uaccess::write_user(arg, &n)?;
                 Ok(0)
             }
-            TIOCSCTTY | TIOCNOTTY => Ok(0),
+            TIOCSCTTY => {
+                let p = process::current().ok_or(ENOTTY)?;
+                if p.sid.load(Ordering::SeqCst) != p.pid {
+                    return Err(EPERM);
+                }
+                *p.ctty.lock() = Some(self.arc());
+                self.fg_pgrp
+                    .store(p.pgid.load(Ordering::SeqCst), Ordering::SeqCst);
+                Ok(0)
+            }
+            TIOCNOTTY => {
+                if let Some(p) = process::current() {
+                    *p.ctty.lock() = None;
+                }
+                Ok(0)
+            }
             TIOCGSID => {
                 let sid = process::current().map_or(0, |p| p.sid.load(Ordering::SeqCst));
                 uaccess::write_user(arg, &sid)?;
@@ -443,7 +632,10 @@ impl FileLike for Tty {
 
     fn stat(&self) -> KResult<Metadata> {
         let mut m = Metadata::new(FileType::CharDevice, 0o620);
-        m.rdev = (5 << 8) | 1;
+        m.rdev = match &self.sink {
+            Sink::Console(n) => (4 << 8) | (*n as u64 + 1),
+            Sink::Pty(p) => (136 << 8) | p.upgrade().map_or(0, |p| p.index() as u64),
+        };
         Ok(m)
     }
 
@@ -455,7 +647,9 @@ impl FileLike for Tty {
 /// A process exited: if its group was in the foreground and is now empty,
 /// release the terminal.
 pub fn process_exited(p: &Arc<process::Process>) {
-    let tty = console();
+    let Some(tty) = p.ctty.lock().clone() else {
+        return;
+    };
     let fg = tty.fg_pgrp.load(Ordering::SeqCst);
     if fg == p.pgid.load(Ordering::SeqCst) && process::group_members(fg).is_empty() {
         tty.fg_pgrp.store(0, Ordering::SeqCst);
@@ -484,9 +678,9 @@ pub fn serial_input(b: u8) {
     input_available();
 }
 
-/// Feed terminal bytes directly (USB keyboards, tests).
+/// Feed terminal bytes directly (USB keyboards): to the visible console.
 pub fn inject(bytes: &[u8]) {
-    console().receive_bytes(bytes);
+    active().receive_bytes(bytes);
 }
 
 /// Print scheduler, process and TTY state (serial BREAK, like SysRq).
@@ -549,7 +743,8 @@ pub fn start_input_thread() {
             while let Some(ev) = crate::task::keyboard::read_key() {
                 use crate::task::keyboard::Key;
                 match ev {
-                    Key::Bytes(b, n) => tty.receive_bytes(&b[..n]),
+                    Key::Bytes(b, n) => active().receive_bytes(&b[..n]),
+                    Key::SwitchVc(n) => switch_vc(n),
                     Key::ScrollUp => crate::drivers::console::scroll_view_up(),
                     Key::ScrollDown => crate::drivers::console::scroll_view_down(),
                 }

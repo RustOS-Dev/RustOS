@@ -312,6 +312,7 @@ pub fn init() {
     crate::sched::spawn("blk-flush", || {
         loop {
             crate::time::sleep_ms(5000);
+            crate::mm::pagecache::sync_all();
             for d in disks() {
                 let _ = d.dev.sync();
             }

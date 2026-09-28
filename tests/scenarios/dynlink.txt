@@ -18,3 +18,12 @@ wait # $
 send mv /tmp/libgreet.so /lib/ && dyntest | tail -1
 wait dynamic linking OK
 wait # $
+# Thread-local storage and dlopen through ld-rustos
+send tlstest
+wait TLS OK
+wait # $
+send dltest
+wait hello from libgreet\.so, dltest
+wait dlerror: cannot find library: libnothere\.so
+wait dlopen OK \(libgreet 1\.0\)
+wait # $

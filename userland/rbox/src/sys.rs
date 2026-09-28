@@ -9,6 +9,54 @@ pub fn clear(_: &[String]) -> i32 {
     0
 }
 
+fn console_ioctl(req: usize, arg: usize) -> isize {
+    let fd = match rustos_rt::fs::File::open("/dev/tty0") {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("cannot open /dev/tty0: {}", e);
+            return -1;
+        }
+    };
+    rustos_rt::sys::syscall(16, &[fd.fd() as usize, req, arg])
+}
+
+/// chvt N: show virtual console N.
+pub fn chvt(args: &[String]) -> i32 {
+    let Some(n) = args.get(1).and_then(|a| a.parse::<usize>().ok()) else {
+        eprintln!("usage: chvt N");
+        return 2;
+    };
+    if console_ioctl(0x5606, n) < 0 {
+        eprintln!("chvt: no console {}", n);
+        return 1;
+    }
+    0
+}
+
+/// fgconsole: number of the visible virtual console.
+pub fn fgconsole(_: &[String]) -> i32 {
+    let mut st = [0u16; 3];
+    if console_ioctl(0x5603, st.as_mut_ptr() as usize) < 0 {
+        return 1;
+    }
+    println!("{}", st[0]);
+    0
+}
+
+/// tty: name of the terminal on standard input.
+pub fn tty(_: &[String]) -> i32 {
+    match rustos_rt::fs::read_link("/proc/self/fd/0") {
+        Ok(p) if p.starts_with("/dev/") => {
+            println!("{}", p);
+            0
+        }
+        _ => {
+            println!("not a tty");
+            1
+        }
+    }
+}
+
 pub fn date(args: &[String]) -> i32 {
     let t = time::now();
     let (y, mo, d, h, mi, s) = time::civil(t);

@@ -3,6 +3,8 @@
 
 pub mod elf;
 pub mod fd;
+pub mod futex;
+pub mod itimer;
 pub mod signal;
 pub mod uaccess;
 pub mod vm;
@@ -47,9 +49,8 @@ pub struct Process {
     pub child_wq: WaitQueue,
     pub signals: signal::SignalState,
     pub start_ticks: u64,
-    /// Controlling terminal is the console TTY.
-    pub has_tty: AtomicBool,
-    pub clear_child_tid: Mutex<u64>,
+    /// Controlling terminal of the process's session.
+    pub ctty: Mutex<Option<Arc<crate::tty::Tty>>>,
 }
 
 static PROCESSES: Mutex<BTreeMap<Pid, Weak<Process>>> = Mutex::new(BTreeMap::new());
@@ -94,8 +95,10 @@ impl Process {
             child_wq: WaitQueue::new(),
             signals: signal::SignalState::new(),
             start_ticks: crate::time::ticks(),
-            has_tty: AtomicBool::new(parent.is_none_or(|p| p.has_tty.load(Ordering::SeqCst))),
-            clear_child_tid: Mutex::new(0),
+            ctty: Mutex::new(match parent {
+                Some(p) => p.ctty.lock().clone(),
+                None => Some(crate::tty::console()),
+            }),
         });
         PROCESSES.lock().insert(pid, Arc::downgrade(&p));
         p
@@ -179,13 +182,20 @@ pub fn handle_page_fault(frame: &mut TrapFrame, addr: u64) -> bool {
 /// A fault in user mode that could not be resolved: signal the process.
 pub fn user_fault(frame: &mut TrapFrame, sig: u32, addr: u64) {
     if let Some(p) = current() {
+        let area = p.vm().and_then(|vm| {
+            vm.lock().find_area(addr).map(|a| {
+                alloc::format!(" in {} {:#x}-{:#x} prot {}", a.name, a.start, a.end, a.prot)
+            })
+        });
         crate::serial_println!(
-            "[proc] pid {} ({}) {} at rip {:#x} addr {:#x}",
+            "[proc] pid {} ({}) {} at rip {:#x} addr {:#x} err {:#x}{}",
             p.pid,
             p.name.lock(),
             signal::signal_name(sig),
             frame.rip,
-            addr
+            addr,
+            frame.error_code,
+            area.as_deref().unwrap_or(" (no mapping)")
         );
         signal::force_signal(&p, sig);
     } else {
@@ -277,6 +287,7 @@ pub fn clone_thread(
     stack: u64,
     tls: Option<u64>,
     child_tid: u64,
+    clear_tid: u64,
 ) -> KResult<u64> {
     let p = current().ok_or(ESRCH)?;
     let pml4 = p.vm().ok_or(EFAULT)?.lock().pml4;
@@ -296,8 +307,31 @@ pub fn clone_thread(
     if child_tid != 0 {
         let _ = uaccess::write_user(child_tid, &(tid as u32));
     }
+    t.clear_child_tid.store(clear_tid, Ordering::SeqCst);
     sched::make_ready(t);
     Ok(tid)
+}
+
+/// exit(2) of one thread: the process ends with its last thread.
+pub fn exit_thread(status: i32) -> ! {
+    {
+        let me = sched::current();
+        let p = current().expect("exit without a process");
+        let others = p
+            .live_threads()
+            .iter()
+            .any(|t| !Arc::ptr_eq(t, &me) && t.state() != sched::State::Dead);
+        if !others {
+            drop(me);
+            drop(p);
+            exit_current(status);
+        }
+        futex::clear_tid_and_wake(me.clear_child_tid.swap(0, Ordering::SeqCst));
+        p.threads
+            .lock()
+            .retain(|w| w.upgrade().is_some_and(|t| !Arc::ptr_eq(&t, &me)));
+    }
+    sched::exit_current();
 }
 
 /// execve(): replace the current process image. On success `frame` is
@@ -405,6 +439,7 @@ fn do_exit(p: &Arc<Process>, status: i32) {
         parent.child_wq.wake_all();
     }
     crate::tty::process_exited(p);
+    itimer::remove(p.pid);
     if p.pid == 1 {
         crate::println!("[init] init exited with status {:#x}", status);
     }

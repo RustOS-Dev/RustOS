@@ -63,7 +63,21 @@ Built-ins: `:` `.` `[` `alias` `bg` `break` `cd` (`cd -`) `command`
 `ps` (`aux`), `top`, `kill` (`-SIGNAL`), `sleep`, `time`, `watch`,
 `uptime`, `free`/`meminfo`, `uname` (`-a`), `date` (`+FORMAT`), `hostname`,
 `id`, `whoami`, `env`, `which`, `dmesg`, `clear`, `sync`,
-`reboot`, `poweroff`/`shutdown`.
+`reboot`, `poweroff`/`shutdown`, `kapitest` (kernel API self-test).
+
+## Terminals and users
+
+Four virtual consoles run a shell each (`/etc/ttys`); switch with
+Alt-F1..F4 or `chvt N`; `fgconsole` prints the visible one, `tty` the
+terminal of standard input. Programs can create pseudo-terminals
+(`/dev/ptmx`, `/dev/pts/N`).
+
+Logins are off by default (everything runs as root). To require them,
+add `login` after a terminal name in `/storage/etc/ttys` (copy of
+`/etc/ttys`; `console login` covers the first console) and set a password
+with `passwd` (stored as SHA-512 crypt in `/storage/etc/shadow`; accounts
+are in `/etc/passwd`, overridable by `/storage/etc/passwd`). `login [-f]
+[USER]` can also be run by hand.
 
 ## Storage and devices
 

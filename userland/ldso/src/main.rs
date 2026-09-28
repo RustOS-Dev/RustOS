@@ -8,6 +8,17 @@
 //! JUMP_SLOT with eager binding, COPY), restore segment permissions, run
 //! the libraries' initialisers and jump to the program's entry point.
 //!
+//! Thread-local storage: the program's and libraries' PT_TLS blocks are
+//! laid out below the thread pointer (x86-64 variant II, program first),
+//! initialised and installed with arch_prctl(ARCH_SET_FS); TPOFF64,
+//! DTPMOD64 and DTPOFF64 relocations and `__tls_get_addr` are supported.
+//! Libraries loaded later by `dlopen` get their TLS block allocated
+//! separately (general-dynamic access only).
+//!
+//! `dlopen`, `dlsym`, `dlclose` (no unloading) and `dlerror` are provided
+//! by the dynamic linker itself; programs link against the `libdl.so`
+//! stub, whose definitions these override.
+//!
 //! No libc, no allocator: raw system calls and fixed-size tables.
 
 #![no_std]
@@ -49,6 +60,8 @@ const SYS_LSEEK: usize = 8;
 const SYS_MMAP: usize = 9;
 const SYS_MPROTECT: usize = 10;
 const SYS_EXIT: usize = 60;
+const SYS_ARCH_PRCTL: usize = 158;
+const ARCH_SET_FS: usize = 0x1002;
 
 fn write_err(s: &[u8]) {
     unsafe { syscall(SYS_WRITE, 2, s.as_ptr() as usize, s.len(), 0, 0, 0) };
@@ -78,6 +91,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
 const PT_PHDR: u32 = 6;
+const PT_TLS: u32 = 7;
 
 const DT_NULL: i64 = 0;
 const DT_NEEDED: i64 = 1;
@@ -99,6 +113,9 @@ const R_X86_64_COPY: u32 = 5;
 const R_X86_64_GLOB_DAT: u32 = 6;
 const R_X86_64_JUMP_SLOT: u32 = 7;
 const R_X86_64_RELATIVE: u32 = 8;
+const R_X86_64_DTPMOD64: u32 = 16;
+const R_X86_64_DTPOFF64: u32 = 17;
+const R_X86_64_TPOFF64: u32 = 18;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -154,6 +171,14 @@ struct Obj {
     dynamic: u64,
     segs: [(u64, u64, u32); MAX_SEGS],
     nsegs: usize,
+    /// PT_TLS: initialisation image address, its size, block size, align.
+    tls_image: u64,
+    tls_filesz: u64,
+    tls_memsz: u64,
+    tls_align: u64,
+    /// Static TLS: block at TP - tls_offset. Dynamic (dlopen): tls_block.
+    tls_offset: u64,
+    tls_block: u64,
 }
 
 impl Obj {
@@ -175,7 +200,26 @@ impl Obj {
         dynamic: 0,
         segs: [(0, 0, 0); MAX_SEGS],
         nsegs: 0,
+        tls_image: 0,
+        tls_filesz: 0,
+        tls_memsz: 0,
+        tls_align: 1,
+        tls_offset: 0,
+        tls_block: 0,
     };
+
+    fn has_tls(&self) -> bool {
+        self.tls_memsz > 0
+    }
+
+    /// Address of this module's TLS block for the (only) thread.
+    fn tls_base(&self) -> u64 {
+        if self.tls_block != 0 {
+            self.tls_block
+        } else {
+            unsafe { TP - self.tls_offset }
+        }
+    }
 
     fn name(&self) -> &[u8] {
         &self.name[..self.name_len]
@@ -345,22 +389,29 @@ fn already_loaded(name: &[u8]) -> bool {
     objs().iter().any(|o| o.name() == name)
 }
 
-/// Map a shared library and add it to the object list.
-fn load_library(name: &[u8]) {
+/// Open a library by name (a path if it contains '/', else from /lib or
+/// /usr/lib).
+fn open_library(name: &[u8]) -> isize {
     let mut path = [0u8; 256];
-    let mut fd = -1isize;
-    for dir in [&b"/lib/"[..], &b"/usr/lib/"[..]] {
+    let dirs: [&[u8]; 2] = if name.contains(&b'/') { [b"", b""] } else { [b"/lib/", b"/usr/lib/"] };
+    for dir in dirs {
         if dir.len() + name.len() + 1 > path.len() {
-            fail(b"library name too long", name);
+            return -36;
         }
         path[..dir.len()].copy_from_slice(dir);
         path[dir.len()..dir.len() + name.len()].copy_from_slice(name);
         path[dir.len() + name.len()] = 0;
-        fd = unsafe { syscall(SYS_OPEN, path.as_ptr() as usize, 0, 0, 0, 0, 0) };
+        let fd = unsafe { syscall(SYS_OPEN, path.as_ptr() as usize, 0, 0, 0, 0, 0) };
         if fd >= 0 {
-            break;
+            return fd;
         }
     }
+    -2
+}
+
+/// Map a shared library and add it to the object list.
+fn load_library(name: &[u8]) {
+    let fd = open_library(name);
     if fd < 0 {
         fail(b"cannot find library", name);
     }
@@ -404,6 +455,12 @@ fn load_library(name: &[u8]) {
                 }
             }
             PT_DYNAMIC => o.dynamic = bias + p.p_vaddr,
+            PT_TLS => {
+                o.tls_image = bias + p.p_vaddr;
+                o.tls_filesz = p.p_filesz;
+                o.tls_memsz = p.p_memsz;
+                o.tls_align = p.p_align.max(1);
+            }
             _ => {}
         }
     }
@@ -426,15 +483,37 @@ fn push_obj(o: Obj) {
     }
 }
 
+/// Functions the dynamic linker provides itself.
+fn builtin(name: &[u8]) -> Option<u64> {
+    Some(match name {
+        b"__tls_get_addr" => __tls_get_addr as *const () as u64,
+        b"dlopen" => dlopen as *const () as u64,
+        b"dlsym" => dlsym as *const () as u64,
+        b"dlclose" => dlclose as *const () as u64,
+        b"dlerror" => dlerror as *const () as u64,
+        _ => return None,
+    })
+}
+
 /// Resolve `name`, searching every object (or every library for COPY).
 fn resolve(name: &[u8], skip_first: bool) -> Option<(u64, u64)> {
+    if let Some(a) = builtin(name) {
+        return Some((a, 0));
+    }
     objs()
         .iter()
         .skip(skip_first as usize)
         .find_map(|o| o.lookup(name).map(|s| (o.bias + s.st_value, s.st_size)))
 }
 
-fn relocate(o: &Obj, is_main: bool) {
+/// Like `resolve` but also returns the index of the defining object and
+/// the raw symbol value (for TLS relocations).
+fn resolve_obj(name: &[u8]) -> Option<(usize, u64)> {
+    objs().iter().enumerate().find_map(|(i, o)| o.lookup(name).map(|s| (i, s.st_value)))
+}
+
+fn relocate(o: &Obj, self_idx: usize) {
+    let is_main = self_idx == 0;
     let tables = [(o.rela, o.relasz), (o.jmprel, o.pltrelsz)];
     for (table, size) in tables {
         if table == 0 {
@@ -446,6 +525,34 @@ fn relocate(o: &Obj, is_main: bool) {
             let ty = r.info as u32;
             let sym_idx = (r.info >> 32) as u32;
             let at = (o.bias + r.offset) as *mut u64;
+            if matches!(ty, R_X86_64_DTPMOD64 | R_X86_64_DTPOFF64 | R_X86_64_TPOFF64) {
+                // TLS: the defining module and the symbol's offset in its block.
+                let (m, off) = if sym_idx == 0 {
+                    (self_idx, 0)
+                } else {
+                    let sym = o.sym(sym_idx);
+                    let sname = cstr(o.strtab + sym.st_name as u64);
+                    if sym.st_shndx != 0 {
+                        (self_idx, sym.st_value)
+                    } else {
+                        resolve_obj(sname).unwrap_or_else(|| fail(b"undefined TLS symbol", sname))
+                    }
+                };
+                let def = &objs()[m];
+                unsafe {
+                    match ty {
+                        R_X86_64_DTPMOD64 => *at = m as u64 + 1,
+                        R_X86_64_DTPOFF64 => *at = off.wrapping_add(r.addend as u64),
+                        _ => {
+                            if def.tls_block != 0 {
+                                fail(b"initial-exec TLS in a dlopen'ed library", def.name());
+                            }
+                            *at = off.wrapping_add(r.addend as u64).wrapping_sub(def.tls_offset);
+                        }
+                    }
+                }
+                continue;
+            }
             let (s, size) = if sym_idx != 0 && ty != R_X86_64_RELATIVE {
                 let sym = o.sym(sym_idx);
                 let sname = cstr(o.strtab + sym.st_name as u64);
@@ -475,6 +582,197 @@ fn set_prot(o: &Obj, writable: bool) {
     for &(s, e, f) in &o.segs[..o.nsegs] {
         let prot = prot_of(f) | if writable { 2 } else { 0 };
         unsafe { syscall(SYS_MPROTECT, s as usize, (e - s) as usize, prot, 0, 0, 0) };
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Thread-local storage
+// ---------------------------------------------------------------------------
+
+/// The thread pointer (%fs base) once TLS is set up.
+static mut TP: u64 = 0;
+
+fn align_up(v: u64, a: u64) -> u64 {
+    v.div_ceil(a.max(1)) * a.max(1)
+}
+
+fn mmap_anon(len: u64) -> u64 {
+    let a = unsafe { syscall(SYS_MMAP, 0, len as usize, 3, 0x22, usize::MAX, 0) };
+    if a < 0 {
+        fail(b"out of memory", b"");
+    }
+    a as u64
+}
+
+fn init_block(o: &Obj, base: u64) {
+    unsafe {
+        core::ptr::copy_nonoverlapping(o.tls_image as *const u8, base as *mut u8, o.tls_filesz as usize);
+        core::ptr::write_bytes((base + o.tls_filesz) as *mut u8, 0, (o.tls_memsz - o.tls_filesz) as usize);
+    }
+}
+
+/// Lay out the static TLS of every loaded module below the thread pointer
+/// (the program first, as the static linker assumes) and install it.
+#[allow(static_mut_refs)]
+fn setup_tls() {
+    let mut offset = 0u64;
+    let mut max_align = 16u64;
+    for o in objs().iter_mut().filter(|o| o.has_tls()) {
+        offset = align_up(offset + o.tls_memsz, o.tls_align);
+        o.tls_offset = offset;
+        max_align = max_align.max(o.tls_align);
+    }
+    let static_size = align_up(offset, max_align);
+    // [static TLS][TCB: self pointer, spare words]
+    let area = mmap_anon(align_up(static_size + 64 + max_align, 4096));
+    let tp = align_up(area + static_size, max_align);
+    unsafe {
+        TP = tp;
+        *(tp as *mut u64) = tp;
+    }
+    for o in objs().iter().filter(|o| o.has_tls()) {
+        init_block(o, tp - o.tls_offset);
+    }
+    unsafe { syscall(SYS_ARCH_PRCTL, ARCH_SET_FS, tp as usize, 0, 0, 0, 0) };
+}
+
+#[repr(C)]
+struct TlsIndex {
+    module: u64,
+    offset: u64,
+}
+
+/// General-dynamic TLS access.
+extern "C" fn __tls_get_addr(ti: *const TlsIndex) -> u64 {
+    let ti = unsafe { &*ti };
+    match objs().get(ti.module as usize - 1) {
+        Some(o) => o.tls_base() + ti.offset,
+        None => fail(b"bad TLS module", b""),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// dlopen and friends
+// ---------------------------------------------------------------------------
+
+static mut DL_ERROR: &[u8] = b"";
+static mut DL_MSG: [u8; 160] = [0; 160];
+
+#[allow(static_mut_refs)]
+fn set_dl_error(msg: &[u8], name: &[u8]) {
+    unsafe {
+        let mut n = 0;
+        for part in [msg, b": ", name, b"\0"] {
+            for &c in part {
+                if n < DL_MSG.len() - 1 {
+                    DL_MSG[n] = c;
+                    n += 1;
+                }
+            }
+        }
+        DL_MSG[n] = 0;
+        DL_ERROR = &DL_MSG[..n];
+    }
+}
+
+const RTLD_DEFAULT: u64 = 0;
+
+/// Handles are object indexes + 1.
+extern "C" fn dlopen(name: *const u8, _flags: i32) -> u64 {
+    if name.is_null() {
+        return 1; // the program
+    }
+    let name = cstr(name as u64);
+    if let Some(i) = objs().iter().position(|o| o.name() == name) {
+        return i as u64 + 1;
+    }
+    let fd = open_library(name);
+    if fd < 0 {
+        set_dl_error(b"cannot find library", name);
+        return 0;
+    }
+    unsafe { syscall(SYS_CLOSE, fd as usize, 0, 0, 0, 0, 0) };
+    let first = objs().len();
+    load_library(name);
+    let mut i = first;
+    while i < objs().len() {
+        let o = objs()[i];
+        o.needed(|n| {
+            if !already_loaded(n) {
+                load_library(n);
+            }
+        });
+        i += 1;
+    }
+    // New modules with TLS get their own blocks.
+    let count = objs().len();
+    for k in first..count {
+        let o = &mut objs()[k];
+        if o.has_tls() {
+            let base = align_up(mmap_anon(align_up(o.tls_memsz + o.tls_align, 4096)), o.tls_align);
+            o.tls_block = base;
+            init_block(o, base);
+        }
+    }
+    for k in first..count {
+        let o = objs()[k];
+        relocate(&o, k);
+        set_prot(&o, false);
+    }
+    for k in (first..count).rev() {
+        run_init(&objs()[k]);
+    }
+    first as u64 + 1
+}
+
+extern "C" fn dlsym(handle: u64, name: *const u8) -> u64 {
+    let name = cstr(name as u64);
+    let found = if handle == RTLD_DEFAULT {
+        resolve(name, false).map(|(a, _)| a)
+    } else {
+        objs().get(handle as usize - 1).and_then(|o| o.lookup(name).map(|s| {
+            if s.st_info & 0xF == 6 {
+                o.tls_base() + s.st_value // STT_TLS: this thread's copy
+            } else {
+                o.bias + s.st_value
+            }
+        }))
+    };
+    match found {
+        Some(a) => a,
+        None => {
+            set_dl_error(b"undefined symbol", name);
+            0
+        }
+    }
+}
+
+extern "C" fn dlclose(_handle: u64) -> i32 {
+    0 // libraries stay loaded
+}
+
+#[allow(static_mut_refs)]
+extern "C" fn dlerror() -> *const u8 {
+    unsafe {
+        if DL_ERROR.is_empty() {
+            return core::ptr::null();
+        }
+        DL_ERROR = b"";
+        DL_MSG.as_ptr()
+    }
+}
+
+fn run_init(o: &Obj) {
+    if o.init != 0 {
+        let f: extern "C" fn() = unsafe { core::mem::transmute(o.init) };
+        f();
+    }
+    for k in 0..(o.init_arraysz / 8) as usize {
+        let fp = unsafe { *((o.init_array as *const u64).add(k)) };
+        if fp != 0 && fp != u64::MAX {
+            let f: extern "C" fn() = unsafe { core::mem::transmute(fp) };
+            f();
+        }
     }
 }
 
@@ -522,6 +820,12 @@ extern "C" fn ldso_main(sp: *const u64) -> u64 {
                 main.nsegs += 1;
             }
             PT_DYNAMIC => main.dynamic = bias + ph.p_vaddr,
+            PT_TLS => {
+                main.tls_image = bias + ph.p_vaddr;
+                main.tls_filesz = ph.p_filesz;
+                main.tls_memsz = ph.p_memsz;
+                main.tls_align = ph.p_align.max(1);
+            }
             _ => {}
         }
     }
@@ -543,30 +847,24 @@ extern "C" fn ldso_main(sp: *const u64) -> u64 {
         i += 1;
     }
 
+    if objs().iter().any(|o| o.has_tls()) {
+        setup_tls();
+    }
+
     // Libraries first (a COPY in the program reads relocated library
     // data), then the program.
     let all: &[Obj] = objs();
-    for o in all.iter().skip(1) {
-        relocate(o, false);
+    for (k, o) in all.iter().enumerate().skip(1) {
+        relocate(o, k);
         set_prot(o, false);
     }
     set_prot(&all[0], true);
-    relocate(&all[0], true);
+    relocate(&all[0], 0);
     set_prot(&all[0], false);
 
     // Initialisers, dependencies before dependents.
     for o in all.iter().skip(1).rev() {
-        if o.init != 0 {
-            let f: extern "C" fn() = unsafe { core::mem::transmute(o.init) };
-            f();
-        }
-        for k in 0..(o.init_arraysz / 8) as usize {
-            let fp = unsafe { *((o.init_array as *const u64).add(k)) };
-            if fp != 0 && fp != u64::MAX {
-                let f: extern "C" fn() = unsafe { core::mem::transmute(fp) };
-                f();
-            }
-        }
+        run_init(o);
     }
     at_entry
 }

@@ -412,7 +412,9 @@ pub fn fsync(fd: i32) -> SysResult {
 
 pub fn truncate(path: u64, len: u64) -> SysResult {
     let abs = path_at(AT_FDCWD, path)?;
-    vfs::lookup(&abs)?.truncate(len)?;
+    let i = vfs::lookup(&abs)?;
+    i.truncate(len)?;
+    crate::mm::pagecache::truncate(&i, len);
     Ok(0)
 }
 
@@ -421,7 +423,9 @@ pub fn ftruncate(fd: i32, len: u64) -> SysResult {
     if !f.writable() {
         return Err(EINVAL);
     }
-    f.inode.as_ref().ok_or(EINVAL)?.truncate(len)?;
+    let i = f.inode.as_ref().ok_or(EINVAL)?;
+    i.truncate(len)?;
+    crate::mm::pagecache::truncate(i, len);
     Ok(0)
 }
 
@@ -647,7 +651,7 @@ pub fn fstatfs(fd: i32, buf: u64) -> SysResult {
 // poll / select
 // ---------------------------------------------------------------------------
 
-fn wait_ready(
+pub(crate) fn wait_ready(
     timeout_ns: Option<u64>,
     mut check: impl FnMut() -> KResult<usize>,
 ) -> KResult<usize> {

@@ -1,0 +1,7 @@
+# Terminals init keeps a shell on, besides the first console.
+# Add "login" after a name to ask for a user name and password there
+# (accounts: /etc/passwd, passwords: `passwd` -> /storage/etc/shadow);
+# "console login" does the same for the first console.
+tty2
+tty3
+tty4

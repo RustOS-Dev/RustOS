@@ -372,21 +372,14 @@ pub fn tlb_shootdown(pml4: u64) {
     }
 }
 
-/// Wake idle CPUs so they pick up newly runnable threads.
-pub fn kick_idle() {
-    if online() > 1 && cpu::is_initialized() {
-        let me = cpu::this().cpu_id;
-        for id in 0..cpu::cpu_count() {
-            if id == me {
-                continue;
-            }
-            if let Some(c) = cpu::cpu(id)
-                && c.current.load(Ordering::SeqCst) == c.idle.load(Ordering::SeqCst)
-            {
-                apic::send_ipi(c.lapic_id, idt::VEC_RESCHED_IPI);
-                return;
-            }
-        }
+/// Ask CPU `id` to reschedule (it has new work in its run queue).
+pub fn kick_cpu(id: u32) {
+    if online() > 1
+        && cpu::is_initialized()
+        && id != cpu::this().cpu_id
+        && let Some(c) = cpu::cpu(id)
+    {
+        apic::send_ipi(c.lapic_id, idt::VEC_RESCHED_IPI);
     }
 }
 

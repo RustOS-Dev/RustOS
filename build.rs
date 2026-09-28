@@ -10,6 +10,7 @@ fn main() {
     let userland = manifest_dir.join("userland");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=userland");
+    println!("cargo:rerun-if-changed=tools/build-musl.sh");
     // Library crates the userland programs are built from.
     for c in [
         "rustos-rt",
@@ -35,6 +36,18 @@ fn main() {
         }
     }
     add_tree(&userland.join("root"), "", &mut files);
+    // Ports staged with `tools/install-port.sh --initramfs` (under /usr/local).
+    let ports = manifest_dir.join("target/ports-root");
+    println!("cargo:rerun-if-changed={}", ports.display());
+    let before = files.len();
+    add_tree(&ports, "", &mut files);
+    for (name, e) in files[before..].iter_mut() {
+        if name.contains("/bin/")
+            && let Entry::File(_, mode) = e
+        {
+            *mode = 0o755;
+        }
+    }
     // Trust store for `wget https://`: the build host's CA bundle, or the
     // file named by RUSTOS_CA_BUNDLE (empty to leave it out).
     println!("cargo:rerun-if-env-changed=RUSTOS_CA_BUNDLE");
@@ -119,7 +132,72 @@ fn build_userland(userland: &Path, root: &Path) -> Result<Vec<(String, Entry)>, 
         Entry::File(build_ldso(userland, root)?, 0o755),
     ));
     out.extend(build_dyntest(userland, root));
+    out.extend(build_musl_tests(userland, root));
     Ok(out)
+}
+
+/// musl (third_party/musl) and C test programs built against it; skipped
+/// with a warning when musl or a host C compiler is unavailable.
+fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
+    let script = root.join("tools/build-musl.sh");
+    match Command::new("sh").arg(&script).status() {
+        Ok(st) if st.success() => {}
+        _ => {
+            println!("cargo:warning=musl not built: musl test programs not installed");
+            return Vec::new();
+        }
+    }
+    let cc = root.join("tools/rustos-cc");
+    let src = userland.join("musltest");
+    let out = root.join("target").join("musltest");
+    let _ = std::fs::create_dir_all(&out);
+    let steps: [(&[&str], &str, &str); 6] = [
+        (&["-O2"], "musl-hello", "hello.c"),
+        (&["-O2", "-static"], "musl-hello-static", "hello.c"),
+        (&["-O2", "-pthread"], "musl-threads", "threads.c"),
+        (&["-O2", "-fPIC", "-shared"], "libplugin.so", "plugin.c"),
+        (&["-O2"], "musl-dlopen", "dlopen.c"),
+        (&["-O2"], "musl-libctest", "libctest.c"),
+    ];
+    for (flags, name, file) in steps {
+        let status = Command::new("sh")
+            .arg(&cc)
+            .args(flags)
+            .arg("-o")
+            .arg(out.join(name))
+            .arg(src.join(file))
+            .args(if file == "libctest.c" {
+                &["-lm"][..]
+            } else {
+                &[][..]
+            })
+            .status();
+        if !matches!(status, Ok(st) if st.success()) {
+            println!("cargo:warning=musl test {name} failed to build");
+            return Vec::new();
+        }
+    }
+    let mut v = vec![("usr/lib".to_string(), Entry::Dir)];
+    if let Ok(d) = std::fs::read(root.join("target/sysroot/usr/lib/libc.so")) {
+        v.push(("lib/ld-musl-x86_64.so.1".into(), Entry::File(d, 0o755)));
+        v.push((
+            "usr/lib/libc.so".into(),
+            Entry::Symlink("/lib/ld-musl-x86_64.so.1".into()),
+        ));
+    }
+    for (name, dst, mode) in [
+        ("musl-hello", "bin/musl-hello", 0o755),
+        ("musl-hello-static", "bin/musl-hello-static", 0o755),
+        ("musl-threads", "bin/musl-threads", 0o755),
+        ("musl-dlopen", "bin/musl-dlopen", 0o755),
+        ("musl-libctest", "bin/musl-libctest", 0o755),
+        ("libplugin.so", "usr/lib/libplugin.so", 0o644),
+    ] {
+        if let Ok(d) = std::fs::read(out.join(name)) {
+            v.push((dst.to_string(), Entry::File(d, mode)));
+        }
+    }
+    v
 }
 
 /// The dynamic linker: a static PIE built in its own workspace.
@@ -163,37 +241,54 @@ fn build_dyntest(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
         "-mno-sse",
         "-mno-red-zone",
     ];
-    let lib = out.join("libgreet.so");
-    let steps: [(&[&str], &Path, &str); 3] = [
+    let pie: &[&str] = &["-fPIE", "-pie", "-Wl,--dynamic-linker=/lib/ld-rustos.so.1"];
+    let steps: [(&[&str], &str, &str, &[&str]); 7] = [
         (
             &["-fPIC", "-shared", "-Wl,-soname,libgreet.so"],
-            &lib,
+            "libgreet.so",
             "greet.c",
+            &[],
         ),
         (
-            &["-fPIE", "-pie", "-Wl,--dynamic-linker=/lib/ld-rustos.so.1"],
-            &out.join("dyntest"),
-            "main.c",
+            &["-fPIC", "-shared", "-Wl,-soname,libtlsdemo.so"],
+            "libtlsdemo.so",
+            "tlslib.c",
+            &[],
         ),
+        (
+            &["-fPIC", "-shared", "-Wl,-soname,libdl.so"],
+            "libdl.so",
+            "dlstub.c",
+            &[],
+        ),
+        (pie, "dyntest", "main.c", &["-lgreet"]),
         (
             &[
                 "-fno-pie",
                 "-no-pie",
                 "-Wl,--dynamic-linker=/lib/ld-rustos.so.1",
             ],
-            &out.join("dyntest-nopie"),
+            "dyntest-nopie",
             "main.c",
+            &["-lgreet"],
         ),
+        (
+            pie,
+            "tlstest",
+            "tlsmain.c",
+            &["-ltlsdemo", "-Wl,--allow-shlib-undefined"],
+        ),
+        (pie, "dltest", "dltest.c", &["-ldl"]),
     ];
-    for (flags, dst, file) in steps {
+    for (flags, name, file, libs) in steps {
         let mut cmd = Command::new(&cc);
         cmd.args(common)
             .args(flags)
             .arg("-o")
-            .arg(dst)
+            .arg(out.join(name))
             .arg(src.join(file));
-        if file == "main.c" {
-            cmd.arg("-L").arg(&out).arg("-lgreet");
+        if !libs.is_empty() {
+            cmd.arg("-L").arg(&out).args(libs);
         }
         match cmd.status() {
             Ok(st) if st.success() => {}
@@ -206,8 +301,12 @@ fn build_dyntest(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
     let mut v = Vec::new();
     for (name, dst, mode) in [
         ("libgreet.so", "lib/libgreet.so", 0o644),
+        ("libtlsdemo.so", "lib/libtlsdemo.so", 0o644),
+        ("libdl.so", "lib/libdl.so", 0o644),
         ("dyntest", "bin/dyntest", 0o755),
         ("dyntest-nopie", "bin/dyntest-nopie", 0o755),
+        ("tlstest", "bin/tlstest", 0o755),
+        ("dltest", "bin/dltest", 0o755),
     ] {
         if let Ok(d) = std::fs::read(out.join(name)) {
             v.push((dst.to_string(), Entry::File(d, mode)));

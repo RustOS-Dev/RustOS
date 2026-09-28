@@ -54,8 +54,9 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 * Station mode only; open, WPA2-Personal and WPA3-Personal networks.
   No WPA-Enterprise, WEP or TKIP-only networks, AP/monitor/P2P modes.
-* Legacy rates only (up to 54 Mb/s): HT/VHT/HE are not negotiated, no
-  aggregation, no 6 GHz, no power save.
+* 802.11n/ac/ax with A-MPDU aggregation is implemented but unverified on
+  hardware (fallbacks: `iwlwifi.mode=`, `iwlwifi.agg=0` in kernel.conf).
+  A-MSDUs are received, not sent. No 6 GHz, no power save.
 * Intel AX210/AX211/AX201 only, and the firmware files must be installed
   (see [WIFI.md](WIFI.md)).
 

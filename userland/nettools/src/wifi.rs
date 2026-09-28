@@ -73,7 +73,8 @@ fn print_status(iface: &str) {
     let state = field(&s, "state").unwrap_or("unknown");
     println!("{}: {}", iface, state);
     for k in [
-        "ssid", "bssid", "channel", "signal", "security", "firmware", "msg",
+        "ssid", "bssid", "channel", "signal", "security", "mode", "rate", "country", "firmware",
+        "msg",
     ] {
         if let Some(v) = field(&s, k) {
             println!("  {:<9}{}", k, v);

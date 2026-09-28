@@ -168,9 +168,19 @@ pub fn parse_auth(f: &[u8]) -> Option<(u16, u16, u16, &[u8])> {
 
 /// Association request. `rsn` is the full RSN element (empty for open),
 /// `extra` further elements (HT capabilities, RSNXE, ...).
-pub fn assoc_request(sa: Mac, bssid: Mac, capability: u16, ssid: &[u8], band_2g: bool, rsn: &[u8], extra: &[u8]) -> Vec<u8> {
+pub fn assoc_request(
+    sa: Mac,
+    bssid: Mac,
+    capability: u16,
+    ssid: &[u8],
+    band_2g: bool,
+    rsn: &[u8],
+    extra: &[u8],
+) -> Vec<u8> {
     let mut f = mgmt_header(ST_ASSOC_REQ, bssid, sa, bssid);
-    f.extend_from_slice(&(capability & !0x10 | if rsn.is_empty() { 0 } else { 0x10 }).to_le_bytes());
+    f.extend_from_slice(
+        &(capability & !0x10 | if rsn.is_empty() { 0 } else { 0x10 }).to_le_bytes(),
+    );
     f.extend_from_slice(&10u16.to_le_bytes()); // listen interval
     ie::push(&mut f, ie::SSID, ssid);
     let (r, x) = ie::rates(band_2g);
@@ -186,7 +196,10 @@ pub fn assoc_request(sa: Mac, bssid: Mac, capability: u16, ssid: &[u8], band_2g:
 /// Association response: (status, association id, elements).
 pub fn parse_assoc_response(f: &[u8]) -> Option<(u16, u16, &[u8])> {
     let h = Header::parse(f)?;
-    if h.ty() != TYPE_MGMT || !matches!(h.subtype(), ST_ASSOC_RESP | ST_REASSOC_RESP) || f.len() < 30 {
+    if h.ty() != TYPE_MGMT
+        || !matches!(h.subtype(), ST_ASSOC_RESP | ST_REASSOC_RESP)
+        || f.len() < 30
+    {
         return None;
     }
     let b = &f[24..];
@@ -217,25 +230,117 @@ const LLC_SNAP: [u8; 6] = [0xAA, 0xAA, 0x03, 0x00, 0x00, 0x00];
 /// Wrap an Ethernet frame for transmission to the AP (ToDS, QoS data,
 /// best-effort TID). Protection is added by the hardware.
 pub fn data_from_ethernet(eth: &[u8], bssid: Mac, qos: bool) -> Option<Vec<u8>> {
+    data_frame(eth, bssid, if qos { Some(0) } else { None }, 0)
+}
+
+/// Wrap an Ethernet frame as a data frame to the AP with sequence number
+/// `seq`: QoS data for traffic identifier `tid`, or non-QoS data.
+pub fn data_frame(eth: &[u8], bssid: Mac, tid: Option<u8>, seq: u16) -> Option<Vec<u8>> {
     if eth.len() < 14 {
         return None;
     }
     let (da, sa, et) = (&eth[0..6], &eth[6..12], &eth[12..14]);
-    let sub = if qos { ST_QOS_DATA } else { 0 };
+    let sub = if tid.is_some() { ST_QOS_DATA } else { 0 };
     let mut f = Vec::with_capacity(eth.len() + 34);
     f.extend_from_slice(&(fc(TYPE_DATA, sub) | FC_TO_DS).to_le_bytes());
     f.extend_from_slice(&[0, 0]);
     f.extend_from_slice(&bssid);
     f.extend_from_slice(sa);
     f.extend_from_slice(da);
-    f.extend_from_slice(&[0, 0]);
-    if qos {
-        f.extend_from_slice(&[0, 0]);
+    f.extend_from_slice(&((seq & 0xFFF) << 4).to_le_bytes());
+    if let Some(t) = tid {
+        f.extend_from_slice(&[t & 0xF, 0]); // normal ack
     }
     f.extend_from_slice(&LLC_SNAP);
     f.extend_from_slice(et);
     f.extend_from_slice(&eth[14..]);
     Some(f)
+}
+
+/// Set the sequence number of a frame (management frames).
+pub fn set_seq(f: &mut [u8], seq: u16) {
+    if f.len() >= 24 {
+        let frag = u16::from_le_bytes([f[22], f[23]]) & 0xF;
+        f[22..24].copy_from_slice(&(((seq & 0xFFF) << 4) | frag).to_le_bytes());
+    }
+}
+
+/// 802.1D user priority (= TID) of an Ethernet frame from its IPv4 DSCP
+/// or IPv6 traffic class (the precedence bits), 0 for everything else.
+pub fn tid_for_ethernet(eth: &[u8]) -> u8 {
+    if eth.len() < 16 {
+        return 0;
+    }
+    match (eth[12], eth[13]) {
+        (0x08, 0x00) => eth[15] >> 5,
+        (0x86, 0xDD) => (eth[14] & 0x0F) >> 1,
+        (0x88, 0x8E) => 6, // EAPOL: voice, as other stacks send it
+        _ => 0,
+    }
+}
+
+/// Offset of the QoS control field (QoS data frames only).
+fn qos_offset(h: &Header) -> Option<usize> {
+    (h.ty() == TYPE_DATA && h.subtype() & 0x8 != 0).then_some(h.len - 2)
+}
+
+/// TID of a QoS data frame.
+pub fn qos_tid(f: &[u8]) -> Option<u8> {
+    let h = Header::parse(f)?;
+    qos_offset(&h).map(|o| f[o] & 0xF)
+}
+
+const QOS_AMSDU: u8 = 1 << 7;
+
+/// The QoS control field says the body is an A-MSDU.
+pub fn is_amsdu(f: &[u8]) -> bool {
+    Header::parse(f)
+        .and_then(|h| qos_offset(&h))
+        .is_some_and(|o| f[o] & QOS_AMSDU != 0)
+}
+
+/// Clear the A-MSDU flag (the hardware already split the A-MSDU and each
+/// subframe arrives as its own MPDU).
+pub fn clear_amsdu(f: &mut [u8]) {
+    if let Some(o) = Header::parse(f).and_then(|h| qos_offset(&h)) {
+        f[o] &= !QOS_AMSDU;
+    }
+}
+
+/// Split a received A-MSDU data frame into Ethernet frames.
+pub fn amsdu_to_ethernet(f: &[u8]) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let Some(h) = Header::parse(f) else {
+        return out;
+    };
+    if h.protected() {
+        return out;
+    }
+    let mut b = &f[h.len..];
+    while b.len() >= 14 {
+        let (da, sa) = (&b[0..6], &b[6..12]);
+        let len = u16::from_be_bytes([b[12], b[13]]) as usize;
+        let Some(msdu) = b.get(14..14 + len) else {
+            break;
+        };
+        let mut eth = Vec::with_capacity(len + 14);
+        eth.extend_from_slice(da);
+        eth.extend_from_slice(sa);
+        if msdu.len() >= 8 && msdu[..6] == LLC_SNAP {
+            eth.extend_from_slice(&msdu[6..8]);
+            eth.extend_from_slice(&msdu[8..]);
+        } else {
+            eth.extend_from_slice(&(msdu.len() as u16).to_be_bytes());
+            eth.extend_from_slice(msdu);
+        }
+        out.push(eth);
+        let used = (14 + len).next_multiple_of(4);
+        if used >= b.len() {
+            break;
+        }
+        b = &b[used..];
+    }
+    out
 }
 
 /// Unwrap a received (already decrypted) data frame into Ethernet.
@@ -251,8 +356,8 @@ pub fn ethernet_from_data(f: &[u8]) -> Option<Vec<u8>> {
         _ => (h.addr3, f.get(24..30)?.try_into().ok()?),
     };
     let mut body = &f[h.len..];
-    if h.protected() {
-        return None; // caller must decrypt (or hardware must strip) first
+    if h.protected() || is_amsdu(f) {
+        return None; // decrypt / split first
     }
     let mut eth = Vec::with_capacity(body.len() + 14);
     eth.extend_from_slice(&da);
@@ -296,6 +401,55 @@ mod tests {
         assert_eq!(&e[0..6], &ME);
         assert_eq!(&e[12..14], &[0x08, 0x00]);
         assert_eq!(&e[14..], b"payload");
+    }
+
+    #[test]
+    fn qos_seq_and_amsdu() {
+        let mut eth = Vec::new();
+        eth.extend_from_slice(&AP);
+        eth.extend_from_slice(&ME);
+        eth.extend_from_slice(&[0x08, 0x00, 0x45, 0xB8]); // DSCP 46 (EF)
+        eth.extend_from_slice(&[0; 20]);
+        assert_eq!(tid_for_ethernet(&eth), 5);
+        let f = data_frame(&eth, AP, Some(5), 0x123).unwrap();
+        assert_eq!(qos_tid(&f), Some(5));
+        assert_eq!(Header::parse(&f).unwrap().seq, 0x123);
+        let mut ip6 = eth.clone();
+        ip6[12..16].copy_from_slice(&[0x86, 0xDD, 0x6E, 0x00]); // TC 0xE0
+        assert_eq!(tid_for_ethernet(&ip6), 7);
+        let mut m = auth(ME, AP, 0, 1, 0, &[]);
+        set_seq(&mut m, 4095);
+        assert_eq!(Header::parse(&m).unwrap().seq, 4095);
+
+        // A-MSDU with two subframes from the AP.
+        let mut a = data_frame(&eth, AP, Some(0), 1).unwrap();
+        a.truncate(26);
+        let fcv = (u16::from_le_bytes([a[0], a[1]]) & !FC_TO_DS) | FC_FROM_DS;
+        a[0..2].copy_from_slice(&fcv.to_le_bytes());
+        a[24] |= 0x80;
+        for (i, payload) in [&b"first"[..], &b"second!"[..]].iter().enumerate() {
+            let mut msdu = LLC_SNAP.to_vec();
+            msdu.extend_from_slice(&[0x08, 0x00]);
+            msdu.extend_from_slice(payload);
+            a.extend_from_slice(&ME);
+            a.extend_from_slice(&AP);
+            a.extend_from_slice(&(msdu.len() as u16).to_be_bytes());
+            a.extend_from_slice(&msdu);
+            if i == 0 {
+                while (a.len() - 26) % 4 != 0 {
+                    a.push(0);
+                }
+            }
+        }
+        assert!(is_amsdu(&a));
+        assert_eq!(ethernet_from_data(&a), None);
+        let e = amsdu_to_ethernet(&a);
+        assert_eq!(e.len(), 2);
+        assert_eq!(&e[0][14..], b"first");
+        assert_eq!(&e[1][14..], b"second!");
+        assert_eq!(&e[1][0..6], &ME);
+        clear_amsdu(&mut a);
+        assert!(!is_amsdu(&a));
     }
 
     #[test]

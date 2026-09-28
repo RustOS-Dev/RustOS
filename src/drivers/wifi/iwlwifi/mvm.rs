@@ -32,6 +32,9 @@ pub const TX_ANT_CONFIG: u8 = 0x98;
 pub const BT_CONFIG: u8 = 0x9B;
 pub const MISSED_BEACONS: u8 = 0xA2;
 pub const RX_MPDU: u8 = 0xC1;
+pub const BAR_FRAME_RELEASE: u8 = 0xC2;
+pub const FRAME_RELEASE: u8 = 0xC3;
+pub const BA_NOTIF: u8 = 0xC5;
 pub const MCC_UPDATE: u8 = 0xC8;
 // System group.
 pub const SOC_CONFIGURATION: u8 = 0x01;
@@ -40,7 +43,9 @@ pub const INIT_EXTENDED_CFG: u8 = 0x03;
 pub const SESSION_PROTECTION: u8 = 0x05;
 pub const SESSION_PROTECTION_NOTIF: u8 = 0xFB;
 // Data path group.
+pub const STA_HE_CTXT: u8 = 0x07;
 pub const TLC_MNG_CONFIG: u8 = 0x0F;
+pub const TLC_MNG_UPDATE_NOTIF: u8 = 0xF7;
 // Regulatory/NVM group.
 pub const NVM_ACCESS_COMPLETE: u8 = 0x00;
 pub const PNVM_INIT_COMPLETE: u8 = 0xFE;
@@ -57,6 +62,8 @@ pub const MAC_ID: u32 = 0;
 pub const PHY_ID: u32 = 0;
 pub const AP_STA_ID: u8 = 0;
 pub const MGMT_TID: u8 = 15;
+/// Reorder-data BAID meaning "no block-ack session".
+pub const INVALID_BAID: u8 = 0x7F;
 
 /// Little-endian command builder.
 #[derive(Default)]
@@ -107,16 +114,18 @@ pub fn band_of(channel: u8) -> u8 {
     }
 }
 
-/// PHY_CONTEXT_CMD v3/v4 (UHB channel info).
-pub fn phy_context(action: u32, channel: u8, rx_ant: u32) -> Vec<u8> {
+/// PHY_CONTEXT_CMD v3/v4 (UHB channel info). `channel` is the primary
+/// channel; `width` 0-3 = 20/40/80/160 MHz; `ctrl_pos` the position of
+/// the primary channel in the bandwidth (PHY_VHT_CTRL_POS_*).
+pub fn phy_context(action: u32, channel: u8, width: u8, ctrl_pos: u8, rx_ant: u32) -> Vec<u8> {
     let rxchain = (rx_ant << 1) | (2 << 10) | (2 << 12);
     Cmd::new()
         .u32(id_color(PHY_ID))
         .u32(action)
         .u32(channel as u32)
         .u8(band_of(channel))
-        .u8(0) // 20 MHz
-        .u8(0) // control channel position
+        .u8(width)
+        .u8(ctrl_pos)
         .u8(0)
         .u32(0) // lmac id (no CDB)
         .u32(rxchain)
@@ -151,7 +160,15 @@ pub struct MacParams<'a> {
     pub band_5g: bool,
     pub short_slot: bool,
     pub short_preamble: bool,
-    pub _p: core::marker::PhantomData<&'a ()>,
+    /// HT or better: HT protection mode from the AP's HT operation.
+    pub ht: Option<u8>,
+    /// Channel wider than 20 MHz.
+    pub wide: bool,
+    /// ERP (802.11g) protection.
+    pub erp_protection: bool,
+    pub he: bool,
+    /// EDCA parameters per firmware AC (BK, BE, VI, VO).
+    pub edca: &'a [wlan::caps::Edca; 4],
 }
 
 /// MAC_CONTEXT_CMD for a BSS station.
@@ -168,31 +185,49 @@ pub fn mac_context(p: &MacParams) -> Vec<u8> {
         .bytes(&p.bssid)
         .u16(0)
         .u32(0xF) // CCK ACK rates 1..11
-        .u32(0x15) // OFDM ACK rates 6, 12, 24
-        .u32(0) // protection
+        .u32(0x15); // OFDM ACK rates 6, 12, 24
+    // Protection: 11g (ERP) and HT (iwl_mvm_mac_ctxt_set_ht_flags).
+    const PROT_TGG: u32 = 1 << 3;
+    const PROT_TGN: u32 = 1 << 8;
+    const PROT_HT: u32 = 1 << 23;
+    const PROT_FAT: u32 = 1 << 24;
+    let mut prot = if p.erp_protection { PROT_TGG } else { 0 };
+    if let Some(mode) = p.ht {
+        prot |= PROT_TGN;
+        match mode {
+            1 | 3 => prot |= PROT_HT | PROT_FAT,
+            2 if p.wide => prot |= PROT_HT | PROT_FAT,
+            _ => {}
+        }
+    }
+    c.u32(prot)
         .u32(if p.short_preamble { 1 << 5 } else { 0 })
         .u32(if p.short_slot || p.band_5g { 1 << 4 } else { 0 });
+    const FILTER_IN_11AX: u32 = 1 << 14;
     let mut filter = FILTER_ACCEPT_GRP;
     if p.assoc.is_none() {
         filter |= FILTER_IN_BEACON;
     }
-    c.u32(filter).u32(if p.qos { 1 } else { 0 });
-    // EDCA parameters per firmware AC (BK, BE, VI, VO) + one spare:
-    // (cw_min, cw_max, aifsn, fifo, txop in usec).
-    let acs: [(u16, u16, u8, u8, u16); 5] = [
-        (15, 1023, 7, 1, 0),
-        (15, 1023, 3, 2, 0),
-        (7, 15, 2, 3, 3008),
-        (3, 7, 2, 4, 1504),
-        (0, 0, 0, 0, 0),
-    ];
-    for (cw_min, cw_max, aifsn, fifo, txop) in acs {
-        c.u16(cw_min)
-            .u16(cw_max)
-            .u8(aifsn)
-            .u8(if fifo == 0 { 0 } else { 1 << fifo })
-            .u16(txop);
+    if p.he {
+        filter |= FILTER_IN_11AX;
     }
+    const QOS_UPDATE_EDCA: u32 = 1 << 0;
+    const QOS_TGN: u32 = 1 << 1;
+    let mut qos = if p.qos { QOS_UPDATE_EDCA } else { 0 };
+    if p.ht.is_some() {
+        qos |= QOS_TGN;
+    }
+    c.u32(filter).u32(qos);
+    // EDCA per firmware AC (BK, BE, VI, VO) with the gen2 TX FIFO of that
+    // AC (BK=1 .. VO=4), plus one unused entry.
+    for (i, e) in p.edca.iter().enumerate() {
+        c.u16(e.cw_min)
+            .u16(e.cw_max)
+            .u8(e.aifsn)
+            .u8(1 << (i + 1))
+            .u16(e.txop_us);
+    }
+    c.zeros(8);
     // iwl_mac_data_sta (44 bytes) inside a 48-byte union.
     let (aid, bi, dtim) = p.assoc.unwrap_or((0, 100, 1));
     c.u32(p.assoc.is_some() as u32)
@@ -209,23 +244,63 @@ pub fn mac_context(p: &MacParams) -> Vec<u8> {
     c.done()
 }
 
-/// ADD_STA v12 for the AP station.
-pub fn add_sta(modify: bool, bssid: [u8; 6], aid: u16) -> Vec<u8> {
-    const STA_FLG_FAT_EN_MSK: u32 = 3 << 26;
-    const STA_FLG_MIMO_EN_MSK: u32 = 3 << 28;
-    const STA_FLG_RTS_MIMO_PROT: u32 = 1 << 17;
+/// Station flags for ADD_STA from the negotiated link.
+pub fn sta_flags(link: &wlan::caps::Link, tx_chains: u8) -> (u32, u32) {
+    use wlan::caps::{Mode, Width};
+    const RTS_MIMO_PROT: u32 = 1 << 17;
+    const AGG_SIZE_SHIFT: u32 = 19;
+    const AGG_SIZE_MSK: u32 = 0xF << 19;
+    const DENS_SHIFT: u32 = 23;
+    const DENS_MSK: u32 = 7 << 23;
+    const FAT_MSK: u32 = 3 << 26;
+    const MIMO_MSK: u32 = 3 << 28;
+    let mut flags = 0;
+    let mut mask = FAT_MSK | MIMO_MSK | RTS_MIMO_PROT;
+    if link.mode == Mode::Legacy {
+        return (flags, mask);
+    }
+    flags |= match link.width {
+        Width::W20 => 0,
+        Width::W40 => 1 << 26,
+        Width::W80 => 2 << 26,
+        Width::W160 => 3 << 26,
+    };
+    if link.nss >= 2 && tx_chains >= 2 {
+        flags |= 1 << 28;
+        if link.smps == 1 {
+            flags |= RTS_MIMO_PROT;
+        }
+    }
+    mask |= AGG_SIZE_MSK | DENS_MSK;
+    flags |= ((link.ampdu_exp.min(9) as u32) << AGG_SIZE_SHIFT)
+        | ((link.ampdu_density as u32) << DENS_SHIFT);
+    (flags, mask)
+}
+
+/// ADD_STA v12 (iwl_mvm_add_sta_cmd) for the AP station: add, or modify
+/// everything. `tid_disable` has a bit set for every TID without TX
+/// aggregation.
+pub fn add_sta(
+    modify: bool,
+    bssid: [u8; 6],
+    aid: u16,
+    flags: (u32, u32),
+    tid_disable: u16,
+    uapsd: bool,
+) -> Vec<u8> {
+    const MODIFY_UAPSD_ACS: u8 = 1 << 2;
     Cmd::new()
         .u8(modify as u8)
         .u8(0) // awake ACs
-        .u16(0xFFFF) // no aggregation on any TID
+        .u16(tid_disable)
         .u32(id_color(MAC_ID))
         .bytes(&bssid)
         .u16(0)
         .u8(AP_STA_ID)
-        .u8(0) // modify mask
+        .u8(if uapsd { MODIFY_UAPSD_ACS } else { 0 })
         .u16(0)
-        .u32(0) // SISO, 20 MHz
-        .u32(STA_FLG_FAT_EN_MSK | STA_FLG_MIMO_EN_MSK | STA_FLG_RTS_MIMO_PROT)
+        .u32(flags.0)
+        .u32(flags.1)
         .u8(0)
         .u8(0)
         .u16(0)
@@ -239,6 +314,40 @@ pub fn add_sta(modify: bool, bssid: [u8; 6], aid: u16) -> Vec<u8> {
         .u8(0)
         .u8(0)
         .done()
+}
+
+/// ADD_STA modify of only the per-TID TX aggregation mask
+/// (STA_MODIFY_TID_DISABLE_TX), as `iwl_mvm_sta_tx_agg` sends it.
+pub fn add_sta_tid_disable(tid_disable: u16) -> Vec<u8> {
+    let mut c = add_sta(true, [0; 6], 0, (0, 0), tid_disable, false);
+    c[17] = 1 << 1; // modify mask
+    c
+}
+
+/// ADD_STA modify starting (or stopping) a receive block-ack session
+/// (`iwl_mvm_fw_baid_op_sta`). The response status carries the BAID.
+pub fn add_sta_rx_ba(start: bool, tid: u8, ssn: u16, win: u16) -> Vec<u8> {
+    const MODIFY_ADD_BA_TID: u8 = 1 << 3;
+    const MODIFY_REMOVE_BA_TID: u8 = 1 << 4;
+    let mut c = add_sta(true, [0; 6], 0, (0, 0), 0, false);
+    // Offsets in iwl_mvm_add_sta_cmd: modify_mask 17, add_immediate_ba_tid
+    // 28, remove_immediate_ba_tid 29, add_immediate_ba_ssn 30,
+    // rx_ba_window 44.
+    if start {
+        c[17] = MODIFY_ADD_BA_TID;
+        c[28] = tid;
+        c[30..32].copy_from_slice(&ssn.to_le_bytes());
+        c[44..46].copy_from_slice(&win.to_le_bytes());
+    } else {
+        c[17] = MODIFY_REMOVE_BA_TID;
+        c[29] = tid;
+    }
+    c
+}
+
+/// BAID from an ADD_STA response status (valid bit 15, BAID bits 8-14).
+pub fn add_sta_baid(status: u32) -> Option<u8> {
+    (status & 0xFF == 1 && status & 0x8000 != 0).then_some(((status >> 8) & 0x7F) as u8)
 }
 
 pub fn remove_sta(sta_id: u8) -> Vec<u8> {
@@ -329,22 +438,105 @@ pub fn igtk(key: &[u8], keyidx: u16, ipn: [u8; 6]) -> Vec<u8> {
         .done()
 }
 
-/// TLC_MNG_CONFIG_CMD v4: firmware rate scaling with legacy rates.
-pub fn tlc_config(band_5g: bool, chains: u8) -> Vec<u8> {
+/// TLC_MNG_CONFIG_CMD v4: firmware rate scaling for the negotiated link.
+pub fn tlc_config(link: &wlan::caps::Link, band_5g: bool, chains: u8) -> Vec<u8> {
+    use wlan::caps::Mode;
     // Legacy rate bitmap: bits 0-3 CCK, 4-11 OFDM.
     let non_ht: u16 = if band_5g { 0xFF0 } else { 0xFFF };
+    let mode = match link.mode {
+        Mode::Legacy => 0,
+        Mode::Ht => 1,
+        Mode::Vht => 2,
+        Mode::He => 3,
+    };
+    const FLAG_STBC: u16 = 1 << 0;
+    const FLAG_LDPC: u16 = 1 << 1;
+    let mut flags = 0;
+    if link.stbc && chains.count_ones() > 1 {
+        flags |= FLAG_STBC;
+    }
+    if link.ldpc {
+        flags |= FLAG_LDPC;
+    }
     let mut c = Cmd::new();
     c.u8(AP_STA_ID)
         .zeros(3)
-        .u8(0) // 20 MHz
-        .u8(0) // non-HT mode
+        .u8(if link.mode == Mode::Legacy {
+            0
+        } else {
+            link.width.code()
+        })
+        .u8(mode)
         .u8(chains)
-        .u8(0)
-        .u16(0)
-        .u16(non_ht)
-        .zeros(2 * 3 * 2)
-        .u16(3839) // max MPDU length
-        .u16(0);
+        .u8(link.sgi)
+        .u16(flags)
+        .u16(non_ht);
+    // ht_rates[nss][bw]: bw 0 = up to 80 MHz, 1 = 160 MHz, 2 = 320 MHz.
+    for s in 0..2 {
+        c.u16(link.mcs[s][0]).u16(link.mcs[s][1]).u16(0);
+    }
+    c.u16(if link.max_mpdu == 0 {
+        3839
+    } else {
+        link.max_mpdu
+    })
+    .u16(0);
+    c.done()
+}
+
+/// STA_HE_CTXT_CMD v2 (88 bytes) or v3 (92 bytes) for the AP station.
+pub fn he_sta_context(version: u8, he: &wlan::caps::HeLink) -> Vec<u8> {
+    const FLAG_BSS_COLOR_DIS: u32 = 1 << 5;
+    const FLAG_PACKET_EXT: u32 = 1 << 8;
+    const FLAG_ACK_ENABLED: u32 = 1 << 11;
+    const FLAG_MU_EDCA_CW: u32 = 1 << 12;
+    const HE_MAC2_ACK_EN: u8 = 1 << 1;
+    let mut flags = 0;
+    if he.color_disabled {
+        flags |= FLAG_BSS_COLOR_DIS;
+    }
+    if he.pkt_ext.is_some() {
+        flags |= FLAG_PACKET_EXT;
+    }
+    if he.mac[2] & HE_MAC2_ACK_EN != 0 {
+        flags |= FLAG_ACK_ENABLED;
+    }
+    if he.mu_edca.is_some() {
+        flags |= FLAG_MU_EDCA_CW;
+    }
+    let mut c = Cmd::new();
+    c.u8(AP_STA_ID).u8(8).u8(0).u8(0).u32(flags);
+    c.zeros(6).u16(0); // reference BSSID (no multiple BSSID)
+    c.u32(0); // HTC flags
+    c.u8(0).u8(0).u8(0).u8(0); // fragmentation off
+    // Packet extension thresholds: [2 streams][4 or 5 widths][low, high].
+    let widths = if version >= 3 { 5 } else { 4 };
+    let pe = he
+        .pkt_ext
+        .unwrap_or([[[wlan::caps::PKT_EXT_NONE; 2]; 5]; 2]);
+    for s in pe.iter() {
+        for th in s.iter().take(widths) {
+            c.u8(th[0]).u8(th[1]);
+        }
+    }
+    c.u8(he.bss_color).u8(he.default_pe).u16(he.rts_threshold);
+    c.u8(0).u8(0).u16(0); // random access parameters, puncturing
+    // Trigger-based EDCA per firmware AC (BK, BE, VI, VO).
+    for ac in 0..4 {
+        match he.mu_edca {
+            Some(m) => {
+                let (aifsn, ecw_min, ecw_max, timer) = m[ac];
+                c.u16(ecw_min as u16)
+                    .u16(ecw_max as u16)
+                    .u16(aifsn as u16)
+                    .u16(timer as u16);
+            }
+            None => {
+                c.zeros(8);
+            }
+        }
+    }
+    c.u8(0).u8(0).u8(0).u8(0).u8(0).zeros(3);
     c.done()
 }
 
@@ -367,8 +559,17 @@ pub const SCAN_CHANNELS_5: &[u8] = &[
 ];
 
 /// SCAN_REQ_UMAC v15 (iwl_scan_req_umac_v17 layout) for a one-shot
-/// active scan of `channels`, optionally directed at `ssid`.
-pub fn scan_request(own: [u8; 6], channels: &[u8], ssid: &[u8], associated: bool) -> Vec<u8> {
+/// active scan of `channels`, optionally directed at `ssid`. `caps24` and
+/// `caps5` are extra probe request elements (HT/VHT/HE capabilities) for
+/// each band.
+pub fn scan_request(
+    own: [u8; 6],
+    channels: &[u8],
+    ssid: &[u8],
+    associated: bool,
+    caps24: &[u8],
+    caps5: &[u8],
+) -> Vec<u8> {
     const GEN_FLAGS_PASS_ALL: u16 = 1 << 1;
     const GEN_FLAGS_ADAPTIVE_DWELL: u16 = 1 << 7;
     const CHAN_FLAG_ENABLE_CHAN_ORDER: u8 = 1 << 5;
@@ -427,9 +628,11 @@ pub fn scan_request(own: [u8; 6], channels: &[u8], ssid: &[u8], associated: bool
     buf.extend_from_slice(&[1, 8, 0x82, 0x84, 0x8B, 0x96, 0x0C, 0x12, 0x18, 0x24]);
     buf.extend_from_slice(&[50, 4, 0x30, 0x48, 0x60, 0x6C]);
     buf.extend_from_slice(&[3, 1, 0]); // DS parameter set (firmware fills)
+    buf.extend_from_slice(caps24);
     let b24_len = buf.len() - b24;
     let b5 = buf.len();
     buf.extend_from_slice(&[1, 8, 0x8C, 0x12, 0x98, 0x24, 0xB0, 0x48, 0x60, 0x6C]);
+    buf.extend_from_slice(caps5);
     let b5_len = buf.len() - b5;
     let common = buf.len();
     c.u16(0).u16(mac_len as u16);
@@ -438,7 +641,7 @@ pub fn scan_request(own: [u8; 6], channels: &[u8], ssid: &[u8], associated: bool
     c.u16(common as u16).u16(0); // 6 GHz: none
     c.u16(common as u16).u16(0); // common data
     buf.resize(512, 0);
-    c.bytes(&buf);
+    c.bytes(&buf[..512]);
     // short_ssid_num, bssid_num, reserved
     c.u8(0).u8(0).u16(0);
     // direct_scan[20] (id, len, ssid[32])
@@ -458,8 +661,9 @@ pub fn scan_request(own: [u8; 6], channels: &[u8], ssid: &[u8], associated: bool
 }
 
 /// Rate for management frames and frames sent before rate scaling is
-/// configured: 1 Mb/s CCK on 2.4 GHz, 6 Mb/s OFDM on 5 GHz.
-pub fn basic_rate(band_5g: bool, tx_ant: u32) -> u32 {
+/// configured: 1 Mb/s CCK on 2.4 GHz, 6 Mb/s OFDM on 5 GHz. `v2` selects
+/// the rate_n_flags format of TX_CMD version 9 and later.
+pub fn basic_rate(band_5g: bool, tx_ant: u32, v2: bool) -> u32 {
     let ant = if band_5g {
         1 << 14 // antenna A
     } else if tx_ant & 2 != 0 {
@@ -467,7 +671,84 @@ pub fn basic_rate(band_5g: bool, tx_ant: u32) -> u32 {
     } else {
         1 << 14
     };
-    if band_5g { (1 << 8) | ant } else { ant }
+    match (v2, band_5g) {
+        (true, true) => (1 << 8) | ant, // legacy OFDM, index 0 (6 Mb/s)
+        (true, false) => ant,           // CCK, index 0 (1 Mb/s)
+        (false, true) => 13 | ant,      // PLCP 6 Mb/s
+        (false, false) => 10 | (1 << 9) | ant, // PLCP 1 Mb/s, CCK
+    }
+}
+
+/// Describe a rate_n_flags value ("HE-MCS 11 2SS 80MHz", "54 Mb/s").
+pub fn describe_rate(r: u32, v2: bool) -> alloc::string::String {
+    use alloc::format;
+    const CCK: [&str; 4] = ["1", "2", "5.5", "11"];
+    const OFDM: [&str; 8] = ["6", "9", "12", "18", "24", "36", "48", "54"];
+    const OFDM_PLCP: [u32; 8] = [13, 15, 5, 7, 9, 11, 1, 3];
+    const CCK_PLCP: [u32; 4] = [10, 20, 55, 110];
+    if v2 {
+        let width = 20 << ((r >> 11) & 7);
+        let nss = ((r >> 4) & 1) + 1;
+        let idx = (r & 0xF) as usize;
+        return match (r >> 8) & 7 {
+            0 => format!("{} Mb/s", CCK.get(idx).unwrap_or(&"?")),
+            1 => format!("{} Mb/s", OFDM.get(idx).unwrap_or(&"?")),
+            2 => format!("HT-MCS {} {}MHz", (nss - 1) * 8 + (r & 7), width),
+            3 => format!("VHT-MCS {} {}SS {}MHz", idx, nss, width),
+            4 => format!("HE-MCS {} {}SS {}MHz", idx, nss, width),
+            _ => format!("EHT-MCS {} {}SS {}MHz", idx, nss, width),
+        };
+    }
+    let width = 20 << ((r >> 11) & 3);
+    if r & (1 << 26) != 0 {
+        return format!("VHT-MCS {} {}SS {}MHz", r & 0xF, ((r >> 4) & 3) + 1, width);
+    }
+    if r & (1 << 8) != 0 {
+        return format!("HT-MCS {} {}MHz", r & 0x3F, width);
+    }
+    let plcp = r & 0xFF;
+    if r & (1 << 9) != 0 {
+        let i = CCK_PLCP.iter().position(|&p| p == plcp);
+        return format!("{} Mb/s", i.map_or("?", |i| CCK[i]));
+    }
+    let i = OFDM_PLCP.iter().position(|&p| p == plcp);
+    format!("{} Mb/s", i.map_or("?", |i| OFDM[i]))
+}
+
+/// Channels in the order of the firmware's NVM channel list (UHB devices:
+/// 2.4 GHz, 5 GHz, then 6 GHz).
+pub const NVM_CHANNELS: &[u8] = &[
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80,
+    84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161,
+    165, 169, 173, 177, 181,
+];
+pub const NVM_CHANNEL_VALID: u32 = 1 << 0;
+pub const NVM_CHANNEL_ACTIVE: u32 = 1 << 3;
+
+/// Parse an MCC_UPDATE response (v3, v4 or v8 layout, told apart by the
+/// channel count matching the length): (country code, per-channel flags
+/// for the 2.4/5 GHz channels in `NVM_CHANNELS`).
+/// Channel number and its NVM flags.
+pub type ChannelFlags = Vec<(u8, u32)>;
+
+pub fn parse_mcc_response(d: &[u8]) -> Option<([u8; 2], ChannelFlags)> {
+    let le32 = |o: usize| {
+        d.get(o..o + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+    };
+    for off in [20usize, 16, 12] {
+        let Some(n) = le32(off) else { continue };
+        let n = n as usize;
+        if n == 0 || n > 128 || off + 4 + 4 * n != d.len() {
+            continue;
+        }
+        let mcc = [d[5], d[4]];
+        let chans = (0..n.min(NVM_CHANNELS.len()))
+            .map(|i| (NVM_CHANNELS[i], le32(off + 4 + 4 * i).unwrap_or(0)))
+            .collect();
+        return Some((mcc, chans));
+    }
+    None
 }
 
 /// Build the device TX command (cmd header + iwl_tx_cmd_gen3 + 802.11
@@ -537,4 +818,71 @@ pub fn hdr_len(frame: &[u8]) -> usize {
         n = 10;
     }
     n
+}
+
+/// Sanity checks of command sizes against the Linux iwlwifi structures
+/// (run at boot in debug builds; the kernel is not host-testable).
+pub fn layout_checks() {
+    use wlan::caps::{DEFAULT_EDCA, HeLink, Link, Mode, Width};
+    let link = Link {
+        mode: Mode::He,
+        width: Width::W80,
+        primary: 36,
+        center: 42,
+        nss: 2,
+        mcs: [[0xFFF, 0]; 2],
+        sgi: 0,
+        ldpc: true,
+        stbc: true,
+        ampdu_exp: 7,
+        ampdu_density: 5,
+        max_mpdu: 3895,
+        smps: 3,
+        ht_protection: 0,
+        erp_protection: false,
+        edca: DEFAULT_EDCA,
+        qos: true,
+        he: None,
+    };
+    let he = HeLink {
+        bss_color: 1,
+        color_disabled: false,
+        rts_threshold: 1023,
+        default_pe: 0,
+        pkt_ext: None,
+        mu_edca: None,
+        mac: [0; 6],
+    };
+    // iwl_phy_context_cmd: 32 bytes.
+    assert_eq!(phy_context(1, 36, 2, 4, 3).len(), 32);
+    // iwl_mvm_add_sta_cmd (ADD_STA_CMD_API_S_VER_12): 48 bytes.
+    assert_eq!(
+        add_sta(false, [0; 6], 0, sta_flags(&link, 2), 0xFFFF, false).len(),
+        48
+    );
+    let ba = add_sta_rx_ba(true, 3, 100, 64);
+    assert_eq!((ba[17], ba[28], ba[30], ba[44]), (1 << 3, 3, 100, 64));
+    // iwl_tlc_config_cmd_v4: 12 header + 12 rates + 4 = 28 bytes.
+    assert_eq!(tlc_config(&link, true, 3).len(), 28);
+    // iwl_he_sta_context_cmd v2 / v3: 88 / 92 bytes.
+    assert_eq!(he_sta_context(2, &he).len(), 88);
+    assert_eq!(he_sta_context(3, &he).len(), 92);
+    // iwl_mac_ctx_cmd: 60 common + 5 * 8 EDCA + 48 union = 148 bytes.
+    let m = mac_context(&MacParams {
+        action: 1,
+        own: [0; 6],
+        bssid: [0; 6],
+        assoc: None,
+        qos: true,
+        band_5g: true,
+        short_slot: true,
+        short_preamble: false,
+        ht: Some(0),
+        wide: true,
+        erp_protection: false,
+        he: true,
+        edca: &DEFAULT_EDCA,
+    });
+    assert_eq!(m.len(), 148);
+    let _ = describe_rate(0, true);
 }

@@ -94,3 +94,11 @@ AX211/AX201).
 **Network not found / association fails** — `wifi scan` must list it;
 WPA3-only networks need management-frame protection (supported);
 Enterprise networks are not supported.
+
+**Connects but traffic stalls, is slow, or the firmware asserts** — the
+802.11n/ac/ax and aggregation paths are the newest code. Narrow it down
+in `/storage/etc/kernel.conf`, one line at a time, reconnecting after
+each reboot: `iwlwifi.agg=0` (no A-MPDU), then `iwlwifi.mode=vht` (no
+802.11ax), `iwlwifi.width=20`, and finally `iwlwifi.mode=legacy`. Report
+which setting helps, with a `bugreport`; `wifi status` shows the mode and
+rate in use.

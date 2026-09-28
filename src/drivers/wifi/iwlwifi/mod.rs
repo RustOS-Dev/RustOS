@@ -28,6 +28,8 @@ use fw::Firmware;
 use mvm::*;
 use spin::Mutex;
 use trans::{Packet, Trans, TxQueue};
+use wlan::ba::{self, Action, Reorder, Replay, Verdict};
+use wlan::caps::{self, Ac, Mode, Profile, Width};
 use wlan::frame::BssInfo;
 use wlan::ie::{self, Cipher, Security};
 use wlan::sta::{Output, State, Station};
@@ -49,8 +51,14 @@ struct WifiReq {
     arg_len: u64,
 }
 
-const DATA_QUEUE_SIZE: usize = 256;
+/// TX queue sizes: best effort carries almost everything.
+const BE_QUEUE_SIZE: usize = 256;
+const AC_QUEUE_SIZE: usize = 64;
 const MGMT_QUEUE_SIZE: usize = 64;
+/// Frames on a TID before a TX block-ack session is requested.
+const BA_TRIGGER_FRAMES: u32 = 16;
+/// The firmware aggregates only with a peer buffer of at least 64 frames.
+const BA_MIN_BUF: u16 = 64;
 const TX_SLOT: usize = 2560;
 const SCAN_TIMEOUT_MS: u64 = 12_000;
 
@@ -94,9 +102,58 @@ struct Link {
     band_5g: bool,
     ptk: bool,
     tx_ant: u32,
-    data_q: Option<TxQueue>,
+    /// TX rate_n_flags format v2 (TX_CMD version 9+).
+    rate_v2: bool,
+    /// Data queues per access category (index `caps::Ac`).
+    txq: [Option<TxQueue>; 4],
     mgmt_q: Option<TxQueue>,
+    /// Next sequence number per TID (8 = non-QoS data).
+    seq: [u16; 9],
+    mgmt_seq: u16,
+    /// Frames sent per TID (to start aggregation on busy TIDs).
+    tid_frames: [u32; 8],
     tx_errors: u64,
+}
+
+impl Link {
+    fn clear_queues(&mut self) {
+        self.txq = [None, None, None, None];
+        self.mgmt_q = None;
+    }
+    fn queues(&mut self) -> impl Iterator<Item = &mut TxQueue> {
+        self.txq
+            .iter_mut()
+            .chain(core::iter::once(&mut self.mgmt_q))
+            .flatten()
+    }
+    /// Build the data frame for `eth` on the queue of its access category:
+    /// (frame, access category index).
+    fn data_frame(&mut self, eth: &[u8]) -> Option<(Vec<u8>, usize)> {
+        let (tid, ac) = if self.qos {
+            let ac = Ac::from_tid(wlan::frame::tid_for_ethernet(eth));
+            let ac = if self.txq[ac as usize].is_some() {
+                ac
+            } else {
+                Ac::Be
+            };
+            (Some(ac.tid()), ac as usize)
+        } else {
+            (None, Ac::Be as usize)
+        };
+        let si = tid.map_or(8, |t| t as usize);
+        let seq = self.seq[si];
+        let mut frame = wlan::frame::data_frame(eth, self.bssid, tid, seq)?;
+        self.seq[si] = wlan::ba::sn_inc(seq);
+        if let Some(t) = tid {
+            self.tid_frames[t as usize] = self.tid_frames[t as usize].saturating_add(1);
+        }
+        if self.ptk {
+            // The firmware inserts the CCMP/GCMP header and encrypts frames
+            // marked Protected (as mac80211 marks them).
+            frame[1] |= 0x40;
+        }
+        Some((frame, ac))
+    }
 }
 
 #[derive(Default)]
@@ -116,6 +173,11 @@ struct Status {
     message: String,
     firmware: String,
     results: Vec<ScanEntry>,
+    /// Negotiated mode ("802.11ax 80 MHz 2x2") and last TX rate.
+    link_info: String,
+    rate: String,
+    /// Regulatory domain from the firmware.
+    country: String,
 }
 
 pub struct Iwl {
@@ -131,6 +193,11 @@ pub struct Iwl {
     /// Wakes ioctl callers waiting for a scan.
     done_wq: WaitQueue,
     scan_epoch: AtomicU64,
+}
+
+/// Check firmware command encodings against the Linux structure sizes.
+pub fn self_test() {
+    mvm::layout_checks();
 }
 
 pub fn matches(dev: &PciDevice) -> bool {
@@ -188,8 +255,12 @@ pub fn probe(dev: &PciDevice) {
             band_5g: false,
             ptk: false,
             tx_ant: 3,
-            data_q: None,
+            rate_v2: true,
+            txq: [None, None, None, None],
             mgmt_q: None,
+            seq: [0; 9],
+            mgmt_seq: 0,
+            tid_frames: [0; 8],
             tx_errors: 0,
         }),
         rxq: RxQueue::new(),
@@ -204,6 +275,9 @@ pub fn probe(dev: &PciDevice) {
             message: String::new(),
             firmware: String::new(),
             results: Vec::new(),
+            link_info: String::new(),
+            rate: String::new(),
+            country: String::new(),
         }),
         wq: WaitQueue::new(),
         irq: AtomicBool::new(false),
@@ -238,6 +312,18 @@ pub fn probe(dev: &PciDevice) {
             last_tick: 0,
             fw_attempts: 0,
             err_tables: (0, 0),
+            profile: Profile::AX210,
+            agg: true,
+            link: None,
+            tid_disable: 0xFFFF,
+            tx_ba: [TxBa::Off; 8],
+            rx_ba: Vec::new(),
+            dialog: 0,
+            replay: Replay::new(0),
+            group_replay: Replay::new(0),
+            channels: Vec::new(),
+            he_ctxt_ver: 0,
+            tlc_v2: false,
         }
         .run()
     });
@@ -331,19 +417,13 @@ impl NetDevice for Iwl {
         if !l.connected {
             return Err(ENETDOWN);
         }
-        let Some(mut frame) = wlan::frame::data_from_ethernet(eth, l.bssid, l.qos) else {
+        let Some((frame, ac)) = l.data_frame(eth) else {
             return Err(EINVAL);
         };
-        let hdrlen = hdr_len(&frame);
         let encrypt = l.ptk;
-        if encrypt {
-            // The firmware inserts the CCMP/GCMP header and encrypts frames
-            // marked Protected (as mac80211 marks them).
-            frame[1] |= 0x40;
-        }
-        let (cmd, tb1) = tx_command(&frame, hdrlen, None, encrypt, false);
+        let (cmd, tb1) = tx_command(&frame, hdr_len(&frame), None, encrypt, false);
         let mmio = self.mmio;
-        let q = l.data_q.as_mut().ok_or(ENETDOWN)?;
+        let q = l.txq[ac].as_mut().ok_or(ENETDOWN)?;
         match Trans::tx(q, mmio, &cmd, tb1, frame.len() as u16) {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -415,6 +495,15 @@ impl NetDevice for Iwl {
                 s.security
             );
         }
+        if s.phase == Phase::Connected && !s.link_info.is_empty() {
+            let _ = write!(out, " mode=\"{}\"", s.link_info);
+            if !s.rate.is_empty() {
+                let _ = write!(out, " rate=\"{}\"", s.rate);
+            }
+        }
+        if !s.country.is_empty() {
+            let _ = write!(out, " country={}", s.country);
+        }
         if !s.firmware.is_empty() {
             let _ = write!(out, " firmware={}", s.firmware);
         }
@@ -444,6 +533,59 @@ struct Driver {
     fw_attempts: u32,
     /// SRAM addresses of the LMAC and UMAC error tables (from ALIVE).
     err_tables: (u32, u32),
+    /// What we advertise (limited by kernel.conf and firmware support).
+    profile: Profile,
+    /// Aggregation (block ack) enabled.
+    agg: bool,
+    /// Link parameters negotiated with the current AP.
+    link: Option<caps::Link>,
+    /// TIDs without TX aggregation (ADD_STA tid_disable_tx).
+    tid_disable: u16,
+    tx_ba: [TxBa; 8],
+    rx_ba: Vec<RxBa>,
+    dialog: u8,
+    /// Replay counters: unicast per TID, group per key index.
+    replay: Replay,
+    group_replay: Replay,
+    /// Regulatory channel flags from MCC_UPDATE (empty: unknown).
+    channels: Vec<(u8, u32)>,
+    /// STA_HE_CTXT_CMD version (0: HE unsupported by the driver).
+    he_ctxt_ver: u8,
+    /// TLC notifications use rate_n_flags v2.
+    tlc_v2: bool,
+}
+
+/// Block-ack session we originate (TX aggregation) on one TID.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TxBa {
+    Off,
+    Pending {
+        token: u8,
+        since: u64,
+    },
+    On,
+    /// Refused or failed; try again after `until`.
+    Refused {
+        until: u64,
+    },
+}
+
+/// Receive block-ack session (the AP aggregates frames to us).
+struct RxBa {
+    tid: u8,
+    baid: u8,
+    reorder: Reorder<RxFrame>,
+}
+
+/// A received data frame on its way through reordering and replay
+/// checks: the 802.11 frame (decrypted, security header removed).
+struct RxFrame {
+    f: Vec<u8>,
+    protected: bool,
+    pn: Option<u64>,
+    keyidx: u8,
+    /// Later subframe of a hardware-split A-MSDU (same PN allowed).
+    same_pn_ok: bool,
 }
 
 fn now() -> u64 {
@@ -554,6 +696,20 @@ impl Driver {
                 );
             }
         }
+        self.dev.link.lock().rate_v2 = fw.cmd_version(LEGACY, TX_CMD).is_none_or(|v| v > 8);
+        self.tlc_v2 = fw
+            .notif_version(DATA_PATH, TLC_MNG_UPDATE_NOTIF)
+            .is_some_and(|v| v >= 3);
+        self.he_ctxt_ver = match fw.cmd_version(DATA_PATH, STA_HE_CTXT).unwrap_or(2) {
+            v @ (2 | 3) => v,
+            v => {
+                crate::println!(
+                    "[iwlwifi] STA_HE_CTXT v{} unsupported: 802.11ax disabled",
+                    v
+                );
+                0
+            }
+        };
         self.dev.status.lock().firmware =
             format!("{} ({})", names[i].trim_end_matches(".ucode"), fw.version);
         if self.trans.rfkill() {
@@ -619,7 +775,7 @@ impl Driver {
         self.cmd(
             LEGACY,
             PHY_CONTEXT,
-            &phy_context(FW_CTXT_ACTION_ADD, 1, rx_ant),
+            &phy_context(FW_CTXT_ACTION_ADD, 1, 0, 0, rx_ant),
         )?;
         self.channel = 1;
         let _ = self.cmd(LEGACY, POWER_TABLE, &[0, 0, 0, 0]);
@@ -631,8 +787,36 @@ impl Driver {
                 .u32(0)
                 .zeros(20)
                 .done();
-            if self.cmd(LEGACY, MCC_UPDATE, &mcc).is_err() {
-                crate::println!("[iwlwifi] regulatory update failed; using firmware defaults");
+            match self.cmd(LEGACY, MCC_UPDATE, &mcc) {
+                Ok(r) => match parse_mcc_response(&r) {
+                    Some((mcc, chans)) => {
+                        let valid: Vec<(u8, u32)> = chans
+                            .into_iter()
+                            .filter(|(_, f)| f & NVM_CHANNEL_VALID != 0)
+                            .collect();
+                        let country = String::from_utf8_lossy(&mcc).into_owned();
+                        crate::println!(
+                            "[iwlwifi] regulatory domain {}: {} channels ({} passive-only)",
+                            country,
+                            valid.len(),
+                            valid
+                                .iter()
+                                .filter(|(_, f)| f & NVM_CHANNEL_ACTIVE == 0)
+                                .count()
+                        );
+                        self.dev.status.lock().country = country;
+                        if !valid.is_empty() {
+                            self.channels = valid;
+                        }
+                    }
+                    None => crate::println!(
+                        "[iwlwifi] unrecognised MCC_UPDATE response ({} bytes)",
+                        r.len()
+                    ),
+                },
+                Err(_) => {
+                    crate::println!("[iwlwifi] regulatory update failed; using firmware defaults")
+                }
             }
         }
         self.cmd(LEGACY, SCAN_CFG, &scan_config(tx_ant, rx_ant))?;
@@ -690,6 +874,9 @@ impl Driver {
                 )
             })
             .unwrap_or((false, false));
+        // HT/HE settings and the AP's EDCA parameters apply once associated.
+        let link = self.link.as_ref().filter(|_| assoc.is_some());
+        let edca = link.map_or(caps::DEFAULT_EDCA, |l| l.edca);
         mac_context(&MacParams {
             action,
             own: self.dev.mac,
@@ -699,8 +886,47 @@ impl Driver {
             band_5g: self.channel > 14,
             short_slot,
             short_preamble: short_pre,
-            _p: core::marker::PhantomData,
+            ht: link.filter(|l| l.mode >= Mode::Ht).map(|l| l.ht_protection),
+            wide: link.is_some_and(|l| l.width > Width::W20),
+            erp_protection: link.is_some_and(|l| l.erp_protection),
+            he: link.is_some_and(|l| l.mode == Mode::He),
+            edca: &edca,
         })
+    }
+
+    /// Capabilities to advertise: the AX210 profile limited by the
+    /// firmware and by `iwlwifi.mode` / `iwlwifi.width` in kernel.conf.
+    fn profile(&mut self) -> Profile {
+        let mut p = Profile::AX210;
+        p.nss = (self
+            .fw
+            .as_ref()
+            .map_or(3, |f| f.valid_tx_ant() & f.valid_rx_ant())
+            & 3)
+        .count_ones() as u8;
+        p.nss = p.nss.max(1);
+        if self.he_ctxt_ver == 0 {
+            p.max_mode = Mode::Vht;
+        }
+        match crate::params::get("iwlwifi.mode").as_deref() {
+            Some("legacy" | "abg") => p.max_mode = Mode::Legacy,
+            Some("ht" | "n") => p.max_mode = p.max_mode.min(Mode::Ht),
+            Some("vht" | "ac") => p.max_mode = p.max_mode.min(Mode::Vht),
+            _ => {}
+        }
+        if let Some(w) = crate::params::get("iwlwifi.width").and_then(|w| w.parse::<u32>().ok()) {
+            p.max_width = p.max_width.min(Width::from_mhz(w));
+        }
+        if p.max_mode == Mode::Legacy {
+            p.max_width = Width::W20;
+        }
+        self.agg = p.max_mode >= Mode::Ht
+            && !matches!(
+                crate::params::get("iwlwifi.agg").as_deref(),
+                Some("0" | "off" | "no")
+            );
+        self.profile = p;
+        p
     }
 
     fn rx_ant(&self) -> u32 {
@@ -771,6 +997,7 @@ impl Driver {
                 let out = s.tick(t);
                 self.outputs(out)?;
             }
+            self.tx_ba_tick(t);
             self.expire_results();
         }
         Ok(())
@@ -833,6 +1060,22 @@ impl Driver {
         match (p.group, p.cmd) {
             (0 | 1, RX_MPDU) => self.rx_mpdu(&p.data)?,
             (0 | 1, TX_CMD) => self.tx_status(&p),
+            (0 | 1, BA_NOTIF) => self.ba_notif(&p.data),
+            (0 | 1, FRAME_RELEASE) if p.data.len() >= 4 => {
+                let nssn = u16::from_le_bytes([p.data[2], p.data[3]]);
+                self.release_frames(p.data[0], nssn)?;
+            }
+            (0 | 1, BAR_FRAME_RELEASE) if p.data.len() >= 8 => {
+                let info = u32::from_le_bytes(p.data[4..8].try_into().unwrap());
+                self.release_frames(((info >> 24) & 0x3F) as u8, (info & 0xFFF) as u16)?;
+            }
+            (DATA_PATH, TLC_MNG_UPDATE_NOTIF) if p.data.len() >= 12 => {
+                let flags = u32::from_le_bytes(p.data[4..8].try_into().unwrap());
+                if flags & 1 != 0 {
+                    let rate = u32::from_le_bytes(p.data[8..12].try_into().unwrap());
+                    self.dev.status.lock().rate = describe_rate(rate, self.tlc_v2);
+                }
+            }
             (0 | 1, SCAN_COMPLETE_UMAC) => self.scan_done(),
             (0 | 1, MISSED_BEACONS) => {
                 let missed = p
@@ -853,27 +1096,59 @@ impl Driver {
     }
 
     fn tx_status(&mut self, p: &Packet) {
-        // iwl_mvm_tx_resp: frame_count at 0, tx_queue at 36, status at 40.
+        // iwl_mvm_tx_resp: frame_count at 0, tx_queue at 36, per-frame
+        // status from 40, then the scheduler SSN (next index to reclaim).
         let d = &p.data;
         if d.len() < 44 {
             return;
         }
+        let count = d[0] as usize;
         let queue = u16::from_le_bytes([d[36], d[37]]);
         let status = u16::from_le_bytes([d[40], d[41]]);
-        let idx = (p.seq & 0xFF) as u32;
         let mut l = self.dev.link.lock();
-        if status & 0xFF != 1 && status & 0xFF != 2 {
+        if count == 1 && status & 0xFF != 1 && status & 0xFF != 2 {
             l.tx_errors += 1;
         }
-        let Link { data_q, mgmt_q, .. } = &mut *l;
-        for q in [data_q.as_mut(), mgmt_q.as_mut()].into_iter().flatten() {
+        if count > 1 {
+            return; // aggregated: reclaimed by the block-ack notification
+        }
+        let ssn = d
+            .get(40 + 4 * count..44 + 4 * count)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()) & 0xFFFF)
+            .unwrap_or((p.seq as u32 & 0xFF) + 1);
+        for q in l.queues() {
             if q.id == queue {
-                q.reclaim_to(idx + 1);
+                q.reclaim_to(ssn);
+            }
+        }
+    }
+
+    /// Compressed block-ack notification: reclaim the acknowledged frames
+    /// (iwl_mvm_compressed_ba_notif, TFD entries from offset 32).
+    fn ba_notif(&mut self, d: &[u8]) {
+        if d.len() < 32 {
+            return;
+        }
+        let n = u16::from_le_bytes([d[28], d[29]]) as usize;
+        let mut l = self.dev.link.lock();
+        for i in 0..n {
+            let Some(e) = d.get(32 + 8 * i..40 + 8 * i) else {
+                break;
+            };
+            let queue = u16::from_le_bytes([e[0], e[1]]);
+            let index = u16::from_le_bytes([e[2], e[3]]) as u32;
+            for q in l.queues() {
+                if q.id == queue {
+                    q.reclaim_to(index);
+                }
             }
         }
     }
 
     fn rx_mpdu(&mut self, d: &[u8]) -> KResult<()> {
+        // iwl_rx_mpdu_desc (v3, 64 bytes): mpdu_len 0, mac_flags1 2,
+        // mac_flags2 3, amsdu_info 4, status 12, reorder_data 16,
+        // energy 40/41, channel 42.
         const DESC: usize = 64;
         if d.len() < DESC + 24 {
             return Ok(());
@@ -881,7 +1156,9 @@ impl Driver {
         let mpdu_len = u16::from_le_bytes([d[0], d[1]]) as usize;
         let flags1 = d[2];
         let flags2 = d[3];
+        let amsdu_info = d[4];
         let status = u32::from_le_bytes(d[12..16].try_into().unwrap());
+        let reorder = u32::from_le_bytes(d[16..20].try_into().unwrap());
         // CRC and overrun OK.
         if status & 3 != 3 {
             return Ok(());
@@ -914,7 +1191,10 @@ impl Driver {
             len -= mic;
         }
         f.truncate(len);
-        if decrypted {
+        let (mut pn, mut keyidx) = (None, 0);
+        if decrypted && f.len() >= hdrlen + 8 {
+            pn = ba::ccmp_pn(&f[hdrlen..hdrlen + 8]);
+            keyidx = f[hdrlen + 3] >> 6;
             f.drain(hdrlen..hdrlen + 8);
             f[1] &= !0x40;
         }
@@ -924,13 +1204,87 @@ impl Driver {
         let fc = u16::from_le_bytes([f[0], f[1]]);
         match (fc >> 2) & 3 {
             0 => self.rx_mgmt(&f, channel, energy.clamp(-127, 0) as i8),
-            2 => self.rx_data(&f, protected),
+            2 => {
+                // The hardware splits A-MSDUs: each subframe arrives as an
+                // MPDU of its own with the A-MSDU flag still set.
+                let hw_amsdu = flags2 & 0x40 != 0;
+                if hw_amsdu {
+                    wlan::frame::clear_amsdu(&mut f);
+                }
+                let sub = (fc >> 4) & 0xF;
+                let reorderable = sub & 0x8 != 0 && sub & 0x4 == 0 && f[4] & 1 == 0;
+                let frame = RxFrame {
+                    f,
+                    protected,
+                    pn,
+                    keyidx,
+                    same_pn_ok: hw_amsdu && amsdu_info & 0x7F != 0,
+                };
+                let baid = ((reorder >> 24) & 0x7F) as u8;
+                if reorderable
+                    && baid != INVALID_BAID
+                    && let Some(b) = self.rx_ba.iter_mut().find(|b| b.baid == baid)
+                {
+                    let sn = ((reorder >> 12) & 0xFFF) as u16;
+                    let nssn = (reorder & 0xFFF) as u16;
+                    let old = reorder & 0x8000_0000 != 0;
+                    let last = amsdu_info & 0x80 != 0;
+                    match b.reorder.rx(frame, sn, nssn, old, false, hw_amsdu, last) {
+                        Verdict::Pass(fr) => self.deliver(fr)?,
+                        Verdict::Held(v) => {
+                            for fr in v {
+                                self.deliver(fr)?;
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                self.deliver(frame)
+            }
             _ => Ok(()),
         }
     }
 
+    /// Frames the reorder buffer may now release (firmware frame release
+    /// and block-ack-request notifications).
+    fn release_frames(&mut self, baid: u8, nssn: u16) -> KResult<()> {
+        let Some(b) = self.rx_ba.iter_mut().find(|b| b.baid == baid) else {
+            return Ok(());
+        };
+        for fr in b.reorder.release(nssn) {
+            self.deliver(fr)?;
+        }
+        Ok(())
+    }
+
+    /// Replay check, then hand the frame to the network stack.
+    fn deliver(&mut self, fr: RxFrame) -> KResult<()> {
+        if let Some(pn) = fr.pn {
+            let ok = if fr.f[4] & 1 != 0 {
+                self.group_replay
+                    .check(fr.keyidx as usize, pn, fr.same_pn_ok)
+            } else {
+                let tid = wlan::frame::qos_tid(&fr.f).map_or(16, |t| t as usize);
+                self.replay.check(tid, pn, fr.same_pn_ok)
+            };
+            if !ok {
+                return Ok(()); // replayed
+            }
+        }
+        self.rx_data(&fr.f, fr.protected)
+    }
+
     fn rx_mgmt(&mut self, f: &[u8], channel: u8, signal: i8) -> KResult<()> {
         let sub = (f[0] >> 4) & 0xF;
+        if sub == wlan::frame::ST_ACTION && f.len() > 24 {
+            let from_ap = self
+                .sta
+                .as_ref()
+                .is_some_and(|s| f[10..16] == s.bss.bssid && f[4..10] == self.dev.mac);
+            if from_ap && let Some(a) = Action::parse(&f[24..]) {
+                return self.rx_block_ack(a);
+            }
+        }
         if sub == 8 || sub == 5 {
             // Beacon / probe response.
             if let Some(mut bss) = wlan::frame::parse_beacon(f) {
@@ -978,19 +1332,216 @@ impl Driver {
         if fc & 0x0300 != 0x0200 || addr2 != sta.bss.bssid {
             return Ok(()); // only FromDS frames from our AP
         }
-        let Some(eth) = wlan::frame::ethernet_from_data(f) else {
-            return Ok(());
-        };
-        if eth.len() >= 14 && eth[12..14] == [0x88, 0x8E] {
-            let out = self.sta.as_mut().unwrap().rx_eapol(&eth[14..], now());
-            return self.outputs(out);
-        }
         let secured = sta.security == Security::Open || was_protected;
-        if self.dev.link.lock().connected && secured {
-            self.dev.rxq.push(eth);
-            net::kick();
+        let frames = if wlan::frame::is_amsdu(f) {
+            wlan::frame::amsdu_to_ethernet(f)
+        } else {
+            wlan::frame::ethernet_from_data(f).into_iter().collect()
+        };
+        for eth in frames {
+            if eth.len() >= 14 && eth[12..14] == [0x88, 0x8E] {
+                if let Some(s) = self.sta.as_mut() {
+                    let out = s.rx_eapol(&eth[14..], now());
+                    self.outputs(out)?;
+                }
+                continue;
+            }
+            if self.dev.link.lock().connected && secured {
+                self.dev.rxq.push(eth);
+                net::kick();
+            }
         }
         Ok(())
+    }
+
+    /// Block Ack action frames from the AP.
+    fn rx_block_ack(&mut self, a: Action) -> KResult<()> {
+        match a {
+            Action::AddbaRequest {
+                token,
+                params,
+                timeout,
+                ssn,
+            } => {
+                let tid = params.tid & 7;
+                self.stop_rx_ba(tid)?;
+                let he = self.link.as_ref().is_some_and(|l| l.mode == Mode::He);
+                let max = if he { 256 } else { 64 };
+                let win = if params.buf_size == 0 {
+                    max
+                } else {
+                    params.buf_size.min(max)
+                };
+                let usable = self.agg
+                    && params.immediate
+                    && self.link.as_ref().is_some_and(|l| l.mode >= Mode::Ht);
+                let mut status = ba::STATUS_DECLINED;
+                if usable {
+                    let r = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(true, tid, ssn, win))?;
+                    let st = r
+                        .get(0..4)
+                        .map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
+                    match add_sta_baid(st) {
+                        Some(baid) => {
+                            self.rx_ba.push(RxBa {
+                                tid,
+                                baid,
+                                reorder: Reorder::new(ssn, win),
+                            });
+                            status = ba::STATUS_SUCCESS;
+                        }
+                        None => {
+                            crate::println!(
+                                "[iwlwifi] RX block ack for TID {} refused ({:#x})",
+                                tid,
+                                st
+                            );
+                            if st & 0xFF == 1 {
+                                let _ = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(false, tid, 0, 0));
+                            }
+                        }
+                    }
+                }
+                self.send_action(Action::AddbaResponse {
+                    token,
+                    status,
+                    params: ba::Params {
+                        amsdu: params.amsdu,
+                        immediate: true,
+                        tid,
+                        buf_size: if status == ba::STATUS_SUCCESS {
+                            win
+                        } else {
+                            params.buf_size
+                        },
+                    },
+                    timeout,
+                });
+            }
+            Action::AddbaResponse {
+                token,
+                status,
+                params,
+                ..
+            } => {
+                let tid = (params.tid & 7) as usize;
+                let TxBa::Pending { token: t, .. } = self.tx_ba[tid] else {
+                    return Ok(());
+                };
+                if t != token {
+                    return Ok(());
+                }
+                if status != ba::STATUS_SUCCESS || params.buf_size < BA_MIN_BUF {
+                    if status == ba::STATUS_SUCCESS {
+                        // A window below 64 frames: the firmware cannot use it.
+                        self.send_action(Action::Delba {
+                            tid: tid as u8,
+                            initiator: true,
+                            reason: ba::REASON_END_BA,
+                        });
+                    }
+                    self.tx_ba[tid] = TxBa::Refused {
+                        until: now() + 60_000,
+                    };
+                    return Ok(());
+                }
+                self.tid_disable &= !(1 << tid);
+                self.cmd(LEGACY, ADD_STA, &add_sta_tid_disable(self.tid_disable))?;
+                self.tx_ba[tid] = TxBa::On;
+                crate::println!(
+                    "[iwlwifi] TX aggregation on TID {} (window {})",
+                    tid,
+                    params.buf_size
+                );
+            }
+            Action::Delba { tid, initiator, .. } => {
+                if initiator {
+                    self.stop_rx_ba(tid & 7)?;
+                } else {
+                    let tid = (tid & 7) as usize;
+                    if self.tx_ba[tid] == TxBa::On {
+                        self.tid_disable |= 1 << tid;
+                        self.cmd(LEGACY, ADD_STA, &add_sta_tid_disable(self.tid_disable))?;
+                    }
+                    self.tx_ba[tid] = TxBa::Refused {
+                        until: now() + 60_000,
+                    };
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// End the receive block-ack session on `tid` (delivering what the
+    /// reorder buffer still holds).
+    fn stop_rx_ba(&mut self, tid: u8) -> KResult<()> {
+        let Some(i) = self.rx_ba.iter().position(|b| b.tid == tid) else {
+            return Ok(());
+        };
+        let mut b = self.rx_ba.remove(i);
+        for fr in b.reorder.flush() {
+            self.deliver(fr)?;
+        }
+        if self.sta_added {
+            let _ = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(false, tid, 0, 0));
+        }
+        Ok(())
+    }
+
+    /// Start TX block-ack sessions on busy TIDs; expire stale requests.
+    fn tx_ba_tick(&mut self, t: u64) {
+        let (connected, qos, frames) = {
+            let l = self.dev.link.lock();
+            (l.connected, l.qos, l.tid_frames)
+        };
+        let ht = self.link.as_ref().is_some_and(|l| l.mode >= Mode::Ht);
+        if !self.agg || !connected || !qos || !ht {
+            return;
+        }
+        let he = self.link.as_ref().is_some_and(|l| l.mode == Mode::He);
+        for ac in Ac::ALL {
+            let tid = ac.tid() as usize;
+            match self.tx_ba[tid] {
+                TxBa::Off if frames[tid] >= BA_TRIGGER_FRAMES => {
+                    self.dialog = self.dialog.wrapping_add(1).max(1);
+                    let token = self.dialog;
+                    let ssn = self.dev.link.lock().seq[tid];
+                    self.send_action(Action::AddbaRequest {
+                        token,
+                        params: ba::Params {
+                            amsdu: false,
+                            immediate: true,
+                            tid: tid as u8,
+                            buf_size: if he { 256 } else { 64 },
+                        },
+                        timeout: 0,
+                        ssn,
+                    });
+                    self.tx_ba[tid] = TxBa::Pending { token, since: t };
+                }
+                TxBa::Pending { since, .. } if t - since > 1000 => {
+                    self.tx_ba[tid] = TxBa::Refused { until: t + 30_000 };
+                }
+                TxBa::Refused { until } if t >= until => {
+                    self.dev.link.lock().tid_frames[tid] = 0;
+                    self.tx_ba[tid] = TxBa::Off;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Forget the link parameters and block-ack sessions.
+    fn reset_link_state(&mut self) {
+        self.link = None;
+        self.tid_disable = 0xFFFF;
+        self.tx_ba = [TxBa::Off; 8];
+        self.rx_ba.clear();
+        self.replay = Replay::new(0);
+        self.group_replay = Replay::new(0);
+        let mut st = self.dev.status.lock();
+        st.link_info.clear();
+        st.rate.clear();
     }
 
     fn start_scan(&mut self, for_connect: bool) -> KResult<()> {
@@ -998,14 +1549,29 @@ impl Driver {
             return Ok(());
         }
         let connected = self.dev.status.lock().phase == Phase::Connected;
-        let mut chans: Vec<u8> = SCAN_CHANNELS_24.to_vec();
-        chans.extend_from_slice(SCAN_CHANNELS_5);
+        let chans: Vec<u8> = if self.channels.is_empty() {
+            SCAN_CHANNELS_24
+                .iter()
+                .chain(SCAN_CHANNELS_5)
+                .copied()
+                .collect()
+        } else {
+            self.channels.iter().map(|&(c, _)| c).collect()
+        };
         let ssid = if for_connect {
             self.want.as_ref().map(|w| w.0.clone()).unwrap_or_default()
         } else {
             Vec::new()
         };
-        let req = scan_request(self.dev.mac, &chans, &ssid, connected);
+        let p = self.profile();
+        let req = scan_request(
+            self.dev.mac,
+            &chans,
+            &ssid,
+            connected,
+            &caps::probe_elements(&p, true),
+            &caps::probe_elements(&p, false),
+        );
         self.cmd(LEGACY, SCAN_REQ_UMAC, &req)?;
         self.scan_started = now();
         self.scan_for_connect = for_connect;
@@ -1074,6 +1640,16 @@ impl Driver {
         };
         let bss = best.bss.clone();
         let channel = bss.channel.unwrap_or(1);
+        if !self.channels.is_empty() && !self.channels.iter().any(|&(c, _)| c == channel) {
+            self.dev.set_phase(
+                Phase::Failed,
+                &format!(
+                    "channel {} is not allowed in this regulatory domain",
+                    channel
+                ),
+            );
+            return Ok(());
+        }
         let security = ie::security(bss.capability, &bss.ies);
         if matches!(security, Security::Wep | Security::Enterprise) {
             self.dev.set_phase(
@@ -1108,21 +1684,32 @@ impl Driver {
                 return Ok(());
             }
         };
+        let mut sta = sta;
         self.pmf = sta.pmf();
+        sta.profile = self.profile();
+        let link = caps::negotiate(&sta.profile, &bss.ies, channel);
 
-        // Tune to the channel, bind the MAC to it, add the AP station.
+        // Tune to the channel (at the AP's width), bind the MAC to it, add
+        // the AP station.
         self.channel = channel;
         let rx_ant = self.rx_ant();
         self.cmd(
             LEGACY,
             PHY_CONTEXT,
-            &phy_context(FW_CTXT_ACTION_MODIFY, channel, rx_ant),
+            &phy_context(
+                FW_CTXT_ACTION_MODIFY,
+                channel,
+                link.width.code(),
+                caps::ctrl_pos(&link),
+                rx_ant,
+            ),
         )?;
         if !self.bound {
             self.cmd(LEGACY, BINDING, &binding(FW_CTXT_ACTION_ADD))?;
             self.bound = true;
         }
         self.sta = Some(sta);
+        self.link = Some(link);
         let bssid = bss.bssid;
         self.cmd(
             LEGACY,
@@ -1136,6 +1723,8 @@ impl Driver {
             l.band_5g = channel > 14;
             l.ptk = false;
             l.qos = false;
+            l.seq = [0; 9];
+            l.tid_frames = [0; 8];
         }
         let _ = self.cmd(
             MAC_CONF,
@@ -1150,16 +1739,30 @@ impl Driver {
     }
 
     fn add_station(&mut self, bssid: [u8; 6]) -> KResult<()> {
-        let r = self.cmd(LEGACY, ADD_STA, &add_sta(false, bssid, 0))?;
+        self.tid_disable = 0xFFFF;
+        let legacy = sta_flags(&caps::negotiate(&Profile::LEGACY, &[], self.channel), 1);
+        let r = self.cmd(
+            LEGACY,
+            ADD_STA,
+            &add_sta(false, bssid, 0, legacy, self.tid_disable, false),
+        )?;
         if r.first().is_some_and(|&s| s != 1) {
             crate::println!("[iwlwifi] ADD_STA failed ({:#x})", r[0]);
             return Err(EIO);
         }
         self.sta_added = true;
-        let data = self.alloc_queue(0, DATA_QUEUE_SIZE)?;
+        let mut queues = [None, None, None, None];
+        queues[Ac::Be as usize] = Some(self.alloc_queue(Ac::Be.tid(), BE_QUEUE_SIZE)?);
+        for ac in [Ac::Bk, Ac::Vi, Ac::Vo] {
+            // Other categories fall back to best effort without a queue.
+            match self.alloc_queue(ac.tid(), AC_QUEUE_SIZE) {
+                Ok(q) => queues[ac as usize] = Some(q),
+                Err(e) => crate::println!("[iwlwifi] no TX queue for {:?}: {}", ac, e),
+            }
+        }
         let mgmt = self.alloc_queue(MGMT_TID, MGMT_QUEUE_SIZE)?;
         let mut l = self.dev.link.lock();
-        l.data_q = Some(data);
+        l.txq = queues;
         l.mgmt_q = Some(mgmt);
         Ok(())
     }
@@ -1180,12 +1783,29 @@ impl Driver {
     }
 
     /// Send a management frame through the AP station's management queue.
-    fn send_mgmt(&mut self, f: &[u8]) -> KResult<()> {
+    /// `protect`: encrypt it (robust action frames with PMF).
+    fn send_mgmt(&mut self, f: &[u8], protect: bool) -> KResult<()> {
         let mut l = self.dev.link.lock();
-        let rate = basic_rate(l.band_5g, l.tx_ant);
-        let (cmd, tb1) = tx_command(f, 24, Some(rate), false, true);
+        let rate = basic_rate(l.band_5g, l.tx_ant, l.rate_v2);
+        let mut f = f.to_vec();
+        wlan::frame::set_seq(&mut f, l.mgmt_seq);
+        l.mgmt_seq = ba::sn_inc(l.mgmt_seq);
+        let encrypt = protect && l.ptk;
+        if encrypt {
+            f[1] |= 0x40;
+        }
+        let (cmd, tb1) = tx_command(&f, 24, Some(rate), encrypt, true);
         let q = l.mgmt_q.as_mut().ok_or(ENETDOWN)?;
         Trans::tx(q, self.dev.mmio, &cmd, tb1, f.len() as u16)
+    }
+
+    /// Send a Block Ack action frame to the AP.
+    fn send_action(&mut self, a: Action) {
+        let bssid = self.dev.link.lock().bssid;
+        let f = a.frame(self.dev.mac, bssid);
+        if let Err(e) = self.send_mgmt(&f, self.pmf) {
+            crate::println!("[iwlwifi] action frame TX failed: {}", e);
+        }
     }
 
     fn send_eapol(&mut self, body: &[u8]) -> KResult<()> {
@@ -1195,14 +1815,11 @@ impl Driver {
         eth.extend_from_slice(&self.dev.mac);
         eth.extend_from_slice(&[0x88, 0x8E]);
         eth.extend_from_slice(body);
-        let mut frame = wlan::frame::data_from_ethernet(&eth, l.bssid, l.qos).ok_or(EINVAL)?;
-        let rate = basic_rate(l.band_5g, l.tx_ant);
+        let (frame, ac) = l.data_frame(&eth).ok_or(EINVAL)?;
+        let rate = basic_rate(l.band_5g, l.tx_ant, l.rate_v2);
         let encrypt = l.ptk;
-        if encrypt {
-            frame[1] |= 0x40;
-        }
         let (cmd, tb1) = tx_command(&frame, hdr_len(&frame), Some(rate), encrypt, true);
-        let q = l.data_q.as_mut().ok_or(ENETDOWN)?;
+        let q = l.txq[ac].as_mut().ok_or(ENETDOWN)?;
         Trans::tx(q, self.dev.mmio, &cmd, tb1, frame.len() as u16)
     }
 
@@ -1210,7 +1827,7 @@ impl Driver {
         for o in out {
             match o {
                 Output::TxMgmt(f) => {
-                    if let Err(e) = self.send_mgmt(&f) {
+                    if let Err(e) = self.send_mgmt(&f, false) {
                         crate::println!("[iwlwifi] management TX failed: {}", e);
                     }
                 }
@@ -1219,7 +1836,7 @@ impl Driver {
                         crate::println!("[iwlwifi] EAPOL TX failed: {}", e);
                     }
                 }
-                Output::Associated { aid, qos } => self.associated(aid, qos)?,
+                Output::Associated { aid, qos, ies } => self.associated(aid, qos, &ies)?,
                 Output::InstallPairwise { cipher, key } => {
                     let gcmp = matches!(cipher, Cipher::Gcmp128 | Cipher::Gcmp256);
                     self.cmd(
@@ -1228,13 +1845,19 @@ impl Driver {
                         &add_sta_key(&key, 0, 0, gcmp, false, self.pmf, [0; 6]),
                     )?;
                     self.dev.link.lock().ptk = true;
+                    self.replay = Replay::new(0);
                 }
                 Output::InstallGroup {
                     idx,
                     cipher,
                     key,
-                    rsc: _,
+                    rsc,
                 } => {
+                    let mut pn = [0u8; 8];
+                    pn[..6].copy_from_slice(&rsc[..6]);
+                    let start = u64::from_le_bytes(pn);
+                    // Accept the counter itself (RSC is the last one used).
+                    let _ = self.group_replay.check(idx as usize, start, false);
                     let gcmp = matches!(cipher, Cipher::Gcmp128 | Cipher::Gcmp256);
                     let offset = idx.clamp(1, 3);
                     self.cmd(
@@ -1256,6 +1879,9 @@ impl Driver {
                     );
                     self.dev.link.lock().connected = true;
                     self.dev.set_phase(Phase::Connected, "");
+                    if let Some(l) = &self.link {
+                        self.dev.status.lock().link_info = caps::describe(l, self.channel <= 14);
+                    }
                     let st = self.dev.status.lock();
                     crate::println!(
                         "[iwlwifi] connected to \"{}\" ({})",
@@ -1279,38 +1905,76 @@ impl Driver {
         Ok(())
     }
 
-    fn associated(&mut self, aid: u16, qos: bool) -> KResult<()> {
-        let (bssid, bi) = {
+    fn associated(&mut self, aid: u16, qos: bool, resp_ies: &[u8]) -> KResult<()> {
+        let (bssid, bi, beacon_ies) = {
             let s = self.sta.as_ref().ok_or(EIO)?;
-            (s.bss.bssid, s.bss.beacon_interval)
+            (s.bss.bssid, s.bss.beacon_interval, s.bss.ies.clone())
         };
-        let dtim = self
-            .sta
-            .as_ref()
-            .and_then(|s| ie::find(&s.bss.ies, 5).and_then(|t| t.get(1).copied()))
+        let dtim = ie::find(&beacon_ies, 5)
+            .and_then(|t| t.get(1).copied())
             .unwrap_or(1);
+        // The association response carries the AP's capabilities for us;
+        // the beacon fills in what it leaves out (e.g. WMM parameters).
+        let mut ies = resp_ies.to_vec();
+        ies.extend_from_slice(&beacon_ies);
+        let link = caps::negotiate(&self.profile, &ies, self.channel);
+        let qos = qos || link.qos;
+        crate::println!(
+            "[iwlwifi] associated (aid {}): {}{}",
+            aid,
+            caps::describe(&link, self.channel <= 14),
+            if link.mode >= Mode::Ht {
+                format!(", A-MPDU up to {} KiB", 8u32 << link.ampdu_exp)
+            } else {
+                String::new()
+            }
+        );
+        let rx_ant = self.rx_ant();
+        if self
+            .link
+            .as_ref()
+            .is_none_or(|l| l.width != link.width || l.center != link.center)
+        {
+            self.cmd(
+                LEGACY,
+                PHY_CONTEXT,
+                &phy_context(
+                    FW_CTXT_ACTION_MODIFY,
+                    self.channel,
+                    link.width.code(),
+                    caps::ctrl_pos(&link),
+                    rx_ant,
+                ),
+            )?;
+        }
+        self.link = Some(link.clone());
         self.cmd(
             LEGACY,
             MAC_CONTEXT,
             &self.mac_cmd(FW_CTXT_ACTION_MODIFY, bssid, Some((aid, bi, dtim)), qos),
         )?;
-        self.cmd(LEGACY, ADD_STA, &add_sta(true, bssid, aid))?;
         let chains = (self.fw.as_ref().map_or(3, |f| f.valid_tx_ant()) & 3) as u8;
+        let flags = sta_flags(&link, chains.count_ones() as u8);
+        self.cmd(
+            LEGACY,
+            ADD_STA,
+            &add_sta(true, bssid, aid, flags, self.tid_disable, false),
+        )?;
+        if let Some(he) = link.he.as_ref().filter(|_| self.he_ctxt_ver != 0)
+            && let Err(e) = self.cmd(
+                DATA_PATH,
+                STA_HE_CTXT,
+                &he_sta_context(self.he_ctxt_ver, he),
+            )
+        {
+            crate::println!("[iwlwifi] HE station context failed: {}", e);
+        }
         self.cmd(
             DATA_PATH,
             TLC_MNG_CONFIG,
-            &tlc_config(self.channel > 14, chains),
+            &tlc_config(&link, self.channel > 14, chains),
         )?;
-        let mut l = self.dev.link.lock();
-        l.qos = qos;
-        drop(l);
-        if self
-            .sta
-            .as_ref()
-            .is_some_and(|s| s.security == Security::Open)
-        {
-            // No handshake: the station reports Connected itself.
-        }
+        self.dev.link.lock().qos = qos;
         Ok(())
     }
 
@@ -1323,7 +1987,7 @@ impl Driver {
             ) {
                 for o in s.disconnect() {
                     if let Output::TxMgmt(f) = o {
-                        let _ = self.send_mgmt(&f);
+                        let _ = self.send_mgmt(&f, self.pmf);
                         crate::time::sleep_ms(20);
                     }
                 }
@@ -1335,12 +1999,12 @@ impl Driver {
 
     fn drop_link(&mut self, why: &'static str) {
         self.sta = None;
+        self.reset_link_state();
         let mut l = self.dev.link.lock();
         let was = l.connected;
         l.connected = false;
         l.ptk = false;
-        l.data_q = None;
-        l.mgmt_q = None;
+        l.clear_queues();
         drop(l);
         if was {
             crate::println!("[iwlwifi] link down: {}", why);
@@ -1351,6 +2015,7 @@ impl Driver {
     /// Remove the AP station, its queues and the binding.
     fn teardown(&mut self) {
         self.sta = None;
+        self.reset_link_state();
         {
             let mut l = self.dev.link.lock();
             l.connected = false;
@@ -1364,11 +2029,7 @@ impl Driver {
             let _ = self.cmd(LEGACY, REMOVE_STA, &remove_sta(AP_STA_ID));
             self.sta_added = false;
         }
-        {
-            let mut l = self.dev.link.lock();
-            l.data_q = None;
-            l.mgmt_q = None;
-        }
+        self.dev.link.lock().clear_queues();
         let _ = self.cmd(
             LEGACY,
             MAC_CONTEXT,

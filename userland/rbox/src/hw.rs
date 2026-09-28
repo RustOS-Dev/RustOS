@@ -463,6 +463,11 @@ fn wifi_section(c: &mut Check, o: &Opts, iface: &str) {
         return;
     }
     net_steps(c, o, iface);
+    // After traffic the firmware has reported its rate choice.
+    c.info(
+        &format!("{} mode, width and TX rate", iface),
+        &format!("wifi -i {} status", iface),
+    );
     if o.rekey_secs > 0 {
         println!("    waiting {} s for a group-key refresh...", o.rekey_secs);
         time::sleep_ms(o.rekey_secs * 1000);

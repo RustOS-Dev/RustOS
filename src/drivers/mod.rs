@@ -29,6 +29,10 @@ pub fn shutdown() {
 
 /// Probe every bus for devices with drivers (storage, USB, network, ...).
 pub fn probe_all() {
+    // Firmware command layouts (cheap; catches encoding regressions in
+    // QEMU runs where no Wi-Fi card exists).
+    #[cfg(debug_assertions)]
+    wifi::iwlwifi::self_test();
     crate::block::init();
     for dev in crate::pci::enumerate() {
         match (dev.class, dev.subclass, dev.prog_if) {

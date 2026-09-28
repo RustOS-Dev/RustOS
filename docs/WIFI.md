@@ -79,6 +79,17 @@ ssid="CafeOpen"
 Status is also visible in `/proc/net/wireless` and
 `/sys/class/net/wlan0/wireless/status`.
 
+### Tuning and fallbacks
+
+If a network misbehaves with the fast modes, limit them in
+`/storage/etc/kernel.conf` (read at boot) and reconnect:
+
+```
+iwlwifi.mode=vht     # legacy | ht | vht | he (default: he)
+iwlwifi.width=40     # 20 | 40 | 80 | 160 MHz (default: 160)
+iwlwifi.agg=0        # no A-MPDU aggregation
+```
+
 ## How a connection works
 
 1. **Boot**: the transport lays out the context-info structures (image
@@ -101,11 +112,18 @@ Status is also visible in `/proc/net/wireless` and
    negotiated; required for WPA3).
 5. **Keys**: the 4-way handshake derives the PTK/GTK (and IGTK with PMF);
    keys go into the firmware (`ADD_STA_KEY`, `MGMT_MCAST_KEY`), which
-   encrypts and decrypts data frames in hardware. Rate scaling is handed
-   to the firmware (`TLC_MNG_CONFIG`).
+   encrypts and decrypts data frames in hardware. The link parameters
+   negotiated from the AP's HT/VHT/HE elements (`wlan::caps`) go into the
+   PHY context (width, control channel position), MAC context (HT
+   protection, EDCA from WMM, 11ax), ADD_STA (width, MIMO, A-MPDU limits),
+   the HE station context and the rate-scaling configuration
+   (`TLC_MNG_CONFIG`).
 6. **Data**: Ethernet frames from the network stack are wrapped as
-   802.11 (QoS) data frames; received MPDUs are unwrapped after the
-   firmware's decryption (IV, MIC and padding removed).
+   802.11 QoS data frames on the TX queue of their access category (from
+   the IP DSCP) with per-TID sequence numbers; a busy TID gets a block-ack
+   session (ADDBA) and the firmware aggregates it. Received MPDUs are
+   unwrapped after the firmware's decryption, reordered within block-ack
+   sessions and checked against replay (CCMP/GCMP packet numbers).
 7. **Roaming/loss**: missed-beacon notifications or a deauthentication
    tear the link down and trigger a new scan for the saved SSID.
 
@@ -117,8 +135,16 @@ PNVM selection, command sizes). It could not be exercised on hardware in
 CI (no emulator exists), so expect rough edges on real laptops; the kernel
 log (`dmesg`) prints each boot step and firmware error details.
 
-* Legacy rates only (HT/VHT/HE capabilities are not advertised yet):
-  up to 54 Mb/s.
-* No 6 GHz scanning, no A-MPDU/A-MSDU aggregation, no power save.
+* 802.11n/ac/ax (HT/VHT/HE) on 2.4 and 5 GHz: 20/40/80/160 MHz,
+  2 spatial streams, LDPC, STBC, firmware rate scaling. The negotiated
+  mode and the firmware's current TX rate show in `wifi status`
+  (`mode "802.11ax 80 MHz 2x2"`, `rate "HE-MCS 11 2SS 80MHz"`).
+* A-MPDU aggregation both ways (block-ack sessions with a reorder
+  buffer driven by the firmware's release notifications); A-MSDUs are
+  received (split by the hardware, or in software) but not sent. The
+  receive limits advertised are the smallest (3839/3895-byte MPDUs) so
+  every frame fits one 4 KiB receive buffer.
+* The channel list follows the regulatory domain the firmware reports.
+* No 6 GHz, no power save (the radio stays awake).
 * WPA-Enterprise (802.1X/EAP), WEP and TKIP-only networks are refused.
 * No AP, monitor or P2P modes.

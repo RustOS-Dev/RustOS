@@ -10,6 +10,9 @@
 //!
 //! Known keys:
 //! * `iwlwifi.debug=1` — log every Wi-Fi host command and notification.
+//! * `iwlwifi.mode=legacy|ht|vht|he` — highest 802.11 mode to use.
+//! * `iwlwifi.width=20|40|80|160` — widest channel to use (MHz).
+//! * `iwlwifi.agg=0` — no A-MPDU aggregation (block ack).
 //! * `net.debug=1` — log a one-line summary of every frame sent/received.
 //! * `log.persist=1` — mirror the kernel log to `/storage/log/kernel.log`.
 

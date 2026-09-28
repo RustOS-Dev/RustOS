@@ -9,7 +9,7 @@ use crate::eapol::{self, Supplicant};
 use crate::frame::{self, BssInfo};
 use crate::ie::{self, Akm, Cipher, Rsn, Security};
 use crate::sae::{self, Sae};
-use crate::{Mac, crypto};
+use crate::{Mac, caps, crypto};
 use alloc::vec::Vec;
 
 const RETRY_MS: u64 = 1000;
@@ -26,11 +26,28 @@ pub enum Output {
     /// Transmit an EAPOL frame (ethertype 0x888E) to the AP, unencrypted
     /// until the pairwise key is installed.
     TxEapol(Vec<u8>),
-    InstallPairwise { cipher: Cipher, key: Vec<u8> },
-    InstallGroup { idx: u8, cipher: Cipher, key: Vec<u8>, rsc: [u8; 8] },
-    InstallIgtk { idx: u16, key: Vec<u8>, ipn: [u8; 6] },
+    InstallPairwise {
+        cipher: Cipher,
+        key: Vec<u8>,
+    },
+    InstallGroup {
+        idx: u8,
+        cipher: Cipher,
+        key: Vec<u8>,
+        rsc: [u8; 8],
+    },
+    InstallIgtk {
+        idx: u16,
+        key: Vec<u8>,
+        ipn: [u8; 6],
+    },
     /// Association succeeded (the driver adds the station to firmware).
-    Associated { aid: u16, qos: bool },
+    /// `ies` are the AP's elements from the association response.
+    Associated {
+        aid: u16,
+        qos: bool,
+        ies: Vec<u8>,
+    },
     /// Data traffic may flow.
     Connected,
     /// Lost or failed; `reason` is for the log.
@@ -68,6 +85,8 @@ pub struct Station {
     deadline: u64,
     retries: u32,
     pub aid: u16,
+    /// Capabilities advertised in the association request.
+    pub profile: caps::Profile,
 }
 
 fn band_2g(bss: &BssInfo) -> bool {
@@ -92,9 +111,16 @@ impl Station {
                 e
             })
             .unwrap_or_default();
-        let h2e = ie::find(&bss.ies, ie::RSNX).is_some_and(|x| x.first().is_some_and(|b| b & RSNX_SAE_H2E != 0));
+        let h2e = ie::find(&bss.ies, ie::RSNX)
+            .is_some_and(|x| x.first().is_some_and(|b| b & RSNX_SAE_H2E != 0));
         let (akm, pairwise, group, pmf, pmf_required) = match (security, &rsn) {
-            (Security::Open, _) => (Akm::Unknown(0), Cipher::Ccmp128, Cipher::Ccmp128, false, false),
+            (Security::Open, _) => (
+                Akm::Unknown(0),
+                Cipher::Ccmp128,
+                Cipher::Ccmp128,
+                false,
+                false,
+            ),
             (Security::Wpa2Psk | Security::Wpa3Sae, Some(r)) => {
                 if passphrase.is_empty() {
                     return Err("this network needs a passphrase");
@@ -139,7 +165,9 @@ impl Station {
                 caps,
                 pmkids: Vec::new(),
                 group_mgmt: if pmf {
-                    rsn.as_ref().and_then(|r| r.group_mgmt).or(Some(Cipher::BipCmac128))
+                    rsn.as_ref()
+                        .and_then(|r| r.group_mgmt)
+                        .or(Some(Cipher::BipCmac128))
                 } else {
                     None
                 },
@@ -149,7 +177,13 @@ impl Station {
         let pmk = if matches!(akm, Akm::Psk | Akm::PskSha256) {
             if passphrase.len() == 64 && passphrase.iter().all(|c| c.is_ascii_hexdigit()) {
                 (0..32)
-                    .map(|i| u8::from_str_radix(core::str::from_utf8(&passphrase[i * 2..i * 2 + 2]).unwrap(), 16).unwrap())
+                    .map(|i| {
+                        u8::from_str_radix(
+                            core::str::from_utf8(&passphrase[i * 2..i * 2 + 2]).unwrap(),
+                            16,
+                        )
+                        .unwrap()
+                    })
                     .collect()
             } else if (8..=63).contains(&passphrase.len()) {
                 crypto::wpa_psk(passphrase, &bss.ssid).to_vec()
@@ -179,6 +213,7 @@ impl Station {
             deadline: now + RETRY_MS,
             retries: 0,
             aid: 0,
+            profile: caps::Profile::LEGACY,
             bss,
         };
         let out = sta.start_auth(now, rng)?;
@@ -191,16 +226,28 @@ impl Station {
         Output::TxMgmt(f)
     }
 
-    fn start_auth(&mut self, now: u64, rng: &mut dyn FnMut(&mut [u8])) -> Result<Vec<Output>, &'static str> {
+    fn start_auth(
+        &mut self,
+        now: u64,
+        rng: &mut dyn FnMut(&mut [u8]),
+    ) -> Result<Vec<Output>, &'static str> {
         let bssid = self.bss.bssid;
         if self.akm == Akm::Sae {
             let s = if self.h2e {
                 let pt = sae::h2e_pt(&self.bss.ssid, &self.passphrase, None);
                 Sae::new_h2e(&pt, self.own, bssid, rng)
             } else {
-                Sae::new(&self.passphrase, self.own, bssid, rng).map_err(|_| "SAE: no password element")?
+                Sae::new(&self.passphrase, self.own, bssid, rng)
+                    .map_err(|_| "SAE: no password element")?
             };
-            let f = frame::auth(self.own, bssid, frame::AUTH_SAE, 1, s.commit_status(), &s.commit());
+            let f = frame::auth(
+                self.own,
+                bssid,
+                frame::AUTH_SAE,
+                1,
+                s.commit_status(),
+                &s.commit(),
+            );
             self.sae = Some(s);
             Ok(alloc::vec![self.send(f, now)])
         } else {
@@ -215,10 +262,20 @@ impl Station {
             ie::push(&mut extra, ie::RSNX, &[RSNX_SAE_H2E | 1]);
         }
         // Advertise WMM so QoS data is used (required for 802.11n+ rates).
-        let wmm_ap = ie::iter(&self.bss.ies).any(|(id, b)| id == ie::VENDOR && b.starts_with(&[0x00, 0x50, 0xF2, 0x02]));
+        let wmm_ap = ie::iter(&self.bss.ies)
+            .any(|(id, b)| id == ie::VENDOR && b.starts_with(&[0x00, 0x50, 0xF2, 0x02]));
         if wmm_ap {
-            ie::push(&mut extra, ie::VENDOR, &[0x00, 0x50, 0xF2, 0x02, 0x00, 0x01, 0x00]);
+            ie::push(
+                &mut extra,
+                ie::VENDOR,
+                &[0x00, 0x50, 0xF2, 0x02, 0x00, 0x01, 0x00],
+            );
         }
+        extra.extend_from_slice(&caps::assoc_elements(
+            &self.profile,
+            &self.bss.ies,
+            band_2g(&self.bss),
+        ));
         let f = frame::assoc_request(
             self.own,
             self.bss.bssid,
@@ -240,7 +297,9 @@ impl Station {
 
     /// Process a received management frame addressed to us.
     pub fn rx_mgmt(&mut self, f: &[u8], now: u64, rng: &mut dyn FnMut(&mut [u8])) -> Vec<Output> {
-        let Some(h) = frame::Header::parse(f) else { return Vec::new() };
+        let Some(h) = frame::Header::parse(f) else {
+            return Vec::new();
+        };
         if h.addr2 != self.bss.bssid || h.addr1 != self.own {
             return Vec::new();
         }
@@ -250,7 +309,9 @@ impl Station {
         }
         match self.state {
             State::Authenticating | State::SaeConfirming => {
-                let Some((algo, seq, status, body)) = frame::parse_auth(f) else { return Vec::new() };
+                let Some((algo, seq, status, body)) = frame::parse_auth(f) else {
+                    return Vec::new();
+                };
                 if algo == frame::AUTH_OPEN && self.akm != Akm::Sae {
                     if status != 0 {
                         return self.fail("open authentication rejected");
@@ -260,13 +321,22 @@ impl Station {
                 if algo != frame::AUTH_SAE {
                     return Vec::new();
                 }
-                let Some(sae) = self.sae.as_mut() else { return Vec::new() };
+                let Some(sae) = self.sae.as_mut() else {
+                    return Vec::new();
+                };
                 match (seq, status) {
                     (1, frame::STATUS_ANTI_CLOGGING) => {
                         if sae.set_token_from(body).is_err() {
                             return self.fail("SAE: bad anti-clogging request");
                         }
-                        let c = frame::auth(self.own, self.bss.bssid, frame::AUTH_SAE, 1, sae.commit_status(), &sae.commit());
+                        let c = frame::auth(
+                            self.own,
+                            self.bss.bssid,
+                            frame::AUTH_SAE,
+                            1,
+                            sae.commit_status(),
+                            &sae.commit(),
+                        );
                         alloc::vec![self.send(c, now)]
                     }
                     (1, 0) | (1, frame::STATUS_SAE_HASH_TO_ELEMENT) => {
@@ -286,7 +356,9 @@ impl Station {
                         self.pmk = sae.pmk().to_vec();
                         alloc::vec![self.assoc(now)]
                     }
-                    (_, frame::STATUS_UNSUPPORTED_GROUP) => self.fail("SAE: AP does not support group 19"),
+                    (_, frame::STATUS_UNSUPPORTED_GROUP) => {
+                        self.fail("SAE: AP does not support group 19")
+                    }
                     _ => self.fail("SAE authentication rejected"),
                 }
             }
@@ -298,9 +370,14 @@ impl Station {
                     return self.fail("association rejected");
                 }
                 self.aid = aid;
-                let qos = ie::iter(ies).any(|(id, b)| id == ie::VENDOR && b.starts_with(&[0x00, 0x50, 0xF2, 0x02]))
+                let qos = ie::iter(ies)
+                    .any(|(id, b)| id == ie::VENDOR && b.starts_with(&[0x00, 0x50, 0xF2, 0x02]))
                     || ie::find(ies, ie::HT_CAPS).is_some();
-                let mut out = alloc::vec![Output::Associated { aid, qos }];
+                let mut out = alloc::vec![Output::Associated {
+                    aid,
+                    qos,
+                    ies: ies.to_vec()
+                }];
                 self.last_tx = None;
                 if self.security == Security::Open {
                     self.state = State::Connected;
@@ -328,15 +405,27 @@ impl Station {
 
     /// Process an EAPOL frame from the AP.
     pub fn rx_eapol(&mut self, body: &[u8], now: u64) -> Vec<Output> {
-        let Some(s) = self.supplicant.as_mut() else { return Vec::new() };
+        let Some(s) = self.supplicant.as_mut() else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         for a in s.rx(body) {
             match a {
                 eapol::Action::Send(f) => out.push(Output::TxEapol(f)),
-                eapol::Action::InstallPairwise { cipher, key } => out.push(Output::InstallPairwise { cipher, key }),
-                eapol::Action::InstallGroup { idx, cipher, key, rsc } => {
-                    out.push(Output::InstallGroup { idx, cipher, key, rsc })
+                eapol::Action::InstallPairwise { cipher, key } => {
+                    out.push(Output::InstallPairwise { cipher, key })
                 }
+                eapol::Action::InstallGroup {
+                    idx,
+                    cipher,
+                    key,
+                    rsc,
+                } => out.push(Output::InstallGroup {
+                    idx,
+                    cipher,
+                    key,
+                    rsc,
+                }),
                 eapol::Action::InstallIgtk { idx, key, ipn } => {
                     if self.pmf {
                         out.push(Output::InstallIgtk { idx, key, ipn })
@@ -359,7 +448,9 @@ impl Station {
     /// Retransmissions and timeouts; call every ~100 ms.
     pub fn tick(&mut self, now: u64) -> Vec<Output> {
         match self.state {
-            State::Authenticating | State::SaeConfirming | State::Associating if now >= self.deadline => {
+            State::Authenticating | State::SaeConfirming | State::Associating
+                if now >= self.deadline =>
+            {
                 self.retries += 1;
                 if self.retries > MAX_RETRIES {
                     return self.fail(match self.state {
@@ -372,7 +463,9 @@ impl Station {
                     None => Vec::new(),
                 }
             }
-            State::Handshake if now >= self.deadline => self.fail("4-way handshake timed out (wrong password?)"),
+            State::Handshake if now >= self.deadline => {
+                self.fail("4-way handshake timed out (wrong password?)")
+            }
             _ => Vec::new(),
         }
     }
@@ -433,7 +526,11 @@ mod tests {
         BssInfo {
             bssid: AP,
             ssid: b"home".to_vec(),
-            capability: if akms_present(security) { 0x0411 } else { 0x0401 },
+            capability: if akms_present(security) {
+                0x0411
+            } else {
+                0x0401
+            },
             beacon_interval: 100,
             channel: Some(6),
             ies,
@@ -462,21 +559,48 @@ mod tests {
 
     fn tx(out: &[Output]) -> Vec<u8> {
         out.iter()
-            .find_map(|o| if let Output::TxMgmt(f) = o { Some(f.clone()) } else { None })
+            .find_map(|o| {
+                if let Output::TxMgmt(f) = o {
+                    Some(f.clone())
+                } else {
+                    None
+                }
+            })
             .expect("no frame sent")
     }
 
     #[test]
     fn open_network() {
         let mut r = rng();
-        let (mut s, out) = Station::connect(ME, bss(Security::Open, false), b"", 0, &mut r).unwrap();
+        let (mut s, out) =
+            Station::connect(ME, bss(Security::Open, false), b"", 0, &mut r).unwrap();
         let auth = tx(&out);
         assert_eq!(frame::parse_auth(&auth).unwrap().0, frame::AUTH_OPEN);
         let out = s.rx_mgmt(&from_ap(frame::auth(ME, AP, 0, 2, 0, &[])), 10, &mut r);
-        assert_eq!(frame::Header::parse(&tx(&out)).unwrap().subtype(), frame::ST_ASSOC_REQ);
+        assert_eq!(
+            frame::Header::parse(&tx(&out)).unwrap().subtype(),
+            frame::ST_ASSOC_REQ
+        );
         let out = s.rx_mgmt(&assoc_resp(), 20, &mut r);
         assert!(out.contains(&Output::Connected));
         assert_eq!(s.aid, 1);
+    }
+
+    #[test]
+    fn assoc_request_carries_ht_caps() {
+        let mut r = rng();
+        let mut b = bss(Security::Open, false);
+        ie::push(
+            &mut b.ies,
+            caps::HT_CAPS,
+            &caps::ht_caps(&caps::Profile::AX210),
+        );
+        let (mut s, _) = Station::connect(ME, b, b"", 0, &mut r).unwrap();
+        s.profile = caps::Profile::AX210;
+        let out = s.rx_mgmt(&from_ap(frame::auth(ME, AP, 0, 2, 0, &[])), 10, &mut r);
+        let req = tx(&out);
+        assert!(ie::find(&req[28..], caps::HT_CAPS).is_some());
+        assert!(ie::find(&req[28..], caps::VHT_CAPS).is_none()); // 2.4 GHz
     }
 
     /// Full 4-way handshake against the test authenticator (whose
@@ -484,12 +608,19 @@ mod tests {
     fn handshake(s: &mut Station, pmk: &[u8], rsne: Vec<u8>) {
         let mut ap = Authenticator::new(s.akm, pmk, rsne);
         let out = s.rx_eapol(&ap.msg1(), 30);
-        let Some(Output::TxEapol(m2)) = out.first() else { panic!("no msg2: {:?}", out) };
+        let Some(Output::TxEapol(m2)) = out.first() else {
+            panic!("no msg2: {:?}", out)
+        };
         let m3 = ap.msg3(m2).expect("AP rejected msg2");
         let out = s.rx_eapol(&m3, 40);
-        let Some(Output::TxEapol(m4)) = out.first() else { panic!("no msg4: {:?}", out) };
+        let Some(Output::TxEapol(m4)) = out.first() else {
+            panic!("no msg4: {:?}", out)
+        };
         assert!(ap.check_msg4(m4));
-        assert!(out.contains(&Output::InstallPairwise { cipher: Cipher::Ccmp128, key: ap.tk() }));
+        assert!(out.contains(&Output::InstallPairwise {
+            cipher: Cipher::Ccmp128,
+            key: ap.tk()
+        }));
         assert!(out.iter().any(|o| matches!(o, Output::InstallGroup { .. })));
         assert!(out.contains(&Output::Connected));
         assert_eq!(s.state, State::Connected);
@@ -535,7 +666,14 @@ mod tests {
             };
             ap.process_commit(body).unwrap();
             let out = s.rx_mgmt(
-                &from_ap(frame::auth(ME, AP, frame::AUTH_SAE, 1, ap.commit_status(), &ap.commit())),
+                &from_ap(frame::auth(
+                    ME,
+                    AP,
+                    frame::AUTH_SAE,
+                    1,
+                    ap.commit_status(),
+                    &ap.commit(),
+                )),
                 10,
                 &mut r,
             );
@@ -543,9 +681,16 @@ mod tests {
             let (_, seq, _, cbody) = frame::parse_auth(&conf).unwrap();
             assert_eq!(seq, 2);
             ap.process_confirm(cbody).unwrap();
-            let out = s.rx_mgmt(&from_ap(frame::auth(ME, AP, frame::AUTH_SAE, 2, 0, &ap.confirm())), 20, &mut r);
+            let out = s.rx_mgmt(
+                &from_ap(frame::auth(ME, AP, frame::AUTH_SAE, 2, 0, &ap.confirm())),
+                20,
+                &mut r,
+            );
             let areq = tx(&out);
-            assert_eq!(frame::Header::parse(&areq).unwrap().subtype(), frame::ST_ASSOC_REQ);
+            assert_eq!(
+                frame::Header::parse(&areq).unwrap().subtype(),
+                frame::ST_ASSOC_REQ
+            );
             let rsn = Rsn::parse(ie::find(&areq[28..], ie::RSN).unwrap()).unwrap();
             assert_eq!(rsn.akms, alloc::vec![Akm::Sae]);
             assert!(rsn.caps & ie::RSN_CAP_MFPR != 0);
@@ -566,7 +711,10 @@ mod tests {
         for i in 1..=MAX_RETRIES as u64 {
             assert!(matches!(s.tick(i * RETRY_MS + 1)[0], Output::TxMgmt(_)));
         }
-        assert_eq!(s.tick(10 * RETRY_MS), alloc::vec![Output::Disconnected("authentication timed out")]);
+        assert_eq!(
+            s.tick(10 * RETRY_MS),
+            alloc::vec![Output::Disconnected("authentication timed out")]
+        );
     }
 
     #[test]

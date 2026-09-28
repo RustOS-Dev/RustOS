@@ -141,6 +141,12 @@ impl Firmware {
         (v.0 != 99 && v.0 != 0).then_some(v.0)
     }
 
+    /// Notification version the firmware sends.
+    pub fn notif_version(&self, group: u8, cmd: u8) -> Option<u8> {
+        let v = self.cmd_versions.get(&(group, cmd))?;
+        (v.1 != 99 && v.1 != 0).then_some(v.1)
+    }
+
     /// Valid TX/RX antenna masks from the PHY SKU.
     pub fn valid_tx_ant(&self) -> u32 {
         match (self.phy_sku >> 16) & 0xF {

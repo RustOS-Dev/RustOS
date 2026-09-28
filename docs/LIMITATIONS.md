@@ -40,12 +40,15 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 ## Networking
 
-* IPv6: SLAAC addresses and default routes only (no DHCPv6, no AAAA
-  lookups in the resolver).
+* IPv6: no privacy (temporary) addresses, no DHCPv6 prefix delegation,
+  no multicast group management (MLD) beyond what SLAAC needs.
 * No IP forwarding, NAT, firewall, VLANs, bridges or `AF_PACKET` sockets.
-* TLS: client only, TLS 1.3 only (`TLS_AES_128_GCM_SHA256`, P-256), no
-  session resumption or client certificates. HTTPS needs a CA bundle
-  (shipped from the build host) and a correct clock.
+* TLS: client only (TLS 1.2 and 1.3, ECDHE with AES-GCM or
+  ChaCha20-Poly1305); no session resumption, client certificates, OCSP or
+  revocation checks. HTTPS needs a CA bundle (shipped from the build host)
+  and a correct clock.
+* Captive portals are detected, but pages that need JavaScript to log in
+  cannot be used from the text browser.
 
 ## Wi-Fi
 

@@ -92,13 +92,15 @@ and on USB hot-plug (`/storage`, `/boot/efi`, `/mnt/<device>`).
 | `route` | `route add|del default gw GW` · `route add -net N netmask M gw GW` |
 | `arp` | neighbour cache |
 | `ping` | `ping [-c COUNT] [-i INTERVAL] [-W TIMEOUT] [-s SIZE] [-q] HOST` |
-| `nslookup` / `host` | `nslookup NAME` |
+| `nslookup` / `host` | `nslookup [-4|-6] NAME [SERVER]` |
 | `netstat` | `netstat [-tuln]` |
 | `nc` | `nc [-u] [-w SECS] [-z] HOST PORT` · `nc -l [-u] [-p] PORT` |
-| `wget` | `wget [-q] [-k] [-O FILE] [-T SECS] http[s]://HOST[:PORT]/PATH` |
+| `wget` | `wget [-q|-v] [-S] [-k] [-O FILE] [-T SECS] [-U AGENT] [--header 'H: V'] [--post-data DATA|--post-file FILE] [--load-cookies F] [--save-cookies F] [--keep-session-cookies] [--max-redirect N] [--secure-protocol TLSv1_2|TLSv1_3] [--content-on-error] URL` |
+| `netcheck` | `netcheck [-q] [-T SECS]` — Internet / captive-portal check |
+| `browse` / `lynx` / `www` | `browse [-k] [-dump|-source] [-width N] [--portal] [URL]` — text web browser, see [BROWSER.md](BROWSER.md) |
 | `httpd` | `httpd [-p PORT] [-d DIR]` |
 | `ntpdate` | `ntpdate [SERVER]` |
-| `wifi` | `wifi [status|scan|connect SSID [PASS] [--save]|disconnect|auto|forget SSID] [-i IFACE]` |
+| `wifi` | `wifi [status|scan|connect SSID [PASS] [--save] [--no-portal-check]|disconnect|auto|forget SSID] [-i IFACE]` |
 
 See [NETWORKING.md](NETWORKING.md) and [WIFI.md](WIFI.md).
 

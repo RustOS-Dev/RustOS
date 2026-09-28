@@ -450,7 +450,9 @@ impl Socket {
         if nonblock {
             return Err(EINPROGRESS);
         }
-        self.block(false, None, |net, st| {
+        // SO_SNDTIMEO bounds a blocking connect, as on Linux.
+        let timeout = self.inner.lock().sndtimeo;
+        let r = self.block(false, timeout, |net, st| {
             self.update_connect(net, st);
             if st.connecting {
                 Pending
@@ -459,7 +461,23 @@ impl Socket {
             } else {
                 Ready(Err(st.error.take().unwrap_or(ECONNREFUSED)))
             }
-        })
+        });
+        if r == Err(EAGAIN) {
+            // Give up on the half-open connection so the socket can be
+            // closed or reused.
+            with(|net| {
+                let mut st = self.inner.lock();
+                if let Some(slot) = st.conn.take()
+                    && let Some(i) = net.by_index(slot.ifc)
+                {
+                    i.sockets.get_mut::<tcp::Socket>(slot.h).abort();
+                    i.sockets.remove(slot.h);
+                }
+                st.connecting = false;
+            });
+            return Err(ETIMEDOUT);
+        }
+        r
     }
 
     /// Progress a pending connect (for blocking connect, poll, SO_ERROR).

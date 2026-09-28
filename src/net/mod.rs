@@ -8,6 +8,7 @@
 //! polls every interface; socket syscalls work under the same lock and
 //! kick the thread when they queue data.
 
+pub mod dhcpv6;
 pub mod socket;
 pub mod syscalls;
 
@@ -99,6 +100,17 @@ pub struct Iface {
     link: bool,
     /// Neighbours seen in ARP traffic.
     pub arp: BTreeMap<[u8; 4], [u8; 6]>,
+    /// IPv6 DNS servers (router advertisement RDNSS, DHCPv6).
+    pub dns6: Vec<Ipv6Address>,
+    /// DNS search domains (RA DNSSL, DHCPv6).
+    pub search: Vec<String>,
+    /// Captive-portal URI and where it came from (RFC 8910).
+    pub portal: Option<(String, &'static str)>,
+    /// Latest router advertisement, handed over by the receive path.
+    pending_ra: Option<netproto::ra::RouterAdvert>,
+    dhcp6: Option<dhcpv6::Client>,
+    /// Address leased through DHCPv6 IA_NA.
+    dhcp6_addr: Option<Ipv6Address>,
 }
 
 impl Iface {
@@ -126,6 +138,12 @@ impl Iface {
             routes: Vec::new(),
             link,
             arp: BTreeMap::new(),
+            dns6: Vec::new(),
+            search: Vec::new(),
+            portal: None,
+            pending_ra: None,
+            dhcp6: None,
+            dhcp6_addr: None,
         }
     }
 
@@ -246,18 +264,171 @@ impl Iface {
                     router.map_or(String::from("-"), |r| format!("{}", r)),
                     dns
                 );
+                let portal = cfg.packet.as_ref().and_then(|p| {
+                    p.options()
+                        .find(|o| o.kind == 114)
+                        .and_then(|o| netproto::capport::parse_uri(o.data))
+                });
                 self.set_ipv4(Some(addr));
                 self.set_gateway(router);
                 self.dns = dns;
-                write_resolv_conf(&self.dns);
+                if let Some(url) = portal {
+                    crate::println!("[net] {}: captive portal {} (DHCP)", self.name, url);
+                    self.portal = Some((url, "dhcp"));
+                } else if self.portal.as_ref().is_some_and(|p| p.1 == "dhcp") {
+                    self.portal = None;
+                }
+                self.write_resolv_conf();
             }
             Some(dhcpv4::Event::Deconfigured) => {
                 crate::println!("[net] {}: DHCP lease lost", self.name);
                 self.set_ipv4(None);
                 self.set_gateway(None);
+                if self.portal.as_ref().is_some_and(|p| p.1 == "dhcp") {
+                    self.portal = None;
+                }
             }
             None => {}
         }
+    }
+
+    fn write_resolv_conf(&self) {
+        write_resolv_conf(&self.dns, &self.dns6, &self.search);
+    }
+
+    /// Act on a router advertisement: IPv6 DNS servers, search domains,
+    /// the captive-portal option, and DHCPv6 for the M/O flags.
+    fn handle_ra(&mut self, ra: netproto::ra::RouterAdvert) {
+        let now = crate::time::millis();
+        let mut changed = false;
+        for (a, life) in &ra.dns {
+            let a = Ipv6Address::from(*a);
+            if *life == 0 {
+                changed |= self.dns6.contains(&a);
+                self.dns6.retain(|d| *d != a);
+            } else if !self.dns6.contains(&a) {
+                self.dns6.push(a);
+                changed = true;
+            }
+        }
+        for d in &ra.search {
+            if !self.search.contains(d) {
+                self.search.push(d.clone());
+                changed = true;
+            }
+        }
+        // A source only replaces its own announcement (DHCPv4 wins).
+        if let Some(url) = &ra.captive_portal
+            && self
+                .portal
+                .as_ref()
+                .is_none_or(|p| p.1 == "ra" && p.0 != *url)
+        {
+            crate::println!(
+                "[net] {}: captive portal {} (router advertisement)",
+                self.name,
+                url
+            );
+            self.portal = Some((url.clone(), "ra"));
+        }
+        if changed {
+            crate::println!(
+                "[net] {}: IPv6 DNS {:?} (router advertisement)",
+                self.name,
+                self.dns6
+            );
+            self.write_resolv_conf();
+        }
+        let want = if ra.managed {
+            Some(true)
+        } else if ra.other {
+            Some(false)
+        } else {
+            None
+        };
+        match (want, self.dhcp6.as_ref().map(|c| c.stateful)) {
+            (Some(w), Some(cur)) if w == cur => {}
+            (Some(w), _) => {
+                if let Some(old) = self.dhcp6.take()
+                    && let Some(a) = old.remove(&mut self.sockets)
+                {
+                    self.drop_v6_addr(a);
+                }
+                crate::println!(
+                    "[net] {}: starting DHCPv6 ({})",
+                    self.name,
+                    if w { "stateful" } else { "stateless" }
+                );
+                let mac = self.mac();
+                self.dhcp6 = Some(dhcpv6::Client::new(&mut self.sockets, mac, w, now));
+            }
+            (None, _) => {}
+        }
+    }
+
+    fn drop_v6_addr(&mut self, a: Ipv6Address) {
+        self.iface
+            .update_ip_addrs(|addrs| addrs.retain(|c| c.address() != IpAddress::Ipv6(a)));
+        if self.dhcp6_addr == Some(a) {
+            self.dhcp6_addr = None;
+        }
+    }
+
+    fn dhcp6_poll(&mut self) -> Option<u64> {
+        let now = crate::time::millis();
+        let client = self.dhcp6.as_mut()?;
+        let upd = client.poll(&mut self.sockets, now);
+        let delay = client.delay(now);
+        if let Some(u) = upd {
+            if let Some(a) = u.lost {
+                crate::println!("[net] {}: DHCPv6 address {} expired", self.name, a);
+                self.drop_v6_addr(a);
+            }
+            if let Some((a, valid)) = u.addr
+                && self.dhcp6_addr != Some(a)
+            {
+                if let Some(old) = self.dhcp6_addr {
+                    self.drop_v6_addr(old);
+                }
+                crate::println!(
+                    "[net] {}: DHCPv6 address {}/128 (valid {} s)",
+                    self.name,
+                    a,
+                    valid
+                );
+                self.iface.update_ip_addrs(|addrs| {
+                    let _ = addrs.push(IpCidr::new(IpAddress::Ipv6(a), 128));
+                });
+                self.dhcp6_addr = Some(a);
+            }
+            let mut changed = false;
+            for d in u.dns {
+                if !self.dns6.contains(&d) {
+                    self.dns6.push(d);
+                    changed = true;
+                }
+            }
+            for d in u.domains {
+                if !self.search.contains(&d) {
+                    self.search.push(d);
+                    changed = true;
+                }
+            }
+            if changed {
+                crate::println!("[net] {}: IPv6 DNS {:?} (DHCPv6)", self.name, self.dns6);
+                self.write_resolv_conf();
+            }
+            if let Some(url) = u.portal
+                && self
+                    .portal
+                    .as_ref()
+                    .is_none_or(|p| (p.1 == "dhcpv6" || p.1 == "ra") && p.0 != url)
+            {
+                crate::println!("[net] {}: captive portal {} (DHCPv6)", self.name, url);
+                self.portal = Some((url, "dhcpv6"));
+            }
+        }
+        Some(delay)
     }
 
     /// Poll this interface. Returns the delay until it wants polling again.
@@ -276,6 +447,16 @@ impl Iface {
             if let Some(h) = self.dhcp {
                 self.sockets.get_mut::<dhcpv4::Socket>(h).reset();
             }
+            // A new link may be a new network: forget IPv6 configuration
+            // and the portal; the next RA starts over.
+            if let Some(c) = self.dhcp6.take()
+                && let Some(a) = c.remove(&mut self.sockets)
+            {
+                self.drop_v6_addr(a);
+            }
+            self.dns6.clear();
+            self.search.clear();
+            self.portal = None;
         }
         if let Some(lo) = self.lo.as_mut() {
             self.iface.poll(now, lo, &mut self.sockets);
@@ -289,10 +470,15 @@ impl Iface {
                 dev: &dev,
                 stats: &mut self.stats,
                 arp: Some(&mut self.arp),
+                ra: Some(&mut self.pending_ra),
             };
             self.iface.poll(now, &mut p, &mut self.sockets);
         }
         self.dhcp_poll();
+        if let Some(ra) = self.pending_ra.take() {
+            self.handle_ra(ra);
+        }
+        let dhcp6_delay = self.dhcp6_poll();
         // Reap sockets whose close has completed.
         let t = crate::time::millis();
         let sockets = &mut self.sockets;
@@ -307,9 +493,14 @@ impl Iface {
                 true
             }
         });
-        self.iface
+        let d = self
+            .iface
             .poll_delay(now, &self.sockets)
-            .map(|d| d.total_millis())
+            .map(|d| d.total_millis());
+        match (d, dhcp6_delay) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 }
 
@@ -325,6 +516,8 @@ struct Phy<'a> {
     dev: &'a Arc<dyn NetDevice>,
     stats: &'a mut Stats,
     arp: Option<&'a mut BTreeMap<[u8; 4], [u8; 6]>>,
+    /// Receives router advertisements seen on the wire.
+    ra: Option<&'a mut Option<netproto::ra::RouterAdvert>>,
 }
 
 /// One-line description of an Ethernet frame (`net.debug=1`).
@@ -441,6 +634,17 @@ impl Device for Phy<'_> {
                 }
                 arp.insert(ip, mac);
             }
+        }
+        // Router advertisements: smoltcp does SLAAC itself, but the M/O
+        // flags, RDNSS and captive-portal options are ours to act on.
+        if frame.len() > 54
+            && frame[12..14] == [0x86, 0xDD]
+            && frame[20] == 58
+            && frame[54] == 134
+            && let Some(slot) = self.ra.as_mut()
+            && let Some(ra) = netproto::ra::parse_frame(&frame)
+        {
+            **slot = Some(ra);
         }
         self.stats.rx_packets += 1;
         self.stats.rx_bytes += frame.len() as u64;
@@ -564,15 +768,31 @@ fn random_seed() -> u64 {
     u64::from_ne_bytes(b)
 }
 
-fn write_resolv_conf(dns: &[Ipv4Address]) {
-    if dns.is_empty() {
+fn write_resolv_conf(dns: &[Ipv4Address], dns6: &[Ipv6Address], search: &[String]) {
+    if dns.is_empty() && dns6.is_empty() {
         return;
     }
-    let mut s = String::from("# generated by the kernel DHCP client\n");
+    let mut s = String::from("# generated by the kernel (DHCP, DHCPv6, router advertisements)\n");
+    if !search.is_empty() {
+        let _ = writeln!(s, "search {}", search.join(" "));
+    }
     for d in dns {
         let _ = writeln!(s, "nameserver {}", d);
     }
+    for d in dns6 {
+        let _ = writeln!(s, "nameserver {}", d);
+    }
     let _ = crate::vfs::write_all("/etc/resolv.conf", s.as_bytes());
+}
+
+/// A DHCPv4 client that also asks for the domain name and captive-portal
+/// URI (option 114) and keeps the raw reply to read them.
+fn new_dhcp4() -> dhcpv4::Socket<'static> {
+    static REQUEST: [u8; 5] = [1, 3, 6, 15, 114];
+    let mut s = dhcpv4::Socket::new();
+    s.set_parameter_request_list(&REQUEST);
+    s.set_receive_packet_buffer(alloc::boxed::Box::leak(vec![0u8; 1500].into_boxed_slice()));
+    s
 }
 
 /// Register a NIC. Returns the interface name. DHCP starts automatically.
@@ -598,6 +818,7 @@ pub fn register(dev: Arc<dyn NetDevice>) -> String {
         dev: &dev,
         stats: &mut stats,
         arp: None,
+        ra: None,
     };
     let mut iface = Interface::new(config, &mut p, now);
     // IPv6 link-local address from the MAC (EUI-64).
@@ -630,7 +851,7 @@ pub fn register(dev: Arc<dyn NetDevice>) -> String {
             .map_or(String::new(), |s| format!(", {} Mbit/s", s))
     );
     let mut ifc = Iface::new(name.clone(), index, Some(dev), None, iface);
-    ifc.dhcp = Some(ifc.sockets.add(dhcpv4::Socket::new()));
+    ifc.dhcp = Some(ifc.sockets.add(new_dhcp4()));
     net.ifaces.push(ifc);
     drop(g);
     kick();
@@ -658,7 +879,7 @@ pub fn set_dhcp(name: &str, on: bool) -> KResult<()> {
         }
         match (on, ifc.dhcp) {
             (true, Some(h)) => ifc.sockets.get_mut::<dhcpv4::Socket>(h).reset(),
-            (true, None) => ifc.dhcp = Some(ifc.sockets.add(dhcpv4::Socket::new())),
+            (true, None) => ifc.dhcp = Some(ifc.sockets.add(new_dhcp4())),
             (false, _) => ifc.stop_dhcp(),
         }
         Ok(())
@@ -721,6 +942,7 @@ fn register_procfs() {
     register("net/udp", || socket::gen_sockets(false));
     register("net/wireless", gen_wireless);
     register("net/arp", gen_arp);
+    register("net/captive_portal", gen_captive_portal);
 }
 
 fn gen_dev() -> String {
@@ -815,6 +1037,20 @@ fn gen_if_addrs() -> String {
                 i.gateway.map_or(String::from("-"), |g| format!("{}", g)),
                 addrs.join(" ")
             );
+        }
+    });
+    s
+}
+
+/// `IFACE SOURCE URI` for every interface that learned a captive-portal
+/// URI (DHCPv4 option 114, DHCPv6 option 103, RA option 37).
+fn gen_captive_portal() -> String {
+    let mut s = String::new();
+    with(|net| {
+        for i in &net.ifaces {
+            if let Some((url, src)) = &i.portal {
+                let _ = writeln!(s, "{} {} {}", i.name, src, url);
+            }
         }
     });
     s

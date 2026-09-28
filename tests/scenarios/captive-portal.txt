@@ -1,0 +1,32 @@
+# Captive-portal detection and login with the text browser.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/test-web-server.py" 18097 /tmp/rustos-portal.log
+wait # $ 240
+send dhcp eth0 -t 20
+wait leased 10\.0\.2\.15/24 30
+wait # $
+send echo "url=http://10.0.2.2:18097/generate_204" > /etc/portal.conf
+wait # $
+send netcheck -T 5; echo rc=$?
+wait captive portal detected: http://10\.0\.2\.2:18097/portal\?orig=generate_204
+wait rc=2
+wait # $
+send browse --portal
+wait Welcome to Free Wi-Fi 30
+wait Text field email
+raw \r
+wait email:
+raw me@example.com\r
+wait Check box
+raw \r
+raw \x1b[B
+wait Submit button
+raw \r
+wait You are now connected 30
+wait Internet access OK 30
+raw q
+wait # $
+send netcheck; echo rc=$?
+wait Internet access OK
+wait rc=0
+wait # $
+hostrun grep -q "POST /portal .*email=me%40example.com&terms=on" /tmp/rustos-portal.log

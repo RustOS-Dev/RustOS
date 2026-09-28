@@ -67,7 +67,36 @@ pub fn handle(frame: &mut TrapFrame) {
     }
 }
 
+/// Where the kernel image is mapped (PIE, loaded by the bootloader).
+const KERNEL_IMAGE: core::ops::Range<u64> = 0xffff_8000_0000_0000..0xffff_8000_0400_0000;
+
+/// Print stack words that look like kernel code addresses (a heuristic
+/// backtrace; resolve with `addr2line -e rustos 0xOFFSET`).
+fn stack_scan(rsp: u64) {
+    if !(0xffff_8000_0000_0000..u64::MAX - 1024).contains(&rsp) {
+        return;
+    }
+    crate::println!("stack scan from {:#x} (image offsets):", rsp);
+    let mut shown = 0;
+    for i in 0..256u64 {
+        let p = rsp + i * 8;
+        // Stop at the end of the page to avoid faulting on a guard page.
+        if i > 0 && p & 0xFFF == 0 && shown > 0 && i > 64 {
+            break;
+        }
+        let v = unsafe { core::ptr::read_volatile(p as *const u64) };
+        if KERNEL_IMAGE.contains(&v) {
+            crate::println!("  [rsp+{:#05x}] {:#x}", i * 8, v - KERNEL_IMAGE.start);
+            shown += 1;
+            if shown >= 24 {
+                break;
+            }
+        }
+    }
+}
+
 fn fatal(frame: &TrapFrame, cr2: Option<u64>) -> ! {
+    stack_scan(frame.rsp);
     let cpu = if super::cpu::is_initialized() {
         super::cpu::this().cpu_id
     } else {

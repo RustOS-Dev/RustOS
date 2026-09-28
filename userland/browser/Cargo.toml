@@ -1,0 +1,15 @@
+[package]
+name = "browser"
+version = "0.1.0"
+edition = "2024"
+description = "browse: a lynx-like text web browser for RustOS"
+
+[[bin]]
+name = "browse"
+path = "src/main.rs"
+
+[dependencies]
+rustos-rt.workspace = true
+webclient = { path = "../webclient" }
+html = { path = "../../crates/html" }
+textlayout = { path = "../../crates/textlayout" }

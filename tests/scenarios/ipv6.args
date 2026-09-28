@@ -1,0 +1,3 @@
+# Point-to-point link to tools/fake-router.py (Ethernet frames over UDP)
+-netdev dgram,id=n0,local.type=inet,local.host=127.0.0.1,local.port=18301,remote.type=inet,remote.host=127.0.0.1,remote.port=18300
+-device virtio-net-pci,netdev=n0

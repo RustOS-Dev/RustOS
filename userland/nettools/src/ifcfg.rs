@@ -358,6 +358,13 @@ pub fn dhcp(args: &[String]) -> i32 {
                 p,
                 i.gateway.map_or(String::new(), |g| format!(" gateway {}", g))
             );
+            // The network may announce a captive portal (DHCP option 114).
+            time::sleep_ms(100);
+            if let Some((ifc, src, url)) = webclient::portal::announced()
+                && ifc == name
+            {
+                println!("{}: captive portal {} (from {}); log in with 'browse --portal'", name, url, src);
+            }
             return 0;
         }
         time::sleep_ms(200);

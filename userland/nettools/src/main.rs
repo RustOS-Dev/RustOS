@@ -9,10 +9,10 @@ mod dns;
 mod http;
 mod ifcfg;
 mod nc;
+mod netcheck;
 mod netstat;
 mod ntp;
 mod ping;
-mod tls;
 mod wifi;
 
 use rustos_rt::prelude::*;
@@ -31,6 +31,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("ifup", ifcfg::ifup),
     ("ip", ifcfg::ip),
     ("nc", nc::nc),
+    ("netcheck", netcheck::netcheck),
     ("netstat", netstat::netstat),
     ("nslookup", dns::nslookup),
     ("ntpdate", ntp::ntpdate),

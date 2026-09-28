@@ -1,0 +1,43 @@
+# Network configuration from a scripted router (tools/fake-router.py):
+# DHCPv4 with a captive-portal option, router advertisements (SLAAC,
+# RDNSS, DNSSL, M/O flags), stateful DHCPv6, DNS A/AAAA and HTTP over
+# IPv6 and IPv4.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/fake-router.py" 18300 18301
+wait # $ 240
+send dhcp eth0 -t 30
+wait leased 192\.168\.50\.10/24 gateway 192\.168\.50\.1 40
+wait captive portal http://192\.168\.50\.1/portal \(from dhcp\)
+wait # $
+send sleep 8; ip addr | cat; cat /etc/resolv.conf /proc/net/captive_portal
+wait 2001:db8:50::100
+wait search example\.test
+wait nameserver 2001:db8:50::53
+wait eth0 dhcp http://192\.168\.50\.1/portal
+wait # $
+send dmesg | grep DHCPv6 | cat
+wait starting DHCPv6 \(stateful\)
+wait DHCPv6 address 2001:db8:50::100/128
+wait # $
+send nslookup v6only.example.test
+wait Address: 2001:db8:50::1
+wait # $
+# With a global IPv6 address, IPv6 comes first.
+send host dual.example.test
+wait dual.example.test has IPv6 address 2001:db8:50::1
+wait dual.example.test has address 192\.168\.50\.1
+wait # $
+send nslookup -4 v6only.example.test || echo no-v4
+wait no-v4
+wait # $
+# HTTP to an AAAA-only name (IPv6 TCP), then IPv4-only.
+send wget -q -O - http://v6only.example.test/
+wait hello from the fake router
+wait # $
+send wget -q -O - http://v4only.example.test/ && wget -q -O - "http://[2001:db8:50::1]/"
+wait hello from the fake router[\s\S]*hello from the fake router
+wait # $
+# The probe URL does not resolve here, but the network announced a portal.
+send netcheck -T 3; echo rc=$?
+wait captive portal detected: http://192\.168\.50\.1/portal
+wait rc=2
+wait # $

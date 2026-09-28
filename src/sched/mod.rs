@@ -176,7 +176,10 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         entry,
         arg,
     ];
-    let sp = top - 8 * (frame.len() as u64 + 1); // keep 16-byte alignment for call
+    // The trampoline pops `entry` and `arg` and then `call`s: rsp must be
+    // 16-byte aligned at that call (SysV ABI), i.e. sp + 72 ≡ 0 (mod 16).
+    let sp = (top & !15) - 8 * (frame.len() as u64 + 2);
+    debug_assert_eq!((sp + 8 * frame.len() as u64) % 16, 0);
     unsafe {
         core::ptr::copy_nonoverlapping(frame.as_ptr(), sp as *mut u64, frame.len());
     }

@@ -34,10 +34,22 @@ NICs all plug in through the same `NetDevice` trait.
   starts a DHCPv4 client.
 * **DHCP** leases configure the address, default gateway and DNS servers
   (written to `/etc/resolv.conf`). A link-down/up cycle restarts DHCP.
+* **IPv6 configuration** (`src/net/dhcpv6.rs`, codecs in
+  `crates/netproto`): router advertisements are also read for their
+  flags, RDNSS (DNS servers), DNSSL (search domains) and captive-portal
+  options. The *M* flag starts a stateful DHCPv6 client (IA_NA address,
+  renewed at T1), the *O* flag a stateless one (DNS, domains). IPv4 and
+  IPv6 DNS servers both go to `/etc/resolv.conf`.
+* **Captive portals**: the portal URI from DHCPv4 option 114, DHCPv6
+  option 103 or the RA option (RFC 8910) is published in
+  `/proc/net/captive_portal`.
 * **Routing**: a per-interface route table plus a global default route;
   `route()` picks the interface for a destination.
-* **DNS**: `rustos_rt::net::resolve` consults `/etc/hosts`, then the
-  resolvers in `/etc/resolv.conf` (UDP, A records).
+* **DNS**: `rustos_rt::net::resolve_all` consults `/etc/hosts`, then the
+  resolvers in `/etc/resolv.conf` (IPv4 or IPv6 servers) for AAAA and A
+  records. IPv6 addresses come first when the machine has a global IPv6
+  address; `connect_host` tries each address in turn with a connect
+  timeout (`SO_SNDTIMEO`).
 
 ## Sockets
 
@@ -78,29 +90,47 @@ are joined by `wifi auto` from `wifi.conf` (see [WIFI.md](WIFI.md)).
 | `dhcp IFACE [-t SECS]` (`dhclient`) | (re)start DHCP and wait for a lease |
 | `route`, `arp` | routing table, neighbour cache |
 | `ping [-c N] [-i SECS] HOST` | ICMP echo |
-| `nslookup NAME` (`host`) | DNS lookup |
+| `nslookup [-4\|-6] NAME` (`host`) | DNS lookup (A and AAAA) |
 | `netstat [-tuln]` | sockets (`/proc/net/tcp`, `/proc/net/udp`) |
 | `nc [-l] [-u] [-p PORT] [-w SECS] [HOST PORT]` | TCP/UDP client and server |
-| `wget [-q] [-k] [-O FILE] [-T SECS] URL` | HTTP/1.1 and HTTPS download |
+| `wget [-q] [-v] [-S] [-k] [-O FILE] [-T SECS] [--post-data D] [--header H] [--load-cookies F] [--save-cookies F] [--secure-protocol TLSv1_2\|TLSv1_3] URL...` | HTTP/1.1 and HTTPS download (redirects, chunked, cookies, IPv6) |
+| `netcheck [-q] [-T SECS]` | Internet reachable, or a captive portal? (exit 0/2, 1 offline) |
 | `httpd [-p PORT] [-d DIR]` | static file server |
 | `ntpdate [SERVER]` | set the clock over SNTP |
 | `wifi ...` | wireless control ([WIFI.md](WIFI.md)) |
 
 ### HTTPS
 
-`wget` speaks TLS 1.3 (embedded-tls: `TLS_AES_128_GCM_SHA256`, P-256 key
-exchange, RSA and ECDSA certificates). Server certificates are verified
-against the CA bundle at `/storage/etc/ssl/certs/ca-certificates.crt` or
+`wget` (and `browse`) use `crates/nettls`: rustls with a pure-Rust
+RustCrypto provider (no SIMD, fits the soft-float userland). TLS 1.3
+(AES-128/256-GCM, ChaCha20-Poly1305) and TLS 1.2 (ECDHE-ECDSA/RSA with
+AES-GCM or ChaCha20-Poly1305); X25519, P-256 and P-384 key exchange; RSA
+(PKCS#1 and PSS), ECDSA and Ed25519 signatures. Server certificates are
+verified by webpki against the CA bundle at
+`/storage/etc/ssl/certs/ca-certificates.crt` or
 `/etc/ssl/certs/ca-certificates.crt` (the build copies the build host's
 bundle into the initramfs; set `RUSTOS_CA_BUNDLE` to choose another file):
 the chain must lead to a trusted CA, be within its validity period (keep
 the clock right with `ntpdate`) and name the host. `-k` /
-`--no-check-certificate` skips verification. TLS 1.2-only servers are not
-supported.
+`--no-check-certificate` skips verification. HTTP handling (redirects,
+chunked and gzip bodies, cookies, forms) is in `crates/http` and
+`crates/weburl`, shared with the browser.
+
+### Captive portals
+
+Hotel, train and café networks often intercept web traffic until you log
+in on a web page. RustOS notices this in two ways: the network announces
+the portal (see above), or a probe of
+`http://connectivitycheck.gstatic.com/generate_204` (configurable in
+`/etc/portal.conf`) is redirected or answered with something other than
+`204`. `wifi connect`/`wifi auto` run the check after joining a network,
+`dhcp` reports an announced portal, and `netcheck` checks on demand. The
+login page is saved in `/run/portal` for `browse --portal`.
 
 ## Kernel interfaces
 
-* `/proc/net/dev`, `route`, `tcp`, `udp`, `arp`, `if_addrs`, `wireless`.
+* `/proc/net/dev`, `route`, `tcp`, `udp`, `arp`, `if_addrs`, `wireless`,
+  `captive_portal`.
 * `/sys/class/net/<iface>/{address,operstate,carrier,mtu,speed,type,flags,
   ifindex,driver,statistics/*,wireless/status}`.
 * ioctls on any socket: `SIOCGIFCONF`, `SIOCGIFFLAGS`/`SIOCSIFFLAGS`,
@@ -127,12 +157,15 @@ supported.
 loopback, static config, sysfs), `eth-e1000`, `eth-e1000e`,
 `eth-virtio-net` (the `network` scenario also checks the SLAAC address),
 `eth-usb` (ECM, and RNDIS when built with
-`RUSTOS_USB_PREFER_RNDIS`) and `https` (private CA, TLS 1.3-only server,
-trust, `-k`, host-name mismatch).
+`RUSTOS_USB_PREFER_RNDIS`), `https` (private CA, TLS 1.3-only and TLS
+1.2-only servers, trust, `-k`, host-name mismatch, protocol selection) and
+`ipv6`: a scripted router (`tools/fake-router.py`, attached through QEMU's
+`dgram` network backend) provides DHCPv4 with a portal option, router
+advertisements with RDNSS/DNSSL/portal, stateful DHCPv6, DNS and HTTP over
+IPv4 and IPv6.
 
 ## Limitations
 
-* IPv6: SLAAC and link-local addresses, `AF_INET6` sockets; no DHCPv6,
-  and the DNS resolver only queries A records over IPv4.
+* IPv6: no temporary (privacy) addresses or prefix delegation.
 * No IP forwarding/NAT, no raw `AF_PACKET`, no multicast group management.
-* TLS is client-only, TLS 1.3 only, no session resumption.
+* TLS is client-only; no session resumption or client certificates.

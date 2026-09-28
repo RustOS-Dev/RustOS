@@ -91,6 +91,15 @@ const BLANK: Cell = Cell {
 };
 
 static mut GRID: [Cell; MAX_COLS * MAX_ROWS] = [BLANK; MAX_COLS * MAX_ROWS];
+const ZERO_CELL: Cell = Cell {
+    ch: 0,
+    fg: Color::rgb(0, 0, 0),
+    bg: Color::rgb(0, 0, 0),
+};
+
+/// The normal screen, saved while the alternate screen is active (all
+/// zero so it lives in .bss).
+static mut SAVED_GRID: [Cell; MAX_COLS * MAX_ROWS] = [ZERO_CELL; MAX_COLS * MAX_ROWS];
 
 enum Parse {
     Ground,
@@ -115,6 +124,8 @@ pub struct FbConsole {
     bold: bool,
     cursor_visible: bool,
     saved: (usize, usize),
+    /// Alternate screen active; the normal screen and cursor are saved.
+    alt: Option<(usize, usize)>,
     scroll_top: usize,
     scroll_bottom: usize,
     dirty: [bool; MAX_ROWS],
@@ -241,6 +252,30 @@ impl FbConsole {
             let (x, y) = (self.cx.min(self.cols - 1), self.cy);
             self.render_cell(x, y, true);
             self.drawn_cursor = Some((x, y));
+        }
+    }
+
+    /// Enter (`set`) or leave the alternate screen: the normal screen and
+    /// cursor are saved on entry and restored on exit.
+    #[allow(clippy::deref_addrof)]
+    fn alternate_screen(&mut self, set: bool, rows: usize, cols: usize) {
+        let n = rows * cols;
+        // SAFETY: only accessed while holding CONSOLE.
+        let saved = unsafe { &mut *(&raw mut SAVED_GRID) };
+        if set {
+            if self.alt.is_some() {
+                return;
+            }
+            saved[..n].copy_from_slice(&self.grid()[..n]);
+            self.alt = Some((self.cx, self.cy));
+            for y in 0..rows {
+                self.erase(y, 0, cols);
+            }
+        } else if let Some((x, y)) = self.alt.take() {
+            self.grid()[..n].copy_from_slice(&saved[..n]);
+            (self.cx, self.cy) = (x.min(cols - 1), y.min(rows - 1));
+            self.wrap_pending = false;
+            self.mark_all();
         }
     }
 
@@ -532,17 +567,7 @@ impl FbConsole {
                 for i in 0..self.nparams {
                     match self.params[i] {
                         25 => self.cursor_visible = set,
-                        1049 | 47 | 1047 => {
-                            // Alternate screen: approximate with a clear.
-                            for y in 0..rows {
-                                self.erase(y, 0, cols);
-                            }
-                            if set {
-                                self.saved = (self.cx, self.cy);
-                            } else {
-                                (self.cx, self.cy) = self.saved;
-                            }
-                        }
+                        1049 | 47 | 1047 => self.alternate_screen(set, rows, cols),
                         _ => {}
                     }
                 }
@@ -806,6 +831,7 @@ pub unsafe fn init(framebuffer: FrameBuffer) {
         bold: false,
         cursor_visible: true,
         saved: (0, 0),
+        alt: None,
         scroll_top: 0,
         scroll_bottom: rows - 1,
         dirty: [false; MAX_ROWS],

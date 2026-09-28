@@ -10,7 +10,17 @@ fn main() {
     let userland = manifest_dir.join("userland");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=userland");
-    println!("cargo:rerun-if-changed=crates/rustos-rt/src");
+    // Library crates the userland programs are built from.
+    for c in [
+        "rustos-rt",
+        "weburl",
+        "http",
+        "nettls",
+        "html",
+        "textlayout",
+    ] {
+        println!("cargo:rerun-if-changed=crates/{c}/src");
+    }
     println!("cargo:rerun-if-env-changed=RUSTOS_SKIP_USERLAND");
 
     let cpio = out_dir.join("initramfs.cpio");
@@ -69,7 +79,8 @@ fn build_userland(userland: &Path, root: &Path) -> Result<Vec<(String, Entry)>, 
     cmd.env(
         "RUSTFLAGS",
         format!(
-            "-C relocation-model=static -C link-arg=-T{} -C link-arg=--no-pie --cfg aes_force_soft --cfg polyval_force_soft",
+            // No SSE/AVX in userland: portable backends for every crypto crate.
+            "-C relocation-model=static -C link-arg=-T{} -C link-arg=--no-pie --cfg aes_force_soft --cfg polyval_force_soft --cfg chacha20_force_soft --cfg poly1305_force_soft --cfg curve25519_dalek_backend=\"serial\"",
             userland.join("userland.ld").display()
         ),
     );

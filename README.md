@@ -32,7 +32,10 @@ mass storage, and Ethernet (CDC ECM, NCM, RNDIS — phone tethering).
 drivers for virtio-net, Intel e1000/e1000e/I219, I225/I226 (igc), Realtek
 RTL8111/8168/8125 (r8169); **Intel AX210 Wi-Fi** (also AX211/AX201) with
 WPA2-PSK and WPA3-SAE; tools `ip`, `ifconfig`, `ifup`, `ping`, `nslookup`,
-`netstat`, `nc`, **`wget` with HTTPS (TLS 1.3)**, `httpd`, `ntpdate`, `wifi`.
+`netstat`, `nc`, **`wget` with HTTPS (TLS 1.2/1.3)**, `httpd`, `ntpdate`, `wifi`,
+`netcheck` (captive-portal detection); IPv4 and IPv6 (SLAAC, DHCPv6, RDNSS);
+**`browse`, a lynx-like text web browser** with forms, cookies and HTTPS
+that can log into captive-portal Wi-Fi ([docs/BROWSER.md](docs/BROWSER.md)).
 
 **Userland** — `init`, `sh` (pipes, redirection, variables, globbing,
 command substitution, functions, job control), `rbox` (≈90 coreutils:
@@ -91,6 +94,8 @@ root@rustos:/# ip addr                       # interfaces get DHCP automatically
 root@rustos:/# wget https://example.com/     # HTTPS with certificate checking
 root@rustos:/# wifi scan
 root@rustos:/# wifi connect "My Network" 'passphrase' --save
+root@rustos:/# browse --portal                # log into a hotel / café Wi-Fi
+root@rustos:/# browse duckduckgo.com/lite     # text web browsing
 root@rustos:/# lsblk; lsusb; lspci; dmesg | tail
 root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 ```

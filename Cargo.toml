@@ -22,6 +22,7 @@ acpi = "6.1"
 log = "0.4"
 usb-desc = { path = "crates/usb-desc" }
 wlan = { path = "crates/wlan" }
+netproto = { path = "crates/netproto" }
 # The kernel runs without SSE: force the portable crypto backends.
 sha1 = { version = "0.10", default-features = false, features = ["force-soft"] }
 sha2 = { version = "0.10", default-features = false, features = ["force-soft"] }

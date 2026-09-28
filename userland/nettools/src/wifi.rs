@@ -121,6 +121,24 @@ fn scan(iface: &str) -> i32 {
     }
 }
 
+/// After joining a network: wait for an IPv4 lease, then look for a
+/// captive portal (hotspots in hotels, trains, cafés). Prints a hint when
+/// one is found; with `quiet`, prints nothing otherwise.
+fn after_connect(iface: &str, quiet: bool) {
+    let start = rustos_rt::time::millis();
+    while rustos_rt::time::millis() - start < 15_000 {
+        if rustos_rt::net::interface(iface).is_some_and(|i| i.ipv4().is_some()) {
+            break;
+        }
+        rustos_rt::time::sleep_ms(250);
+    }
+    let st = webclient::portal::check(5000);
+    match st {
+        webclient::portal::Status::Online if quiet => {}
+        _ => println!("wifi: {}", webclient::portal::describe(&st)),
+    }
+}
+
 /// Start connecting and wait for the outcome.
 fn connect(iface: &str, ssid: &str, pass: &str, timeout_ms: u64, quiet: bool) -> bool {
     let mut s = ssid.as_bytes().to_vec();
@@ -275,10 +293,11 @@ pub fn wifi(args: &[String]) -> i32 {
             if !connect(&iface, ssid, pass, 30_000, false) {
                 return 1;
             }
-            if save_it {
-                return save(ssid, pass);
+            let rc = if save_it { save(ssid, pass) } else { 0 };
+            if !rest.contains(&"--no-portal-check") {
+                after_connect(&iface, false);
             }
-            0
+            rc
         }
         "disconnect" => match request(&iface, WIFI_DISCONNECT, &mut [], &[]) {
             Ok(_) => 0,
@@ -308,6 +327,7 @@ pub fn wifi(args: &[String]) -> i32 {
                     if quiet {
                         println!("wifi: connected to \"{}\"", ssid);
                     }
+                    after_connect(&iface, quiet);
                     return 0;
                 }
             }

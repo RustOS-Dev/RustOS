@@ -12,3 +12,5 @@ crates/wlan/target
 crates/wlan/Cargo.lock
 __pycache__/
 crates/*/target
+crates/*/Cargo.lock
+!crates/rustos-rt/Cargo.lock

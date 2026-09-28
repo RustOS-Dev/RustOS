@@ -1,0 +1,58 @@
+# The text browser against tools/test-web-server.py on the host.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/test-web-server.py" 18096 /tmp/rustos-web.log
+wait # $ 240
+send dhcp eth0 -t 20
+wait leased 10\.0\.2\.15/24 30
+wait # $
+# Batch rendering (-dump): headings, lists, tables, links, forms.
+send browse -dump -width 60 http://10.0.2.2:18096/
+wait Welcome to the test site
+wait \* First item
+wait Name    Size
+wait kernel  4 MiB
+wait \[1\]Log in or \[2\]see a refresh
+wait \[rust os_+\] \[ Search \]
+wait References
+wait 1\. http://10\.0\.2\.2:18096/login
+wait # $
+# Interactive login: user name, password, check box, submit (POST with
+# the session cookie from the login page, then a redirect and gzip).
+send browse http://10.0.2.2:18096/login
+wait Text field user
+raw \r
+wait user:
+raw alice\r
+wait Password field pass
+raw \r
+wait pass:
+raw secret\r
+wait Check box
+raw \r
+raw \x1b[B
+wait Submit button
+raw \r
+wait Welcome alice 30
+raw q
+wait # $
+hostrun grep -q "POST /login | sid=abc | user=alice&pass=secret&token=t0k&remember=on" /tmp/rustos-web.log
+hostrun grep -q "GET /welcome | .*auth=1" /tmp/rustos-web.log
+# A GET form: edit the query and submit.
+send browse http://10.0.2.2:18096/
+wait Log in
+raw \x1b[B\x1b[B
+wait Text field q
+raw \r
+wait q:
+raw \x15rustos browser\r
+wait Submit button
+raw \r
+wait Results for.{0,20}rustos browser 30
+raw q
+wait # $
+hostrun grep -q "GET /search?q=rustos+browser" /tmp/rustos-web.log
+# Meta refresh is followed after its countdown.
+send browse http://10.0.2.2:18096/refresh
+wait Refreshing to http://10\.0\.2\.2:18096/welcome
+wait Not logged in 30
+raw q
+wait # $

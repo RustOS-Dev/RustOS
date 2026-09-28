@@ -69,6 +69,8 @@ pub fn write_raw(bytes: &[u8]) {
 }
 
 static RX_LOCK: Mutex<()> = Mutex::new(());
+/// Set when a BREAK arrives on COM1 (the "SysRq" debug dump request).
+pub static SYSRQ: AtomicBool = AtomicBool::new(false);
 static RX_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Move received bytes from the UART to the TTY. Called from the IRQ 4
@@ -85,7 +87,21 @@ pub fn poll_rx() {
             let mut lsr = Port::<u8>::new(COM1_PORT + LINE_STATUS_OFFSET);
             let mut data = Port::<u8>::new(COM1_PORT + DATA_OFFSET);
             let mut guard = 0;
-            while lsr.read() & 1 != 0 && guard < 64 {
+            loop {
+                let status = lsr.read();
+                if status & 0x10 != 0 {
+                    // Break condition: request a state dump (the break
+                    // itself arrives as a NUL byte, which is dropped).
+                    SYSRQ.store(true, Ordering::Relaxed);
+                    crate::tty::input_available();
+                    if status & 1 != 0 {
+                        let _ = data.read();
+                    }
+                    continue;
+                }
+                if status & 1 == 0 || guard >= 64 {
+                    break;
+                }
                 let b = data.read();
                 crate::tty::serial_input(b);
                 guard += 1;

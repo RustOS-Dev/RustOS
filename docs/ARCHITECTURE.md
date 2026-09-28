@@ -41,7 +41,7 @@ initramfs embedded in the kernel image.
 | `src/net/` | network core, sockets, socket syscalls |
 | `src/drivers/` | block, net, wifi, virtio, console, framebuffer, serial, PS/2, RNG |
 | `src/tty.rs`, `src/klog.rs`, `src/time.rs`, `src/firmware.rs`, `src/initramfs.rs` | terminal, kernel log, time, firmware loader, initramfs |
-| `crates/` | host-testable libraries: `wlan`, `usb-desc`, `fat-format`, `rustos-rt`, `create-image` |
+| `crates/` | host-testable libraries: `wlan`, `usb-desc`, `fat-format`, `netproto` (DHCPv6/RA/portal codecs), `weburl`, `http` (package `httpc`), `nettls` (rustls + RustCrypto provider), `rustos-rt`, `create-image` |
 | `userland/` | init, sh, rbox, nettools, ldso, dynamic-linking tests, root filesystem files |
 
 ## Boot
@@ -187,7 +187,7 @@ Linux x86-64 numbers through `syscall` (and `int 0x80`); see
 ## Testing
 
 * Host unit tests for the pure crates (`crates/wlan`, `usb-desc`,
-  `fat-format`).
+  `fat-format`, `netproto`, `weburl`, `http`, `nettls`).
 * Kernel tests (`cargo test`) boot under QEMU per test binary.
 * Boot scenarios (`tools/run-scenarios.sh`) drive the serial console with
   real devices: shell language and job control, storage (NVMe, virtio,

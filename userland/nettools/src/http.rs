@@ -3,337 +3,253 @@
 use crate::err;
 use rustos_rt::net::{self, Ipv4, Socket, SocketAddr};
 use rustos_rt::prelude::*;
-use rustos_rt::{fs, io, time};
+use rustos_rt::{fs, io};
+use webclient::httpc::client::Sink;
+use webclient::httpc::cookie::Context;
+use webclient::httpc::{self, Request, ResponseHead, Url};
+use webclient::nettls::Versions;
 
-struct Url {
-    https: bool,
-    host: String,
-    port: u16,
+const USAGE: &str =
+    "usage: wget [-q] [-v] [-S] [-k] [-O FILE] [-T SECS] [-U AGENT] [--header 'K: V']
+            [--post-data DATA | --post-file FILE] [--load-cookies FILE] [--save-cookies FILE]
+            [--keep-session-cookies] [--max-redirect N] [--secure-protocol auto|TLSv1_2|TLSv1_3]
+            [--content-on-error] URL...";
+
+/// Writes the body to a file or stdout, created on the first byte (so a
+/// failed request leaves no empty file behind).
+struct Output {
     path: String,
+    file: Option<fs::File>,
+    bytes: u64,
+    show_headers: bool,
+    keep_errors: bool,
+    status: u16,
+    failed: Option<String>,
 }
 
-fn parse_url(u: &str) -> Option<Url> {
-    let (https, rest) = if let Some(r) = u.strip_prefix("http://") {
-        (false, r)
-    } else if let Some(r) = u.strip_prefix("https://") {
-        (true, r)
-    } else {
-        (false, u)
-    };
-    let (hostport, path) = match rest.find('/') {
-        Some(i) => (&rest[..i], &rest[i..]),
-        None => (rest, "/"),
-    };
-    let (host, port) = match hostport.rsplit_once(':') {
-        Some((h, p)) => (h, p.parse().ok()?),
-        None => (hostport, if https { 443 } else { 80 }),
-    };
-    if host.is_empty() {
-        return None;
-    }
-    Some(Url {
-        https,
-        host: host.to_string(),
-        port,
-        path: path.to_string(),
-    })
-}
-
-enum Transport {
-    Plain(Socket),
-    Tls(alloc::boxed::Box<crate::tls::Tls>),
-}
-
-impl Transport {
-    fn recv(&mut self, buf: &mut [u8]) -> rustos_rt::Result<usize> {
-        match self {
-            Transport::Plain(s) => s.recv(buf),
-            Transport::Tls(t) => match t.read(buf) {
-                Ok(n) => Ok(n),
-                // close_notify or a truncated stream both end the body.
-                Err(embedded_tls::TlsError::ConnectionClosed) => Ok(0),
-                Err(_) => Err(rustos_rt::Error(5)),
-            },
+impl Sink for Output {
+    fn head(&mut self, h: &ResponseHead, url: &Url) -> httpc::Result<()> {
+        self.status = h.status;
+        if self.show_headers {
+            eprintln!("  {} -> HTTP/1.{} {} {}", url, h.minor, h.status, h.reason);
+            for (k, v) in &h.headers.0 {
+                eprintln!("  {}: {}", k, v);
+            }
         }
+        Ok(())
     }
 
-    fn send_all(&mut self, d: &[u8]) -> rustos_rt::Result<()> {
-        match self {
-            Transport::Plain(s) => s.send_all(d),
-            Transport::Tls(t) => {
-                let mut d = d;
-                while !d.is_empty() {
-                    let n = t.write(d).map_err(|_| rustos_rt::Error(5))?;
-                    d = &d[n..];
+    fn data(&mut self, d: &[u8]) -> httpc::Result<()> {
+        if self.status >= 400 && !self.keep_errors {
+            return Ok(());
+        }
+        if self.path == "-" {
+            io::write_all(1, d).map_err(|e| httpc::Error::Io(e.to_string()))?;
+        } else {
+            if self.file.is_none() {
+                match fs::File::create(&self.path) {
+                    Ok(f) => self.file = Some(f),
+                    Err(e) => {
+                        self.failed = Some(format!("{}: {}", self.path, e));
+                        return Err(httpc::Error::Io(format!("{}: {}", self.path, e)));
+                    }
                 }
-                t.flush().map_err(|_| rustos_rt::Error(5))
             }
+            self.file
+                .as_ref()
+                .unwrap()
+                .write_all(d)
+                .map_err(|e| httpc::Error::Io(format!("{}: {}", self.path, e)))?;
         }
-    }
-}
-
-/// Buffered reader over a connection.
-struct Conn {
-    s: Transport,
-    buf: Vec<u8>,
-    pos: usize,
-    eof: bool,
-}
-
-impl Conn {
-    fn fill(&mut self) -> rustos_rt::Result<bool> {
-        if self.eof {
-            return Ok(false);
-        }
-        if self.pos > 0 {
-            self.buf.drain(..self.pos);
-            self.pos = 0;
-        }
-        let mut tmp = [0u8; 16384];
-        let n = self.s.recv(&mut tmp)?;
-        if n == 0 {
-            self.eof = true;
-            return Ok(false);
-        }
-        self.buf.extend_from_slice(&tmp[..n]);
-        Ok(true)
-    }
-
-    fn line(&mut self) -> rustos_rt::Result<Option<String>> {
-        loop {
-            if let Some(i) = self.buf[self.pos..].iter().position(|&b| b == b'\n') {
-                let l = String::from_utf8_lossy(&self.buf[self.pos..self.pos + i])
-                    .trim_end_matches('\r')
-                    .to_string();
-                self.pos += i + 1;
-                return Ok(Some(l));
-            }
-            if !self.fill()? {
-                return Ok(None);
-            }
-        }
-    }
-
-    /// Up to `max` bytes (0 = at end of stream).
-    fn read(&mut self, max: usize) -> rustos_rt::Result<Vec<u8>> {
-        if self.pos >= self.buf.len() && !self.fill()? {
-            return Ok(Vec::new());
-        }
-        let n = max.min(self.buf.len() - self.pos);
-        let v = self.buf[self.pos..self.pos + n].to_vec();
-        self.pos += n;
-        Ok(v)
-    }
-}
-
-enum Sink {
-    Stdout,
-    File(fs::File),
-}
-
-impl Sink {
-    fn write(&mut self, d: &[u8]) -> rustos_rt::Result<()> {
-        match self {
-            Sink::Stdout => io::write_all(io::STDOUT, d),
-            Sink::File(f) => f.write_all(d),
-        }
+        self.bytes += d.len() as u64;
+        Ok(())
     }
 }
 
 pub fn wget(args: &[String]) -> i32 {
     let mut out: Option<String> = None;
     let mut quiet = false;
+    let mut verbose = false;
+    let mut show_headers = false;
     let mut insecure = false;
-    let mut timeout = 30u64;
-    let mut url = None;
+    let mut timeout = 20u64;
+    let mut post: Option<Vec<u8>> = None;
+    let mut headers: Vec<(String, String)> = Vec::new();
+    let mut agent: Option<String> = None;
+    let mut load_cookies: Option<String> = None;
+    let mut save_cookies: Option<String> = None;
+    let mut keep_session = false;
+    let mut max_redirect = 20usize;
+    let mut versions = Versions::Both;
+    let mut keep_errors = false;
+    let mut urls = Vec::new();
+
     let mut i = 1;
     while i < args.len() {
-        match args[i].as_str() {
-            "-O" => {
-                i += 1;
-                out = args.get(i).cloned();
-            }
-            "-q" => quiet = true,
+        let a = args[i].as_str();
+        // "--opt=value" or "--opt value" / "-O value".
+        let (flag, inline) = match a.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            _ => (a, None),
+        };
+        let value = |i: &mut usize| -> Option<String> {
+            inline.clone().or_else(|| {
+                *i += 1;
+                args.get(*i).cloned()
+            })
+        };
+        match flag {
+            "-q" | "--quiet" => quiet = true,
+            "-v" | "--verbose" => verbose = true,
+            "-S" | "--server-response" => show_headers = true,
             "-k" | "--no-check-certificate" => insecure = true,
-            "-T" => {
-                i += 1;
-                timeout = args.get(i).and_then(|t| t.parse().ok()).unwrap_or(timeout);
+            "--keep-session-cookies" => keep_session = true,
+            "--content-on-error" => keep_errors = true,
+            "-O" | "--output-document" => out = value(&mut i),
+            "-T" | "--timeout" => {
+                timeout = value(&mut i)
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(timeout)
             }
-            u => url = Some(u.to_string()),
+            "-U" | "--user-agent" => agent = value(&mut i),
+            "--header" => {
+                if let Some(h) = value(&mut i)
+                    && let Some((k, v)) = h.split_once(':')
+                {
+                    headers.push((k.trim().to_string(), v.trim().to_string()));
+                }
+            }
+            "--post-data" => post = value(&mut i).map(String::into_bytes),
+            "--post-file" => {
+                let f = value(&mut i).unwrap_or_default();
+                match fs::read(&f) {
+                    Ok(d) => post = Some(d),
+                    Err(e) => return err("wget", &f, e),
+                }
+            }
+            "--load-cookies" => load_cookies = value(&mut i),
+            "--save-cookies" => save_cookies = value(&mut i),
+            "--max-redirect" => {
+                max_redirect = value(&mut i)
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(max_redirect)
+            }
+            "--secure-protocol" => {
+                versions = match value(&mut i).unwrap_or_default().as_str() {
+                    "TLSv1_2" => Versions::Tls12Only,
+                    "TLSv1_3" => Versions::Tls13Only,
+                    _ => Versions::Both,
+                }
+            }
+            "-h" | "--help" => {
+                println!("{}", USAGE);
+                return 0;
+            }
+            _ if a.starts_with('-') && a.len() > 1 => {
+                eprintln!("wget: unknown option {}\n{}", a, USAGE);
+                return 2;
+            }
+            _ => urls.push(a.to_string()),
         }
         i += 1;
     }
-    let Some(mut url_s) = url else {
-        eprintln!("usage: wget [-q] [-k] [-O FILE] [-T SECS] http[s]://HOST[:PORT]/PATH");
+    if urls.is_empty() {
+        eprintln!("{}", USAGE);
         return 2;
-    };
-    for _redirect in 0..6 {
-        let Some(u) = parse_url(&url_s) else {
-            eprintln!("wget: unsupported URL '{}'", url_s);
-            return 1;
-        };
-        let addr = match net::resolve(&u.host) {
-            Ok(v) => SocketAddr { ip: v[0], port: u.port },
-            Err(e) => return err("wget", &u.host, e),
-        };
-        if !quiet {
-            eprintln!("Connecting to {} ({})...", u.host, addr);
-        }
-        let s = match net::tcp_connect(addr) {
-            Ok(s) => s,
-            Err(e) => return err("wget", &format!("{}", addr), e),
-        };
-        let _ = s.set_timeout(timeout * 1000);
-        let default_port = if u.https { 443 } else { 80 };
-        let host_hdr = if u.port == default_port { u.host.clone() } else { format!("{}:{}", u.host, u.port) };
-        let mut s = if u.https {
-            let cas = if insecure {
-                None
-            } else {
-                match crate::tls::system_cas() {
-                    Some(c) => Some(c),
-                    None => {
-                        eprintln!(
-                            "wget: no CA certificates ({}); use --no-check-certificate to skip verification",
-                            crate::tls::CA_BUNDLES[1]
-                        );
-                        return 1;
-                    }
-                }
-            };
-            match crate::tls::connect(s, &u.host, cas) {
-                Ok(t) => Transport::Tls(alloc::boxed::Box::new(t)),
-                Err(e) => {
-                    eprintln!("wget: {}: {}", u.host, e);
-                    return 1;
-                }
-            }
-        } else {
-            Transport::Plain(s)
-        };
-        let req = format!(
-            "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: RustOS-wget/1.0\r\nAccept: */*\r\nConnection: close\r\n\r\n",
-            u.path, host_hdr
-        );
-        if let Err(e) = s.send_all(req.as_bytes()) {
-            return err("wget", "send", e);
-        }
-        let mut c = Conn { s, buf: Vec::new(), pos: 0, eof: false };
-        let status_line = match c.line() {
-            Ok(Some(l)) => l,
-            _ => {
-                eprintln!("wget: no response");
-                return 1;
-            }
-        };
-        let code: u32 = status_line.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
-        let mut length: Option<usize> = None;
-        let mut chunked = false;
-        let mut location = None;
-        while let Ok(Some(h)) = c.line() {
-            if h.is_empty() {
-                break;
-            }
-            if let Some((k, v)) = h.split_once(':') {
-                let v = v.trim();
-                match k.to_ascii_lowercase().as_str() {
-                    "content-length" => length = v.parse().ok(),
-                    "transfer-encoding" => chunked = v.eq_ignore_ascii_case("chunked"),
-                    "location" => location = Some(v.to_string()),
-                    _ => {}
-                }
-            }
-        }
-        if !quiet {
-            eprintln!("HTTP request sent, awaiting response... {}", status_line);
-        }
-        if (300..400).contains(&code) {
-            if let Some(l) = location {
-                url_s = if l.starts_with('/') {
-                    format!("{}://{}{}", if u.https { "https" } else { "http" }, host_hdr, l)
-                } else {
-                    l
-                };
-                if !quiet {
-                    eprintln!("Redirected to {}", url_s);
-                }
+    }
+
+    let mut netc = webclient::Net::new();
+    netc.timeout_ms = timeout * 1000;
+    netc.insecure = insecure;
+    netc.versions = versions;
+    netc.verbose = verbose;
+    let mut client = webclient::client(netc);
+    client.opts.compression = false; // save exactly what the server sends
+    client.opts.max_redirects = max_redirect;
+    client.opts.keep_alive = urls.len() > 1;
+    if let Some(a) = agent {
+        client.opts.user_agent = a;
+    }
+    if let Some(f) = &load_cookies {
+        webclient::load_cookies(&mut client.jar, f);
+    }
+
+    let mut status = 0;
+    for raw in &urls {
+        let url = match Url::from_user_input(raw) {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("wget: {}: {}", raw, e);
+                status = 1;
                 continue;
             }
-        }
-        if code != 200 {
-            eprintln!("wget: server returned {}", status_line);
-            return 1;
-        }
-        let name = out.clone().unwrap_or_else(|| {
-            let b = u.path.rsplit('/').next().unwrap_or("").split('?').next().unwrap_or("");
-            if b.is_empty() { String::from("index.html") } else { b.to_string() }
-        });
-        let mut sink = if name == "-" {
-            Sink::Stdout
-        } else {
-            match fs::File::create(&name) {
-                Ok(f) => Sink::File(f),
-                Err(e) => return err("wget", &name, e),
-            }
         };
-        let start = time::millis();
-        let mut total = 0usize;
-        let r: rustos_rt::Result<()> = (|| {
-            if chunked {
-                loop {
-                    let Some(l) = c.line()? else { break };
-                    let size = usize::from_str_radix(l.split(';').next().unwrap_or("0").trim(), 16).unwrap_or(0);
-                    if size == 0 {
-                        break;
-                    }
-                    let mut left = size;
-                    while left > 0 {
-                        let d = c.read(left)?;
-                        if d.is_empty() {
-                            return Ok(());
-                        }
-                        sink.write(&d)?;
-                        left -= d.len();
-                        total += d.len();
-                    }
-                    let _ = c.line()?;
-                }
+        let path = out.clone().unwrap_or_else(|| {
+            let n = url.file_name();
+            if n.is_empty() {
+                String::from("index.html")
             } else {
-                loop {
-                    let want = length.map_or(65536, |l| (l - total).min(65536));
-                    if want == 0 {
-                        break;
-                    }
-                    let d = c.read(want)?;
-                    if d.is_empty() {
-                        break;
-                    }
-                    sink.write(&d)?;
-                    total += d.len();
+                n
+            }
+        });
+        let mut req = match &post {
+            Some(body) => Request::post(
+                url.clone(),
+                "application/x-www-form-urlencoded",
+                body.clone(),
+            ),
+            None => Request::get(url.clone()),
+        };
+        for (k, v) in &headers {
+            req.headers.set(k, v);
+        }
+        if !quiet && path != "-" {
+            eprintln!("--> {}", url);
+        }
+        let mut sink = Output {
+            path: path.clone(),
+            file: None,
+            bytes: 0,
+            show_headers,
+            keep_errors,
+            status: 0,
+            failed: None,
+        };
+        match client.send_streaming(req, Context::USER, &mut sink) {
+            Ok((_, head, _)) => {
+                if head.status >= 400 {
+                    eprintln!(
+                        "wget: {}: server returned {} {}",
+                        url, head.status, head.reason
+                    );
+                    status = 8;
+                } else if !quiet && path != "-" {
+                    eprintln!("saved '{}' ({} bytes)", path, sink.bytes);
+                }
+                if let Some(f) = sink.file.take() {
+                    let _ = f.sync();
                 }
             }
-            Ok(())
-        })();
-        if let Err(e) = r {
-            return err("wget", "transfer", e);
+            Err(e) => {
+                let tls_verify = client
+                    .connector
+                    .last_tls_error
+                    .as_ref()
+                    .is_some_and(|t| t.is_certificate_error());
+                eprintln!("wget: {}: {}", url, e);
+                if tls_verify {
+                    eprintln!("wget: use --no-check-certificate (-k) to connect anyway");
+                }
+                status = if tls_verify { 5 } else { 4 };
+            }
         }
-        if length.is_some_and(|l| l != total) {
-            eprintln!("wget: connection closed after {} of {} bytes", total, length.unwrap());
-            return 1;
-        }
-        if !quiet {
-            let ms = (time::millis() - start).max(1);
-            eprintln!(
-                "'{}' saved [{} bytes, {} KB/s]",
-                name,
-                total,
-                total as u64 * 1000 / 1024 / ms
-            );
-        }
-        return 0;
     }
-    eprintln!("wget: too many redirects");
-    1
+    if let Some(f) = &save_cookies
+        && !webclient::save_cookies(&client.jar, f, keep_session)
+    {
+        eprintln!("wget: cannot write {}", f);
+    }
+    status
 }
 
 fn content_type(path: &str) -> &'static str {
@@ -366,19 +282,30 @@ fn respond(s: &Socket, code: &str, ctype: &str, body: &[u8], head: bool) {
 
 fn serve(s: Socket, root: &str) {
     let _ = s.set_timeout(10_000);
-    let mut c = Conn { s: Transport::Plain(s), buf: Vec::new(), pos: 0, eof: false };
-    let Ok(Some(req)) = c.line() else { return };
-    while let Ok(Some(h)) = c.line() {
-        if h.is_empty() {
-            break;
+    // Read the request head (up to the blank line).
+    let mut head_buf = Vec::new();
+    let mut chunk = [0u8; 2048];
+    while !head_buf.windows(4).any(|w| w == b"\r\n\r\n") && head_buf.len() < 64 * 1024 {
+        match s.recv(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => head_buf.extend_from_slice(&chunk[..n]),
         }
     }
+    let text = String::from_utf8_lossy(&head_buf).into_owned();
+    let req = text.lines().next().unwrap_or("");
     let mut parts = req.split_whitespace();
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/").split('?').next().unwrap_or("/");
-    let Transport::Plain(s) = &c.s else { return };
+    let target = &webclient::httpc::weburl::percent_decode_str(target);
+    let s = &s;
     if method != "GET" && method != "HEAD" {
-        respond(s, "405 Method Not Allowed", "text/plain", b"method not allowed\n", false);
+        respond(
+            s,
+            "405 Method Not Allowed",
+            "text/plain",
+            b"method not allowed\n",
+            false,
+        );
         return;
     }
     let head = method == "HEAD";
@@ -438,7 +365,10 @@ pub fn httpd(args: &[String]) -> i32 {
         }
         i += 1;
     }
-    let l = match net::tcp_listen(SocketAddr { ip: Ipv4::ANY, port }) {
+    let l = match net::tcp_listen(SocketAddr {
+        ip: Ipv4::ANY,
+        port,
+    }) {
         Ok(l) => l,
         Err(e) => return err("httpd", &format!("port {}", port), e),
     };

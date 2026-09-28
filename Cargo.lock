@@ -384,6 +384,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
 
 [[package]]
+name = "netproto"
+version = "0.1.0"
+
+[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -463,6 +467,7 @@ dependencies = [
  "lazy_static",
  "linked_list_allocator",
  "log",
+ "netproto",
  "pc-keyboard",
  "sha1",
  "sha2",

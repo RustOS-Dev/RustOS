@@ -64,8 +64,12 @@ a static address can be set in `/storage/etc/network.conf`.
 
 **`wget https://...` fails with `InvalidCertificate`** — check the clock
 (`date`; fix with `ntpdate`), the host name, and that the CA bundle exists
-(`/etc/ssl/certs/ca-certificates.crt`). `wget -k` skips verification.
-Servers that only offer TLS 1.2 are not supported.
+(`/etc/ssl/certs/ca-certificates.crt`). `wget -k` skips verification;
+`wget -v` shows the negotiated TLS version and cipher.
+
+**Web pages do not load on a hotel/café Wi-Fi** — the network probably
+has a captive portal: `netcheck` tells you, and `browse --portal` opens
+the login page.
 
 **Name resolution fails** — `cat /etc/resolv.conf`; add entries to
 `/etc/hosts` for local names.

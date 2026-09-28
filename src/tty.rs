@@ -489,6 +489,53 @@ pub fn inject(bytes: &[u8]) {
     console().receive_bytes(bytes);
 }
 
+/// Print scheduler, process and TTY state (serial BREAK, like SysRq).
+pub fn debug_dump() {
+    let tty = console();
+    let t = *tty.termios.lock();
+    crate::println!(
+        "[sysrq] tty lflag={:#o} iflag={:#o} vmin={} fg_pgrp={} ready={} line={}",
+        t.lflag,
+        t.iflag,
+        t.cc[VMIN],
+        tty.fg_pgrp.load(Ordering::SeqCst),
+        tty.ready.lock().len(),
+        tty.line.lock().len()
+    );
+    for p in crate::process::all() {
+        let threads: alloc::vec::Vec<alloc::string::String> = p
+            .live_threads()
+            .iter()
+            .map(|th| alloc::format!("{}:{:?}", th.tid, th.state()))
+            .collect();
+        crate::println!(
+            "[sysrq] pid {} ppid {} pgid {} sid {} {}{}{} threads {:?} cmd {:?}",
+            p.pid,
+            p.ppid.load(Ordering::SeqCst),
+            p.pgid.load(Ordering::SeqCst),
+            p.sid.load(Ordering::SeqCst),
+            p.name.lock(),
+            if p.zombie.load(Ordering::SeqCst) {
+                " zombie"
+            } else {
+                ""
+            },
+            if p.stopped.load(Ordering::SeqCst) {
+                " stopped"
+            } else {
+                ""
+            },
+            threads,
+            p.cmdline.lock()
+        );
+    }
+    for (tid, name, state, user) in crate::sched::thread_list() {
+        if !user {
+            crate::println!("[sysrq] kthread {} {:?} {}", tid, state, name);
+        }
+    }
+}
+
 /// Start the thread that moves keyboard and serial input into the TTY.
 pub fn start_input_thread() {
     crate::sched::spawn("tty-input", || {
@@ -496,6 +543,9 @@ pub fn start_input_thread() {
         loop {
             let seen = PENDING_INPUT.load(Ordering::SeqCst);
             crate::drivers::serial::poll_rx();
+            if crate::drivers::serial::SYSRQ.swap(false, Ordering::Relaxed) {
+                debug_dump();
+            }
             while let Some(ev) = crate::task::keyboard::read_key() {
                 use crate::task::keyboard::Key;
                 match ev {

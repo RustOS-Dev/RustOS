@@ -9,7 +9,7 @@ hostbg cd /tmp/rustos-tls && exec python3 -m http.server 18444 --bind 127.0.0.1
 sleep 1
 # The private CA is not trusted yet: refused unless -k is given.
 send wget -q -O - https://10.0.2.2:18443/hello.txt
-wait not a trusted CA|no CA certificates
+wait untrusted authority|no CA certificates
 wait # $
 send wget -q -k -O - https://10.0.2.2:18443/hello.txt
 wait secret over tls
@@ -23,5 +23,21 @@ wait secret over tls
 wait # $
 # Hostname mismatch must fail.
 send wget -q -O - https://10.0.2.2:18443/hello.txt || echo verify-failed
+wait different host name
 wait verify-failed
+wait # $
+# A TLS 1.2-only server (ECDHE-ECDSA-AES128-GCM), verified against the CA.
+hostbg cd /tmp/rustos-tls && exec python3 -c "import http.server,ssl;s=http.server.HTTPServer(('127.0.0.1',18445),http.server.SimpleHTTPRequestHandler);c=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);c.maximum_version=ssl.TLSVersion.TLSv1_2;c.load_cert_chain('server.pem','server.key');s.socket=c.wrap_socket(s.socket,server_side=True);s.serve_forever()"
+sleep 1
+send wget -v -O /tmp/tls12.txt https://tls.test:18445/hello.txt && cat /tmp/tls12.txt
+wait TLSv1_2 TLS_ECDHE_ECDSA_WITH_
+wait secret over tls
+wait # $
+# Protocol selection: TLS 1.3 only against the TLS 1.2 server fails.
+send wget -q --secure-protocol=TLSv1_3 -O - https://tls.test:18445/hello.txt || echo no-common-version
+wait no-common-version
+wait # $
+send wget -v -q -O - https://tls.test:18443/hello.txt
+wait TLSv1_3 TLS13_
+wait secret over tls
 wait # $

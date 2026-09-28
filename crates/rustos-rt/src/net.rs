@@ -19,6 +19,7 @@ pub const SOL_SOCKET: u32 = 1;
 pub const SO_REUSEADDR: u32 = 2;
 pub const SO_BROADCAST: u32 = 6;
 pub const SO_RCVTIMEO: u32 = 20;
+pub const SO_SNDTIMEO: u32 = 21;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ipv4(pub [u8; 4]);
@@ -79,6 +80,138 @@ impl SockaddrIn {
     }
 }
 
+/// An IPv4 or IPv6 address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpAddr {
+    V4(Ipv4),
+    V6([u8; 16]),
+}
+
+impl IpAddr {
+    /// Parse dotted IPv4 or textual IPv6 (optionally in brackets, with
+    /// `::` compression and an embedded IPv4 tail).
+    pub fn parse(s: &str) -> Option<IpAddr> {
+        let s = s.trim();
+        if let Some(v4) = Ipv4::parse(s) {
+            return Some(IpAddr::V4(v4));
+        }
+        let s = s.strip_prefix('[').and_then(|x| x.strip_suffix(']')).unwrap_or(s);
+        // Drop a zone index ("fe80::1%eth0").
+        let s = s.split('%').next().unwrap_or(s);
+        if !s.contains(':') {
+            return None;
+        }
+        let parse_groups = |part: &str, out: &mut Vec<u16>| -> Option<()> {
+            if part.is_empty() {
+                return Some(());
+            }
+            for g in part.split(':') {
+                if g.contains('.') {
+                    let v4 = Ipv4::parse(g)?;
+                    out.push(u16::from_be_bytes([v4.0[0], v4.0[1]]));
+                    out.push(u16::from_be_bytes([v4.0[2], v4.0[3]]));
+                } else {
+                    if g.is_empty() || g.len() > 4 {
+                        return None;
+                    }
+                    out.push(u16::from_str_radix(g, 16).ok()?);
+                }
+            }
+            Some(())
+        };
+        let mut head = Vec::new();
+        let mut tail = Vec::new();
+        match s.split_once("::") {
+            Some((h, t)) => {
+                parse_groups(h, &mut head)?;
+                parse_groups(t, &mut tail)?;
+                if head.len() + tail.len() > 7 {
+                    return None;
+                }
+            }
+            None => {
+                parse_groups(s, &mut head)?;
+                if head.len() != 8 {
+                    return None;
+                }
+            }
+        }
+        let mut g = [0u16; 8];
+        g[..head.len()].copy_from_slice(&head);
+        g[8 - tail.len()..].copy_from_slice(&tail);
+        let mut a = [0u8; 16];
+        for (i, v) in g.iter().enumerate() {
+            a[2 * i..2 * i + 2].copy_from_slice(&v.to_be_bytes());
+        }
+        Some(IpAddr::V6(a))
+    }
+
+    pub fn is_v6(&self) -> bool {
+        matches!(self, IpAddr::V6(_))
+    }
+
+    /// Link-local (fe80::/10, 169.254/16) or loopback.
+    pub fn is_local_scope(&self) -> bool {
+        match self {
+            IpAddr::V4(v) => v.0[0] == 127 || (v.0[0] == 169 && v.0[1] == 254),
+            IpAddr::V6(a) => (a[0] == 0xfe && a[1] & 0xc0 == 0x80) || *a == LOOPBACK6,
+        }
+    }
+}
+
+pub const LOOPBACK6: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+
+impl core::fmt::Display for IpAddr {
+    /// RFC 5952 text form (longest zero run compressed).
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            IpAddr::V4(v) => write!(f, "{}", v),
+            IpAddr::V6(a) => {
+                let g: Vec<u16> = (0..8).map(|i| u16::from_be_bytes([a[2 * i], a[2 * i + 1]])).collect();
+                let (mut best, mut best_len, mut i) = (8, 0, 0);
+                while i < 8 {
+                    if g[i] == 0 {
+                        let start = i;
+                        while i < 8 && g[i] == 0 {
+                            i += 1;
+                        }
+                        if i - start > best_len && i - start > 1 {
+                            best = start;
+                            best_len = i - start;
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                let mut i = 0;
+                while i < 8 {
+                    if i == best {
+                        f.write_str(if i == 0 { "::" } else { ":" })?;
+                        i += best_len;
+                        continue;
+                    }
+                    write!(f, "{:x}", g[i])?;
+                    if i < 7 {
+                        f.write_str(":")?;
+                    }
+                    i += 1;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct SockaddrIn6 {
+    family: u16,
+    port_be: u16,
+    flowinfo: u32,
+    addr: [u8; 16],
+    scope: u32,
+}
+
 /// A socket descriptor, closed on drop.
 pub struct Socket {
     fd: i32,
@@ -117,6 +250,54 @@ impl Socket {
             &[self.fd as usize, &sa as *const _ as usize, 16],
         ))
         .map(|_| ())
+    }
+
+    /// Connect to an IPv4 or IPv6 endpoint (the socket's family must
+    /// match).
+    pub fn connect_ip(&self, ip: IpAddr, port: u16) -> Result<()> {
+        match ip {
+            IpAddr::V4(v4) => self.connect(SocketAddr { ip: v4, port }),
+            IpAddr::V6(a) => {
+                let sa = SockaddrIn6 {
+                    family: AF_INET6,
+                    port_be: port.to_be(),
+                    flowinfo: 0,
+                    addr: a,
+                    scope: 0,
+                };
+                sys::check(sys::syscall(
+                    nr::CONNECT,
+                    &[self.fd as usize, &sa as *const _ as usize, 28],
+                ))
+                .map(|_| ())
+            }
+        }
+    }
+
+    /// Send a datagram to an IPv4 or IPv6 endpoint.
+    pub fn send_to_ip(&self, buf: &[u8], ip: IpAddr, port: u16) -> Result<usize> {
+        match ip {
+            IpAddr::V4(v4) => self.send_to(buf, SocketAddr { ip: v4, port }),
+            IpAddr::V6(a) => {
+                let sa = SockaddrIn6 {
+                    family: AF_INET6,
+                    port_be: port.to_be(),
+                    flowinfo: 0,
+                    addr: a,
+                    scope: 0,
+                };
+                sys::check(sys::syscall(
+                    nr::SENDTO,
+                    &[self.fd as usize, buf.as_ptr() as usize, buf.len(), 0, &sa as *const _ as usize, 28],
+                ))
+                .map(|n| n as usize)
+            }
+        }
+    }
+
+    /// Receive a datagram (sender address not reported).
+    pub fn recv_any(&self, buf: &mut [u8]) -> Result<usize> {
+        self.recv(buf)
     }
 
     pub fn listen(&self, backlog: u32) -> Result<()> {
@@ -223,6 +404,13 @@ impl Socket {
         self.set_option(SOL_SOCKET, SO_RCVTIMEO, &b)
     }
 
+    /// Bound `connect` and `send` (SO_SNDTIMEO).
+    pub fn set_send_timeout(&self, ms: u64) -> Result<()> {
+        let tv = [(ms / 1000) as i64, ((ms % 1000) * 1000) as i64];
+        let b: [u8; 16] = unsafe { core::mem::transmute(tv) };
+        self.set_option(SOL_SOCKET, SO_SNDTIMEO, &b)
+    }
+
     pub fn local_addr(&self) -> Result<SocketAddr> {
         let mut sa = SockaddrIn::default();
         let mut len: u32 = 16;
@@ -317,6 +505,11 @@ pub fn nameservers() -> Vec<Ipv4> {
 }
 
 fn dns_query(name: &str, id: u16) -> Vec<u8> {
+    dns_query_type(name, id, 1)
+}
+
+/// A DNS query for `name` with record type `qtype` (1 = A, 28 = AAAA).
+fn dns_query_type(name: &str, id: u16, qtype: u16) -> Vec<u8> {
     let mut q = Vec::new();
     q.extend_from_slice(&id.to_be_bytes());
     q.extend_from_slice(&[0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0]);
@@ -325,7 +518,8 @@ fn dns_query(name: &str, id: u16) -> Vec<u8> {
         q.extend_from_slice(label.as_bytes());
     }
     q.push(0);
-    q.extend_from_slice(&[0, 1, 0, 1]); // A, IN
+    q.extend_from_slice(&qtype.to_be_bytes());
+    q.extend_from_slice(&[0, 1]); // IN
     q
 }
 
@@ -343,6 +537,18 @@ fn skip_name(p: &[u8], mut i: usize) -> Option<usize> {
 }
 
 fn parse_a_records(p: &[u8], id: u16) -> Option<Vec<Ipv4>> {
+    parse_records(p, id).map(|v| {
+        v.into_iter()
+            .filter_map(|a| match a {
+                IpAddr::V4(x) => Some(x),
+                IpAddr::V6(_) => None,
+            })
+            .collect()
+    })
+}
+
+/// A and AAAA records of a DNS response (`None` if it is not ours).
+fn parse_records(p: &[u8], id: u16) -> Option<Vec<IpAddr>> {
     if p.len() < 12 || u16::from_be_bytes([p[0], p[1]]) != id {
         return None;
     }
@@ -362,7 +568,11 @@ fn parse_a_records(p: &[u8], id: u16) -> Option<Vec<Ipv4>> {
         let len = u16::from_be_bytes([*p.get(i + 8)?, *p.get(i + 9)?]) as usize;
         i += 10;
         if ty == 1 && len == 4 {
-            out.push(Ipv4([p[i], p[i + 1], p[i + 2], p[i + 3]]));
+            out.push(IpAddr::V4(Ipv4([p[i], p[i + 1], p[i + 2], p[i + 3]])));
+        } else if ty == 28 && len == 16 {
+            let mut a = [0u8; 16];
+            a.copy_from_slice(p.get(i..i + 16)?);
+            out.push(IpAddr::V6(a));
         }
         i += len;
     }
@@ -416,6 +626,135 @@ pub fn resolve(host: &str) -> Result<Vec<Ipv4>> {
         }
     }
     Err(Error(110))
+}
+
+/// Nameservers of either family from /etc/resolv.conf.
+pub fn nameservers_all() -> Vec<IpAddr> {
+    let mut v = Vec::new();
+    if let Ok(conf) = crate::fs::read_to_string("/etc/resolv.conf") {
+        for line in conf.lines() {
+            let mut w = line.split_whitespace();
+            if w.next() == Some("nameserver")
+                && let Some(ip) = w.next().and_then(IpAddr::parse)
+            {
+                v.push(ip);
+            }
+        }
+    }
+    if v.is_empty() {
+        v.push(IpAddr::V4(Ipv4([8, 8, 8, 8])));
+    }
+    v
+}
+
+/// True if some interface has a global (non link-local) IPv6 address.
+pub fn have_global_ipv6() -> bool {
+    crate::fs::read_to_string("/proc/net/if_addrs")
+        .unwrap_or_default()
+        .split_whitespace()
+        .filter_map(|w| w.split('/').next().and_then(IpAddr::parse))
+        .any(|a| a.is_v6() && !a.is_local_scope())
+}
+
+fn hosts_lookup(host: &str) -> Vec<IpAddr> {
+    let mut v = Vec::new();
+    if let Ok(hosts) = crate::fs::read_to_string("/etc/hosts") {
+        for line in hosts.lines() {
+            let line = line.split('#').next().unwrap_or("");
+            let mut w = line.split_whitespace();
+            if let Some(ip) = w.next().and_then(IpAddr::parse)
+                && w.any(|n| n.eq_ignore_ascii_case(host))
+            {
+                v.push(ip);
+            }
+        }
+    }
+    v
+}
+
+/// Resolve `host` to IPv4 and IPv6 addresses in connection order: IPv6
+/// first only when this machine has a global IPv6 address (a simple
+/// RFC 6724 policy), then IPv4. Literals, `localhost` and /etc/hosts are
+/// handled locally; DNS asks for AAAA and A records.
+pub fn resolve_all(host: &str) -> Result<Vec<IpAddr>> {
+    if let Some(ip) = IpAddr::parse(host) {
+        return Ok(alloc::vec![ip]);
+    }
+    if host.eq_ignore_ascii_case("localhost") {
+        return Ok(alloc::vec![IpAddr::V4(Ipv4([127, 0, 0, 1])), IpAddr::V6(LOOPBACK6)]);
+    }
+    let from_hosts = hosts_lookup(host);
+    if !from_hosts.is_empty() {
+        return Ok(from_hosts);
+    }
+    let want6 = have_global_ipv6();
+    let mut rnd = [0u8; 2];
+    crate::process::getrandom(&mut rnd);
+    let id = u16::from_ne_bytes(rnd);
+    let q4 = dns_query_type(host, id, 1);
+    let q6 = dns_query_type(host, id.wrapping_add(1), 28);
+    let mut v4 = None;
+    let mut v6 = None;
+    let mut last_err = Error(110);
+    'servers: for server in nameservers_all() {
+        let family = if server.is_v6() { AF_INET6 } else { AF_INET };
+        let Ok(sock) = Socket::new(family, SOCK_DGRAM, 0) else { continue };
+        sock.set_timeout(2000)?;
+        for _ in 0..2 {
+            if v4.is_none() {
+                let _ = sock.send_to_ip(&q4, server, 53);
+            }
+            if want6 && v6.is_none() {
+                let _ = sock.send_to_ip(&q6, server, 53);
+            }
+            loop {
+                let mut buf = [0u8; 1500];
+                let Ok(n) = sock.recv_any(&mut buf) else { break };
+                if let Some(r) = parse_records(&buf[..n], id) {
+                    v4 = Some(r);
+                } else if let Some(r) = parse_records(&buf[..n], id.wrapping_add(1)) {
+                    v6 = Some(r);
+                }
+                if v4.is_some() && (!want6 || v6.is_some()) {
+                    break 'servers;
+                }
+            }
+            if v4.is_some() {
+                // Don't wait long for a missing AAAA answer.
+                break 'servers;
+            }
+            last_err = Error(110);
+        }
+    }
+    let mut out = Vec::new();
+    if want6 {
+        out.extend(v6.unwrap_or_default().into_iter().filter(|a| a.is_v6()));
+    }
+    out.extend(v4.clone().unwrap_or_default().into_iter().filter(|a| !a.is_v6()));
+    if out.is_empty() {
+        return Err(if v4.is_some() { Error(2) } else { last_err });
+    }
+    Ok(out)
+}
+
+/// Connect a TCP socket to `host:port`, trying every resolved address in
+/// order with `timeout_ms` per attempt. Returns the socket and the
+/// address used.
+pub fn connect_host(host: &str, port: u16, timeout_ms: u64) -> Result<(Socket, IpAddr)> {
+    let addrs = resolve_all(host)?;
+    let mut err = Error(111);
+    for ip in addrs {
+        let family = if ip.is_v6() { AF_INET6 } else { AF_INET };
+        let sock = Socket::new(family, SOCK_STREAM, 0)?;
+        if timeout_ms > 0 {
+            sock.set_send_timeout(timeout_ms)?;
+        }
+        match sock.connect_ip(ip, port) {
+            Ok(()) => return Ok((sock, ip)),
+            Err(e) => err = e,
+        }
+    }
+    Err(err)
 }
 
 /// Parse "host:port" and resolve it.

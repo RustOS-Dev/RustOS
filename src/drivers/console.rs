@@ -112,14 +112,44 @@ pub fn write_bytes(bytes: &[u8]) {
     crate::drivers::serial::write_bytes(bytes);
 }
 
-struct ConsoleWriter;
+/// Owner of the print lock (CPU id + 1; 0 = free). A CPU that already
+/// holds it (e.g. a panic while printing) prints without waiting.
+static PRINT_OWNER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
-impl fmt::Write for ConsoleWriter {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
-            c.write_bytes(s.as_bytes());
+/// Formats a message into a buffer so it reaches every sink in one piece
+/// (messages from different CPUs never interleave mid-line).
+struct LineBuf {
+    buf: [u8; 1024],
+    len: usize,
+}
+
+impl LineBuf {
+    fn flush(&mut self) {
+        if self.len == 0 {
+            return;
         }
-        crate::klog::write_bytes(s.as_bytes());
+        let bytes = &self.buf[..self.len];
+        if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
+            c.write_bytes(bytes);
+        }
+        crate::klog::write_bytes(bytes);
+        crate::drivers::serial::write_bytes(bytes);
+        self.len = 0;
+    }
+}
+
+impl fmt::Write for LineBuf {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let mut b = s.as_bytes();
+        while !b.is_empty() {
+            if self.len == self.buf.len() {
+                self.flush();
+            }
+            let n = b.len().min(self.buf.len() - self.len);
+            self.buf[self.len..self.len + n].copy_from_slice(&b[..n]);
+            self.len += n;
+            b = &b[n..];
+        }
         Ok(())
     }
 }
@@ -129,10 +159,38 @@ impl fmt::Write for ConsoleWriter {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
+    use core::sync::atomic::Ordering;
     interrupts::without_interrupts(|| {
-        let _ = ConsoleWriter.write_fmt(args);
+        let me = if crate::arch::x86_64::cpu::is_initialized() {
+            crate::arch::x86_64::cpu::this().cpu_id as usize + 1
+        } else {
+            1
+        };
+        let reentrant = PRINT_OWNER.load(Ordering::Acquire) == me;
+        if !reentrant {
+            let mut spins = 0u64;
+            while PRINT_OWNER
+                .compare_exchange_weak(0, me, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+            {
+                core::hint::spin_loop();
+                spins += 1;
+                // Never wedge the machine on a stuck printer.
+                if spins > 50_000_000 {
+                    break;
+                }
+            }
+        }
+        let mut b = LineBuf {
+            buf: [0; 1024],
+            len: 0,
+        };
+        let _ = b.write_fmt(args);
+        b.flush();
+        if !reentrant {
+            let _ = PRINT_OWNER.compare_exchange(me, 0, Ordering::Release, Ordering::Relaxed);
+        }
     });
-    crate::serial_print!("{}", args);
 }
 
 /// Clear the framebuffer console (no-op without a framebuffer).

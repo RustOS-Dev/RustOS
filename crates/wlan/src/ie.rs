@@ -167,7 +167,8 @@ pub struct Rsn {
 }
 
 fn suite_at(b: &[u8], o: usize) -> Option<u32> {
-    b.get(o..o + 4).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
+    b.get(o..o + 4)
+        .map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 impl Rsn {
@@ -291,10 +292,18 @@ impl Security {
 /// Transition-mode networks (PSK + SAE) report WPA3.
 pub fn security(capability: u16, ies: &[u8]) -> Security {
     if let Some(rsn) = find(ies, RSN).and_then(Rsn::parse) {
-        if rsn.akms.iter().any(|a| matches!(a, Akm::Sae | Akm::FtSae | Akm::SaeExt)) {
+        if rsn
+            .akms
+            .iter()
+            .any(|a| matches!(a, Akm::Sae | Akm::FtSae | Akm::SaeExt))
+        {
             return Security::Wpa3Sae;
         }
-        if rsn.akms.iter().any(|a| matches!(a, Akm::Psk | Akm::PskSha256 | Akm::FtPsk)) {
+        if rsn
+            .akms
+            .iter()
+            .any(|a| matches!(a, Akm::Psk | Akm::PskSha256 | Akm::FtPsk))
+        {
             return Security::Wpa2Psk;
         }
         return Security::Enterprise;
@@ -317,7 +326,10 @@ pub fn rates(band_2g: bool) -> (Vec<u8>, Vec<u8>) {
             alloc::vec![0x30, 0x48, 0x60, 0x6c],
         )
     } else {
-        (alloc::vec![0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c], Vec::new())
+        (
+            alloc::vec![0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c],
+            Vec::new(),
+        )
     }
 }
 
@@ -347,7 +359,8 @@ mod tests {
     fn classic_wpa2_ie() {
         // Common WPA2-PSK CCMP element as broadcast by most APs.
         let body = [
-            1, 0, 0x00, 0x0f, 0xac, 4, 1, 0, 0x00, 0x0f, 0xac, 4, 1, 0, 0x00, 0x0f, 0xac, 2, 0x0c, 0,
+            1, 0, 0x00, 0x0f, 0xac, 4, 1, 0, 0x00, 0x0f, 0xac, 4, 1, 0, 0x00, 0x0f, 0xac, 2, 0x0c,
+            0,
         ];
         let r = Rsn::parse(&body).unwrap();
         assert_eq!(r.akms, alloc::vec![Akm::Psk]);

@@ -51,7 +51,12 @@ pub fn kdf_sha256(key: &[u8], label: &[u8], context: &[u8], bits: usize) -> Vec<
     while out.len() < len {
         out.extend_from_slice(&hmac_sha256(
             key,
-            &[&i.to_le_bytes(), label, context, &(bits as u16).to_le_bytes()],
+            &[
+                &i.to_le_bytes(),
+                label,
+                context,
+                &(bits as u16).to_le_bytes(),
+            ],
         ));
         i += 1;
     }
@@ -118,14 +123,19 @@ mod tests {
         let out = prf_sha1(&[0x0b; 20], b"prefix", b"Hi There", 64);
         assert_eq!(
             out,
-            hex("bcd4c650b30b9684951829e0d75f9d54b862175ed9f00606e17d8da35402ffee75df78c3d31e0f889f012120c0862beb67753e7439ae242edb8373698356cf5a")
+            hex(
+                "bcd4c650b30b9684951829e0d75f9d54b862175ed9f00606e17d8da35402ffee75df78c3d31e0f889f012120c0862beb67753e7439ae242edb8373698356cf5a"
+            )
         );
     }
 
     #[test]
     fn cmac_rfc4493() {
         let key: [u8; 16] = hex("2b7e151628aed2a6abf7158809cf4f3c").try_into().unwrap();
-        assert_eq!(aes_cmac(&key, b"").to_vec(), hex("bb1d6929e95937287fa37d129b756746"));
+        assert_eq!(
+            aes_cmac(&key, b"").to_vec(),
+            hex("bb1d6929e95937287fa37d129b756746")
+        );
     }
 
     #[test]

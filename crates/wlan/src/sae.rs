@@ -12,7 +12,8 @@ use p256::{AffinePoint, EncodedPoint, FieldBytes, FieldElement, ProjectivePoint,
 pub const GROUP_19: u16 = 19;
 
 const P: [u8; 32] = hex32("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff");
-const Q_MINUS_1: [u8; 32] = hex32("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550");
+const Q_MINUS_1: [u8; 32] =
+    hex32("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550");
 const B: [u8; 32] = hex32("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b");
 /// 2^256 mod p.
 const R256: [u8; 32] = hex32("00000000fffffffeffffffffffffffffffffffff000000000000000000000001");
@@ -65,7 +66,11 @@ fn fe(b: &[u8; 32]) -> Option<FieldElement> {
 
 /// Reduce a big-endian integer of up to 48 bytes modulo p.
 fn fe_reduce(v: &[u8]) -> FieldElement {
-    let (hi, lo) = if v.len() > 32 { v.split_at(v.len() - 32) } else { (&[][..], v) };
+    let (hi, lo) = if v.len() > 32 {
+        v.split_at(v.len() - 32)
+    } else {
+        (&[][..], v)
+    };
     let mut lo32 = [0u8; 32];
     lo32[32 - lo.len()..].copy_from_slice(lo);
     if lo32 >= P {
@@ -265,13 +270,23 @@ impl Sae {
     }
 
     /// Hunting-and-pecking SAE between `own` and `peer`.
-    pub fn new(password: &[u8], own: Mac, peer: Mac, rng: &mut dyn FnMut(&mut [u8])) -> Result<Sae, SaeError> {
+    pub fn new(
+        password: &[u8],
+        own: Mac,
+        peer: Mac,
+        rng: &mut dyn FnMut(&mut [u8]),
+    ) -> Result<Sae, SaeError> {
         let pwe = pwe_hunting_and_pecking(password, &own, &peer).ok_or(SaeError::NoPwe)?;
         Ok(Self::with_pwe(pwe, false, rng))
     }
 
     /// Hash-to-element SAE using a precomputed PT.
-    pub fn new_h2e(pt: &ProjectivePoint, own: Mac, peer: Mac, rng: &mut dyn FnMut(&mut [u8])) -> Sae {
+    pub fn new_h2e(
+        pt: &ProjectivePoint,
+        own: Mac,
+        peer: Mac,
+        rng: &mut dyn FnMut(&mut [u8]),
+    ) -> Sae {
         Self::with_pwe(pwe_h2e(pt, &own, &peer), true, rng)
     }
 
@@ -334,7 +349,11 @@ impl Sae {
             return Err(SaeError::BadMessage);
         }
         let off = if self.h2e { 2 } else { body.len() - 96 };
-        let off = if self.h2e && body.len() > 98 && body[98] != 0xFF { body.len() - 96 } else { off };
+        let off = if self.h2e && body.len() > 98 && body[98] != 0xFF {
+            body.len() - 96
+        } else {
+            off
+        };
         let s: [u8; 32] = body[off..off + 32].try_into().unwrap();
         let peer_scalar = scalar_from(&s).ok_or(SaeError::BadPeer)?;
         if bool::from(peer_scalar.is_zero()) || peer_scalar == Scalar::ONE {
@@ -362,7 +381,14 @@ impl Sae {
         Ok(())
     }
 
-    fn confirm_hash(&self, counter: u16, s1: &Scalar, e1: &AffinePoint, s2: &Scalar, e2: &AffinePoint) -> [u8; 32] {
+    fn confirm_hash(
+        &self,
+        counter: u16,
+        s1: &Scalar,
+        e1: &AffinePoint,
+        s2: &Scalar,
+        e2: &AffinePoint,
+    ) -> [u8; 32] {
         hmac_sha256(
             &self.kck,
             &[
@@ -427,9 +453,11 @@ mod tests {
         Ok((a, b))
     }
 
-
     fn h(s: &str) -> Vec<u8> {
-        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
     }
 
     /// IEEE 802.11-2020 Annex J.10 (as used by hostapd's module tests).
@@ -438,13 +466,34 @@ mod tests {
         let a1: Mac = h("4d3f2fffe387").try_into().unwrap();
         let a2: Mac = h("a5d8aa958e3c").try_into().unwrap();
         let pwe = pwe_hunting_and_pecking(b"mekmitasdigoat", &a1, &a2).unwrap();
-        let rand = scalar_from(&h("992465fd3daa3c60aa6565b7f62a2a7f2e12dd12f198faf4fbed89d7ff1ace94").try_into().unwrap()).unwrap();
-        let mask = scalar_from(&h("9507a90f777a044d6a0830b91ea3d5dd70bece44e1acffb86983b5e1bf9fb322").try_into().unwrap()).unwrap();
+        let rand = scalar_from(
+            &h("992465fd3daa3c60aa6565b7f62a2a7f2e12dd12f198faf4fbed89d7ff1ace94")
+                .try_into()
+                .unwrap(),
+        )
+        .unwrap();
+        let mask = scalar_from(
+            &h("9507a90f777a044d6a0830b91ea3d5dd70bece44e1acffb86983b5e1bf9fb322")
+                .try_into()
+                .unwrap(),
+        )
+        .unwrap();
         let mut sae = Sae::with_rand_mask(pwe, false, rand, mask);
-        assert_eq!(sae.commit(), h("13002e2c0f0db52440ad146d967114ce005ce1eab0aa2c2e5c2871b774f6c2575c65d5ad9e00829707aa36ba8b859738fc961d08243505f47c035376d7ac4bc8d7b95083bf43827d0fc31ed778dd3671fd21a46d1091d64b6f9a1e1272621325dbe1"));
+        assert_eq!(
+            sae.commit(),
+            h(
+                "13002e2c0f0db52440ad146d967114ce005ce1eab0aa2c2e5c2871b774f6c2575c65d5ad9e00829707aa36ba8b859738fc961d08243505f47c035376d7ac4bc8d7b95083bf43827d0fc31ed778dd3671fd21a46d1091d64b6f9a1e1272621325dbe1"
+            )
+        );
         sae.process_commit(&h("1300591b96f3397fb945100848e7b550543b6720d88337ee93fc49fd6df7e08b5223e71b9bb048d3873f20556953a96c91536fd8ee6ca9b4a68a148b056a909be03e83ae208f60f8ef5537858074db06687032399862999b511e0a1552a5fea317c2")).unwrap();
-        assert_eq!(sae.kck.to_vec(), h("1e733f6d9bd53256287304338831b09a39406d121017073a5c30db36f36cb81a"));
-        assert_eq!(sae.pmk().to_vec(), h("4e4dfab1a2dd8ac1a91790f953faaa452ae5c6873ab75b63605ba663f8a7fe59"));
+        assert_eq!(
+            sae.kck.to_vec(),
+            h("1e733f6d9bd53256287304338831b09a39406d121017073a5c30db36f36cb81a")
+        );
+        assert_eq!(
+            sae.pmk().to_vec(),
+            h("4e4dfab1a2dd8ac1a91790f953faaa452ae5c6873ab75b63605ba663f8a7fe59")
+        );
         assert_eq!(sae.pmkid().to_vec(), h("8747a600eea3f9f22475df58ca1e5498"));
     }
 
@@ -454,15 +503,24 @@ mod tests {
         let a2: Mac = h("000b6bd90246").try_into().unwrap();
         let pt = h2e_pt(b"byteme", b"mekmitasdigoat", Some(b"psk4internet"));
         let pwe = encode_point(&pwe_h2e(&pt, &a1, &a2).to_affine());
-        assert_eq!(pwe[..32].to_vec(), h("c93049b9e64000f848201649e999f2b5c22dea69b5632c9df4d633b8aa1f6c1e"));
-        assert_eq!(pwe[32..].to_vec(), h("73634e94b53d82e7383a8d258199d9dc1a5ee8269d060382ccbf33e614ff59a0"));
+        assert_eq!(
+            pwe[..32].to_vec(),
+            h("c93049b9e64000f848201649e999f2b5c22dea69b5632c9df4d633b8aa1f6c1e")
+        );
+        assert_eq!(
+            pwe[32..].to_vec(),
+            h("73634e94b53d82e7383a8d258199d9dc1a5ee8269d060382ccbf33e614ff59a0")
+        );
     }
 
     #[test]
     fn field_helpers() {
         // p reduces to 0; 2^256 - 1 to R256 - 1.
         assert_eq!(fe_reduce(&P), FieldElement::ZERO);
-        assert_eq!(fe_reduce(&[0xFF; 32]), fe(&R256).unwrap() - FieldElement::ONE);
+        assert_eq!(
+            fe_reduce(&[0xFF; 32]),
+            fe(&R256).unwrap() - FieldElement::ONE
+        );
         // 2^256 (as 33 bytes) reduces to R256.
         let mut two256 = [0u8; 33];
         two256[0] = 1;

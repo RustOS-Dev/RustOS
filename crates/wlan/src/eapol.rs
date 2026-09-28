@@ -96,7 +96,15 @@ pub fn descriptor_version(akm: Akm) -> u16 {
 }
 
 /// Raw PTK bytes (KCK || KEK || TK || extra) of `len` bytes.
-pub fn ptk_bytes(akm: Akm, pmk: &[u8], aa: &Mac, spa: &Mac, anonce: &[u8; 32], snonce: &[u8; 32], len: usize) -> Vec<u8> {
+pub fn ptk_bytes(
+    akm: Akm,
+    pmk: &[u8],
+    aa: &Mac,
+    spa: &Mac,
+    anonce: &[u8; 32],
+    snonce: &[u8; 32],
+    len: usize,
+) -> Vec<u8> {
     let (a1, a2) = min_max(aa, spa);
     let (n1, n2) = min_max(anonce, snonce);
     let mut ctx = Vec::with_capacity(76);
@@ -111,7 +119,15 @@ pub fn ptk_bytes(akm: Akm, pmk: &[u8], aa: &Mac, spa: &Mac, anonce: &[u8; 32], s
     }
 }
 
-pub fn derive_ptk(akm: Akm, cipher: Cipher, pmk: &[u8], aa: &Mac, spa: &Mac, anonce: &[u8; 32], snonce: &[u8; 32]) -> Ptk {
+pub fn derive_ptk(
+    akm: Akm,
+    cipher: Cipher,
+    pmk: &[u8],
+    aa: &Mac,
+    spa: &Mac,
+    anonce: &[u8; 32],
+    snonce: &[u8; 32],
+) -> Ptk {
     let raw = ptk_bytes(akm, pmk, aa, spa, anonce, snonce, 32 + cipher.key_len());
     Ptk {
         kck: raw[..16].to_vec(),
@@ -175,7 +191,8 @@ pub fn unwrap_key_data(kek: &[u8], data: &[u8]) -> Option<Vec<u8>> {
 /// Find a KDE of `kind` in (decrypted) key data.
 pub fn find_kde(data: &[u8], kind: u8) -> Option<&[u8]> {
     ie::iter(data).find_map(|(id, b)| {
-        (id == ie::VENDOR && b.len() >= 4 && b[..3] == [0x00, 0x0F, 0xAC] && b[3] == kind).then(|| &b[4..])
+        (id == ie::VENDOR && b.len() >= 4 && b[..3] == [0x00, 0x0F, 0xAC] && b[3] == kind)
+            .then(|| &b[4..])
     })
 }
 
@@ -190,9 +207,21 @@ pub fn kde(kind: u8, body: &[u8]) -> Vec<u8> {
 pub enum Action {
     /// Send this EAPOL frame to the AP.
     Send(Vec<u8>),
-    InstallPairwise { cipher: Cipher, key: Vec<u8> },
-    InstallGroup { idx: u8, cipher: Cipher, key: Vec<u8>, rsc: [u8; 8] },
-    InstallIgtk { idx: u16, key: Vec<u8>, ipn: [u8; 6] },
+    InstallPairwise {
+        cipher: Cipher,
+        key: Vec<u8>,
+    },
+    InstallGroup {
+        idx: u8,
+        cipher: Cipher,
+        key: Vec<u8>,
+        rsc: [u8; 8],
+    },
+    InstallIgtk {
+        idx: u16,
+        key: Vec<u8>,
+        ipn: [u8; 6],
+    },
     /// The 4-way handshake finished; the port is open.
     Connected,
     Failed(&'static str),
@@ -224,7 +253,17 @@ pub struct Supplicant {
 
 impl Supplicant {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(akm: Akm, pairwise: Cipher, group: Cipher, pmk: &[u8], aa: Mac, spa: Mac, own_rsne: Vec<u8>, ap_rsne: Vec<u8>, rng: &mut dyn FnMut(&mut [u8])) -> Supplicant {
+    pub fn new(
+        akm: Akm,
+        pairwise: Cipher,
+        group: Cipher,
+        pmk: &[u8],
+        aa: Mac,
+        spa: Mac,
+        own_rsne: Vec<u8>,
+        ap_rsne: Vec<u8>,
+        rng: &mut dyn FnMut(&mut [u8]),
+    ) -> Supplicant {
         let mut snonce = [0u8; 32];
         rng(&mut snonce);
         Supplicant {
@@ -265,11 +304,14 @@ impl Supplicant {
     }
 
     fn replay_ok(&self, r: &[u8; 8]) -> bool {
-        self.last_replay.is_none_or(|l| u64::from_be_bytes(*r) > u64::from_be_bytes(l))
+        self.last_replay
+            .is_none_or(|l| u64::from_be_bytes(*r) > u64::from_be_bytes(l))
     }
 
     fn install_group(&self, data: &[u8], out: &mut Vec<Action>, rsc: [u8; 8]) -> bool {
-        let Some(g) = find_kde(data, KDE_GTK) else { return false };
+        let Some(g) = find_kde(data, KDE_GTK) else {
+            return false;
+        };
         if g.len() < 2 + 5 {
             return false;
         }
@@ -296,7 +338,9 @@ impl Supplicant {
     /// Process a received EAPOL frame.
     pub fn rx(&mut self, raw: &[u8]) -> Vec<Action> {
         let mut out = Vec::new();
-        let Some(k) = KeyFrame::parse(raw) else { return out };
+        let Some(k) = KeyFrame::parse(raw) else {
+            return out;
+        };
         if k.info & KI_REQUEST != 0 || k.info & KI_ACK == 0 {
             return out;
         }
@@ -309,7 +353,15 @@ impl Supplicant {
                 if self.state == State::Done {
                     return out; // rekeying via a new 4-way is not supported
                 }
-                self.ptk = Some(derive_ptk(self.akm, self.pairwise, &self.pmk, &self.aa, &self.spa, &k.nonce, &self.snonce));
+                self.ptk = Some(derive_ptk(
+                    self.akm,
+                    self.pairwise,
+                    &self.pmk,
+                    &self.aa,
+                    &self.spa,
+                    &k.nonce,
+                    &self.snonce,
+                ));
                 self.last_replay = Some(k.replay);
                 let msg2 = self.reply(&k, KI_PAIRWISE, self.snonce, self.own_rsne.clone());
                 out.push(Action::Send(msg2));
@@ -317,7 +369,9 @@ impl Supplicant {
                 return out;
             }
             // Message 3.
-            let Some(ptk) = self.ptk.clone() else { return out };
+            let Some(ptk) = self.ptk.clone() else {
+                return out;
+            };
             if self.state != State::WaitMsg3 || !self.replay_ok(&k.replay) {
                 return out;
             }
@@ -357,8 +411,13 @@ impl Supplicant {
             return out;
         }
         // Group key handshake message 1.
-        let Some(ptk) = self.ptk.clone() else { return out };
-        if self.state != State::Done || !self.replay_ok(&k.replay) || !verify(self.akm, &ptk.kck, raw) {
+        let Some(ptk) = self.ptk.clone() else {
+            return out;
+        };
+        if self.state != State::Done
+            || !self.replay_ok(&k.replay)
+            || !verify(self.akm, &ptk.kck, raw)
+        {
             return out;
         }
         let Some(data) = unwrap_key_data(&ptk.kek, &k.data) else {
@@ -435,7 +494,15 @@ pub(crate) mod tests {
         /// Returns message 3 if message 2 checks out.
         pub fn msg3(&mut self, msg2: &[u8]) -> Option<Vec<u8>> {
             let k = KeyFrame::parse(msg2)?;
-            let ptk = derive_ptk(self.akm, Cipher::Ccmp128, &self.pmk, &AA, &SPA, &self.anonce, &k.nonce);
+            let ptk = derive_ptk(
+                self.akm,
+                Cipher::Ccmp128,
+                &self.pmk,
+                &AA,
+                &SPA,
+                &self.anonce,
+                &k.nonce,
+            );
             if !verify(self.akm, &ptk.kck, msg2) {
                 return None;
             }
@@ -449,7 +516,13 @@ pub(crate) mod tests {
             self.replay += 1;
             let f = KeyFrame {
                 eapol_version: 2,
-                info: descriptor_version(self.akm) | KI_PAIRWISE | KI_ACK | KI_MIC | KI_INSTALL | KI_SECURE | KI_ENC_DATA,
+                info: descriptor_version(self.akm)
+                    | KI_PAIRWISE
+                    | KI_ACK
+                    | KI_MIC
+                    | KI_INSTALL
+                    | KI_SECURE
+                    | KI_ENC_DATA,
                 key_len: 16,
                 replay: self.replay.to_be_bytes(),
                 nonce: self.anonce,
@@ -502,9 +575,21 @@ pub(crate) mod tests {
         let ap_rsne = rsne(akm);
         let mut ap = Authenticator::new(akm, ap_pmk, ap_rsne.clone());
         let mut r = rng();
-        let mut sta = Supplicant::new(akm, Cipher::Ccmp128, Cipher::Ccmp128, sta_pmk, AA, SPA, rsne(akm), ap_rsne, &mut r);
+        let mut sta = Supplicant::new(
+            akm,
+            Cipher::Ccmp128,
+            Cipher::Ccmp128,
+            sta_pmk,
+            AA,
+            SPA,
+            rsne(akm),
+            ap_rsne,
+            &mut r,
+        );
         let a1 = sta.rx(&ap.msg1());
-        let Some(Action::Send(m2)) = a1.first() else { return Err("no msg2") };
+        let Some(Action::Send(m2)) = a1.first() else {
+            return Err("no msg2");
+        };
         let m3 = ap.msg3(m2).ok_or("AP rejected msg2")?;
         let a3 = sta.rx(&m3);
         let Some(Action::Send(m4)) = a3.first() else {
@@ -513,12 +598,19 @@ pub(crate) mod tests {
         if !ap.check_msg4(m4) {
             return Err("AP rejected msg4");
         }
-        assert!(a3.contains(&Action::InstallPairwise { cipher: Cipher::Ccmp128, key: ap.tk() }));
+        assert!(a3.contains(&Action::InstallPairwise {
+            cipher: Cipher::Ccmp128,
+            key: ap.tk()
+        }));
         assert!(a3.contains(&Action::Connected));
         // Rekey the group key.
         let g = sta.rx(&ap.group_msg1([0x42; 16]));
         assert!(matches!(g.first(), Some(Action::Send(_))));
-        assert!(g.iter().any(|a| matches!(a, Action::InstallGroup { idx: 2, key, .. } if key == &[0x42; 16])));
+        assert!(
+            g.iter().any(
+                |a| matches!(a, Action::InstallGroup { idx: 2, key, .. } if key == &[0x42; 16])
+            )
+        );
         Ok(a3)
     }
 
@@ -526,8 +618,15 @@ pub(crate) mod tests {
     fn wpa2_psk_handshake() {
         let pmk = crypto::wpa_psk(b"correct horse", b"home");
         let a = run(Akm::Psk, &pmk, &pmk).unwrap();
-        assert!(a.iter().any(|x| matches!(x, Action::InstallGroup { idx: 1, key, .. } if key == &[0x77; 16])));
-        assert!(a.iter().any(|x| matches!(x, Action::InstallIgtk { idx: 4, .. })));
+        assert!(
+            a.iter().any(
+                |x| matches!(x, Action::InstallGroup { idx: 1, key, .. } if key == &[0x77; 16])
+            )
+        );
+        assert!(
+            a.iter()
+                .any(|x| matches!(x, Action::InstallIgtk { idx: 4, .. }))
+        );
     }
 
     #[test]
@@ -547,17 +646,29 @@ pub(crate) mod tests {
     /// IEEE 802.11-2024 J.13: SAE PTK with a 256-bit KDK appended.
     #[test]
     fn ptk_ieee_j13() {
-        let h = |s: &str| -> Vec<u8> { (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect() };
+        let h = |s: &str| -> Vec<u8> {
+            (0..s.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+                .collect()
+        };
         let pmk = h("def43e5567e01ca6649265f19a290eeff8bd888f6c1d9cc9d10f04bd378f3cad");
         let aa: Mac = h("c0ffd4a8dbc1").try_into().unwrap();
         let spa: Mac = h("00904c01c107").try_into().unwrap();
-        let an: [u8; 32] = h("be7a1ca284347b5bd67dbd2dfdb4d99f1afae0b88ba18e008718417e4b27ef5f").try_into().unwrap();
-        let sn: [u8; 32] = h("404b012ffb43ed0fb43ea1f287c91f2506d21b4a92d74b5ea50c943350ce8671").try_into().unwrap();
+        let an: [u8; 32] = h("be7a1ca284347b5bd67dbd2dfdb4d99f1afae0b88ba18e008718417e4b27ef5f")
+            .try_into()
+            .unwrap();
+        let sn: [u8; 32] = h("404b012ffb43ed0fb43ea1f287c91f2506d21b4a92d74b5ea50c943350ce8671")
+            .try_into()
+            .unwrap();
         let raw = ptk_bytes(Akm::Sae, &pmk, &aa, &spa, &an, &sn, 16 + 16 + 16 + 32);
         assert_eq!(raw[..16].to_vec(), h("cd7b9e7555362df0b63568484a8112f5"));
         assert_eq!(raw[16..32].to_vec(), h("99cad3588da0f1e63fd190191039bb4b"));
         assert_eq!(raw[32..48].to_vec(), h("9e2e9377e7532e737a1bc250fe194a03"));
-        assert_eq!(raw[48..].to_vec(), h("6c7fb97ceb55b01acff00f070942bdf5291feb4bee38e0365b25a250bb2ac9ff"));
+        assert_eq!(
+            raw[48..].to_vec(),
+            h("6c7fb97ceb55b01acff00f070942bdf5291feb4bee38e0365b25a250bb2ac9ff")
+        );
     }
 
     #[test]

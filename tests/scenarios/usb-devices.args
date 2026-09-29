@@ -1,0 +1,7 @@
+# HID report protocol (tablet) and USB Attached SCSI with bulk streams on
+# a SuperSpeed port (qemu-xhci ports 5-8 are USB 3).
+-device qemu-xhci,id=xhci
+-device usb-tablet,bus=xhci.0,port=1
+-drive if=none,id=ua0,format=raw,file=@EXT4:64:uasdisk@
+-device usb-uas,bus=xhci.0,id=uas0
+-device scsi-hd,bus=uas0.0,scsi-id=0,lun=0,drive=ua0

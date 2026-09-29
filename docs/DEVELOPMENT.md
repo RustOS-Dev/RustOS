@@ -77,7 +77,7 @@ cargo test                                   # kernel tests in QEMU
 tools/run-scenarios.sh                       # all boot scenarios
 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/network.txt
 RUSTOS_SMP=4 tools/run-scenarios.sh          # more CPUs
-for c in crates/wlan crates/usb-desc crates/fat-format crates/netproto crates/weburl crates/http crates/nettls crates/html crates/textlayout crates/unixcrypt; do (cd $c && cargo test); done
+for c in crates/wlan crates/usb-desc crates/fat-format crates/netproto crates/weburl crates/http crates/nettls crates/html crates/textlayout crates/unixcrypt crates/ext4-core; do (cd $c && cargo test); done
 cargo fmt --check && cargo clippy -- -D warnings
 ```
 

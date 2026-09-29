@@ -365,4 +365,16 @@ fn register_builtin() {
         (13 << 8) | 63,
         Arc::new(crate::drivers::mouse::MouseDev),
     );
+    register(
+        "input/event0",
+        FileType::CharDevice,
+        (13 << 8) | 64,
+        Arc::new(crate::drivers::input::EventDev),
+    );
+    register(
+        "input/js0",
+        FileType::CharDevice,
+        13 << 8,
+        Arc::new(crate::drivers::input::JoystickDev),
+    );
 }

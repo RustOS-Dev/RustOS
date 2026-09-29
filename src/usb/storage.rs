@@ -1,5 +1,6 @@
-//! USB mass storage, Bulk-Only Transport with the SCSI transparent command
-//! set. Each LUN becomes a block device (sdX) with partitions and automount.
+//! USB mass storage with the SCSI transparent command set, over Bulk-Only
+//! Transport or USB Attached SCSI (`uas.rs`). Each LUN becomes a block
+//! device (sdX) with partitions and automount.
 
 use super::UsbDevice;
 use crate::block::{self, BlockDevice, DiskKind};
@@ -16,22 +17,29 @@ const CSW_SIG: u32 = 0x5342_5355;
 const BUF: usize = 64 * 1024;
 const TIMEOUT_MS: u64 = 20_000;
 
-struct Io {
-    cbw: DmaBuffer,
-    data: DmaBuffer,
-    tag: u32,
+pub(super) struct Io {
+    /// BOT: CBW/CSW. UAS: command IU at 0, sense IU at 128.
+    pub(super) cbw: DmaBuffer,
+    pub(super) data: DmaBuffer,
+    pub(super) tag: u32,
+    /// UAS: sense data (key, ASC, ASCQ) from the last failed command.
+    pub(super) last_sense: Option<(u8, u8, u8)>,
 }
 
-struct Transport {
-    dev: Arc<UsbDevice>,
-    iface: u8,
-    ep_in: Endpoint,
-    ep_out: Endpoint,
-    io: Mutex<Io>,
+pub(super) enum Kind {
+    Bot { ep_in: Endpoint, ep_out: Endpoint },
+    Uas(super::uas::Pipes),
+}
+
+pub(super) struct Transport {
+    pub(super) dev: Arc<UsbDevice>,
+    pub(super) iface: u8,
+    pub(super) kind: Kind,
+    pub(super) io: Mutex<Io>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Dir {
+pub(super) enum Dir {
     None,
     In,
     Out,
@@ -39,17 +47,31 @@ enum Dir {
 
 impl Transport {
     fn reset_recovery(&self) {
+        let Kind::Bot { ep_in, ep_out } = &self.kind else {
+            return;
+        };
         let _ = self.dev.control_out(0x21, 0xFF, 0, self.iface as u16, &[]);
-        self.dev.clear_halt(&self.ep_in);
-        self.dev.clear_halt(&self.ep_out);
+        self.dev.clear_halt(ep_in);
+        self.dev.clear_halt(ep_out);
     }
 
     /// Run one SCSI command. For writes, the data is taken from
     /// `io.data[..len]`; for reads it is left there. Returns bytes moved.
-    fn command(&self, io: &mut Io, lun: u8, cdb: &[u8], dir: Dir, len: usize) -> KResult<usize> {
+    pub(super) fn command(
+        &self,
+        io: &mut Io,
+        lun: u8,
+        cdb: &[u8],
+        dir: Dir,
+        len: usize,
+    ) -> KResult<usize> {
         if self.dev.is_gone() {
             return Err(ENODEV);
         }
+        let (ep_in, ep_out) = match &self.kind {
+            Kind::Bot { ep_in, ep_out } => (ep_in, ep_out),
+            Kind::Uas(p) => return super::uas::command(self, p, io, lun, cdb, dir, len),
+        };
         io.tag = io.tag.wrapping_add(1);
         let tag = io.tag;
         let c = &io.cbw;
@@ -63,7 +85,7 @@ impl Transport {
         for (i, b) in cdb.iter().enumerate() {
             c.write::<u8>(15 + i, *b);
         }
-        if let Err(e) = self.dev.transfer(&self.ep_out, c, 31, Some(TIMEOUT_MS)) {
+        if let Err(e) = self.dev.transfer(ep_out, c, 31, Some(TIMEOUT_MS)) {
             if e != ENODEV {
                 self.reset_recovery();
             }
@@ -71,11 +93,7 @@ impl Transport {
         }
         let mut moved = 0;
         if dir != Dir::None && len > 0 {
-            let ep = if dir == Dir::In {
-                &self.ep_in
-            } else {
-                &self.ep_out
-            };
+            let ep = if dir == Dir::In { ep_in } else { ep_out };
             match self.dev.transfer(ep, &io.data, len, Some(TIMEOUT_MS)) {
                 Ok(n) => moved = n,
                 Err(EPIPE) => {} // stalled data phase: read the CSW anyway
@@ -90,7 +108,7 @@ impl Transport {
         // CSW (retry once after a stall).
         let mut csw = Err(EIO);
         for _ in 0..2 {
-            csw = self.dev.transfer(&self.ep_in, c, 13, Some(TIMEOUT_MS));
+            csw = self.dev.transfer(ep_in, c, 13, Some(TIMEOUT_MS));
             if csw != Err(EPIPE) {
                 break;
             }
@@ -120,6 +138,10 @@ impl Transport {
 
     /// REQUEST SENSE: (sense key, ASC, ASCQ).
     fn sense(&self, io: &mut Io, lun: u8) -> Option<(u8, u8, u8)> {
+        if let Kind::Uas(_) = self.kind {
+            // UAS returns sense data with the failed command.
+            return io.last_sense.take();
+        }
         let n = self
             .command(io, lun, &[0x03, 0, 0, 0, 18, 0], Dir::In, 18)
             .ok()?;
@@ -272,25 +294,38 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
     if dev.configure_endpoints(&[ep_in, ep_out]).is_err() {
         return false;
     }
-    let (Some(cbw), Some(data)) = (DmaBuffer::new(64), DmaBuffer::new(BUF)) else {
+    start(dev, iface.number, Kind::Bot { ep_in, ep_out })
+}
+
+/// Bring up the LUNs behind a configured transport.
+pub(super) fn start(dev: &Arc<UsbDevice>, iface: u8, kind: Kind) -> bool {
+    let (Some(cbw), Some(data)) = (DmaBuffer::new(256), DmaBuffer::new(BUF)) else {
         return false;
     };
+    let uas = matches!(kind, Kind::Uas(_));
     let t = Arc::new(Transport {
         dev: dev.clone(),
-        iface: iface.number,
-        ep_in,
-        ep_out,
-        io: Mutex::new(Io { cbw, data, tag: 0 }),
+        iface,
+        kind,
+        io: Mutex::new(Io {
+            cbw,
+            data,
+            tag: 0,
+            last_sense: None,
+        }),
     });
     // Bring the LUNs up in a thread: spin-up can take seconds.
     let d = dev.clone();
     crate::sched::spawn(&format!("usb-storage{}", dev.slot), move || {
-        let max_lun = d
-            .control_in(0x21, 0xFE, 0, t.iface as u16, 1)
-            .ok()
-            .and_then(|b| b.first().copied())
-            .unwrap_or(0)
-            .min(7);
+        let max_lun = if uas {
+            0
+        } else {
+            d.control_in(0x21, 0xFE, 0, t.iface as u16, 1)
+                .ok()
+                .and_then(|b| b.first().copied())
+                .unwrap_or(0)
+                .min(7)
+        };
         for lun in 0..=max_lun {
             match init_lun(&t, lun) {
                 Ok(disk) => {

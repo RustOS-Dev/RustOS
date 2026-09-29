@@ -12,12 +12,12 @@ use crate::mm::dma::DmaBuffer;
 use crate::pci::PciDevice;
 use crate::sched::WaitQueue;
 use crate::sched::mutex::Mutex as SleepMutex;
+use crate::sync::Mutex;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering, fence};
-use crate::sync::Mutex;
 
 // Capability registers.
 const CAPLENGTH: u64 = 0x00;
@@ -175,8 +175,30 @@ impl Event {
 /// Per-endpoint transfer state.
 struct EpState {
     ring: Ring,
+    /// Bulk streams: one ring per stream ID (index 0 unused) and the stream
+    /// context array the endpoint context points at.
+    streams: Vec<Ring>,
+    _stream_ctx: Option<DmaBuffer>,
     /// Transfer events for this endpoint not yet consumed: (trb, code, residual).
     events: VecDeque<(u64, u8, u32)>,
+}
+
+impl EpState {
+    fn ring_mut(&mut self, sid: u16) -> Option<&mut Ring> {
+        if sid == 0 {
+            Some(&mut self.ring)
+        } else {
+            self.streams.get_mut(sid as usize)
+        }
+    }
+}
+
+/// A queued transfer descriptor (see [`Xhci::submit`]).
+pub struct Td {
+    dci: u8,
+    sid: u16,
+    trbs: Vec<(u64, u32, u32)>,
+    addrs: Vec<u64>,
 }
 
 struct SlotData {
@@ -205,6 +227,8 @@ pub struct EpConfig {
     pub max_burst: u8,
     pub mult: u8,
     pub interval: u8,
+    /// Bulk streams wanted (power of two; 0 = none).
+    pub streams: u32,
 }
 
 pub struct HubConfig {
@@ -224,6 +248,8 @@ pub struct Xhci {
     db: u64,
     pub max_ports: u8,
     ctx_size: usize,
+    /// Largest primary stream array (entries); 0 without stream support.
+    max_streams: u32,
     dcbaa: DmaBuffer,
     _scratch: Vec<DmaBuffer>,
     cmd: Mutex<Ring>,
@@ -406,8 +432,12 @@ impl Xhci {
     // ------------------------------------------------------------------
 
     fn command(&self, param: u64, control: u32) -> KResult<(u8, u8)> {
+        self.command_with_status(param, 0, control)
+    }
+
+    fn command_with_status(&self, param: u64, status: u32, control: u32) -> KResult<(u8, u8)> {
         let _g = self.cmd_lock.lock();
-        let trb = self.cmd.lock().push(param, 0, control);
+        let trb = self.cmd.lock().push(param, status, control);
         w32(self.db, 0);
         let mut res = None;
         let ok = self.wait_for(
@@ -481,6 +511,8 @@ impl Xhci {
             (slot, 1),
             EpState {
                 ring,
+                streams: Vec::new(),
+                _stream_ctx: None,
                 events: VecDeque::new(),
             },
         );
@@ -531,15 +563,39 @@ impl Xhci {
             let mut max_dci = (sd.out_ctx.read::<u32>(0) >> 27) & 0x1F;
             for ep in eps {
                 let ring = Ring::new().ok_or(ENOMEM)?;
+                let nstreams = ep.streams.min(self.max_streams);
+                let (streams, stream_ctx) = if nstreams >= 2 && ep.ep_type & 3 == 2 {
+                    let sca = DmaBuffer::new(nstreams as usize * 16).ok_or(ENOMEM)?;
+                    sca.zero();
+                    let mut rs = Vec::with_capacity(nstreams as usize);
+                    rs.push(Ring::new().ok_or(ENOMEM)?); // stream 0: reserved
+                    for sid in 1..nstreams as usize {
+                        let r = Ring::new().ok_or(ENOMEM)?;
+                        // SCT 1 = primary transfer ring, DCS 1.
+                        sca.write::<u64>(sid * 16, r.phys() | (1 << 1) | 1);
+                        rs.push(r);
+                    }
+                    (rs, Some(sca))
+                } else {
+                    (Vec::new(), None)
+                };
                 add |= 1 << ep.dci;
                 max_dci = max_dci.max(ep.dci as u32);
                 let o = self.in_ctx_off(1 + ep.dci as usize);
                 let periodic = matches!(ep.ep_type, 1 | 3 | 5 | 7);
                 let isoch = matches!(ep.ep_type, 1 | 5);
                 let esit = ep.max_packet as u32 * (ep.max_burst as u32 + 1) * (ep.mult as u32 + 1);
+                // MaxPStreams (primary array of 2^(n+1)) and LSA.
+                let pstreams = match &stream_ctx {
+                    Some(_) => ((nstreams.trailing_zeros() - 1) << 10) | (1 << 15),
+                    None => 0,
+                };
                 inc.write::<u32>(
                     o,
-                    ((ep.mult as u32) << 8) | ((ep.interval as u32) << 16) | ((esit >> 16) << 24),
+                    ((ep.mult as u32) << 8)
+                        | pstreams
+                        | ((ep.interval as u32) << 16)
+                        | ((esit >> 16) << 24),
                 );
                 let cerr = if isoch { 0 } else { 3 };
                 inc.write::<u32>(
@@ -549,10 +605,13 @@ impl Xhci {
                         | ((ep.max_burst as u32) << 8)
                         | ((ep.max_packet as u32) << 16),
                 );
-                inc.write::<u64>(o + 8, ring.phys() | 1);
+                match &stream_ctx {
+                    Some(sca) => inc.write::<u64>(o + 8, sca.phys()),
+                    None => inc.write::<u64>(o + 8, ring.phys() | 1),
+                }
                 let avg = if periodic { esit.min(1024) } else { 3072 };
                 inc.write::<u32>(o + 16, avg | ((esit & 0xFFFF) << 16));
-                rings.push((ep.dci, ring));
+                rings.push((ep.dci, ring, streams, stream_ctx));
             }
             let mut dw0 = inc.read::<u32>(s);
             dw0 = (dw0 & !(0x1F << 27)) | (max_dci << 27);
@@ -575,11 +634,13 @@ impl Xhci {
         };
         {
             let mut map = self.eps.lock();
-            for (dci, ring) in rings {
+            for (dci, ring, streams, stream_ctx) in rings {
                 map.insert(
                     (slot, dci),
                     EpState {
                         ring,
+                        streams,
+                        _stream_ctx: stream_ctx,
                         events: VecDeque::new(),
                     },
                 );
@@ -607,8 +668,8 @@ impl Xhci {
     }
 
     /// Recover a halted or stuck endpoint: reset it (if halted) and move
-    /// its dequeue pointer past everything queued.
-    fn recover(&self, slot: u8, dci: u8, halted: bool) {
+    /// the dequeue pointer of ring `sid` past everything queued.
+    fn recover(&self, slot: u8, dci: u8, sid: u16, halted: bool) {
         if halted {
             let _ = self.command(
                 0,
@@ -623,40 +684,59 @@ impl Xhci {
         let ptr = match self.eps.lock().get_mut(&(slot, dci)) {
             Some(ep) => {
                 ep.events.clear();
-                ep.ring.enqueue_ptr()
+                match ep.ring_mut(sid) {
+                    // Stream rings: SCT 1 (primary ring) in the pointer.
+                    Some(r) if sid != 0 => r.enqueue_ptr() | (1 << 1),
+                    Some(r) => r.enqueue_ptr(),
+                    None => return,
+                }
             }
             None => return,
         };
-        let _ = self.command(
+        let _ = self.command_with_status(
             ptr,
+            (sid as u32) << 16,
             (TRB_SET_TR_DEQUEUE << 10) | (dci as u32) << 16 | (slot as u32) << 24,
         );
     }
 
-    /// Queue a TD (list of TRBs as (param, status, control)) and wait for it.
-    /// Returns (completion code, bytes transferred for data TRBs).
-    fn run_td(
+    /// Queue a TD (list of TRBs as (param, status, control)) on ring `sid`
+    /// of endpoint `dci` and ring its doorbell.
+    fn queue_td(
         &self,
         dev: &UsbDevice,
         dci: u8,
-        trbs: &[(u64, u32, u32)],
-        timeout_ms: Option<u64>,
-    ) -> KResult<usize> {
+        sid: u16,
+        trbs: Vec<(u64, u32, u32)>,
+        clear: bool,
+    ) -> KResult<Td> {
         let slot = dev.slot;
-        let lock = self.ep_lock(slot, dci);
-        let _g = lock.lock();
         if dev.is_gone() {
             return Err(ENODEV);
         }
         let addrs: Vec<u64> = {
             let mut map = self.eps.lock();
             let ep = map.get_mut(&(slot, dci)).ok_or(ENODEV)?;
-            ep.events.clear();
-            trbs.iter()
-                .map(|&(p, s, c)| ep.ring.push(p, s, c))
-                .collect()
+            if clear {
+                ep.events.clear();
+            }
+            let ring = ep.ring_mut(sid).ok_or(EINVAL)?;
+            trbs.iter().map(|&(p, s, c)| ring.push(p, s, c)).collect()
         };
-        w32(self.db + 4 * slot as u64, dci as u32);
+        w32(self.db + 4 * slot as u64, dci as u32 | (sid as u32) << 16);
+        Ok(Td {
+            dci,
+            sid,
+            trbs,
+            addrs,
+        })
+    }
+
+    /// Wait for a queued TD. Returns the bytes moved by its data TRBs.
+    fn wait_td(&self, dev: &UsbDevice, td: &Td, timeout_ms: Option<u64>) -> KResult<usize> {
+        let (slot, dci) = (dev.slot, td.dci);
+        let trbs = &td.trbs;
+        let addrs = &td.addrs;
         let last = *addrs.last().unwrap();
         let mut result: Option<(u8, usize)> = None;
         let mut moved = 0usize;
@@ -676,9 +756,19 @@ impl Xhci {
                     result = Some((0, 0));
                     return true;
                 };
+                let mut keep = VecDeque::new();
+                let mut finished = false;
                 while let Some((trb, code, residual)) = ep.events.pop_front() {
+                    if finished {
+                        keep.push_back((trb, code, residual));
+                        continue;
+                    }
                     let Some(i) = addrs.iter().position(|&a| a == trb) else {
-                        continue; // stale event from an earlier TD
+                        // Another stream's TD, or a stale event.
+                        if td.sid != 0 {
+                            keep.push_back((trb, code, residual));
+                        }
+                        continue;
                     };
                     let before: usize = (0..i).map(data_len).sum();
                     match code {
@@ -688,7 +778,7 @@ impl Xhci {
                                     moved = (0..trbs.len()).map(data_len).sum();
                                 }
                                 result = Some((code, moved));
-                                return true;
+                                finished = true;
                             }
                         }
                         CC_SHORT => {
@@ -697,16 +787,17 @@ impl Xhci {
                             // Control transfers continue with the status stage.
                             if t != TRB_DATA || trb == last {
                                 result = Some((code, moved));
-                                return true;
+                                finished = true;
                             }
                         }
                         _ => {
                             result = Some((code, before));
-                            return true;
+                            finished = true;
                         }
                     }
                 }
-                false
+                ep.events = keep;
+                finished
             },
             &|| dev.is_gone(),
         );
@@ -714,7 +805,7 @@ impl Xhci {
             if dev.is_gone() {
                 return Err(ENODEV);
             }
-            self.recover(slot, dci, false);
+            self.recover(slot, dci, td.sid, false);
             return Err(ETIMEDOUT);
         }
         let (code, n) = result.unwrap();
@@ -722,7 +813,7 @@ impl Xhci {
             0 => Err(ENODEV),
             CC_SUCCESS | CC_SHORT => Ok(n),
             CC_STALL => {
-                self.recover(slot, dci, true);
+                self.recover(slot, dci, td.sid, true);
                 Err(EPIPE)
             }
             c => {
@@ -733,10 +824,29 @@ impl Xhci {
                     dci,
                     c
                 );
-                self.recover(slot, dci, true);
+                self.recover(slot, dci, td.sid, true);
                 Err(EIO)
             }
         }
+    }
+
+    /// Queue a TD and wait for it (endpoint transfers are serialised).
+    fn run_td(
+        &self,
+        dev: &UsbDevice,
+        dci: u8,
+        trbs: Vec<(u64, u32, u32)>,
+        timeout_ms: Option<u64>,
+    ) -> KResult<usize> {
+        let lock = self.ep_lock(dev.slot, dci);
+        let _g = lock.lock();
+        let td = self.queue_td(dev, dci, 0, trbs, true)?;
+        self.wait_td(dev, &td, timeout_ms)
+    }
+
+    /// Whether bulk streams are available.
+    pub fn supports_streams(&self) -> bool {
+        self.max_streams >= 2
     }
 
     /// Control transfer on EP0. `data` is the DMA buffer for the data stage.
@@ -773,18 +883,11 @@ impl Xhci {
             0,
             (TRB_STATUS << 10) | TRB_IOC | if status_in { TRB_DIR_IN } else { 0 },
         ));
-        self.run_td(dev, 1, &trbs, Some(timeout_ms))
+        self.run_td(dev, 1, trbs, Some(timeout_ms))
     }
 
-    /// Bulk or interrupt transfer on endpoint `dci` using `phys..phys+len`.
-    pub fn transfer(
-        &self,
-        dev: &UsbDevice,
-        dci: u8,
-        phys: u64,
-        len: usize,
-        timeout_ms: Option<u64>,
-    ) -> KResult<usize> {
+    /// Normal TRBs for `phys..phys+len` (split at 64 KiB boundaries).
+    fn normal_trbs(dci: u8, phys: u64, len: usize) -> Vec<(u64, u32, u32)> {
         let dir_in = dci & 1 == 1;
         let mut trbs = Vec::new();
         let mut off = 0usize;
@@ -803,7 +906,35 @@ impl Xhci {
                 break;
             }
         }
-        self.run_td(dev, dci, &trbs, timeout_ms)
+        trbs
+    }
+
+    /// Bulk or interrupt transfer on endpoint `dci` using `phys..phys+len`.
+    pub fn transfer(
+        &self,
+        dev: &UsbDevice,
+        dci: u8,
+        phys: u64,
+        len: usize,
+        timeout_ms: Option<u64>,
+    ) -> KResult<usize> {
+        self.run_td(dev, dci, Self::normal_trbs(dci, phys, len), timeout_ms)
+    }
+
+    /// Queue a bulk transfer on stream `sid` (or the endpoint's ring, 0)
+    /// without waiting; the caller serialises use of the endpoint.
+    pub fn submit(&self, dev: &UsbDevice, dci: u8, sid: u16, phys: u64, len: usize) -> KResult<Td> {
+        self.queue_td(dev, dci, sid, Self::normal_trbs(dci, phys, len), sid == 0)
+    }
+
+    /// Wait for a TD from [`Xhci::submit`].
+    pub fn wait(&self, dev: &UsbDevice, td: &Td, timeout_ms: Option<u64>) -> KResult<usize> {
+        self.wait_td(dev, td, timeout_ms)
+    }
+
+    /// Abandon a TD that will not complete (stop the endpoint and skip it).
+    pub fn cancel(&self, dev: &UsbDevice, td: &Td) {
+        self.recover(dev.slot, td.dci, td.sid, false);
     }
 }
 
@@ -928,6 +1059,10 @@ pub fn probe(dev: &PciDevice, index: usize) -> Option<Arc<Xhci>> {
         db,
         max_ports,
         ctx_size,
+        max_streams: match (hcc1 >> 12) & 0xF {
+            0 => 0,
+            n => 1 << (n + 1),
+        },
         dcbaa,
         _scratch: scratch,
         cmd: Mutex::new(cmd),

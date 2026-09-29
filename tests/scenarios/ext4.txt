@@ -1,0 +1,53 @@
+# ext4 read/write: journal replay at mount, files through extents (large,
+# fragmented, preallocated, truncated), htree directory inserts with leaf
+# splits, then a host e2fsck of the result.
+wait # $ 240
+send grep /mnt/vd /proc/mounts | cat
+wait /dev/vda /mnt/vda ext4 rw
+wait /dev/vdb /mnt/vdb ext4 rw
+wait # $
+# The dirty journal was replayed at mount.
+send dmesg | grep -i "journal"; head -1 /mnt/vdb/hello.txt
+wait replayed 1 transaction
+wait NEW-CONTENT
+wait # $
+# A large file (one extent tree, several extents) and a checksum.
+send dd if=/dev/urandom of=/mnt/vda/rand.bin bs=65536 count=160 2>/dev/null; sha256sum /mnt/vda/rand.bin > /tmp/rand.sum; ls -l /mnt/vda/rand.bin
+wait 10485760
+wait # $
+# A fragmented file: every other block, 400 extents (tree depth 1, leaf split).
+send i=0; while [ $i -lt 800 ]; do dd if=/dev/urandom of=/mnt/vda/frag bs=4096 count=1 seek=$i conv=notrunc 2>/dev/null; i=$((i+2)); done; ls -l /mnt/vda/frag; sha256sum /mnt/vda/frag > /tmp/frag.sum
+wait 3272704 240
+wait # $
+# Preallocation (uninitialized extents), then writes into the middle.
+send fallocate -l 4194304 /mnt/vda/pre && echo middle | dd of=/mnt/vda/pre bs=1 seek=2000000 conv=notrunc 2>/dev/null; ls -l /mnt/vda/pre; dd if=/mnt/vda/pre bs=1 skip=2000000 count=6 2>/dev/null; echo
+wait 4194304
+wait middle
+wait # $
+# htree: 500 more entries in the indexed directory, a rename and removals.
+send i=0; while [ $i -lt 500 ]; do echo $i > /mnt/vda/big/new-entry-with-a-longish-name-$i; i=$((i+1)); done; ls /mnt/vda/big | wc -l
+wait 800 240
+wait # $
+send mv /mnt/vda/big/new-entry-with-a-longish-name-7 /mnt/vda/big/renamed && rm /mnt/vda/big/seed-file-0001 && cat /mnt/vda/big/renamed && ls /mnt/vda/big | wc -l
+wait 7\r\n
+wait 799
+wait # $
+# Truncation frees extents; directories and symlinks.
+send truncate -s 1000000 /mnt/vda/frag && ls -l /mnt/vda/frag && mkdir -p /mnt/vda/a/b/c && ln -s ../../rand.bin /mnt/vda/a/b/link && cat /mnt/vda/a/b/link | wc -c
+wait 1000000
+wait 10485760
+wait # $
+# An open, unlinked file is released when closed.
+send sh -c "sleep 2; cat" < /mnt/vda/rand.bin | wc -c & sleep 1; rm /mnt/vda/rand.bin; wait
+wait 10485760
+wait # $
+send cp /mnt/vda/pre /mnt/vda/rand.bin && df /mnt/vda && sync && umount /mnt/vda && umount /mnt/vdb
+wait # $
+hostrun e2fsck -fn "$RUSTOS_DISK0"
+hostrun e2fsck -fn "$RUSTOS_DISK1"
+# Remount and check the data again.
+send mount /dev/vda /mnt/e4 && cmp /mnt/e4/pre /mnt/e4/rand.bin && echo same-data; ls /mnt/e4/big | wc -l; cat /mnt/e4/big/new-entry-with-a-longish-name-499
+wait same-data
+wait 799
+wait 499\r\n
+wait # $

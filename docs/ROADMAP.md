@@ -33,7 +33,7 @@ Wi-Fi uses legacy rates (no HT/VHT/HE yet). See
 - [x] **M13** Wi-Fi speed: HT/VHT/HE capabilities, 20–160 MHz, MIMO, A-MPDU/A-MSDU, reorder buffer, regulatory channel list, power save
 - [x] **M14** Kernel: per-CPU run queues, epoll/eventfd/timerfd/signalfd, page cache and file-backed `mmap`, pseudo-terminals, virtual consoles
 - [x] **M15** musl libc sysroot and `rustos-cc`, dynamic-linker TLS and `dlopen`, ported software
-- [ ] **M16** ext4 journal replay and read/write, USB HID report descriptors, USB Attached SCSI
+- [x] **M16** ext4 journal replay and read/write, USB HID report descriptors, USB Attached SCSI
 
 Round 2 deviations: M13 keeps 4 KiB receive buffers and advertises the
 smallest A-MSDU/MPDU limits instead of 12 KiB buffers; receive BA
@@ -45,6 +45,13 @@ of per-object queues, and the page cache serves mmap only (read/write stay
 coherent with it but go to the filesystem); login is optional (off by
 default). M15 ships busybox and curl as optional ports (built on request
 with tools/install-port.sh) rather than in the default image.
+M16 journals metadata only (ordered mode, one transaction in the log at a
+time, checkpointed synchronously at each commit); directory lookups scan
+linearly (inserts keep the htree index valid); inline_data, bigalloc,
+quotas and meta_bg mount read-only. UAS keeps one command in flight (tags
+cycle over the streams) and needs SuperSpeed bulk streams, otherwise the
+device's Bulk-Only alternate setting is used. The input devices have no
+EVIOCG* ioctls yet.
 
 ## Context
 

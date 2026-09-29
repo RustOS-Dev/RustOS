@@ -10,23 +10,44 @@ elf, script = os.path.abspath(sys.argv[1]), sys.argv[2]
 extra = sys.argv[3:]
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 img = tempfile.mktemp(suffix=".img")
-# Extra disk images: @EXT2:<MiB>[:label]@ (mke2fs), @BLANK:<MiB>@ (zeros).
+# Extra disk images: @EXT2:<MiB>[:label]@, @EXT4:<MiB>[:label]@ (mke2fs,
+# with a seed directory; ext4 also gets an htree-indexed directory "big"),
+# @EXT4J:<MiB>[:label]@ (ext4 whose journal holds a committed transaction
+# not yet written back: /hello.txt reads OLD-CONTENT until the journal is
+# replayed, NEW-CONTENT after), @BLANK:<MiB>@ (zeros). Their paths are
+# exported to host commands as $RUSTOS_DISK0, $RUSTOS_DISK1, ...
 scratch = []
+def _quiet(cmd, **kw):
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
 def _disk(m):
     kind, size = m.group(1), int(m.group(2))
     path = tempfile.mktemp(suffix=".disk")
+    os.environ[f"RUSTOS_DISK{len(scratch)}"] = path
     scratch.append(path)
     with open(path, "wb") as f:
         f.truncate(size * 1024 * 1024)
-    if kind in ("EXT2", "EXT4"):
+    if kind in ("EXT2", "EXT4", "EXT4J"):
         fs = "ext2" if kind == "EXT2" else "ext4"
         label = m.group(3) or "data"
         subprocess.run(["mke2fs", "-q", "-F", "-t", fs, "-L", label, path], check=True)
         # Seed a file so read paths are exercised before any write.
-        subprocess.run(["debugfs", "-w", "-R", "mkdir seed", path], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _quiet(["debugfs", "-w", "-R", "mkdir seed", path])
+    if kind == "EXT4":
+        # A directory big enough to be indexed (e2fsck -D builds the htree).
+        cmds = "mkdir big\n" + "".join(f"write /dev/null big/seed-file-{i:04d}\n" for i in range(300))
+        _quiet(["debugfs", "-w", "-f", "-", path], input=cmds.encode())
+        subprocess.run(["e2fsck", "-fyD", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if kind == "EXT4J":
+        d = tempfile.mkdtemp()
+        old, new = os.path.join(d, "old"), os.path.join(d, "new")
+        open(old, "w").write("OLD-CONTENT\n" * 100)
+        open(new, "wb").write(("NEW-CONTENT\n" * 100).encode().ljust(4096, b"\0"))
+        _quiet(["debugfs", "-w", "-R", f"write {old} hello.txt", path])
+        blk = subprocess.run(["debugfs", "-R", "bmap hello.txt 0", path], capture_output=True,
+                             text=True, check=True).stdout.strip()
+        _quiet(["debugfs", "-w", "-f", "-", path], input=f"jo\njw -b {blk} {new}\njc\n".encode())
     return path
-extra = [re.sub(r"@(EXT2|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, a) for a in extra]
+extra = [re.sub(r"@(EXT2|EXT4J|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, a) for a in extra]
 subprocess.run(["cargo", "run", "--quiet", "--", elf, img], cwd=f"{root}/crates/create-image", check=True,
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 ovmf = next((c for c in ["/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_CODE.fd",
@@ -100,7 +121,7 @@ for line in open(script):
     elif op == "monitor":
         # HMP command, e.g. 'monitor sendkey a' or 'monitor device_del u1'.
         import socket
-        arg = re.sub(r"@(EXT2|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, arg)
+        arg = re.sub(r"@(EXT2|EXT4J|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, arg)
         m = socket.socket(socket.AF_UNIX)
         m.connect(mon_path)
         m.settimeout(2)

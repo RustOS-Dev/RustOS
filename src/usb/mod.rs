@@ -9,10 +9,12 @@ pub mod cdc_ether;
 pub mod hid;
 pub mod hub;
 pub mod storage;
+pub mod uas;
 pub mod xhci;
 
 use crate::errno::*;
 use crate::mm::dma::DmaBuffer;
+use crate::sync::Mutex;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -21,7 +23,6 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
-use crate::sync::Mutex;
 pub use usb_desc::{Configuration, DeviceDescriptor, Endpoint, Interface, TransferType};
 use xhci::{EpConfig, HubConfig, SlotInfo, Xhci};
 
@@ -229,6 +230,7 @@ impl UsbDevice {
             max_burst,
             mult,
             interval,
+            streams: 0,
         }
     }
 
@@ -236,6 +238,44 @@ impl UsbDevice {
     pub fn configure_endpoints(&self, eps: &[Endpoint]) -> KResult<()> {
         let cfgs: Vec<EpConfig> = eps.iter().map(|e| self.ep_config(e)).collect();
         self.hc.configure_endpoints(self.slot, &cfgs, None)
+    }
+
+    /// Enable endpoints, with `streams` bulk streams on those that get it
+    /// (`(endpoint, streams)`; 0 = no streams).
+    pub fn configure_endpoints_streams(&self, eps: &[(Endpoint, u32)]) -> KResult<()> {
+        let cfgs: Vec<EpConfig> = eps
+            .iter()
+            .map(|(e, n)| EpConfig {
+                streams: *n,
+                ..self.ep_config(e)
+            })
+            .collect();
+        self.hc.configure_endpoints(self.slot, &cfgs, None)
+    }
+
+    /// Queue a bulk transfer on stream `sid` without waiting.
+    pub fn submit(
+        &self,
+        ep: &Endpoint,
+        sid: u16,
+        buf: &DmaBuffer,
+        off: usize,
+        len: usize,
+    ) -> KResult<xhci::Td> {
+        if off + len > buf.len() {
+            return Err(EINVAL);
+        }
+        self.hc
+            .submit(self, ep.dci(), sid, buf.phys() + off as u64, len)
+    }
+
+    /// Wait for a transfer from [`UsbDevice::submit`].
+    pub fn wait(&self, td: &xhci::Td, timeout_ms: Option<u64>) -> KResult<usize> {
+        self.hc.wait(self, td, timeout_ms)
+    }
+
+    pub fn cancel(&self, td: &xhci::Td) {
+        self.hc.cancel(self, td)
     }
 
     pub fn configure_hub(&self, eps: &[Endpoint], hub: HubConfig) -> KResult<()> {
@@ -312,9 +352,10 @@ fn bind(dev: &Arc<UsbDevice>) {
         .map(|c| c.default_interfaces().cloned().collect())
         .unwrap_or_default();
     for iface in &ifaces {
-        let builtin: [(&'static str, DriverProbe); 4] = [
+        let builtin: [(&'static str, DriverProbe); 5] = [
             ("hub", hub::probe),
             ("usbhid", hid::probe),
+            ("uas", uas::probe),
             ("usb-storage", storage::probe),
             ("cdc_ether", cdc_ether::probe),
         ];

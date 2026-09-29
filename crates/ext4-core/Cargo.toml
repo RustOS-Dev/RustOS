@@ -1,0 +1,8 @@
+[package]
+name = "ext4-core"
+version = "0.1.0"
+edition = "2024"
+description = "no_std ext4 building blocks: crc32c/crc16, metadata checksums, htree hashes, jbd2 journal replay and transactions"
+
+[lib]
+path = "src/lib.rs"

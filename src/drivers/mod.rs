@@ -2,6 +2,7 @@ pub mod block;
 pub mod console;
 pub mod fbdev;
 pub mod framebuffer;
+pub mod input;
 pub mod mouse;
 pub mod net;
 pub mod ps2;

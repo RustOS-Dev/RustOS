@@ -31,8 +31,12 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 ## Filesystems and storage
 
-* ext3/ext4 are read-only (no journal replay, extents read only); ext2
-  is read/write.
+* ext2/ext3/ext4 are read/write (journal replay, metadata journaling in
+  ordered mode, extents, metadata checksums, htree inserts). ext4 images
+  with inline_data, bigalloc, quotas, meta_bg or an external journal are
+  mounted read-only (the kernel log names the features); directory
+  lookups scan linearly instead of using the htree index; only metadata
+  is journaled (no `data=journal`).
 * FAT has no Unix permissions (files appear as root-owned 0755/0644);
   timestamps have 2-second resolution.
 * No NTFS, exFAT, btrfs, XFS; no software RAID or LVM; no disk
@@ -64,10 +68,14 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 ## USB
 
-* No isochronous transfers (webcams, audio), no USB Attached SCSI (UAS),
-  no USB serial adapters, printers or USB Wi-Fi/Bluetooth.
-* HID: boot-protocol keyboards and mice; no report-descriptor parsing for
-  other devices (game pads, touchscreens).
+* No isochronous transfers (webcams, audio), no USB serial adapters,
+  printers or USB Wi-Fi/Bluetooth.
+* UAS needs SuperSpeed bulk streams (otherwise Bulk-Only is used when the
+  device offers it) and keeps one command in flight.
+* HID: report descriptors are parsed (keyboards incl. NKRO and media
+  keys, mice, tablets/touch screens, game pads); multi-touch contacts are
+  not tracked separately, and `/dev/input/event0` merges all devices and
+  has no EVIOCG* ioctls; no output reports (keyboard LEDs).
 
 ## Userland
 

@@ -33,11 +33,11 @@ wait # $
 send mv /mnt/nvme0n1/hard /mnt/nvme0n1/d/moved && rm /mnt/nvme0n1/d/n && wc -l /mnt/nvme0n1/d/moved
 wait 5000 /mnt/nvme0n1/d/moved
 wait # $
-# ext4 on virtio: read-only
-send cat /proc/mounts | grep vda; ls /mnt/vda; touch /mnt/vda/x
-wait ext4
+# ext4 on virtio: read/write (see the ext4 scenario for more)
+send cat /proc/mounts | grep vda; ls /mnt/vda; touch /mnt/vda/x && echo ext4-writable
+wait ext4 rw
 wait seed
-wait Read-only
+wait ext4-writable
 wait # $
 # mkfs on a blank disk, mount and use
 send mkfs.vfat -n SCRATCH /dev/vdb && mount /dev/vdb /mnt/scratch && echo hi > /mnt/scratch/hello && cat /mnt/scratch/hello

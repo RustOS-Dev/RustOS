@@ -260,6 +260,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ext4-core"
+version = "0.1.0"
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -464,6 +468,7 @@ dependencies = [
  "bootloader_api",
  "conquer-once",
  "crossbeam-queue",
+ "ext4-core",
  "lazy_static",
  "linked_list_allocator",
  "log",

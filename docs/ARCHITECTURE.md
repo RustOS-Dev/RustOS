@@ -141,8 +141,12 @@ identity map of the first 2 MiB), then `ap_entry` loads the kernel page
 tables and the BSP's PAT/CR0/CR4 setup, builds the CPU's GDT/TSS/IDT and
 GS block, enables its LAPIC and timer and joins the scheduler. Cross-CPU
 work uses IPIs: TLB shootdown (generation counted; CPUs spinning with
-interrupts off answer pending requests from their wait loops), reschedule
-kicks and halt (panic, power-off, reboot).
+interrupts off answer pending requests from their wait loops — every
+kernel spin lock, `crate::sync::Mutex`/`RwLock`, does so while it waits,
+so a CPU holding a lock across a shootdown cannot stall one waiting for
+that lock), reschedule kicks and halt (panic, power-off, reboot). In
+xAPIC mode an IPI is sent with interrupts off (ICR high and low are two
+writes).
 
 ## Interrupts and time
 
@@ -166,11 +170,18 @@ time (`settimeofday`/`ntpdate` adjust it).
   `read`/`write`; shared anonymous memory objects.
 * **tmpfs** root, **devfs** (`/dev/null`, `zero`, `urandom`, `tty`,
   `tty0`-`tty4`, `console`, `ptmx`, `pts/N`, `fb0`, block devices,
-  `input/mice`), **procfs** (processes,
+  `input/mice`, `input/event0`, `input/js0`), **procfs** (processes,
   `meminfo`, `mounts`, `net/*`, `interrupts`, ...), **sysfs**
   (`class/net`, `class/block`, CPUs), **pipes** and FIFOs.
-* **FAT** (12/16/32, long names, read/write), **ext2** (read/write),
-  **ext3/ext4** (read-only, extents).
+* **FAT** (12/16/32, long names, read/write), **ext2/ext3/ext4**
+  (read/write, `src/fs/ext2/`): metadata goes through `mread`/`mwrite`
+  into the running jbd2 transaction (`journal.rs`), committed in ordered
+  mode (data first, then log, checkpoint) on sync, every 5 s by the
+  flusher and when it grows large; a dirty journal is replayed at mount
+  (or overlaid in memory on read-only devices). `extent.rs` allocates,
+  splits and truncates extent trees, `htree.rs` inserts into indexed
+  directories; checksums, hashes and the journal format live in the
+  host-tested `crates/ext4-core`.
 * **Block layer**: `BlockDevice` trait, write-back buffer cache,
   GPT/MBR partitions exposed as devices, automount rules.
 * **TTYs** (`src/tty.rs`): a POSIX line discipline (canonical mode,
@@ -186,8 +197,11 @@ time (`settimeofday`/`ntpdate` adjust it).
   setup (`enable_msix`, `enable_msi`, `enable_msi_or_intx`).
 * **Storage**: NVMe, AHCI, virtio-blk, USB mass storage.
 * **USB**: xHCI (interrupt driven, hot-plug), device enumeration and
-  configuration choice, class drivers: hub, HID keyboard/mouse, mass
-  storage, CDC ECM/NCM/RNDIS Ethernet.
+  configuration choice, bulk streams, class drivers: hub, HID (report
+  descriptors parsed by `usb_desc::hid`; keyboards to the console,
+  pointers and game controllers to `drivers::input`), mass storage over
+  Bulk-Only and UAS (`usb/uas.rs`, sharing the SCSI layer in
+  `usb/storage.rs`), CDC ECM/NCM/RNDIS Ethernet.
 * **Network**: see [NETWORKING.md](NETWORKING.md); Wi-Fi: see
   [WIFI.md](WIFI.md).
 * **Power-off/reboot**: `drivers::shutdown` flushes filesystems and caches,

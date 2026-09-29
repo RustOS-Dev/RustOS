@@ -68,7 +68,9 @@ pub fn parse_ntb16(b: &[u8]) -> Vec<&[u8]> {
         let next = rd16(b, ndp + 6).unwrap_or(0);
         let mut e = ndp + 8;
         while e + 4 <= ndp + len {
-            let (Some(off), Some(dlen)) = (rd16(b, e), rd16(b, e + 2)) else { break };
+            let (Some(off), Some(dlen)) = (rd16(b, e), rd16(b, e + 2)) else {
+                break;
+            };
             if off == 0 || dlen == 0 {
                 break;
             }
@@ -89,7 +91,11 @@ pub fn parse_ntb16(b: &[u8]) -> Vec<&[u8]> {
 /// Returns the block and how many frames it contains.
 pub fn build_ntb16(frames: &[&[u8]], seq: u16, p: &NtbParams) -> (Vec<u8>, usize) {
     let max = (p.out_max as usize).clamp(64, 65535);
-    let max_dg = if p.out_max_datagrams == 0 { usize::MAX } else { p.out_max_datagrams as usize };
+    let max_dg = if p.out_max_datagrams == 0 {
+        usize::MAX
+    } else {
+        p.out_max_datagrams as usize
+    };
     let divisor = p.out_divisor as usize;
     let rem = p.out_remainder as usize % divisor;
     let ndp_align = (p.out_alignment as usize).clamp(4, 64);
@@ -184,6 +190,9 @@ mod tests {
         b[20..22].copy_from_slice(&4u16.to_le_bytes());
         b[24..26].copy_from_slice(&4u16.to_le_bytes());
         let p = NtbParams::parse(&b).unwrap();
-        assert_eq!((p.in_max, p.out_max, p.out_divisor, p.out_remainder), (32768, 16384, 4, 0));
+        assert_eq!(
+            (p.in_max, p.out_max, p.out_divisor, p.out_remainder),
+            (32768, 16384, 4, 0)
+        );
     }
 }

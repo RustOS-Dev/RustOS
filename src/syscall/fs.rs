@@ -429,6 +429,31 @@ pub fn ftruncate(fd: i32, len: u64) -> SysResult {
     Ok(0)
 }
 
+/// fallocate(2): preallocate (mode 0 or FALLOC_FL_KEEP_SIZE). Filesystems
+/// without preallocation extend the file (sparse) for mode 0.
+pub fn fallocate(fd: i32, mode: u32, off: u64, len: u64) -> SysResult {
+    const KEEP_SIZE: u32 = 1;
+    let f = file(fd)?;
+    if !f.writable() {
+        return Err(EBADF);
+    }
+    if len == 0 {
+        return Err(EINVAL);
+    }
+    let i = f.inode.as_ref().ok_or(ENODEV)?;
+    match i.fallocate(mode, off, len) {
+        Err(EOPNOTSUPP) if mode == 0 => {
+            let end = off.checked_add(len).ok_or(EFBIG)?;
+            if end > i.metadata()?.size {
+                i.truncate(end)?;
+            }
+            Ok(0)
+        }
+        Err(EOPNOTSUPP) if mode == KEEP_SIZE => Ok(0),
+        r => r.map(|_| 0),
+    }
+}
+
 pub fn getdents64(fd: i32, buf: u64, len: u64) -> SysResult {
     let f = file(fd)?;
     let dir = f.dir_inode()?.clone();

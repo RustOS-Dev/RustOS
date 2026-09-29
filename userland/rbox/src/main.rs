@@ -9,8 +9,10 @@
 extern crate alloc;
 
 mod files;
+mod fsutil;
 mod hash;
 mod hw;
+mod input;
 mod login;
 mod regex;
 mod sys;
@@ -42,6 +44,8 @@ const APPLETS: &[(&str, Applet)] = &[
     ("du", files::du),
     ("echo", text::echo),
     ("env", sys::env),
+    ("evtest", input::evtest),
+    ("fallocate", fsutil::fallocate),
     ("false", |_| 1),
     ("fgconsole", sys::fgconsole),
     ("find", files::find),
@@ -99,6 +103,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("top", sys::top),
     ("touch", files::touch),
     ("tr", text::tr),
+    ("truncate", fsutil::truncate),
     ("true", |_| 0),
     ("umount", sys::umount),
     ("uname", sys::uname),

@@ -23,6 +23,7 @@ log = "0.4"
 usb-desc = { path = "crates/usb-desc" }
 wlan = { path = "crates/wlan" }
 netproto = { path = "crates/netproto" }
+ext4-core = { path = "crates/ext4-core" }
 # The kernel runs without SSE: force the portable crypto backends.
 sha1 = { version = "0.10", default-features = false, features = ["force-soft"] }
 sha2 = { version = "0.10", default-features = false, features = ["force-soft"] }
@@ -80,4 +81,6 @@ opt-level = 3
 [profile.dev.package.crypto-bigint]
 opt-level = 3
 [profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.ext4-core]
 opt-level = 3

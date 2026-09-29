@@ -45,6 +45,7 @@ Built-ins: `:` `.` `[` `alias` `bg` `break` `cd` (`cd -`) `command`
 | `find` | `find [PATH] [-name|-iname GLOB] [-type f|d|l] [-maxdepth N] [-exec CMD {} \;] [-print]` |
 | `du`, `df` | disk usage |
 | `dd` | `dd if= of= bs= count= skip= seek=` |
+| `truncate`, `fallocate` | `truncate -s SIZE FILE...`, `fallocate [-n] [-o OFF] -l LEN FILE` (sizes take K/M/G) |
 | `mkfifo` | named pipes |
 | `md5sum`, `sha256sum`, `cmp`, `diff [-u]` | checksums and comparison |
 | `hexdump` / `xxd` | hex dump |
@@ -89,9 +90,10 @@ are in `/etc/passwd`, overridable by `/storage/etc/passwd`). `login [-f]
 | `lsblk` | disks, partitions, filesystems and mount points |
 | `lspci`, `lsusb` | PCI and USB devices |
 | `hwcheck` | `hwcheck [-y] [-o DIR] [--ssid S --pass P] [--open S] [--http URL] [--https URL] [--dns NAME] [--big URL] [--rekey SECS] [SECTION...]` — hardware checklist with logged results ([HARDWARE.md](HARDWARE.md)) |
+| `evtest` | `evtest [-c N] [DEVICE]` — print input events from `/dev/input/event0` (or a `/dev/input/js*` device) |
 | `bugreport` | `bugreport [-o FILE \| -]` — kernel log, `/proc`, `/sys/class/net` and tool output in one file |
 
-Types for `mount -t`: `vfat`, `ext2`, `ext3`, `ext4` (read-only), `tmpfs`,
+Types for `mount -t`: `vfat`, `ext2`, `ext3`, `ext4`, `tmpfs`,
 `proc`, `sysfs`, `devtmpfs`. Partitions are mounted automatically at boot
 and on USB hot-plug (`/storage`, `/boot/efi`, `/mnt/<device>`).
 

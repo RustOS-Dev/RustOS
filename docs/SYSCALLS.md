@@ -66,6 +66,7 @@ dynamically linked (`PT_INTERP` → `/lib/ld-rustos.so.1`) ELF64 programs and
 | 257 | `openat` |
 | 270 | `pselect6` |
 | 271 | `ppoll` |
+| 285 | `fallocate` (mode 0 and `FALLOC_FL_KEEP_SIZE`; ext4 preallocates uninitialized extents, other filesystems extend the file) |
 | 292 | `dup3` |
 | 293 | `pipe2` |
 

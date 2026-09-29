@@ -1,0 +1,31 @@
+# HID report protocol (QEMU usb-tablet) and USB Attached SCSI.
+wait # $ 240
+send sleep 2; dmesg | grep "\[usb\]" | cat
+wait USB Attached SCSI, [0-9]+ streams
+wait HID tablet \(report protocol\)
+wait # $
+# Tablet buttons and absolute axes reach /dev/input/event0.
+send evtest -c 4 > /tmp/ev.txt &
+wait # $
+monitor mouse_set 3
+monitor mouse_button 1
+monitor mouse_button 0
+sleep 2
+send cat /tmp/ev.txt
+wait event KEY code 0x110 value 1\r\n
+wait event ABS code 0x0
+wait event KEY code 0x110 value 0\r\n
+wait # $
+# The UAS disk (ext4) is automounted; write, verify, remount.
+send d=$(grep " ext4 " /proc/mounts | cut -d" " -f2); echo disk=$d; dd if=/dev/urandom of=$d/r.bin bs=65536 count=64 2>/dev/null; sha256sum $d/r.bin > /tmp/r.sum; seq 1 20000 > $d/n.txt; sync; wc -l $d/n.txt
+wait disk=/mnt/sd
+wait 20000
+wait # $
+send dev=$(grep " ext4 " /proc/mounts | cut -d" " -f1); umount $d && mount $dev /mnt/uas && sha256sum /mnt/uas/r.bin | cut -c1-64 > /tmp/b; cut -c1-64 /tmp/r.sum > /tmp/a; cmp /tmp/a /tmp/b && echo hash-same; tail -1 /mnt/uas/n.txt
+wait hash-same
+wait 20000\r\n
+wait # $
+send umount /mnt/uas && echo unmounted
+wait unmounted
+wait # $
+hostrun e2fsck -fn "$RUSTOS_DISK0"

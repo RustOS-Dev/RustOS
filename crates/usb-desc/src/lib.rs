@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+pub mod hid;
 pub mod ncm;
 
 use alloc::vec::Vec;
@@ -19,6 +20,8 @@ pub const DT_HID: u8 = 0x21;
 pub const DT_HUB: u8 = 0x29;
 pub const DT_SS_HUB: u8 = 0x2A;
 pub const DT_SS_EP_COMPANION: u8 = 0x30;
+/// UAS Pipe Usage descriptor.
+pub const DT_PIPE_USAGE: u8 = 0x24;
 
 pub const CLASS_HID: u8 = 3;
 pub const CLASS_MASS_STORAGE: u8 = 8;
@@ -83,9 +86,20 @@ pub struct Endpoint {
     /// SuperSpeed companion: max burst and attributes.
     pub max_burst: u8,
     pub ss_attributes: u8,
+    /// UAS pipe (Pipe Usage descriptor): 1 command, 2 status, 3 data in,
+    /// 4 data out; 0 if none.
+    pub pipe_id: u8,
 }
 
 impl Endpoint {
+    /// Bulk streams supported (SuperSpeed companion MaxStreams): 0 or 2^n.
+    pub fn max_streams(&self) -> u32 {
+        match self.ss_attributes & 0x1F {
+            0 => 0,
+            n => 1 << n,
+        }
+    }
+
     pub fn number(&self) -> u8 {
         self.address & 0x0F
     }
@@ -182,13 +196,33 @@ impl Configuration {
                             interval: d[6],
                             max_burst: 0,
                             ss_attributes: 0,
+                            pipe_id: 0,
                         });
                     }
                 }
                 DT_SS_EP_COMPANION if len >= 6 => {
-                    if let Some(e) = cfg.interfaces.last_mut().and_then(|i| i.endpoints.last_mut()) {
+                    if let Some(e) = cfg
+                        .interfaces
+                        .last_mut()
+                        .and_then(|i| i.endpoints.last_mut())
+                    {
                         e.max_burst = d[2];
                         e.ss_attributes = d[3];
+                    }
+                }
+                // UAS Pipe Usage descriptor (after its endpoint).
+                DT_PIPE_USAGE
+                    if len >= 4
+                        && cfg.interfaces.last().is_some_and(|i| {
+                            i.class == CLASS_MASS_STORAGE && !i.endpoints.is_empty()
+                        }) =>
+                {
+                    if let Some(e) = cfg
+                        .interfaces
+                        .last_mut()
+                        .and_then(|i| i.endpoints.last_mut())
+                    {
+                        e.pipe_id = d[2];
                     }
                 }
                 _ => {
@@ -295,7 +329,8 @@ pub fn usage_to_set1(usage: u8) -> Option<(bool, u8)> {
         0x15, 0x2C, // y z
         0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, // 1-0
         0x1C, 0x01, 0x0E, 0x0F, 0x39, // enter esc backspace tab space
-        0x0C, 0x0D, 0x1A, 0x1B, 0x2B, 0x2B, 0x27, 0x28, 0x29, 0x33, 0x34, 0x35, // - = [ ] \ # ; ' ` , . /
+        0x0C, 0x0D, 0x1A, 0x1B, 0x2B, 0x2B, 0x27, 0x28, 0x29, 0x33, 0x34,
+        0x35, // - = [ ] \ # ; ' ` , . /
         0x3A, // caps lock
         0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58, // F1-F12
         0, 0x46, 0, // printscreen (ext), scroll lock, pause
@@ -335,27 +370,47 @@ fn push_code(out: &mut Vec<u8>, (ext, code): (bool, u8), down: bool) {
     out.push(if down { code } else { code | 0x80 });
 }
 
-/// Tracks the previous boot keyboard report and turns changes into PS/2
-/// set-1 scancodes.
+/// Tracks the keys held and turns changes into PS/2 set-1 scancodes.
 #[derive(Debug, Clone, Default)]
 pub struct KeyboardState {
     mods: u8,
-    keys: [u8; 6],
+    keys: Vec<u8>,
+    consumer: Vec<u16>,
 }
 
 impl KeyboardState {
     /// Process an 8-byte boot report; appends scancodes to `out`. Returns
     /// the usages newly pressed (for typematic repeat tracking).
     pub fn update(&mut self, report: &[u8], out: &mut Vec<u8>) -> Vec<u8> {
-        let mut pressed = Vec::new();
         if report.len() < 8 {
-            return pressed;
+            return Vec::new();
         }
         // Rollover error: all keys report 0x01; ignore.
         if report[2..8].iter().all(|&k| k == 1) {
-            return pressed;
+            return Vec::new();
         }
-        let mods = report[0];
+        let mut held: Vec<u8> = (0..8)
+            .filter(|b| report[0] & (1 << b) != 0)
+            .map(|b| 0xE0 + b)
+            .collect();
+        held.extend(report[2..8].iter().copied().filter(|&k| k > 3));
+        self.update_usages(&held, out)
+    }
+
+    /// Process the full set of keyboard usages held (page 7, modifiers as
+    /// 0xE0-0xE7), e.g. from an NKRO report. Returns the newly pressed
+    /// non-modifier usages.
+    pub fn update_usages(&mut self, held: &[u8], out: &mut Vec<u8>) -> Vec<u8> {
+        let mut pressed = Vec::new();
+        let mods = held
+            .iter()
+            .filter(|&&u| (0xE0..=0xE7).contains(&u))
+            .fold(0u8, |m, &u| m | 1 << (u - 0xE0));
+        let keys: Vec<u8> = held
+            .iter()
+            .copied()
+            .filter(|&k| k > 3 && !(0xE0..=0xE7).contains(&k))
+            .collect();
         for bit in 0..8 {
             let was = self.mods & (1 << bit) != 0;
             let now = mods & (1 << bit) != 0;
@@ -363,26 +418,40 @@ impl KeyboardState {
                 push_code(out, modifier_to_set1(bit), now);
             }
         }
-        let mut keys = [0u8; 6];
-        keys.copy_from_slice(&report[2..8]);
-        for &k in self.keys.iter().filter(|&&k| k > 3) {
-            if !keys.contains(&k) {
-                if let Some(c) = usage_to_set1(k) {
-                    push_code(out, c, false);
-                }
+        for &k in &self.keys {
+            if let (false, Some(c)) = (keys.contains(&k), usage_to_set1(k)) {
+                push_code(out, c, false);
             }
         }
-        for &k in keys.iter().filter(|&&k| k > 3) {
-            if !self.keys.contains(&k) {
-                if let Some(c) = usage_to_set1(k) {
-                    push_code(out, c, true);
-                    pressed.push(k);
-                }
+        for &k in &keys {
+            if let (false, Some(c)) = (self.keys.contains(&k), usage_to_set1(k)) {
+                push_code(out, c, true);
+                pressed.push(k);
             }
         }
         self.mods = mods;
         self.keys = keys;
         pressed
+    }
+
+    /// Process the consumer-page usages held (media keys).
+    pub fn update_consumer(&mut self, held: &[u16], out: &mut Vec<u8>) {
+        for &u in &self.consumer {
+            if let (false, Some(c)) = (held.contains(&u), hid::consumer_to_set1(u)) {
+                push_code(out, (true, c), false);
+            }
+        }
+        for &u in held {
+            if let (false, Some(c)) = (self.consumer.contains(&u), hid::consumer_to_set1(u)) {
+                push_code(out, (true, c), true);
+            }
+        }
+        self.consumer = held.to_vec();
+    }
+
+    /// Whether `usage` is held.
+    pub fn is_held(&self, usage: u8) -> bool {
+        self.keys.contains(&usage)
     }
 
     /// Make code for a held key (typematic repeat).
@@ -401,7 +470,8 @@ impl KeyboardState {
 
     /// Release everything (device unplugged).
     pub fn release_all(&mut self, out: &mut Vec<u8>) {
-        let _ = self.update(&[0; 8], out);
+        let _ = self.update_usages(&[], out);
+        self.update_consumer(&[], out);
     }
 }
 
@@ -500,5 +570,39 @@ mod tests {
     fn mouse() {
         let r = MouseReport::parse(&[1, 0xFF, 2]).unwrap();
         assert_eq!((r.buttons, r.dx, r.dy, r.wheel), (1, -1, 2, 0));
+    }
+
+    #[test]
+    fn uas_pipes() {
+        // BOT on alternate 0, UAS on alternate 1 (4 SuperSpeed bulk
+        // endpoints with 2^4 streams and pipe usage descriptors).
+        let mut d = vec![9, 2, 0, 0, 1, 1, 0, 0x80, 50];
+        d.extend_from_slice(&[9, 4, 0, 0, 2, 8, 6, 0x50, 0]);
+        d.extend_from_slice(&[7, 5, 0x81, 2, 0, 4, 0, 6, 0x30, 15, 0, 0, 0]);
+        d.extend_from_slice(&[7, 5, 0x02, 2, 0, 4, 0, 6, 0x30, 15, 0, 0, 0]);
+        d.extend_from_slice(&[9, 4, 0, 1, 4, 8, 6, 0x62, 0]);
+        for (addr, pipe, streams) in [(0x01u8, 1u8, 0u8), (0x82, 2, 4), (0x83, 3, 4), (0x04, 4, 4)]
+        {
+            d.extend_from_slice(&[7, 5, addr, 2, 0, 4, 0]);
+            d.extend_from_slice(&[6, 0x30, 15, streams, 0, 0]);
+            d.extend_from_slice(&[4, 0x24, pipe, 0]);
+        }
+        let total = d.len() as u16;
+        d[2..4].copy_from_slice(&total.to_le_bytes());
+        let c = Configuration::parse(&d).unwrap();
+        assert_eq!(c.interfaces.len(), 2);
+        let uas = &c.interfaces[1];
+        assert_eq!((uas.alternate, uas.protocol), (1, 0x62));
+        let pipes: Vec<(u8, u8, u32)> = uas
+            .endpoints
+            .iter()
+            .map(|e| (e.address, e.pipe_id, e.max_streams()))
+            .collect();
+        assert_eq!(
+            pipes,
+            vec![(0x01, 1, 0), (0x82, 2, 16), (0x83, 3, 16), (0x04, 4, 16)]
+        );
+        assert!(uas.extra.is_empty());
+        assert_eq!(c.interfaces[0].endpoints[0].pipe_id, 0);
     }
 }

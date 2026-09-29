@@ -1,0 +1,6 @@
+# ext4 read/write (metadata_csum, extents, htree, journal) on virtio-blk,
+# plus an ext4 image whose journal needs recovery.
+-drive if=none,id=e0,format=raw,file=@EXT4:128:e4data@
+-device virtio-blk-pci,drive=e0
+-drive if=none,id=e1,format=raw,file=@EXT4J:64:e4dirty@
+-device virtio-blk-pci,drive=e1

@@ -26,7 +26,8 @@ not yet run on real hardware; **n/a** = not supported.
 | USB mass storage | Bulk-only transport, SCSI READ/WRITE(10/16), sense recovery, multi-LUN, hot-plug | CI |
 
 Partitions: GPT and MBR. Filesystems: FAT12/16/32 with long names
-(read/write), ext2 (read/write), ext3/ext4 (read-only, extents). Block
+(read/write), ext2/ext3/ext4 (read/write, journaled; checked with
+`e2fsck` in CI). Block
 devices are cached (write-back buffer cache, `sync`).
 
 ## USB
@@ -35,8 +36,11 @@ devices are cached (write-back buffer cache, `sync`).
 |-----------|--------|
 | xHCI host controller (BIOS handoff, MSI-X, hot-plug, USB 2/3 ports, stall recovery) | CI (`qemu-xhci`) |
 | Hubs (USB 2 and 3, TT for low/full-speed) | CI (`usb-hub`) |
-| HID boot keyboard and mouse | CI (`usb-kbd`, `usb-mouse`) |
-| Mass storage | CI (`usb-storage`) |
+| HID keyboard and mouse (report protocol, boot fallback) | CI (`usb-kbd`, `usb-mouse`) |
+| HID tablet (absolute pointer) | CI (`usb-tablet`) |
+| HID game pads, NKRO keyboards, media keys | host tests only |
+| Mass storage (Bulk-Only) | CI (`usb-storage`) |
+| USB Attached SCSI (bulk streams) | CI (`usb-uas`) |
 | Ethernet: CDC ECM, RNDIS | CI (`usb-net`) |
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
 

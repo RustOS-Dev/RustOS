@@ -24,11 +24,15 @@ static, PIE and **dynamically linked** ELF programs (`ld-rustos`, musl's
 signalfd, pseudo-terminals, ~180 Linux system calls.
 
 **Storage** — NVMe, AHCI, virtio-blk and USB mass storage; GPT/MBR; a
-write-back buffer cache; FAT12/16/32 with long names (read/write), ext2
-(read/write), ext3/ext4 (read-only); automount of partitions; `mkfs.fat`.
+write-back buffer cache; FAT12/16/32 with long names (read/write),
+**ext2/ext3/ext4 read/write** (jbd2 journal replay and ordered-mode
+journaling, extents, metadata checksums, htree directories); automount of
+partitions; `mkfs.fat`.
 
-**USB** — interrupt-driven xHCI with hot-plug, hubs, HID keyboard and mouse,
-mass storage, and Ethernet (CDC ECM, NCM, RNDIS — phone tethering).
+**USB** — interrupt-driven xHCI with hot-plug, hubs and bulk streams; HID
+with report-descriptor parsing (keyboards, mice, tablets, game pads —
+`/dev/input/event0`, `js0`); mass storage over Bulk-Only and **USB
+Attached SCSI**; Ethernet (CDC ECM, NCM, RNDIS — phone tethering).
 
 **Networking** — smoltcp-based stack with DHCP, DNS, BSD sockets; NIC
 drivers for virtio-net, Intel e1000/e1000e/I219, I225/I226 (igc), Realtek
@@ -132,7 +136,8 @@ RustOS/
 │                         block, usb, net, drivers, tty, time, ...)
 ├── crates/
 │   ├── wlan/             802.11 frames, WPA2/WPA3 supplicant (host-tested)
-│   ├── usb-desc/         USB descriptors, HID reports, NCM blocks (host-tested)
+│   ├── usb-desc/         USB descriptors, HID report parser, NCM blocks (host-tested)
+│   ├── ext4-core/        ext4 checksums, htree hashes, jbd2 journal (host-tested)
 │   ├── fat-format/       FAT formatter used by the image tools and mkfs
 │   ├── rustos-rt/        userland runtime (syscalls, alloc, fs, net, io)
 │   └── create-image/     builds the UEFI disk image
@@ -154,7 +159,8 @@ cargo fmt --check && cargo clippy -- -D warnings
 ```
 
 Scenarios cover the shell language and job control, storage (NVMe,
-virtio-blk, FAT, ext2/ext4, mkfs), USB (hub, HID, storage hot-plug),
+virtio-blk, FAT, ext2/ext4 with journal replay and e2fsck, mkfs), USB
+(hub, HID, tablet, storage hot-plug, UAS),
 networking with each NIC model, USB Ethernet, HTTPS, dynamic linking and
 stress tests; they run with 2 CPUs by default (`RUSTOS_SMP` overrides). CI
 runs all of this on every push.

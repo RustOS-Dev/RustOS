@@ -10,6 +10,7 @@ pub mod cache;
 pub mod partition;
 
 use crate::errno::*;
+use crate::sync::Mutex;
 use crate::vfs::{self, FileLike, FileType, Metadata};
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -17,7 +18,6 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::any::Any;
 use core::sync::atomic::{AtomicU32, Ordering};
-use crate::sync::Mutex;
 
 pub trait BlockDevice: Send + Sync {
     /// Logical sector size in bytes (512 or 4096).
@@ -313,6 +313,8 @@ pub fn init() {
         loop {
             crate::time::sleep_ms(5000);
             crate::mm::pagecache::sync_all();
+            // Filesystems commit their journals.
+            crate::vfs::sync_all();
             for d in disks() {
                 let _ = d.dev.sync();
             }

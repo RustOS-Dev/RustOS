@@ -104,6 +104,7 @@ pub mod nr {
     pub const FDATASYNC: u64 = 75;
     pub const TRUNCATE: u64 = 76;
     pub const FTRUNCATE: u64 = 77;
+    pub const FALLOCATE: u64 = 285;
     pub const GETDENTS: u64 = 78;
     pub const GETCWD: u64 = 79;
     pub const CHDIR: u64 = 80;
@@ -317,6 +318,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         }
         TRUNCATE => v(fs::truncate(a[0], a[1])),
         FTRUNCATE => v(fs::ftruncate(a[0] as i32, a[1])),
+        FALLOCATE => v(fs::fallocate(a[0] as i32, a[1] as u32, a[2], a[3])),
         GETDENTS | GETDENTS64 => v(fs::getdents64(a[0] as i32, a[1], a[2])),
         GETCWD => v(fs::getcwd(a[0], a[1])),
         CHDIR => v(fs::chdir(a[0])),

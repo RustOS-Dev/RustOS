@@ -1,4 +1,4 @@
-# NVMe with ext2, virtio-blk with ext4 (read-only driver path), blank AHCI-less virtio disk for mkfs
+# NVMe with ext2, virtio-blk with ext4, blank AHCI-less virtio disk for mkfs
 -drive if=none,id=nv0,format=raw,file=@EXT2:64:nvdata@
 -device nvme,serial=rustos0,drive=nv0
 -drive if=none,id=vd0,format=raw,file=@EXT4:64:vdata@

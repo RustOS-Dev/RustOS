@@ -84,7 +84,7 @@ jobs:
         run: rustup toolchain install
       - name: cargo test (crates/*)
         run: |
-          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/textlayout crates/unixcrypt; do
+          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/textlayout crates/unixcrypt crates/ext4-core; do
             (cd "$c" && cargo test)
           done
       - name: Firmware provisioning (write_to_drive.sh)

@@ -17,12 +17,12 @@ pub mod tmpfs;
 
 use crate::errno::*;
 use crate::sched::WaitQueue;
+use crate::sync::{Mutex, RwLock};
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::any::Any;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use crate::sync::{Mutex, RwLock};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -173,6 +173,10 @@ pub trait Inode: Send + Sync + Any {
     }
     fn truncate(&self, _size: u64) -> KResult<()> {
         Err(EINVAL)
+    }
+    /// Preallocate `off..off+len` (mode 0 or FALLOC_FL_KEEP_SIZE).
+    fn fallocate(&self, _mode: u32, _off: u64, _len: u64) -> KResult<()> {
+        Err(EOPNOTSUPP)
     }
     fn symlink(&self, _name: &str, _target: &str) -> KResult<()> {
         Err(EPERM)

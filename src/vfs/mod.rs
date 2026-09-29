@@ -22,7 +22,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::any::Any;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use spin::{Mutex, RwLock};
+use crate::sync::{Mutex, RwLock};
 
 // ---------------------------------------------------------------------------
 // Types

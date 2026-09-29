@@ -16,8 +16,8 @@ pub mod dma;
 pub mod frame;
 pub mod pagecache;
 
+use crate::sync::Mutex;
 use core::sync::atomic::{AtomicU64, Ordering};
-use spin::Mutex;
 use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::Cr3,
@@ -258,8 +258,8 @@ impl KernelStack {
 
 /// Stacks of exited threads, kept mapped for reuse: unmapping would need
 /// a TLB shootdown from the scheduler's context-switch path.
-static FREE_KSTACKS: spin::Mutex<alloc::vec::Vec<(u64, u64)>> =
-    spin::Mutex::new(alloc::vec::Vec::new());
+static FREE_KSTACKS: crate::sync::Mutex<alloc::vec::Vec<(u64, u64)>> =
+    crate::sync::Mutex::new(alloc::vec::Vec::new());
 
 impl Drop for KernelStack {
     fn drop(&mut self) {

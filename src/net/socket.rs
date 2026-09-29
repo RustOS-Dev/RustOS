@@ -82,12 +82,12 @@ struct Inner {
 pub struct Socket {
     pub family: u16,
     pub proto: Proto,
-    inner: spin::Mutex<Inner>,
+    inner: crate::sync::Mutex<Inner>,
 }
 
 static NEXT_PORT: AtomicU16 = AtomicU16::new(49152);
 /// Bound (protocol, port) pairs.
-static PORTS: spin::Mutex<BTreeSet<(u8, u16)>> = spin::Mutex::new(BTreeSet::new());
+static PORTS: crate::sync::Mutex<BTreeSet<(u8, u16)>> = crate::sync::Mutex::new(BTreeSet::new());
 
 fn proto_id(p: Proto) -> u8 {
     match p {
@@ -169,7 +169,7 @@ impl Socket {
         Arc::new(Socket {
             family,
             proto,
-            inner: spin::Mutex::new(Inner {
+            inner: crate::sync::Mutex::new(Inner {
                 backlog_len: 1,
                 ..Default::default()
             }),

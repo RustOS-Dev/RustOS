@@ -2,11 +2,11 @@
 //! COM1, and the kernel log ring buffer read by `dmesg`. Also keeps the
 //! scrollback history for the framebuffer view.
 
+use crate::sync::Mutex;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::fmt;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use spin::Mutex;
 use x86_64::instructions::interrupts;
 
 /// Console colour palette (the classic 16 VGA colours).
@@ -115,6 +115,21 @@ pub fn write_bytes(bytes: &[u8]) {
 /// Owner of the print lock (CPU id + 1; 0 = free). A CPU that already
 /// holds it (e.g. a panic while printing) prints without waiting.
 static PRINT_OWNER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+/// Thread holding PRINT_OWNER (state dumps).
+static PRINT_TID: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// Which output locks are held (state dumps).
+pub fn lock_state() -> alloc::string::String {
+    alloc::format!(
+        "print_owner={} (tid {}) console={} history={} serial={} klog={}",
+        PRINT_OWNER.load(core::sync::atomic::Ordering::SeqCst),
+        PRINT_TID.load(core::sync::atomic::Ordering::SeqCst),
+        crate::drivers::framebuffer::CONSOLE.is_locked(),
+        HISTORY.is_locked(),
+        crate::drivers::serial::is_locked(),
+        crate::klog::is_locked()
+    )
+}
 
 /// Formats a message into a buffer so it reaches every sink in one piece
 /// (messages from different CPUs never interleave mid-line).
@@ -173,6 +188,7 @@ pub fn _print(args: fmt::Arguments) {
                 .compare_exchange_weak(0, me, Ordering::Acquire, Ordering::Relaxed)
                 .is_err()
             {
+                crate::arch::x86_64::smp::poll();
                 core::hint::spin_loop();
                 spins += 1;
                 // Never wedge the machine on a stuck printer.
@@ -180,6 +196,9 @@ pub fn _print(args: fmt::Arguments) {
                     break;
                 }
             }
+        }
+        if !reentrant {
+            PRINT_TID.store(crate::sched::current_tid(), Ordering::SeqCst);
         }
         let mut b = LineBuf {
             buf: [0; 1024],

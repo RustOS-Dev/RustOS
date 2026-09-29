@@ -1097,7 +1097,7 @@ fn gen_wireless() -> String {
 
 /// Frames queued by a driver's interrupt handler for the network thread.
 pub struct RxQueue {
-    q: spin::Mutex<VecDeque<Vec<u8>>>,
+    q: crate::sync::Mutex<VecDeque<Vec<u8>>>,
     pub dropped: AtomicU64,
 }
 
@@ -1110,7 +1110,7 @@ impl Default for RxQueue {
 impl RxQueue {
     pub const fn new() -> RxQueue {
         RxQueue {
-            q: spin::Mutex::new(VecDeque::new()),
+            q: crate::sync::Mutex::new(VecDeque::new()),
             dropped: AtomicU64::new(0),
         }
     }

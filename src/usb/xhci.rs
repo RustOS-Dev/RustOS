@@ -17,7 +17,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering, fence};
-use spin::Mutex;
+use crate::sync::Mutex;
 
 // Capability registers.
 const CAPLENGTH: u64 = 0x00;

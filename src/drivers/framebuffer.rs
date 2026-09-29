@@ -9,9 +9,9 @@
 //! reverse video, cursor visibility, save/restore and cursor-position
 //! reports.
 
+use crate::sync::Mutex;
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
 use core::fmt;
-use spin::Mutex;
 
 const FONT_8X16: &[u8] = include_bytes!("../../assets/font8x16.bin");
 const FONT_WIDTH: usize = 8;

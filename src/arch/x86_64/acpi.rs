@@ -4,6 +4,7 @@
 //! interpreter is only created on first use (shutdown, `_PRT` lookups) so
 //! firmware bytecode the interpreter cannot handle never blocks boot.
 
+use crate::sync::Mutex;
 use acpi::aml::{Interpreter, namespace::AmlName, object::Object};
 use acpi::platform::AcpiPlatform;
 use acpi::platform::interrupt::{InterruptModel, Polarity, TriggerMode};
@@ -12,7 +13,7 @@ use acpi::{AcpiTables, Handle, Handler, HpetInfo, PciAddress, PhysicalMapping};
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::str::FromStr;
-use spin::{Mutex, Once};
+use spin::Once;
 use x86_64::instructions::port::Port;
 
 #[derive(Clone, Copy, Debug)]

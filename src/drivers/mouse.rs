@@ -1,8 +1,8 @@
 //! Pointer input: PS/2 packet decoding and a shared event queue fed by PS/2
 //! and USB HID mice.
 
+use crate::sync::Mutex;
 use alloc::collections::VecDeque;
-use spin::Mutex;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MouseEvent {

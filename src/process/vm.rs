@@ -284,17 +284,41 @@ impl AddressSpace {
     /// Map one page for `addr` according to its area. Returns false if the
     /// access is not allowed.
     pub fn handle_fault(&mut self, addr: u64, write: bool, exec: bool) -> bool {
-        let Some(area) = self.find_area(addr).cloned() else {
+        let r = self.handle_fault_inner(addr, write, exec);
+        if let Err(why) = r {
+            if self.find_area(addr).is_some() {
+                let (free, total) = mm::memory_stats();
+                crate::serial_println!(
+                    "[vm] fault at {:#x} (write {}) not resolved: {} ({} of {} MiB free)",
+                    addr,
+                    write,
+                    why,
+                    free >> 20,
+                    total >> 20
+                );
+            }
             return false;
+        }
+        true
+    }
+
+    fn handle_fault_inner(
+        &mut self,
+        addr: u64,
+        write: bool,
+        exec: bool,
+    ) -> Result<(), &'static str> {
+        let Some(area) = self.find_area(addr).cloned() else {
+            return Err("no area");
         };
         if write && area.prot & PROT_WRITE == 0 {
-            return false;
+            return Err("write to read-only area");
         }
         if exec && area.prot & PROT_EXEC == 0 {
-            return false;
+            return Err("exec of non-exec area");
         }
         if area.prot == 0 {
-            return false;
+            return Err("PROT_NONE");
         }
         let page = Page::<Size4KiB>::containing_address(VirtAddr::new(addr));
         let mut m = mapper_for(self.pml4);
@@ -305,7 +329,7 @@ impl AddressSpace {
                     let new_flags = (flags | F::WRITABLE) - COW_BIT;
                     if mm::frame_is_shared(old) {
                         let Some(new) = mm::with_frames(|f| f.alloc()) else {
-                            return false;
+                            return Err("out of memory (copy-on-write)");
                         };
                         unsafe {
                             core::ptr::copy_nonoverlapping(
@@ -329,17 +353,19 @@ impl AddressSpace {
                             )
                         } {
                             Ok(f) => f.flush(),
-                            Err(_) => return false,
+                            Err(_) => return Err("remap after copy failed"),
                         }
                         // Other threads may still cache the old frame.
                         crate::arch::x86_64::smp::tlb_shootdown(self.pml4);
                     } else if let Ok(f) = unsafe { m.update_flags(page, new_flags) } {
                         f.flush();
                     }
-                    true
-                } else {
+                    Ok(())
+                } else if !write || flags.contains(F::WRITABLE) {
                     // Present and permitted: spurious (e.g. another thread fixed it).
-                    !write || flags.contains(F::WRITABLE)
+                    Ok(())
+                } else {
+                    Err("mapped read-only without copy-on-write")
                 }
             }
             _ => {
@@ -353,13 +379,13 @@ impl AddressSpace {
                             mm::zero_frame(p);
                             (p, true, false)
                         }
-                        None => return false,
+                        None => return Err("out of memory"),
                     },
                     Backing::Phys { base } => (base + (va - area.start), false, true),
                     Backing::File { inode, offset } => {
                         let idx = (offset + (va - area.start)) / FRAME_SIZE;
                         let Ok(p) = mm::pagecache::get_page(inode, idx) else {
-                            return false;
+                            return Err("file page read failed");
                         };
                         if shared && area.prot & PROT_WRITE != 0 {
                             mm::pagecache::mark_dirty(inode, idx);
@@ -372,7 +398,7 @@ impl AddressSpace {
                     }
                     Backing::Shm { obj, offset } => {
                         let Ok(p) = obj.page((offset + (va - area.start)) / FRAME_SIZE) else {
-                            return false;
+                            return Err("out of memory (shared)");
                         };
                         (p, false, false)
                     }
@@ -388,15 +414,23 @@ impl AddressSpace {
                 } {
                     Ok(f) => {
                         f.flush();
-                        true
+                        Ok(())
                     }
-                    Err(_) => {
+                    Err(e) => {
                         if fresh {
                             mm::with_frames(|f| f.free(phys));
                         } else if !device {
                             mm::frame_release(phys);
                         }
-                        false
+                        Err(match e {
+                            x86_64::structures::paging::mapper::MapToError::FrameAllocationFailed => {
+                                "out of memory (page table)"
+                            }
+                            x86_64::structures::paging::mapper::MapToError::PageAlreadyMapped(_) => {
+                                "already mapped"
+                            }
+                            _ => "huge page in the way",
+                        })
                     }
                 }
             }
@@ -681,4 +715,4 @@ impl Drop for AddressSpace {
 }
 
 /// Shared handle used by processes (threads of one process share it).
-pub type Vm = Arc<spin::Mutex<AddressSpace>>;
+pub type Vm = Arc<crate::sync::Mutex<AddressSpace>>;

@@ -20,6 +20,7 @@ pub mod wait;
 
 use crate::arch::x86_64::{cpu, idt::TrapFrame};
 use crate::mm::KernelStack;
+use crate::sync::Mutex;
 use alloc::boxed::Box;
 use alloc::collections::{BinaryHeap, VecDeque};
 use alloc::string::String;
@@ -30,7 +31,6 @@ use core::cmp::Reverse;
 use core::sync::atomic::{
     AtomicBool, AtomicI8, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
 };
-use spin::Mutex;
 
 pub use wait::WaitQueue;
 
@@ -69,7 +69,10 @@ pub struct Thread {
     pub fpu: UnsafeCell<FpuState>,
     pub is_user: AtomicBool,
     /// Wake-up time for timed sleeps (0 = none).
-    wake_at: AtomicU64,
+    /// Sequence number of the timed wakeup armed last; a timer entry only
+    /// wakes the thread if it is still the current one (a woken thread's
+    /// old entries become stale without anyone clearing this).
+    wake_seq: AtomicU64,
     /// Pending wakeup that raced with blocking.
     wakeup_pending: AtomicBool,
     quantum: AtomicU8,
@@ -86,6 +89,12 @@ pub struct Thread {
     /// User address to clear and futex-wake when the thread exits
     /// (`set_tid_address` / `CLONE_CHILD_CLEARTID`).
     pub clear_child_tid: AtomicU64,
+    /// System call in progress (u64::MAX: none) and its first argument,
+    /// for state dumps.
+    pub syscall: AtomicU64,
+    pub syscall_arg: AtomicU64,
+    /// Wait queue the thread last blocked on (state dumps).
+    pub wchan: AtomicU64,
 }
 
 unsafe impl Send for Thread {}
@@ -166,7 +175,7 @@ pub trait TimerTarget: Send + Sync {
 }
 
 enum TimerKind {
-    /// Wake a thread blocked with this deadline in `wake_at`.
+    /// Wake a thread whose `wake_seq` is still this entry's sequence.
     Wake(Arc<Thread>),
     Call(Arc<dyn TimerTarget>),
 }
@@ -196,6 +205,10 @@ impl Ord for TimerEntry {
 
 fn push_timer(deadline: u64, kind: TimerKind) {
     let seq = TIMER_SEQ.fetch_add(1, Ordering::Relaxed);
+    push_timer_seq(deadline, seq, kind);
+}
+
+fn push_timer_seq(deadline: u64, seq: u64, kind: TimerKind) {
     irqsave(|| {
         TIMERS.lock().push(Reverse(TimerEntry {
             deadline,
@@ -246,9 +259,10 @@ fn run_timers(now: u64) {
     for e in due {
         match e.kind {
             TimerKind::Wake(t) => {
-                let at = t.wake_at.load(Ordering::SeqCst);
-                // Skip entries of waits that already ended or were re-armed.
-                if at != 0 && at <= now && t.state() == State::Blocked {
+                // Skip entries of waits that were re-armed since. A stale
+                // entry of the current arming can at most wake the thread
+                // early; waits re-check their condition.
+                if t.wake_seq.load(Ordering::SeqCst) == e.seq && t.state() == State::Blocked {
                     wake(&t);
                 }
             }
@@ -338,7 +352,7 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         fs_base: AtomicU64::new(0),
         fpu: UnsafeCell::new(FpuState(initial_fpu())),
         is_user: AtomicBool::new(false),
-        wake_at: AtomicU64::new(0),
+        wake_seq: AtomicU64::new(u64::MAX),
         wakeup_pending: AtomicBool::new(false),
         quantum: AtomicU8::new(QUANTUM_TICKS as u8),
         interrupted: AtomicBool::new(false),
@@ -347,6 +361,9 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         affinity: AtomicU64::new(u64::MAX),
         nice: AtomicI8::new(0),
         clear_child_tid: AtomicU64::new(0),
+        syscall: AtomicU64::new(u64::MAX),
+        syscall_arg: AtomicU64::new(0),
+        wchan: AtomicU64::new(0),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t
@@ -445,6 +462,19 @@ pub fn try_current() -> Option<Arc<Thread>> {
     }
 }
 
+/// Record the current thread's system call (u64::MAX: none) for state
+/// dumps. Takes no reference: `exit` never returns to drop one.
+pub fn note_syscall(nr: u64, arg: u64) {
+    if !cpu::is_initialized() {
+        return;
+    }
+    let p = cpu::this().current.load(Ordering::SeqCst) as *const Thread;
+    if let Some(t) = unsafe { p.as_ref() } {
+        t.syscall.store(nr, Ordering::Relaxed);
+        t.syscall_arg.store(arg, Ordering::Relaxed);
+    }
+}
+
 pub fn current_tid() -> Tid {
     try_current().map(|t| t.tid).unwrap_or(0)
 }
@@ -535,7 +565,6 @@ pub fn wake(t: &Arc<Thread>) {
             )
             .is_ok()
         {
-            t.wake_at.store(0, Ordering::SeqCst);
             enqueue(t.clone());
         } else {
             t.wakeup_pending.store(true, Ordering::SeqCst);
@@ -594,8 +623,9 @@ pub fn clear_pending_wakeup() {
 
 /// Arm a timed wakeup for the current (about to block) thread.
 pub(crate) fn arm_timeout(t: &Arc<Thread>, deadline_ns: u64) {
-    t.wake_at.store(deadline_ns, Ordering::SeqCst);
-    push_timer(deadline_ns, TimerKind::Wake(t.clone()));
+    let seq = TIMER_SEQ.fetch_add(1, Ordering::Relaxed);
+    t.wake_seq.store(seq, Ordering::SeqCst);
+    push_timer_seq(deadline_ns, seq, TimerKind::Wake(t.clone()));
 }
 
 pub(crate) fn set_blocked(t: &Thread) {
@@ -876,6 +906,20 @@ fn finish_switch() {
 }
 
 /// Snapshot of all live threads: (tid, name, state, is_user).
+/// (tid, wait channel) of every live thread (state dumps; no locks but ALL).
+pub fn wait_channels() -> Vec<(Tid, u64)> {
+    irqsave(|| {
+        ALL.try_lock()
+            .map(|all| {
+                all.iter()
+                    .filter_map(|w| w.upgrade())
+                    .map(|t| (t.tid, t.wchan.load(Ordering::Relaxed)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
 pub fn thread_list() -> Vec<(Tid, String, State, bool)> {
     irqsave(|| {
         let mut all = ALL.lock();

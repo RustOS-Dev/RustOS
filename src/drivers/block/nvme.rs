@@ -233,7 +233,7 @@ impl BlockDevice for Namespace {
     }
 }
 
-static CONTROLLERS: spin::Mutex<Vec<Arc<Controller>>> = spin::Mutex::new(Vec::new());
+static CONTROLLERS: crate::sync::Mutex<Vec<Arc<Controller>>> = crate::sync::Mutex::new(Vec::new());
 
 /// Notify every controller of an orderly shutdown (CC.SHN = normal).
 pub fn shutdown_all() {

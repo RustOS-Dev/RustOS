@@ -1,9 +1,9 @@
 //! Wait queues: block threads until a condition becomes true.
 
 use super::{Thread, current, is_running, schedule, wake};
+use crate::sync::Mutex;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
-use spin::Mutex;
 
 pub struct WaitQueue {
     waiters: Mutex<VecDeque<Arc<Thread>>>,
@@ -60,6 +60,10 @@ impl WaitQueue {
             }
         }
         let t = current();
+        t.wchan.store(
+            self as *const _ as u64,
+            core::sync::atomic::Ordering::Relaxed,
+        );
         loop {
             if cond() {
                 return true;
@@ -68,11 +72,14 @@ impl WaitQueue {
                 return cond();
             }
             x86_64::instructions::interrupts::without_interrupts(|| {
-                self.waiters.lock().push_back(t.clone());
+                // Blocked before visible in the queue: a waker on another
+                // CPU that pops us must find us Blocked, or its wake-up
+                // would be lost (it removes us from the queue either way).
                 super::set_blocked(&t);
                 if let Some(d) = deadline {
                     super::arm_timeout(&t, d);
                 }
+                self.waiters.lock().push_back(t.clone());
             });
             // Re-check after publishing ourselves to close the lost-wakeup race.
             if cond() {

@@ -10,8 +10,9 @@
 pub mod ids;
 
 use crate::arch::x86_64::{acpi, apic, idt};
+use crate::sync::Mutex;
 use alloc::vec::Vec;
-use spin::{Mutex, Once};
+use spin::Once;
 use x86_64::instructions::port::Port;
 
 // ---------------------------------------------------------------------------

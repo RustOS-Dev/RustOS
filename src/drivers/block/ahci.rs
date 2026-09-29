@@ -285,7 +285,8 @@ pub fn probe(dev: &PciDevice) {
     let staggered = cap & (1 << 27) != 0;
 
     // Interrupts: shared handler wakes every port's queue.
-    let ports: Arc<spin::Mutex<Vec<PortWake>>> = Arc::new(spin::Mutex::new(Vec::new()));
+    let ports: Arc<crate::sync::Mutex<Vec<PortWake>>> =
+        Arc::new(crate::sync::Mutex::new(Vec::new()));
     let (h2, p2) = (hba.clone(), ports.clone());
     let handler: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
         let is = h2.r(IS);

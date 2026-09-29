@@ -84,7 +84,7 @@ for line in open(script):
                 m.close()
                 buf = b""
                 read_until("(?!x)x", 5)  # never matches: collect 5 s of output
-                dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l)
+                dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l or b"[nmi]" in l)
                 print("*** kernel state:\n" + dump.decode(errors="replace"))
             except Exception as e:
                 print(f"*** no state dump: {e}")

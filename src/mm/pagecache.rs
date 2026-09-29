@@ -15,11 +15,11 @@
 
 use super::{FRAME_SIZE, frame_is_shared, frame_release, phys_ptr, with_frames, zero_frame};
 use crate::errno::*;
+use crate::sync::Mutex;
 use crate::vfs::Inode;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use spin::Mutex;
 
 struct CachedPage {
     phys: u64,

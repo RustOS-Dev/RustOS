@@ -52,13 +52,15 @@ pub fn handle(frame: &mut TrapFrame) {
                     trace.push_str(&alloc::format!(" {:#x}", ret));
                     rbp = unsafe { *(rbp as *const u64) };
                 }
-                crate::serial_println!(
-                    "[nmi] cpu{} rip {:#x} if={} trace{}",
+                let line = alloc::format!(
+                    "[nmi] cpu{} rip {:#x} if={} trace{}\n",
                     super::cpu::this().cpu_id,
-                    frame.rip,
+                    frame.rip.wrapping_sub(KERNEL_IMAGE.start),
                     frame.rflags & 0x200 != 0,
                     trace
                 );
+                crate::drivers::serial::write_unlocked(line.as_bytes());
+                stack_scan_serial(frame.rsp);
             } else {
                 crate::serial_println!("[trap] NMI received");
             }
@@ -93,6 +95,27 @@ fn stack_scan(rsp: u64) {
             }
         }
     }
+}
+
+/// Like [`stack_scan`], on one serial line (NMI debugging: no locks).
+fn stack_scan_serial(rsp: u64) {
+    if !(0xffff_8000_0000_0000..u64::MAX - 4096).contains(&rsp) {
+        return;
+    }
+    let mut out = alloc::string::String::new();
+    let mut shown = 0;
+    let mut p = rsp;
+    // Stay within the current and the next stack page.
+    let end = (rsp & !0xFFF) + 0x2000;
+    while p < end && shown < 20 {
+        let v = unsafe { core::ptr::read_volatile(p as *const u64) };
+        if KERNEL_IMAGE.contains(&v) {
+            out.push_str(&alloc::format!(" {:#x}", v - KERNEL_IMAGE.start));
+            shown += 1;
+        }
+        p += 8;
+    }
+    crate::drivers::serial::write_unlocked(alloc::format!("[nmi] stack{}\n", out).as_bytes());
 }
 
 fn fatal(frame: &TrapFrame, cr2: Option<u64>) -> ! {

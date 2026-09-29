@@ -1,6 +1,6 @@
+use crate::sync::Mutex;
 use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, Ordering};
-use spin::Mutex;
 use x86_64::instructions::port::Port;
 
 const COM1_PORT: u16 = 0x3f8;
@@ -66,6 +66,21 @@ pub fn write_raw(bytes: &[u8]) {
             write_byte(b);
         }
     });
+}
+
+/// Write without taking the serial lock (NMI handlers: the interrupted
+/// code may hold it). Output may interleave with other writers.
+pub fn write_unlocked(bytes: &[u8]) {
+    for &b in bytes {
+        if b == b'\n' {
+            write_byte(b'\r');
+        }
+        write_byte(b);
+    }
+}
+
+pub fn is_locked() -> bool {
+    SERIAL_LOCK.is_locked()
 }
 
 static RX_LOCK: Mutex<()> = Mutex::new(());

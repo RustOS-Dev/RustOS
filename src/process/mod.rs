@@ -12,12 +12,12 @@ pub mod vm;
 use crate::arch::x86_64::{gdt, idt::TrapFrame};
 use crate::errno::*;
 use crate::sched::{self, Thread, WaitQueue};
+use crate::sync::Mutex;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
-use spin::Mutex;
 
 pub type Pid = u32;
 
@@ -138,6 +138,13 @@ impl Drop for Process {
 
 pub fn find(pid: Pid) -> Option<Arc<Process>> {
     PROCESSES.lock().get(&pid).and_then(|w| w.upgrade())
+}
+
+/// Like [`all`] but gives up if the table is locked (state dumps).
+pub fn try_all() -> Option<Vec<Arc<Process>>> {
+    PROCESSES
+        .try_lock()
+        .map(|t| t.values().filter_map(|w| w.upgrade()).collect())
 }
 
 pub fn all() -> Vec<Arc<Process>> {

@@ -1,8 +1,8 @@
 //! Kernel random numbers: RDRAND/RDSEED when available, mixed into a
 //! ChaCha-style state seeded from the TSC and RTC.
 
+use crate::sync::Mutex;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use spin::Mutex;
 
 static STATE: Mutex<[u64; 4]> = Mutex::new([
     0x243F_6A88_85A3_08D3,

@@ -24,6 +24,7 @@ pub mod params;
 pub mod pci;
 pub mod process;
 pub mod sched;
+pub mod sync;
 pub mod syscall;
 pub mod task;
 pub mod time;

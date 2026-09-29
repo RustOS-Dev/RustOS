@@ -1,9 +1,9 @@
 //! Local APIC (xAPIC or x2APIC), I/O APIC and legacy 8259 masking.
 
 use super::acpi;
+use crate::sync::Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use spin::Mutex;
 use x86_64::registers::model_specific::Msr;
 
 const IA32_APIC_BASE: u32 = 0x1B;
@@ -31,6 +31,11 @@ pub const LVT_MASKED: u32 = 1 << 16;
 pub const LVT_TIMER_PERIODIC: u32 = 1 << 17;
 
 static X2APIC: AtomicBool = AtomicBool::new(false);
+
+/// Whether the local APIC runs in x2APIC (MSR) mode.
+pub fn is_x2apic() -> bool {
+    X2APIC.load(Ordering::Relaxed)
+}
 static XAPIC_BASE: AtomicU64 = AtomicU64::new(0);
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -123,11 +128,18 @@ pub fn send_ipi_raw(dest: u32, low: u32) {
     if X2APIC.load(Ordering::Relaxed) {
         unsafe { Msr::new(0x830).write(((dest as u64) << 32) | low as u64) };
     } else {
-        write(REG_ICR_HIGH, dest << 24);
-        write(REG_ICR_LOW, low);
-        while read(REG_ICR_LOW) & (1 << 12) != 0 {
-            core::hint::spin_loop();
-        }
+        // ICR high/low are two writes: an interrupt in between whose
+        // handler sends an IPI would redirect this one.
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            while read(REG_ICR_LOW) & (1 << 12) != 0 {
+                core::hint::spin_loop();
+            }
+            write(REG_ICR_HIGH, dest << 24);
+            write(REG_ICR_LOW, low);
+            while read(REG_ICR_LOW) & (1 << 12) != 0 {
+                core::hint::spin_loop();
+            }
+        });
     }
 }
 

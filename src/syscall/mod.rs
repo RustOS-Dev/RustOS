@@ -211,7 +211,9 @@ pub fn dispatch(frame: &mut TrapFrame) {
     }
     // Remember the number for syscall restart (error_code is unused here).
     frame.error_code = n;
+    crate::sched::note_syscall(n, a1);
     let r = handle(frame, n, [a1, a2, a3, a4, a5, a6]);
+    crate::sched::note_syscall(u64::MAX, 0);
     if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
         crate::serial_println!(
             "[strace]   -> {:?}",

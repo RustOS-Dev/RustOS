@@ -7,9 +7,9 @@
 //! `fork`, signal delivery and `execve` can all build or edit frames and
 //! return through [`trap_return`].
 
+use crate::sync::Mutex;
 use core::arch::{asm, global_asm};
 use core::sync::atomic::{AtomicUsize, Ordering};
-use spin::Mutex;
 
 /// Register state saved on kernel entry. Field order matches the push order
 /// in `trap_common` (last pushed = lowest address = first field).

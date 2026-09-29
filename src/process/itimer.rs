@@ -2,10 +2,10 @@
 
 use crate::process::signal;
 use crate::sched::{self, TimerTarget};
+use crate::sync::Mutex;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU64, Ordering};
-use spin::Mutex;
 
 pub struct RealTimer {
     pid: u32,

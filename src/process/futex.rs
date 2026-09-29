@@ -8,11 +8,11 @@
 use crate::errno::*;
 use crate::process::{signal, uaccess};
 use crate::sched::WaitQueue;
+use crate::sync::Mutex;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use spin::Mutex;
 
 pub const FUTEX_WAIT: u32 = 0;
 pub const FUTEX_WAKE: u32 = 1;

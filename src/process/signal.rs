@@ -5,9 +5,9 @@ use super::{Process, current, uaccess};
 use crate::arch::x86_64::{gdt, idt::TrapFrame};
 use crate::errno::*;
 use crate::sched::{self, Thread, WaitQueue};
+use crate::sync::Mutex;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU64, Ordering};
-use spin::Mutex;
 
 pub const SIGHUP: u32 = 1;
 pub const SIGINT: u32 = 2;

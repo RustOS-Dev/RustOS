@@ -229,7 +229,11 @@ pub fn start_aps() {
             crate::println!("[smp] CPU with APIC id {} did not start", lapic);
         }
     }
-    crate::println!("[smp] {} CPUs online", online());
+    crate::println!(
+        "[smp] {} CPUs online ({})",
+        online(),
+        if apic::is_x2apic() { "x2APIC" } else { "xAPIC" }
+    );
 }
 
 /// First Rust code on an AP (long mode, kernel page tables, own stack).
@@ -258,7 +262,7 @@ extern "C" fn ap_entry(cpu_id: u64, kernel_cr3: u64) -> ! {
 // Inter-processor interrupts
 // ---------------------------------------------------------------------------
 
-static TLB_LOCK: spin::Mutex<()> = spin::Mutex::new(());
+static TLB_LOCK: crate::sync::Mutex<()> = crate::sync::Mutex::new(());
 static TLB_TARGET: AtomicU64 = AtomicU64::new(0);
 static TLB_PENDING: AtomicU32 = AtomicU32::new(0);
 /// Shootdown generation; each CPU acknowledges every generation once.
@@ -343,8 +347,32 @@ pub fn tlb_shootdown(pml4: u64) {
     apic::send_ipi_all_but_self(idt::VEC_TLB_IPI);
     // Bounded wait: a CPU spinning with interrupts off cannot answer.
     let t = crate::time::Deadline::after_ms(500);
+    // A CPU that never answers is halted or wedged: stop waiting.
+    let giveup = crate::time::Deadline::after_ms(10_000);
+    let mut warned = false;
+    let start = crate::time::nanos();
+    let mut samples = 0u32;
     while TLB_PENDING.load(Ordering::SeqCst) != 0 {
-        if t.expired() {
+        if option_env!("RUSTOS_SMP_DEBUG").is_some() {
+            let ms = (crate::time::nanos() - start) / 1_000_000;
+            let due = [50u64, 150, 300];
+            if (samples as usize) < due.len() && ms >= due[samples as usize] {
+                samples += 1;
+                for id in 0..cpu::cpu_count() {
+                    if TLB_SEEN[id as usize].load(Ordering::SeqCst) < generation
+                        && let Some(c) = cpu::cpu(id)
+                    {
+                        crate::serial_println!("[smp] cpu{} late {} ms", id, ms);
+                        NMI_DUMP.store(true, Ordering::SeqCst);
+                        apic::send_ipi_raw(c.lapic_id, (4 << 8) | (1 << 14));
+                    }
+                }
+            }
+        }
+        if t.expired() && !warned {
+            // Keep waiting: going on without the other CPU's flush would
+            // let it use stale translations of pages about to be freed.
+            warned = true;
             let mut late = alloc::string::String::new();
             for (id, seen) in TLB_SEEN.iter().enumerate().take(cpu::cpu_count() as usize) {
                 if seen.load(Ordering::SeqCst) < generation {
@@ -352,23 +380,35 @@ pub fn tlb_shootdown(pml4: u64) {
                 }
             }
             crate::serial_println!(
-                "[smp] TLB shootdown from cpu{} timed out (no answer from{})",
+                "[smp] TLB shootdown from cpu{} slow (waiting for{})",
                 me,
                 late
             );
-            if option_env!("RUSTOS_SMP_DEBUG").is_some() {
-                for id in 0..cpu::cpu_count() {
-                    if TLB_SEEN[id as usize].load(Ordering::SeqCst) < generation
-                        && let Some(c) = cpu::cpu(id)
-                    {
-                        NMI_DUMP.store(true, Ordering::SeqCst);
-                        apic::send_ipi_raw(c.lapic_id, (4 << 8) | (1 << 14));
-                    }
-                }
-            }
+            // In case the IPI was lost.
+            apic::send_ipi_all_but_self(idt::VEC_TLB_IPI);
+        }
+        if giveup.expired() {
+            crate::serial_println!("[smp] TLB shootdown from cpu{} abandoned", me);
             break;
         }
         core::hint::spin_loop();
+    }
+}
+
+/// Make every other CPU print where it is (state dumps).
+pub fn nmi_dump_others() {
+    if online() <= 1 || !cpu::is_initialized() {
+        return;
+    }
+    let me = cpu::this().cpu_id;
+    NMI_DUMP.store(true, Ordering::SeqCst);
+    for id in 0..cpu::cpu_count() {
+        if id != me
+            && let Some(c) = cpu::cpu(id)
+        {
+            apic::send_ipi_raw(c.lapic_id, (4 << 8) | (1 << 14));
+            crate::time::delay_us(20_000);
+        }
     }
 }
 

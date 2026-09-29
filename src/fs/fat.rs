@@ -51,7 +51,7 @@ pub struct FatFs {
     alloc: Mutex<AllocState>,
     /// Serialises directory modifications.
     dir_lock: Mutex<()>,
-    inodes: spin::Mutex<BTreeMap<(u32, u32), Weak<FatInode>>>,
+    inodes: crate::sync::Mutex<BTreeMap<(u32, u32), Weak<FatInode>>>,
     me: spin::Once<Weak<FatFs>>,
 }
 
@@ -71,8 +71,8 @@ pub struct FatInode {
     fs: Arc<FatFs>,
     is_dir: bool,
     /// None for the root directory.
-    loc: spin::Mutex<Option<Loc>>,
-    state: spin::Mutex<InodeState>,
+    loc: crate::sync::Mutex<Option<Loc>>,
+    state: crate::sync::Mutex<InodeState>,
 }
 
 struct InodeState {
@@ -254,7 +254,7 @@ impl FatFs {
                 free: None,
             }),
             dir_lock: Mutex::new(()),
-            inodes: spin::Mutex::new(BTreeMap::new()),
+            inodes: crate::sync::Mutex::new(BTreeMap::new()),
             me: spin::Once::new(),
         });
         fs.me.call_once(|| Arc::downgrade(&fs));
@@ -728,8 +728,8 @@ impl FatFs {
         let inode = Arc::new(FatInode {
             fs: self.arc(),
             is_dir,
-            loc: spin::Mutex::new(Some(loc)),
-            state: spin::Mutex::new(InodeState {
+            loc: crate::sync::Mutex::new(Some(loc)),
+            state: crate::sync::Mutex::new(InodeState {
                 first: Self::first_cluster_of(raw),
                 size: u32le(raw, 28),
                 attr: raw[11],
@@ -748,8 +748,8 @@ impl FatFs {
         Arc::new(FatInode {
             fs: self.arc(),
             is_dir: true,
-            loc: spin::Mutex::new(None),
-            state: spin::Mutex::new(InodeState {
+            loc: crate::sync::Mutex::new(None),
+            state: crate::sync::Mutex::new(InodeState {
                 first: if self.kind == Kind::Fat32 {
                     self.root_cluster
                 } else {

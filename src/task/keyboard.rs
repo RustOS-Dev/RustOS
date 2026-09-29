@@ -3,11 +3,11 @@
 //! Scancodes queued by the IRQ handler are decoded here (in the TTY input
 //! thread) into the byte sequences a VT100-style terminal would send.
 
+use crate::sync::Mutex;
 use conquer_once::spin::OnceCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 use crossbeam_queue::ArrayQueue;
 use pc_keyboard::{DecodedKey, HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1, layouts};
-use spin::Mutex;
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static KEYBOARD_IRQ_SEEN: AtomicBool = AtomicBool::new(false);

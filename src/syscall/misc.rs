@@ -3,8 +3,8 @@
 use super::SysResult;
 use crate::errno::*;
 use crate::process::{signal, uaccess};
+use crate::sync::Mutex;
 use alloc::string::String;
-use spin::Mutex;
 
 pub static HOSTNAME: Mutex<String> = Mutex::new(String::new());
 

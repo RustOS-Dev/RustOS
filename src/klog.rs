@@ -4,8 +4,8 @@
 //! boot and driver messages even after they scrolled off screen. The buffer
 //! is a fixed static array so it works before the heap exists.
 
+use crate::sync::Mutex;
 use core::fmt;
-use spin::Mutex;
 
 const KLOG_SIZE: usize = 64 * 1024;
 
@@ -21,6 +21,10 @@ static KLOG: Mutex<Ring> = Mutex::new(Ring {
 });
 
 /// Append raw bytes to the log.
+pub fn is_locked() -> bool {
+    KLOG.is_locked()
+}
+
 pub fn write_bytes(bytes: &[u8]) {
     x86_64::instructions::interrupts::without_interrupts(|| {
         let mut ring = KLOG.lock();

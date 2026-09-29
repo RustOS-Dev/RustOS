@@ -36,15 +36,15 @@ pub fn init_heap() -> Result<(), MapToError<Size4KiB>> {
     Ok(())
 }
 
-/// A wrapper around spin::Mutex to permit trait implementations.
+/// A wrapper around crate::sync::Mutex to permit trait implementations.
 pub struct Locked<A> {
-    inner: spin::Mutex<A>,
+    inner: crate::sync::Mutex<A>,
 }
 
 impl<A> Locked<A> {
     pub const fn new(inner: A) -> Self {
         Locked {
-            inner: spin::Mutex::new(inner),
+            inner: crate::sync::Mutex::new(inner),
         }
     }
 

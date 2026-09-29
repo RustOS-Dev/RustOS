@@ -9,10 +9,10 @@ use crate::errno::*;
 use crate::mm::dma::DmaBuffer;
 use crate::net::{self, NetDevice, RxQueue};
 use crate::pci::PciDevice;
+use crate::sync::Mutex;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use spin::Mutex;
 
 const CTRL: u64 = 0x0000;
 const STATUS: u64 = 0x0008;

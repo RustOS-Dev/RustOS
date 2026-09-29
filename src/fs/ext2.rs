@@ -80,7 +80,7 @@ pub struct Ext2Fs {
     pub kind: &'static str,
     id: usize,
     meta: Mutex<Meta>,
-    inodes: spin::Mutex<BTreeMap<u32, Weak<Ext2Inode>>>,
+    inodes: crate::sync::Mutex<BTreeMap<u32, Weak<Ext2Inode>>>,
     me: spin::Once<Weak<Ext2Fs>>,
 }
 
@@ -338,7 +338,7 @@ impl Ext2Fs {
                 free_blocks,
                 free_inodes,
             }),
-            inodes: spin::Mutex::new(BTreeMap::new()),
+            inodes: crate::sync::Mutex::new(BTreeMap::new()),
             me: spin::Once::new(),
         });
         fs.me.call_once(|| Arc::downgrade(&fs));

@@ -21,7 +21,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
-use spin::Mutex;
+use crate::sync::Mutex;
 pub use usb_desc::{Configuration, DeviceDescriptor, Endpoint, Interface, TransferType};
 use xhci::{EpConfig, HubConfig, SlotInfo, Xhci};
 

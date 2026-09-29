@@ -9,13 +9,13 @@ use super::fs::wait_ready;
 use crate::errno::*;
 use crate::process::{self, signal, uaccess};
 use crate::sched::{self, TimerTarget};
+use crate::sync::Mutex;
 use crate::vfs::{self, File, FileLike, POLLIN, POLLOUT};
 use alloc::collections::BTreeMap;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::any::Any;
 use core::sync::atomic::{AtomicU64, Ordering};
-use spin::Mutex;
 
 fn cur() -> KResult<Arc<process::Process>> {
     process::current().ok_or(ESRCH)

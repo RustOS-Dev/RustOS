@@ -17,7 +17,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::any::Any;
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::Mutex;
+use crate::sync::Mutex;
 
 pub trait BlockDevice: Send + Sync {
     /// Logical sector size in bytes (512 or 4096).

@@ -11,13 +11,13 @@ use super::{Sink, Tty};
 use crate::errno::*;
 use crate::process::uaccess;
 use crate::sched::WaitQueue;
+use crate::sync::Mutex;
 use crate::vfs::{self, FileLike, FileType, Metadata};
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::format;
 use alloc::sync::Arc;
 use core::any::Any;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use spin::Mutex;
 
 const TIOCGPTN: u64 = 0x8004_5430;
 const TIOCSPTLCK: u64 = 0x4004_5431;

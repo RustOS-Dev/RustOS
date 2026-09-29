@@ -12,12 +12,13 @@
 use crate::errno::*;
 use crate::process::{self, signal, uaccess};
 use crate::sched::WaitQueue;
+use crate::sync::Mutex;
 use crate::vfs::{self, File, FileLike, FileType, Metadata};
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
 use core::sync::atomic::{AtomicU32, Ordering};
-use spin::{Mutex, Once};
+use spin::Once;
 
 pub mod pty;
 
@@ -685,30 +686,86 @@ pub fn inject(bytes: &[u8]) {
 
 /// Print scheduler, process and TTY state (serial BREAK, like SysRq).
 pub fn debug_dump() {
-    let tty = console();
-    let t = *tty.termios.lock();
-    crate::println!(
-        "[sysrq] tty lflag={:#o} iflag={:#o} vmin={} fg_pgrp={} ready={} line={}",
-        t.lflag,
-        t.iflag,
-        t.cc[VMIN],
-        tty.fg_pgrp.load(Ordering::SeqCst),
-        tty.ready.lock().len(),
-        tty.line.lock().len()
-    );
-    for p in crate::process::all() {
-        let threads: alloc::vec::Vec<alloc::string::String> = p
-            .live_threads()
+    // Written straight to the serial port: the dump must get out even
+    // while output locks are held.
+    macro_rules! dprint {
+        ($($arg:tt)*) => {
+            crate::drivers::serial::write_unlocked(
+                alloc::format!("{}\n", format_args!($($arg)*)).as_bytes(),
+            )
+        };
+    }
+    // First sample every other CPU (NMI: works with interrupts off).
+    crate::arch::x86_64::smp::nmi_dump_others();
+    dprint!("[sysrq] locks: {}", crate::drivers::console::lock_state());
+    dprint!(
+        "[sysrq] vc logs locked: {:?}",
+        VC_LOG
             .iter()
-            .map(|th| alloc::format!("{}:{:?}", th.tid, th.state()))
-            .collect();
-        crate::println!(
+            .map(|l| l.is_locked())
+            .collect::<alloc::vec::Vec<_>>()
+    );
+    // Only try locks: the dump must work while something holds them.
+    let tty = console();
+    match tty.termios.try_lock() {
+        Some(t) => dprint!(
+            "[sysrq] tty lflag={:#o} iflag={:#o} vmin={} fg_pgrp={} ready={:?} line={:?}",
+            t.lflag,
+            t.iflag,
+            t.cc[VMIN],
+            tty.fg_pgrp.load(Ordering::SeqCst),
+            tty.ready.try_lock().map(|r| r.len()),
+            tty.line.try_lock().map(|l| l.len())
+        ),
+        None => dprint!("[sysrq] tty termios <locked>"),
+    }
+    for id in 0..crate::arch::x86_64::cpu::cpu_count() {
+        if let Some(c) = crate::arch::x86_64::cpu::cpu(id) {
+            let cur = c.current.load(Ordering::SeqCst) as *const crate::sched::Thread;
+            let tid = unsafe { cur.as_ref() }.map_or(0, |t| t.tid);
+            dprint!("[sysrq] cpu{} running tid {}", id, tid);
+        }
+    }
+    dprint!("[sysrq] run queues {:?}", crate::sched::queue_lengths());
+    let Some(procs) = crate::process::try_all() else {
+        dprint!("[sysrq] process table <locked>");
+        return;
+    };
+    for p in procs {
+        let threads: alloc::vec::Vec<alloc::string::String> = match p.threads.try_lock() {
+            Some(ts) => ts
+                .iter()
+                .filter_map(|w| w.upgrade())
+                .map(|th| match th.syscall.load(Ordering::Relaxed) {
+                    u64::MAX => alloc::format!("{}:{:?}", th.tid, th.state()),
+                    nr => alloc::format!(
+                        "{}:{:?} in syscall {}({:#x})",
+                        th.tid,
+                        th.state(),
+                        nr,
+                        th.syscall_arg.load(Ordering::Relaxed)
+                    ),
+                })
+                .collect(),
+            None => alloc::vec![alloc::string::String::from("<locked>")],
+        };
+        let name = p
+            .name
+            .try_lock()
+            .map_or(alloc::string::String::from("<locked>"), |n| n.clone());
+        let cmd = p
+            .cmdline
+            .try_lock()
+            .map_or(alloc::vec![alloc::string::String::from("<locked>")], |c| {
+                c.clone()
+            });
+        dprint!(
             "[sysrq] pid {} ppid {} pgid {} sid {} {}{}{} threads {:?} cmd {:?}",
             p.pid,
             p.ppid.load(Ordering::SeqCst),
             p.pgid.load(Ordering::SeqCst),
             p.sid.load(Ordering::SeqCst),
-            p.name.lock(),
+            name,
             if p.zombie.load(Ordering::SeqCst) {
                 " zombie"
             } else {
@@ -720,14 +777,27 @@ pub fn debug_dump() {
                 ""
             },
             threads,
-            p.cmdline.lock()
+            cmd
         );
     }
     for (tid, name, state, user) in crate::sched::thread_list() {
         if !user {
-            crate::println!("[sysrq] kthread {} {:?} {}", tid, state, name);
+            dprint!("[sysrq] kthread {} {:?} {}", tid, state, name);
         }
     }
+    let base = 0xffff_8000_0000_0000u64;
+    let chans: alloc::vec::Vec<alloc::string::String> = crate::sched::wait_channels()
+        .into_iter()
+        .filter(|(_, w)| *w != 0)
+        .map(|(t, w)| {
+            if w >= base && w < base + 0x400_0000 {
+                alloc::format!("{}@{:#x}", t, w - base)
+            } else {
+                alloc::format!("{}@heap:{:#x}", t, w)
+            }
+        })
+        .collect();
+    dprint!("[sysrq] wait channels (image offsets) {:?}", chans);
 }
 
 /// Start the thread that moves keyboard and serial input into the TTY.

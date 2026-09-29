@@ -8,10 +8,10 @@ use crate::errno::*;
 use crate::mm::dma::DmaBuffer;
 use crate::net::{self, NetDevice};
 use crate::pci::{Bar, PciDevice};
+use crate::sync::Mutex;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::Ordering;
-use spin::Mutex;
 
 const IDR0: u64 = 0x00;
 const MAR0: u64 = 0x08;

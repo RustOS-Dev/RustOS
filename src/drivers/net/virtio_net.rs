@@ -5,9 +5,9 @@ use crate::errno::*;
 use crate::mm::dma::DmaBuffer;
 use crate::net::{self, NetDevice};
 use crate::pci::PciDevice;
+use crate::sync::Mutex;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use spin::Mutex;
 
 const F_MAC: u64 = 1 << 5;
 const F_STATUS: u64 = 1 << 16;

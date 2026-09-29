@@ -16,10 +16,10 @@
 //! * `net.debug=1` — log a one-line summary of every frame sent/received.
 //! * `log.persist=1` — mirror the kernel log to `/storage/log/kernel.log`.
 
+use crate::sync::RwLock;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use core::sync::atomic::{AtomicBool, Ordering};
-use spin::RwLock;
 
 static PARAMS: RwLock<BTreeMap<String, String>> = RwLock::new(BTreeMap::new());
 

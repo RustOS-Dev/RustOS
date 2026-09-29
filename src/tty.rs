@@ -780,7 +780,7 @@ pub fn debug_dump() {
             cmd
         );
     }
-    for (tid, name, state, user) in crate::sched::thread_list() {
+    for (tid, name, state, user) in crate::sched::try_thread_list() {
         if !user {
             dprint!("[sysrq] kthread {} {:?} {}", tid, state, name);
         }
@@ -808,6 +808,7 @@ pub fn start_input_thread() {
             let seen = PENDING_INPUT.load(Ordering::SeqCst);
             crate::drivers::serial::poll_rx();
             if crate::drivers::serial::SYSRQ.swap(false, Ordering::Relaxed) {
+                crate::drivers::serial::SYSRQ_SINCE.store(0, Ordering::SeqCst);
                 debug_dump();
             }
             while let Some(ev) = crate::task::keyboard::read_key() {

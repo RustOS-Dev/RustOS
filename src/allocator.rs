@@ -51,4 +51,14 @@ impl<A> Locked<A> {
     pub fn lock(&self) -> spin::MutexGuard<'_, A> {
         self.inner.lock()
     }
+
+    pub fn is_locked(&self) -> bool {
+        self.inner.is_locked()
+    }
+}
+
+/// Whether the kernel heap lock is held (code in interrupt context that
+/// allocates must not run then).
+pub fn heap_locked() -> bool {
+    ALLOCATOR.is_locked()
 }

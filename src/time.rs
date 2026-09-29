@@ -228,6 +228,23 @@ pub fn start_tick() {
     TIMER_RUNNING.store(true, Ordering::SeqCst);
 }
 
+/// A SysRq request the TTY input thread has not taken within two seconds
+/// (it may be the stuck one): dump from the timer interrupt instead.
+fn sysrq_watchdog() {
+    use crate::drivers::serial::{SYSRQ, SYSRQ_SINCE};
+    let since = SYSRQ_SINCE.load(Ordering::SeqCst);
+    if since == 0 || millis().saturating_sub(since) < 2000 || crate::allocator::heap_locked() {
+        return;
+    }
+    if SYSRQ.swap(false, Ordering::SeqCst) {
+        SYSRQ_SINCE.store(0, Ordering::SeqCst);
+        crate::drivers::serial::write_unlocked(
+            b"[sysrq] (from the timer: the input thread is stuck)\n",
+        );
+        crate::tty::debug_dump();
+    }
+}
+
 fn timer_interrupt(_frame: &mut idt::TrapFrame) {
     let cpu = crate::arch::x86_64::cpu::this();
     cpu.ticks.fetch_add(1, Ordering::Relaxed);
@@ -235,6 +252,9 @@ fn timer_interrupt(_frame: &mut idt::TrapFrame) {
         TICKS.fetch_add(1, Ordering::Relaxed);
     }
     apic::eoi();
+    if cpu.cpu_id == 0 {
+        sysrq_watchdog();
+    }
     crate::sched::timer_tick();
 }
 

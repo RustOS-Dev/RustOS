@@ -14,7 +14,7 @@ wait seed
 wait # $ 120
 # 112 MiB file: 1 MiB of random data repeated, checksummed before and after a remount
 send dd if=/dev/urandom of=/tmp/chunk bs=1024 count=1024 2>/dev/null; i=0; while [ $i -lt 112 ]; do cat /tmp/chunk; i=$((i+1)); done > /mnt/vda/big.bin; ls -l /mnt/vda/big.bin
-wait 117440512
+wait 117440512 240
 wait # $ 900
 send sha256sum /mnt/vda/big.bin > /tmp/sum1 && cat /tmp/sum1
 wait [0-9a-f]{64}

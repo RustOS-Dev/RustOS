@@ -237,6 +237,7 @@ pub fn defer(f: impl FnOnce() + Send + 'static) {
 
 /// Start the deferred-work thread (after the scheduler is up).
 pub fn start_worker() {
+    WORKER_STARTED.store(true, Ordering::SeqCst);
     spawn("kworker", || {
         loop {
             DEFERRED_WQ.wait_until(|| irqsave(|| !DEFERRED.lock().is_empty()));
@@ -439,12 +440,7 @@ extern "C" fn user_thread_entry(frame: u64) -> ! {
 
 /// Current thread (panics before the scheduler starts).
 pub fn current() -> Arc<Thread> {
-    let p = cpu::this().current.load(Ordering::SeqCst) as *const Thread;
-    assert!(!p.is_null(), "no current thread");
-    unsafe {
-        Arc::increment_strong_count(p);
-        Arc::from_raw(p)
-    }
+    try_current().expect("no current thread")
 }
 
 /// Current thread if the scheduler is running on this CPU.
@@ -452,14 +448,19 @@ pub fn try_current() -> Option<Arc<Thread>> {
     if !cpu::is_initialized() {
         return None;
     }
-    let p = cpu::this().current.load(Ordering::SeqCst) as *const Thread;
-    if p.is_null() {
-        return None;
-    }
-    unsafe {
-        Arc::increment_strong_count(p);
-        Some(Arc::from_raw(p))
-    }
+    // With interrupts off: a thread preempted between finding its CPU and
+    // reading that CPU's current thread may resume elsewhere and would
+    // read another thread (a different process, or a kernel thread).
+    irqsave(|| {
+        let p = cpu::this().current.load(Ordering::SeqCst) as *const Thread;
+        if p.is_null() {
+            return None;
+        }
+        unsafe {
+            Arc::increment_strong_count(p);
+            Some(Arc::from_raw(p))
+        }
+    })
 }
 
 /// Record the current thread's system call (u64::MAX: none) for state
@@ -468,11 +469,13 @@ pub fn note_syscall(nr: u64, arg: u64) {
     if !cpu::is_initialized() {
         return;
     }
-    let p = cpu::this().current.load(Ordering::SeqCst) as *const Thread;
-    if let Some(t) = unsafe { p.as_ref() } {
-        t.syscall.store(nr, Ordering::Relaxed);
-        t.syscall_arg.store(arg, Ordering::Relaxed);
-    }
+    irqsave(|| {
+        let p = cpu::this().current.load(Ordering::SeqCst) as *const Thread;
+        if let Some(t) = unsafe { p.as_ref() } {
+            t.syscall.store(nr, Ordering::Relaxed);
+            t.syscall_arg.store(arg, Ordering::Relaxed);
+        }
+    });
 }
 
 pub fn current_tid() -> Tid {
@@ -902,7 +905,34 @@ fn finish_switch() {
         }
         out
     };
-    drop(reaped);
+    // Dropping a thread can drop its process and address space, which take
+    // locks (the process table, ...) that a thread preempted on this CPU
+    // may hold: never here with interrupts off. The worker does it.
+    if !reaped.is_empty() {
+        if WORKER_STARTED.load(Ordering::SeqCst) {
+            defer(move || drop(reaped));
+        } else {
+            // Early boot: nothing else can hold those locks yet.
+            drop(reaped);
+        }
+    }
+}
+
+static WORKER_STARTED: AtomicBool = AtomicBool::new(false);
+
+impl Drop for Thread {
+    fn drop(&mut self) {
+        // The last thread of a process may be dropped anywhere, including
+        // the scheduler and interrupt handlers (stale run-queue and timer
+        // entries). Tearing the process down (process table, open files,
+        // address space) needs locks that preempted code on this CPU may
+        // hold, so the worker does it.
+        if let Some(p) = self.process.get_mut().take()
+            && WORKER_STARTED.load(Ordering::SeqCst)
+        {
+            defer(move || drop(p));
+        }
+    }
 }
 
 /// Snapshot of all live threads: (tid, name, state, is_user).
@@ -935,6 +965,26 @@ pub fn thread_list() -> Vec<(Tid, String, State, bool)> {
                     t.is_user.load(Ordering::Relaxed),
                 )
             })
+            .collect()
+    })
+}
+
+/// Like [`thread_list`] with try-locks only (state dumps).
+pub fn try_thread_list() -> Vec<(Tid, String, State, bool)> {
+    irqsave(|| {
+        let Some(all) = ALL.try_lock() else {
+            return Vec::new();
+        };
+        all.iter()
+            .filter_map(|w| w.upgrade())
+            .map(|t| {
+                let name = t
+                    .name
+                    .try_lock()
+                    .map_or(String::from("<locked>"), |n| n.clone());
+                (t.tid, name, t.state(), t.is_user.load(Ordering::Relaxed))
+            })
+            .filter(|(_, n, ..)| n != "idle")
             .collect()
     })
 }

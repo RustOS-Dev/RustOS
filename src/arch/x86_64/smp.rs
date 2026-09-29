@@ -327,6 +327,19 @@ pub fn poll() {
 /// address spaces, for kernel mappings). The caller has already flushed
 /// its own TLB.
 pub fn tlb_shootdown(pml4: u64) {
+    // Stay on this CPU for the whole request (and flush it here too): a
+    // thread that migrated after its own flush would mark the wrong CPU as
+    // done, and neither CPU would flush.
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let (cur, _) = Cr3::read_raw();
+        if pml4 == 0 || cur.start_address().as_u64() == pml4 {
+            x86_64::instructions::tlb::flush_all();
+        }
+        tlb_shootdown_others(pml4)
+    })
+}
+
+fn tlb_shootdown_others(pml4: u64) {
     let n = online();
     if n <= 1 || !cpu::is_initialized() {
         return;

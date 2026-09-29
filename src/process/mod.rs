@@ -174,9 +174,15 @@ pub fn handle_page_fault(frame: &mut TrapFrame, addr: u64) -> bool {
         return false;
     }
     let Some(p) = current() else {
+        crate::serial_println!("[vm] fault at {:#x}: no current process", addr);
         return false;
     };
     let Some(vm) = p.vm() else {
+        crate::serial_println!(
+            "[vm] fault at {:#x}: pid {} has no address space",
+            addr,
+            p.pid
+        );
         return false;
     };
     let write = frame.error_code & 2 != 0;

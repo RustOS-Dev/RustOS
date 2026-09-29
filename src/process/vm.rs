@@ -286,7 +286,16 @@ impl AddressSpace {
     pub fn handle_fault(&mut self, addr: u64, write: bool, exec: bool) -> bool {
         let r = self.handle_fault_inner(addr, write, exec);
         if let Err(why) = r {
-            if self.find_area(addr).is_some() {
+            if why == "no area" {
+                let (cr3, _) = x86_64::registers::control::Cr3::read_raw();
+                crate::serial_println!(
+                    "[vm] fault at {:#x}: no area ({} areas, pml4 {:#x}, cr3 {:#x})",
+                    addr,
+                    self.areas.len(),
+                    self.pml4,
+                    cr3.start_address().as_u64()
+                );
+            } else if self.find_area(addr).is_some() {
                 let (free, total) = mm::memory_stats();
                 crate::serial_println!(
                     "[vm] fault at {:#x} (write {}) not resolved: {} ({} of {} MiB free)",
@@ -527,7 +536,23 @@ impl AddressSpace {
         }
         let mut page = addr & !(FRAME_SIZE - 1);
         while page < end {
-            let area = self.find_area(page).ok_or(EFAULT)?;
+            let Some(area) = self.find_area(page) else {
+                let near: alloc::vec::Vec<alloc::string::String> = self
+                    .areas
+                    .values()
+                    .filter(|a| a.end + 0x100_0000 > addr && a.start < end + 0x100_0000)
+                    .map(|a| alloc::format!("{}:{:#x}-{:#x}", a.name, a.start, a.end))
+                    .collect();
+                crate::serial_println!(
+                    "[vm] user access {:#x}+{:#x}: page {:#x} not mapped (brk {:#x}; near: {:?})",
+                    addr,
+                    len,
+                    page,
+                    self.brk,
+                    near
+                );
+                return Err(EFAULT);
+            };
             if area.prot & PROT_READ == 0 && area.prot & PROT_WRITE == 0 {
                 return Err(EFAULT);
             }

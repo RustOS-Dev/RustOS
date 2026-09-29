@@ -86,6 +86,8 @@ pub fn is_locked() -> bool {
 static RX_LOCK: Mutex<()> = Mutex::new(());
 /// Set when a BREAK arrives on COM1 (the "SysRq" debug dump request).
 pub static SYSRQ: AtomicBool = AtomicBool::new(false);
+/// Uptime (ms) when the pending SysRq request arrived (0: none).
+pub static SYSRQ_SINCE: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 static RX_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Move received bytes from the UART to the TTY. Called from the IRQ 4
@@ -108,6 +110,12 @@ pub fn poll_rx() {
                     // Break condition: request a state dump (the break
                     // itself arrives as a NUL byte, which is dropped).
                     SYSRQ.store(true, Ordering::Relaxed);
+                    let _ = SYSRQ_SINCE.compare_exchange(
+                        0,
+                        crate::time::millis().max(1),
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    );
                     crate::tty::input_available();
                     if status & 1 != 0 {
                         let _ = data.read();

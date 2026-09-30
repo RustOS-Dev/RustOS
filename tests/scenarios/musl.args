@@ -1,0 +1,3 @@
+# test262 subset (tools/fetch-test262.sh) on an ext4 disk for QuickJS.
+-drive if=none,id=t0,format=raw,file=@TREE:160:target/test262@
+-device virtio-blk-pci,drive=t0

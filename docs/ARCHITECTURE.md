@@ -162,12 +162,26 @@ time (`settimeofday`/`ntpdate` adjust it).
 * **VFS**: inode trait objects, mount table, path resolution with
   symlinks, permissions (mode bits, uid/gid, umask), open-file objects
   with offsets and flags, `poll`.
+* **Readiness**: every stream object has a wait queue woken when its
+  `poll()` state may change (`FileLike::wait_queue`: pipes, sockets,
+  TTYs/ptys, input devices, eventfd, timerfd, signalfd, epoll). poll and
+  select sleep on the queues of the descriptors they watch through wake
+  hooks (`sched::wait::wait_any`); objects without a queue of their own
+  use the global `POLL_WQ`.
 * **Event files**: epoll, eventfd, timerfd, signalfd
-  (`src/syscall/event.rs`) on the same readiness notification as poll.
-* **Page cache** (`src/mm/pagecache.rs`): file pages for `mmap`, shared
-  with `MAP_SHARED` mappings, copied on write for `MAP_PRIVATE`, written
-  back by `msync`/`munmap`/`sync`/the flusher, coherent with
-  `read`/`write`; shared anonymous memory objects.
+  (`src/syscall/event.rs`). An epoll instance hooks the wait queue of
+  each watched descriptor; activity marks the entry and wakes the epoll
+  instance's own queue (so epoll descriptors nest in poll and epoll).
+* **Page cache** (`src/mm/pagecache.rs`): `read()` of regular files on
+  ext2/ext4 and FAT and every file mapping go through it. Misses read a
+  run of pages with one filesystem call that bypasses the block cache
+  (`Inode::read_direct`), growing a readahead window up to 32 pages on
+  sequential reads. `write()` goes through to the filesystem (errors
+  such as ENOSPC are reported at once, and ext4's ordered journaling sees
+  the data) and updates the cached pages. Pages are shared with
+  `MAP_SHARED` mappings, copied on write for `MAP_PRIVATE`, written back
+  by `msync`/`munmap`/`sync`/the flusher. The cache holds inodes weakly
+  (a deleted file's pages go with it); shared anonymous memory objects.
 * **tmpfs** root, **devfs** (`/dev/null`, `zero`, `urandom`, `tty`,
   `tty0`-`tty4`, `console`, `ptmx`, `pts/N`, `fb0`, block devices,
   `input/mice`, `input/event0`, `input/js0`), **procfs** (processes,

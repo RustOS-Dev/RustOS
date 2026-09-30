@@ -45,12 +45,27 @@ stages the result in `target/ports/NAME` (laid out like `/usr/local`).
 |------|--------|
 | `busybox` | BusyBox 1.36.1, static (`defconfig` minus a few applets needing missing kernel features) |
 | `curl` | curl 8.10.1 with mbedTLS 3.6.2, static, HTTPS against `/etc/ssl/certs/ca-certificates.crt` |
+| `quickjs` | QuickJS-ng 0.16.2 (from the `rquickjs-sys` crate's vendored copy): `qjs`, `qjsc`, `run-test262`, and `libquickjs.a` + headers for embedding |
+
+The ports named in `ports/default.list` (all three) are built by the
+kernel build on first use and installed in the boot image under
+`/usr/bin`; later builds reuse them until their `build.sh` changes. Set
+`RUSTOS_PORTS=0` to build without them (a port that fails to build, e.g.
+without network access for its sources, is left out with a warning).
+Downloaded sources are kept in `target/ports/src` (or
+`$RUSTOS_PORTS_CACHE`); CI caches that directory. BusyBox applets are run
+as `busybox APPLET` so they do not shadow the rbox tools.
 
 ```sh
 tools/install-port.sh busybox               # stage only
 tools/install-port.sh --initramfs busybox   # also put it in the boot image
 cargo build                                 # (then boot as usual)
 ```
+
+The `musl` scenario runs a test262 subset (`tests/test262.list`, pinned
+commit, fetched by `tools/fetch-test262.sh`) with `run-test262` on RustOS
+and expects the same result as on the host; the known failures of this
+QuickJS-ng version are listed in `tests/test262_errors.txt`.
 
 Staged files can instead be copied to `/storage/usr/local` on a RustOS
 drive. `--initramfs` adds everything in `target/ports-root` to the next

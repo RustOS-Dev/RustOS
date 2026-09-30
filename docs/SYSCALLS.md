@@ -95,7 +95,12 @@ than once, never less) and `EPOLLONESHOT`. timerfd supports
 `/dev/ptmx` and `/dev/pts/N` pseudo-terminals (`TIOCGPTN`,
 `TIOCSPTLCK`), controlling terminals (`TIOCSCTTY`, `TIOCNOTTY`, `/dev/tty`),
 virtual consoles `/dev/tty1`..`tty4` (`VT_ACTIVATE`, `VT_GETSTATE`,
-`/dev/tty0` is the visible one).
+`/dev/tty0` is the visible one). Programs that draw on `/dev/fb0` switch
+their console to graphics mode (`KDSETMODE KD_GRAPHICS`, `KDGETMODE`):
+text output to it is no longer drawn, its pixels are kept while another
+console is shown, and `VT_SETMODE VT_PROCESS` sends the chosen release
+and acquire signals on console switches (`VT_RELDISP` is accepted and
+the switch is not delayed). `KDGKBMODE` reports `K_XLATE`.
 
 ### Metadata and directories
 
@@ -292,7 +297,6 @@ These use standard system calls with RustOS-defined requests:
 
 ## Not implemented
 
-Calls outside this list return `-ENOSYS`. Notable gaps: `epoll`,
-`inotify`, `timerfd`/`eventfd`/`signalfd`, `io_uring`, shared-memory IPC
-(`shmget`, `memfd_create`), `ptrace`, namespaces and cgroups, `setitimer`,
-thread-local storage relocations in the dynamic linker.
+Calls outside this list return `-ENOSYS`. Notable gaps: `inotify`,
+`io_uring`, shared-memory IPC (`shmget`, `memfd_create`), `ptrace`,
+namespaces and cgroups.

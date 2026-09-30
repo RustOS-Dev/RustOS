@@ -1529,7 +1529,15 @@ impl Ext2Inode {
         Ok(Some(cur as u64))
     }
 
-    fn read_data(&self, st: &mut RawInode, off: u64, buf: &mut [u8]) -> KResult<usize> {
+    /// Read file data. `direct` reads data blocks around the block cache
+    /// (the page cache holds them instead).
+    fn read_data(
+        &self,
+        st: &mut RawInode,
+        off: u64,
+        buf: &mut [u8],
+        direct: bool,
+    ) -> KResult<usize> {
         if off >= st.size {
             return Ok(0);
         }
@@ -1551,12 +1559,21 @@ impl Ext2Inode {
             let pos = off + done as u64;
             let l = pos / bs;
             let within = pos % bs;
-            let n = ((bs - within) as usize).min(len - done);
+            let mut n = ((bs - within) as usize).min(len - done);
             match self.bmap(st, l, false)? {
                 Some(pb) => {
-                    self.fs
-                        .dev
-                        .read_bytes(pb * bs + within, &mut buf[done..done + n])?;
+                    // Extend over physically contiguous blocks.
+                    let mut next = l + 1;
+                    while done + n < len && self.bmap(st, next, false)? == Some(pb + (next - l)) {
+                        n = (n + bs as usize).min(len - done);
+                        next += 1;
+                    }
+                    let dst = &mut buf[done..done + n];
+                    if direct {
+                        self.fs.dev.read_bytes_nocache(pb * bs + within, dst)?;
+                    } else {
+                        self.fs.dev.read_bytes(pb * bs + within, dst)?;
+                    }
                 }
                 None => buf[done..done + n].fill(0),
             }
@@ -2199,7 +2216,19 @@ impl Inode for Ext2Inode {
         if st.kind() == FileType::Directory {
             return Err(EISDIR);
         }
-        self.read_data(&mut st, off, buf)
+        self.read_data(&mut st, off, buf, false)
+    }
+
+    fn cacheable(&self) -> bool {
+        self.st.lock().kind() == FileType::Regular
+    }
+
+    fn read_direct(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
+        let mut st = self.st.lock();
+        if st.kind() == FileType::Directory {
+            return Err(EISDIR);
+        }
+        self.read_data(&mut st, off, buf, true)
     }
 
     fn write_at(&self, off: u64, buf: &[u8]) -> KResult<usize> {
@@ -2289,7 +2318,7 @@ impl Inode for Ext2Inode {
             return Ok(String::from_utf8_lossy(&b[..size]).into_owned());
         }
         let mut b = vec![0u8; size];
-        self.read_data(&mut st, 0, &mut b)?;
+        self.read_data(&mut st, 0, &mut b, false)?;
         Ok(String::from_utf8_lossy(&b).into_owned())
     }
 

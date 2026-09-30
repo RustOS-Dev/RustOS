@@ -895,7 +895,6 @@ fn netd() {
         let delay = with(|n| n.poll_all()).flatten();
         EPOCH.fetch_add(1, Ordering::SeqCst);
         SOCK_WQ.wake_all();
-        crate::vfs::notify_poll();
         let ms = delay.unwrap_or(100).min(100);
         if ms > 0 {
             NET_WQ.wait_timeout(ms, || KICK.load(Ordering::SeqCst));

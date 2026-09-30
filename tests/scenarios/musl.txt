@@ -16,7 +16,19 @@ wait # $
 send musl-libctest
 wait libctest: \d+ passed, 0 failed 120
 wait # $
-# Optional port (tools/install-port.sh --initramfs busybox)
-send if [ -x /usr/local/bin/busybox ]; then /usr/local/bin/busybox sh -c 'for i in 1 2 3; do echo bb$i; done | /usr/local/bin/busybox wc -l | /usr/local/bin/busybox sed s/^/BB-RESULT:/'; else echo BB-RESULT: skip; fi
-wait BB-RESULT:(\s*3| skip)\r\n
+# Ports in the default image (ports/default.list)
+send busybox sh -c 'for i in 1 2 3; do echo bb$i; done | busybox wc -l | busybox sed s/^/BB-RESULT:/'
+wait BB-RESULT:\s*3\r\n
+wait # $
+send curl --version | head -1
+wait curl 8\.\d+\.\d+ .*mbedTLS
+wait # $
+send qjs -e 'const m = new Map([[1, "a"]]); console.log(`qjs ${[1, 2, 3].map(x => x * 2).join(",")} ${m.get(1)} ${JSON.stringify({k: [true]})}`)'
+wait qjs 2,4,6 a \{"k":\[true\]\}
+wait # $
+# test262 subset with QuickJS-ng: the same result as on the host (3 known
+# failures in tests/test262_errors.txt). Progress output goes to a file (it
+# is one line per test).
+send cd /mnt/vda && run-test262 -c rustos.conf > /tmp/t262.log 2>&1; cd /; tr '\r' '\n' < /tmp/t262.log | grep -v "^[0-9/]*$" | tail -5
+wait Result: 3/3106 errors, 89 skipped 1200
 wait # $

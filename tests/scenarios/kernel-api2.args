@@ -1,0 +1,3 @@
+# ext4 data disk for the page-cache coherency checks (FAT is /storage).
+-drive if=none,id=e0,format=raw,file=@EXT4:64:kapi2@
+-device virtio-blk-pci,drive=e0

@@ -53,6 +53,19 @@ cycle over the streams) and needs SuperSpeed bulk streams, otherwise the
 device's Bulk-Only alternate setting is used. The input devices have no
 EVIOCG* ioctls yet.
 
+### Round 3
+
+- [x] **M17** Per-object poll wait queues, page cache for read/write, `KD_GRAPHICS` VTs, busybox/curl/QuickJS in the default image
+- [ ] **M18** CSS engine (`crates/css`) and box layout (`crates/layout`) for the text browser
+- [ ] **M19** JavaScript in `browse`: QuickJS-based `jsd` helper with a DOM, events, fetch/XHR, storage
+- [ ] **M20** Graphical browser `browse -g`: fonts, images, painting, mouse, canvas
+- [ ] **M21** Wi-Fi remainder: 12 KiB receive buffers, BAID receive BA, power save, 6 GHz with SAE-H2E, 160 MHz, BT coexistence
+- [ ] **M22** ext4 remainder: multi-transaction journal, data=journal, fast_commit replay, htree lookups, inline_data, bigalloc, meta_bg, quotas, casefold, large_dir, ea_inode
+- [ ] **M23** USB remainder: UAS queueing and USB 2 UAS, isochronous transfers, evdev ioctls
+- [ ] **M24** `hwcheck`/`bugreport` coverage for round 3 features
+- [ ] **M25** Audio: sound core with OSS `/dev/dsp`, Intel HDA, USB Audio Class 1/2, virtio-sound
+- [ ] **M26** Bluetooth: USB/H4 HCI, AX210 firmware, L2CAP/SMP/GATT, HID over GATT and BR/EDR HID
+
 ## Context
 
 RustOS is a ~10.8k-line x86_64 UEFI kernel (bootloader_api 0.11). Today it has:

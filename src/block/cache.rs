@@ -220,6 +220,45 @@ impl CachedDevice {
         Ok(len)
     }
 
+    /// Like [`read_bytes`](Self::read_bytes), but blocks not already cached
+    /// are read straight from the device without being cached (file data
+    /// that the page cache keeps instead).
+    pub fn read_bytes_nocache(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
+        if off >= self.size {
+            return Ok(0);
+        }
+        let len = (buf.len() as u64).min(self.size - off) as usize;
+        let c = self.cache.lock();
+        let mut done = 0;
+        while done < len {
+            let abs = self.base + off + done as u64;
+            let blk = abs / BLOCK as u64;
+            let boff = (abs % BLOCK as u64) as usize;
+            if let Some(e) = c.blocks.get(&blk) {
+                let n = (BLOCK - boff).min(len - done);
+                buf[done..done + n].copy_from_slice(&e.data[boff..boff + n]);
+                done += n;
+                continue;
+            }
+            // A run of uncached blocks covering the rest of the request.
+            let last = (abs + (len - done) as u64 - 1) / BLOCK as u64;
+            let mut end = blk + 1;
+            while end <= last && end < c.total_blocks() && !c.blocks.contains_key(&end) {
+                end += 1;
+            }
+            let spb = c.spb();
+            let ss = c.dev.sector_size() as u64;
+            let sectors = ((end - blk) * spb).min(c.dev.sector_count() - blk * spb);
+            let mut tmp = alloc::vec![0u8; ((end - blk) as usize) * BLOCK];
+            c.dev
+                .read_sectors(blk * spb, &mut tmp[..(sectors * ss) as usize])?;
+            let n = (tmp.len() - boff).min(len - done);
+            buf[done..done + n].copy_from_slice(&tmp[boff..boff + n]);
+            done += n;
+        }
+        Ok(len)
+    }
+
     pub fn write_bytes(&self, off: u64, buf: &[u8]) -> KResult<usize> {
         if self.read_only() {
             return Err(EROFS);

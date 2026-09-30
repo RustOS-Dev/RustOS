@@ -106,7 +106,6 @@ pub fn emit(kind: u16, code: u16, value: i32) {
 pub fn sync() {
     emit(EV_SYN, 0, 0);
     WQ.wake_all();
-    crate::vfs::notify_poll();
 }
 
 /// Joystick event: `button` (true) or axis `number` with `value`.
@@ -122,7 +121,6 @@ pub fn js_emit(button: bool, number: u8, value: i16) {
         },
     );
     WQ.wake_all();
-    crate::vfs::notify_poll();
 }
 
 /// Scale `v` in `lo..=hi` to the joystick range -32767..=32767.
@@ -204,6 +202,9 @@ macro_rules! filelike {
             }
             fn write(&self, b: &[u8], _nb: bool) -> KResult<usize> {
                 Ok(b.len())
+            }
+            fn wait_queue(&self) -> &WaitQueue {
+                &WQ
             }
             fn poll(&self) -> u16 {
                 if self.0.is_empty() {

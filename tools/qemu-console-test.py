@@ -14,7 +14,9 @@ img = tempfile.mktemp(suffix=".img")
 # with a seed directory; ext4 also gets an htree-indexed directory "big"),
 # @EXT4J:<MiB>[:label]@ (ext4 whose journal holds a committed transaction
 # not yet written back: /hello.txt reads OLD-CONTENT until the journal is
-# replayed, NEW-CONTENT after), @BLANK:<MiB>@ (zeros). Their paths are
+# replayed, NEW-CONTENT after), @TREE:<MiB>:<dir>@ (ext4 holding the files of
+# <dir>, relative to the repository; tools/fetch-<name>.sh creates it when
+# missing), @BLANK:<MiB>@ (zeros). Their paths are
 # exported to host commands as $RUSTOS_DISK0, $RUSTOS_DISK1, ...
 scratch = []
 def _quiet(cmd, **kw):
@@ -22,6 +24,17 @@ def _quiet(cmd, **kw):
 def _disk(m):
     kind, size = m.group(1), int(m.group(2))
     path = tempfile.mktemp(suffix=".disk")
+    if kind == "TREE":
+        src = os.path.join(root, m.group(3))
+        fetch = os.path.join(root, "tools", "fetch-" + os.path.basename(src) + ".sh")
+        if not os.path.isdir(src) and os.path.exists(fetch):
+            subprocess.run([fetch], check=True, stdout=subprocess.DEVNULL)
+        os.environ[f"RUSTOS_DISK{len(scratch)}"] = path
+        scratch.append(path)
+        with open(path, "wb") as f:
+            f.truncate(size * 1024 * 1024)
+        subprocess.run(["mke2fs", "-q", "-F", "-t", "ext4", "-d", src, path], check=True)
+        return path
     os.environ[f"RUSTOS_DISK{len(scratch)}"] = path
     scratch.append(path)
     with open(path, "wb") as f:
@@ -47,7 +60,7 @@ def _disk(m):
                              text=True, check=True).stdout.strip()
         _quiet(["debugfs", "-w", "-f", "-", path], input=f"jo\njw -b {blk} {new}\njc\n".encode())
     return path
-extra = [re.sub(r"@(EXT2|EXT4J|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, a) for a in extra]
+extra = [re.sub(r"@(EXT2|EXT4J|EXT4|BLANK|TREE):(\d+)(?::([\w/.-]+))?@", _disk, a) for a in extra]
 subprocess.run(["cargo", "run", "--quiet", "--", elf, img], cwd=f"{root}/crates/create-image", check=True,
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 ovmf = next((c for c in ["/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_CODE.fd",
@@ -121,7 +134,7 @@ for line in open(script):
     elif op == "monitor":
         # HMP command, e.g. 'monitor sendkey a' or 'monitor device_del u1'.
         import socket
-        arg = re.sub(r"@(EXT2|EXT4J|EXT4|BLANK):(\d+)(?::(\w+))?@", _disk, arg)
+        arg = re.sub(r"@(EXT2|EXT4J|EXT4|BLANK|TREE):(\d+)(?::([\w/.-]+))?@", _disk, arg)
         m = socket.socket(socket.AF_UNIX)
         m.connect(mon_path)
         m.settimeout(2)

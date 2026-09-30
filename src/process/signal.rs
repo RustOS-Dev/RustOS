@@ -192,8 +192,11 @@ pub fn send(p: &Arc<Process>, sig: u32) {
         }
     }
     // signalfd readers.
-    crate::vfs::notify_poll();
+    SIGNAL_WQ.wake_all();
 }
+
+/// Woken whenever a signal becomes pending (signalfd readiness).
+pub static SIGNAL_WQ: WaitQueue = WaitQueue::new();
 
 /// Send to every process in a process group.
 pub fn send_group(pgid: u32, sig: u32) -> usize {

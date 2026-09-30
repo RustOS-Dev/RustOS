@@ -4,9 +4,96 @@ use super::{Thread, current, is_running, schedule, wake};
 use crate::sync::Mutex;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 pub struct WaitQueue {
     waiters: Mutex<VecDeque<Arc<Thread>>>,
+    /// Callbacks run on every wake-up (poll/select waiters, epoll
+    /// interests).
+    hooks: Mutex<Vec<Arc<dyn WakeHook>>>,
+}
+
+/// Something to notify when a wait queue is woken. Runs with interrupts
+/// off, possibly in an interrupt handler: it must not allocate or block.
+pub trait WakeHook: Send + Sync {
+    /// Returns false when the hook is dead and should be dropped.
+    fn woken(&self) -> bool;
+}
+
+/// A thread sleeping in poll/select/epoll_wait on several queues at once.
+pub struct PollWaiter {
+    thread: Arc<Thread>,
+    fired: AtomicBool,
+}
+
+impl WakeHook for PollWaiter {
+    fn woken(&self) -> bool {
+        self.fired.store(true, Ordering::SeqCst);
+        wake(&self.thread);
+        true
+    }
+}
+
+/// Sleep until `check` returns non-zero, `deadline` passes or the thread
+/// is interrupted by a signal, waking whenever one of `queues` is woken.
+/// Returns the last value of `check` (0 on timeout or interruption).
+pub fn wait_any<E>(
+    queues: &[&WaitQueue],
+    deadline: Option<u64>,
+    mut check: impl FnMut() -> Result<usize, E>,
+    interrupted: impl Fn() -> bool,
+) -> Result<usize, E> {
+    let n = check()?;
+    if n > 0 || deadline.is_some_and(|d| crate::time::nanos() >= d) || !is_running() {
+        return Ok(n);
+    }
+    let t = current();
+    let w = Arc::new(PollWaiter {
+        thread: t.clone(),
+        fired: AtomicBool::new(false),
+    });
+    let hook: Arc<dyn WakeHook> = w.clone();
+    for (i, q) in queues.iter().enumerate() {
+        // The same queue may back several descriptors.
+        if !queues[..i].iter().any(|p| core::ptr::eq(*p, *q)) {
+            q.add_hook(hook.clone());
+        }
+    }
+    t.wchan.store(
+        queues.first().map_or(0, |q| *q as *const _ as u64),
+        Ordering::Relaxed,
+    );
+    let result = loop {
+        w.fired.store(false, Ordering::SeqCst);
+        let n = match check() {
+            Ok(n) => n,
+            Err(e) => break Err(e),
+        };
+        if n > 0 || interrupted() {
+            break Ok(n);
+        }
+        if deadline.is_some_and(|d| crate::time::nanos() >= d) {
+            break Ok(0);
+        }
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            super::set_blocked(&t);
+            if let Some(d) = deadline {
+                super::arm_timeout(&t, d);
+            }
+        });
+        // A wake-up between the check and set_blocked found us running.
+        if w.fired.load(Ordering::SeqCst) {
+            wake(&t);
+        }
+        schedule();
+    };
+    for (i, q) in queues.iter().enumerate() {
+        if !queues[..i].iter().any(|p| core::ptr::eq(*p, *q)) {
+            q.remove_hook(&hook);
+        }
+    }
+    result
 }
 
 impl Default for WaitQueue {
@@ -19,6 +106,24 @@ impl WaitQueue {
     pub const fn new() -> WaitQueue {
         WaitQueue {
             waiters: Mutex::new(VecDeque::new()),
+            hooks: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn add_hook(&self, h: Arc<dyn WakeHook>) {
+        x86_64::instructions::interrupts::without_interrupts(|| self.hooks.lock().push(h));
+    }
+
+    pub fn remove_hook(&self, h: &Arc<dyn WakeHook>) {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            self.hooks.lock().retain(|x| !Arc::ptr_eq(x, h))
+        });
+    }
+
+    fn run_hooks(&self) {
+        let mut hooks = self.hooks.lock();
+        if !hooks.is_empty() {
+            hooks.retain(|h| h.woken());
         }
     }
 
@@ -41,7 +146,7 @@ impl WaitQueue {
         let mut c = || {
             cond()
                 || t.as_ref()
-                    .is_some_and(|t| t.interrupted.load(core::sync::atomic::Ordering::SeqCst))
+                    .is_some_and(|t| t.interrupted.load(Ordering::SeqCst))
         };
         self.wait_until_deadline(&mut c, None);
         cond()
@@ -60,10 +165,7 @@ impl WaitQueue {
             }
         }
         let t = current();
-        t.wchan.store(
-            self as *const _ as u64,
-            core::sync::atomic::Ordering::Relaxed,
-        );
+        t.wchan.store(self as *const _ as u64, Ordering::Relaxed);
         loop {
             if cond() {
                 return true;
@@ -99,6 +201,8 @@ impl WaitQueue {
             while let Some(t) = q.pop_front() {
                 wake(&t);
             }
+            drop(q);
+            self.run_hooks();
         });
     }
 
@@ -108,6 +212,7 @@ impl WaitQueue {
             if let Some(t) = self.waiters.lock().pop_front() {
                 wake(&t);
             }
+            self.run_hooks();
         });
     }
 }

@@ -676,36 +676,22 @@ pub fn fstatfs(fd: i32, buf: u64) -> SysResult {
 // poll / select
 // ---------------------------------------------------------------------------
 
+/// Sleep until `check` reports ready descriptors, the timeout passes (0 is
+/// returned) or a signal arrives (EINTR). `files` are the descriptors
+/// `check` looks at; their wait queues wake us.
 pub(crate) fn wait_ready(
     timeout_ns: Option<u64>,
-    mut check: impl FnMut() -> KResult<usize>,
+    files: &[Arc<File>],
+    check: impl FnMut() -> KResult<usize>,
 ) -> KResult<usize> {
     let deadline = timeout_ns.map(|t| crate::time::nanos() + t);
-    loop {
-        let epoch = vfs::poll_epoch();
-        let n = check()?;
-        if n > 0 {
-            return Ok(n);
-        }
-        if deadline.is_some_and(|d| crate::time::nanos() >= d) {
-            return Ok(0);
-        }
-        if process::signal::has_pending() {
-            return Err(EINTR);
-        }
-        let changed = || vfs::poll_epoch() != epoch;
-        match deadline {
-            Some(d) => {
-                let now = crate::time::nanos();
-                let ms = (d.saturating_sub(now)).div_ceil(1_000_000).max(1);
-                // Poll at least every 50 ms for sources that do not notify.
-                vfs::POLL_WQ.wait_timeout(ms.min(50), changed);
-            }
-            None => {
-                vfs::POLL_WQ.wait_timeout(50, changed);
-            }
-        }
+    let queues: Vec<&crate::sched::WaitQueue> =
+        files.iter().filter_map(|f| f.wait_queue()).collect();
+    let n = crate::sched::wait::wait_any(&queues, deadline, check, process::signal::has_pending)?;
+    if n == 0 && process::signal::has_pending() {
+        return Err(EINTR);
     }
+    Ok(n)
 }
 
 pub fn poll(fds: u64, nfds: u64, timeout_ms: i64) -> SysResult {
@@ -728,16 +714,21 @@ pub fn poll(fds: u64, nfds: u64, timeout_ms: i64) -> SysResult {
     } else {
         Some(timeout_ms as u64 * 1_000_000)
     };
-    let n = wait_ready(timeout, || {
+    let files: Vec<Option<Arc<File>>> = {
+        let table = p.files.lock();
+        pfds.iter().map(|e| table.get(e.0).ok()).collect()
+    };
+    let live: Vec<Arc<File>> = files.iter().flatten().cloned().collect();
+    let n = wait_ready(timeout, &live, || {
         let mut ready = 0;
-        for e in pfds.iter_mut() {
+        for (e, f) in pfds.iter_mut().zip(&files) {
             e.2 = 0;
             if e.0 < 0 {
                 continue;
             }
-            let rev = match p.files.lock().get(e.0) {
-                Ok(f) => f.poll() & (e.1 as u16 | vfs::POLLERR | vfs::POLLHUP),
-                Err(_) => vfs::POLLNVAL,
+            let rev = match f {
+                Some(f) => f.poll() & (e.1 as u16 | vfs::POLLERR | vfs::POLLHUP),
+                None => vfs::POLLNVAL,
             };
             if rev != 0 {
                 e.2 = rev as i16;
@@ -793,19 +784,22 @@ pub fn select(nfds: i32, rd: u64, wr: u64, ex: u64, tv: u64, pselect: bool) -> S
         alloc::vec![0u64; words],
         alloc::vec![0u64; words],
     );
-    let n = wait_ready(timeout, || {
-        let mut ready = 0;
+    let mut files: Vec<(usize, Arc<File>)> = Vec::new();
+    {
+        let table = p.files.lock();
         for fd in 0..nfds as usize {
             let (w, b) = (fd / 64, 1u64 << (fd % 64));
-            if (rin[w] | win[w] | ein[w]) & b == 0 {
-                continue;
+            if (rin[w] | win[w] | ein[w]) & b != 0 {
+                files.push((fd, table.get(fd as i32).map_err(|_| EBADF)?));
             }
-            let ev = p
-                .files
-                .lock()
-                .get(fd as i32)
-                .map(|f| f.poll())
-                .map_err(|_| EBADF)?;
+        }
+    }
+    let live: Vec<Arc<File>> = files.iter().map(|(_, f)| f.clone()).collect();
+    let n = wait_ready(timeout, &live, || {
+        let mut ready = 0;
+        for (fd, f) in &files {
+            let (w, b) = (fd / 64, 1u64 << (fd % 64));
+            let ev = f.poll();
             rout[w] &= !b;
             wout[w] &= !b;
             eout[w] &= !b;

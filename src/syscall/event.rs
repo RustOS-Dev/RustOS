@@ -1,14 +1,14 @@
 //! Event file descriptors: epoll, eventfd, timerfd and signalfd.
 //!
-//! Readiness uses the same notification as poll/select: every source calls
-//! `vfs::notify_poll()` when it may have become ready, and waiters re-check
-//! (see `fs::wait_ready`).
+//! Each object has a wait queue woken when its readiness may have changed
+//! (`FileLike::wait_queue`). An epoll instance hooks the queues of the
+//! descriptors it watches, so activity on them wakes its own queue.
 
 use super::SysResult;
-use super::fs::wait_ready;
 use crate::errno::*;
 use crate::process::{self, signal, uaccess};
-use crate::sched::{self, TimerTarget};
+use crate::sched::wait::{WakeHook, wait_any};
+use crate::sched::{self, TimerTarget, WaitQueue};
 use crate::sync::Mutex;
 use crate::vfs::{self, File, FileLike, POLLIN, POLLOUT};
 use alloc::collections::BTreeMap;
@@ -39,8 +39,13 @@ fn with_object<T: FileLike + 'static, R>(fd: i32, f: impl FnOnce(&T) -> KResult<
     f(s.as_any().downcast_ref::<T>().ok_or(EINVAL)?)
 }
 
-/// Block (unless `nonblock`) until `ready()` returns a value.
-fn block_until<R>(nonblock: bool, mut ready: impl FnMut() -> Option<R>) -> KResult<R> {
+/// Block (unless `nonblock`) until `ready()` returns a value, waking when
+/// `wq` is woken.
+fn block_until<R>(
+    wq: &WaitQueue,
+    nonblock: bool,
+    mut ready: impl FnMut() -> Option<R>,
+) -> KResult<R> {
     if let Some(r) = ready() {
         return Ok(r);
     }
@@ -48,10 +53,15 @@ fn block_until<R>(nonblock: bool, mut ready: impl FnMut() -> Option<R>) -> KResu
         return Err(EAGAIN);
     }
     let mut out = None;
-    wait_ready(None, || {
-        out = ready();
-        Ok(out.is_some() as usize)
-    })?;
+    wait_any::<Errno>(
+        &[wq],
+        None,
+        || {
+            out = ready();
+            Ok(out.is_some() as usize)
+        },
+        signal::has_pending,
+    )?;
     out.ok_or(EINTR)
 }
 
@@ -64,6 +74,7 @@ const EFD_SEMAPHORE: u32 = 1;
 struct EventFd {
     count: Mutex<u64>,
     semaphore: bool,
+    wq: WaitQueue,
 }
 
 impl FileLike for EventFd {
@@ -71,7 +82,7 @@ impl FileLike for EventFd {
         if buf.len() < 8 {
             return Err(EINVAL);
         }
-        let v = block_until(nonblock, || {
+        let v = block_until(&self.wq, nonblock, || {
             let mut c = self.count.lock();
             if *c == 0 {
                 return None;
@@ -81,7 +92,7 @@ impl FileLike for EventFd {
             Some(v)
         })?;
         buf[..8].copy_from_slice(&v.to_ne_bytes());
-        vfs::notify_poll();
+        self.wq.wake_all();
         Ok(8)
     }
     fn write(&self, buf: &[u8], nonblock: bool) -> KResult<usize> {
@@ -92,11 +103,11 @@ impl FileLike for EventFd {
         if v == u64::MAX {
             return Err(EINVAL);
         }
-        block_until(nonblock, || {
+        block_until(&self.wq, nonblock, || {
             let mut c = self.count.lock();
             (*c <= u64::MAX - 1 - v).then(|| *c += v)
         })?;
-        vfs::notify_poll();
+        self.wq.wake_all();
         Ok(8)
     }
     fn poll(&self) -> u16 {
@@ -110,6 +121,9 @@ impl FileLike for EventFd {
         }
         r
     }
+    fn wait_queue(&self) -> &WaitQueue {
+        &self.wq
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -119,6 +133,7 @@ pub fn eventfd2(initval: u64, flags: u32) -> SysResult {
     let obj = Arc::new(EventFd {
         count: Mutex::new(initval & 0xFFFF_FFFF),
         semaphore: flags & EFD_SEMAPHORE != 0,
+        wq: WaitQueue::new(),
     });
     install(obj, flags, "anon_inode:[eventfd]")
 }
@@ -137,6 +152,7 @@ struct TimerFd {
     deadline: AtomicU64,
     interval: AtomicU64,
     expirations: AtomicU64,
+    wq: WaitQueue,
 }
 
 impl TimerTarget for TimerFd {
@@ -156,7 +172,7 @@ impl TimerTarget for TimerFd {
             self.deadline.store(0, Ordering::SeqCst);
         }
         self.expirations.fetch_add(n, Ordering::SeqCst);
-        vfs::notify_poll();
+        self.wq.wake_all();
     }
 }
 
@@ -165,7 +181,7 @@ impl FileLike for TimerFd {
         if buf.len() < 8 {
             return Err(EINVAL);
         }
-        let v = block_until(nonblock, || {
+        let v = block_until(&self.wq, nonblock, || {
             match self.expirations.swap(0, Ordering::SeqCst) {
                 0 => None,
                 v => Some(v),
@@ -187,6 +203,9 @@ impl FileLike for TimerFd {
     fn close(&self) {
         self.deadline.store(0, Ordering::SeqCst);
     }
+    fn wait_queue(&self) -> &WaitQueue {
+        &self.wq
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -202,6 +221,7 @@ pub fn timerfd_create(clock: u64, flags: u32) -> SysResult {
         deadline: AtomicU64::new(0),
         interval: AtomicU64::new(0),
         expirations: AtomicU64::new(0),
+        wq: WaitQueue::new(),
     });
     install(obj, flags, "anon_inode:[timerfd]")
 }
@@ -301,7 +321,7 @@ impl FileLike for SignalFd {
         let mut n = 0;
         while buf.len() - n >= SIZE {
             let sig = if n == 0 {
-                block_until(nonblock, || self.take())?
+                block_until(&signal::SIGNAL_WQ, nonblock, || self.take())?
             } else {
                 match self.take() {
                     Some(s) => s,
@@ -328,6 +348,9 @@ impl FileLike for SignalFd {
         } else {
             0
         }
+    }
+    fn wait_queue(&self) -> &WaitQueue {
+        &signal::SIGNAL_WQ
     }
     fn as_any(&self) -> &dyn Any {
         self
@@ -372,22 +395,53 @@ struct Interest {
     data: u64,
     /// Readiness last reported (edge-triggered entries).
     last: u32,
-    /// Poll epoch at the last report (edge-triggered entries).
-    epoch: u64,
+    /// `hook.activity` at the last report (edge-triggered entries).
+    seen: u64,
     /// One-shot entry already reported: disabled until EPOLL_CTL_MOD.
     disabled: bool,
+    hook: Arc<InterestHook>,
+}
+
+/// Hooked on a watched file's wait queue: counts activity and wakes the
+/// epoll instance (and so anything polling the epoll descriptor). Hooks of
+/// a closed epoll instance drop out on their queue's next wake-up.
+struct InterestHook {
+    ep: Weak<Epoll>,
+    activity: AtomicU64,
+}
+
+impl WakeHook for InterestHook {
+    fn woken(&self) -> bool {
+        let Some(ep) = self.ep.upgrade() else {
+            return false;
+        };
+        self.activity.fetch_add(1, Ordering::SeqCst);
+        ep.wq.wake_all();
+        true
+    }
+}
+
+impl Interest {
+    fn unhook(&self) {
+        if let Some(f) = self.file.upgrade()
+            && let Some(q) = f.wait_queue()
+        {
+            let h: Arc<dyn WakeHook> = self.hook.clone();
+            q.remove_hook(&h);
+        }
+    }
 }
 
 struct Epoll {
     /// Keyed by (fd, file address) like Linux's (fd, file) pair.
     items: Mutex<BTreeMap<(i32, usize), Interest>>,
+    wq: WaitQueue,
 }
 
 impl Epoll {
     /// Collect up to `max` ready events.
     fn collect(&self, max: usize, consume: bool) -> Vec<(u32, u64)> {
         let mut out = Vec::new();
-        let epoch = vfs::poll_epoch();
         let mut items = self.items.lock();
         items.retain(|_, it| it.file.strong_count() > 0);
         for it in items.values_mut() {
@@ -405,13 +459,14 @@ impl Epoll {
             }
             if it.events & EPOLLET != 0 {
                 // Report rising edges, and again after any new activity.
-                let fresh = ready & !it.last != 0 || epoch != it.epoch;
+                let activity = it.hook.activity.load(Ordering::SeqCst);
+                let fresh = ready & !it.last != 0 || activity != it.seen;
                 if !fresh {
                     continue;
                 }
                 if consume {
                     it.last = ready;
-                    it.epoch = epoch;
+                    it.seen = activity;
                 }
             }
             if consume && it.events & EPOLLONESHOT != 0 {
@@ -437,6 +492,9 @@ impl FileLike for Epoll {
             POLLIN
         }
     }
+    fn wait_queue(&self) -> &WaitQueue {
+        &self.wq
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -449,6 +507,7 @@ pub fn epoll_create1(flags: u32) -> SysResult {
     install(
         Arc::new(Epoll {
             items: Mutex::new(BTreeMap::new()),
+            wq: WaitQueue::new(),
         }),
         flags & vfs::O_CLOEXEC,
         "anon_inode:[eventpoll]",
@@ -470,12 +529,39 @@ pub fn epoll_ctl(epfd: i32, op: u32, fd: i32, event: u64) -> SysResult {
         )
     };
     let key = (fd, Arc::as_ptr(&target) as usize);
-    with_object::<Epoll, _>(epfd, |ep| {
+    let epfile = cur()?.files.lock().get(epfd)?;
+    let vfs::FileObject::Stream(eps) = &epfile.object else {
+        return Err(EINVAL);
+    };
+    if eps.as_any().downcast_ref::<Epoll>().is_none() {
+        return Err(EINVAL);
+    }
+    // An `Arc<Epoll>` for the hooks' back references.
+    let ep_arc: Arc<Epoll> = {
+        let raw = Arc::into_raw(eps.clone()) as *const Epoll;
+        // SAFETY: the object was just checked to be an `Epoll`.
+        unsafe { Arc::from_raw(raw) }
+    };
+    if let vfs::FileObject::Stream(t) = &target.object
+        && let Some(inner) = t.as_any().downcast_ref::<Epoll>()
+        && core::ptr::eq(inner, &*ep_arc)
+    {
+        return Err(ELOOP);
+    }
+    {
+        let ep = &*ep_arc;
         let mut items = ep.items.lock();
         match op {
             EPOLL_CTL_ADD => {
                 if items.contains_key(&key) {
                     return Err(EEXIST);
+                }
+                let hook = Arc::new(InterestHook {
+                    ep: Arc::downgrade(&ep_arc),
+                    activity: AtomicU64::new(0),
+                });
+                if let Some(q) = target.wait_queue() {
+                    q.add_hook(hook.clone());
                 }
                 items.insert(
                     key,
@@ -484,8 +570,9 @@ pub fn epoll_ctl(epfd: i32, op: u32, fd: i32, event: u64) -> SysResult {
                         events,
                         data,
                         last: 0,
-                        epoch: 0,
+                        seen: 0,
                         disabled: false,
+                        hook,
                     },
                 );
             }
@@ -497,13 +584,12 @@ pub fn epoll_ctl(epfd: i32, op: u32, fd: i32, event: u64) -> SysResult {
                 it.disabled = false;
             }
             EPOLL_CTL_DEL => {
-                items.remove(&key).ok_or(ENOENT)?;
+                items.remove(&key).ok_or(ENOENT)?.unhook();
             }
             _ => return Err(EINVAL),
         }
-        Ok(())
-    })?;
-    vfs::notify_poll();
+    }
+    ep_arc.wq.wake_all();
     Ok(0)
 }
 
@@ -534,7 +620,7 @@ fn epoll_wait_ns(epfd: i32, events: u64, max: i32, timeout: Option<u64>) -> SysR
     };
     let ep = s.as_any().downcast_ref::<Epoll>().ok_or(EINVAL)?;
     let mut got = Vec::new();
-    wait_ready(timeout, || {
+    super::fs::wait_ready(timeout, core::slice::from_ref(&file), || {
         got = ep.collect(max as usize, true);
         Ok(got.len())
     })?;

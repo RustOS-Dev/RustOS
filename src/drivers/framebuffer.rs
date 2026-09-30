@@ -173,6 +173,40 @@ pub mod heapless_reply {
 
 pub static CONSOLE: Mutex<Option<FbConsole>> = Mutex::new(None);
 
+/// The visible virtual console is in graphics mode: text output updates
+/// the cell grid but is not drawn.
+static GRAPHICS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Enter or leave graphics mode. Leaving redraws the whole text screen.
+pub fn set_graphics(on: bool) {
+    GRAPHICS.store(on, core::sync::atomic::Ordering::SeqCst);
+    if !on {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            if let Some(c) = CONSOLE.lock().as_mut() {
+                c.mark_all();
+                c.render();
+            }
+        });
+    }
+}
+
+/// Copy of the framebuffer's pixels (to save a graphics console).
+pub fn save_pixels() -> Option<alloc::vec::Vec<u8>> {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        CONSOLE.lock().as_mut().map(|c| c.fb.to_vec())
+    })
+}
+
+/// Put back pixels saved by [`save_pixels`].
+pub fn restore_pixels(p: &[u8]) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        if let Some(c) = CONSOLE.lock().as_mut() {
+            let n = c.fb.len().min(p.len());
+            c.fb[..n].copy_from_slice(&p[..n]);
+        }
+    });
+}
+
 impl FbConsole {
     #[allow(clippy::deref_addrof)]
     fn grid(&mut self) -> &mut [Cell] {
@@ -232,6 +266,9 @@ impl FbConsole {
     }
 
     fn render(&mut self) {
+        if GRAPHICS.load(core::sync::atomic::Ordering::SeqCst) {
+            return; // a program owns the screen (KD_GRAPHICS)
+        }
         if let Some((x, y)) = self.drawn_cursor.take()
             && x < self.cols
             && y < self.rows
@@ -720,6 +757,9 @@ impl FbConsole {
     /// Show `lines` of history (oldest first) followed by the live grid,
     /// scrolled back by `offset` lines. `offset == 0` redraws the live view.
     pub fn show_history(&mut self, history: &[&[u8]], offset: usize) {
+        if GRAPHICS.load(core::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         if offset == 0 {
             self.mark_all();
             self.render();

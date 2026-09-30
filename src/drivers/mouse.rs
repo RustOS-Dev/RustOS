@@ -13,7 +13,8 @@ pub struct MouseEvent {
 }
 
 static EVENTS: Mutex<VecDeque<MouseEvent>> = Mutex::new(VecDeque::new());
-static PACKET: Mutex<([u8; 3], usize)> = Mutex::new(([0; 3], 0));
+/// Packet bytes so far, their count, and the last button state.
+static PACKET: Mutex<([u8; 3], usize, u8)> = Mutex::new(([0; 3], 0, 0));
 
 pub fn push(ev: MouseEvent) {
     let mut q = EVENTS.lock();
@@ -23,7 +24,6 @@ pub fn push(ev: MouseEvent) {
     q.push_back(ev);
     drop(q);
     WQ.wake_all();
-    crate::vfs::notify_poll();
 }
 
 pub fn pop() -> Option<MouseEvent> {
@@ -50,6 +50,23 @@ pub fn ps2_byte(b: u8) {
             wheel: 0,
             buttons: flags & 7,
         });
+        // Also as evdev events (/dev/input/event0).
+        use crate::drivers::input::{self, BTN_MOUSE, EV_KEY, EV_REL, REL_X, REL_Y};
+        let changed = (flags & 7) ^ p.2;
+        p.2 = flags & 7;
+        if dx != 0 {
+            input::emit(EV_REL, REL_X, dx);
+        }
+        if dy != 0 {
+            input::emit(EV_REL, REL_Y, -dy);
+        }
+        // PS/2 bit order: left, right, middle (BTN_LEFT, BTN_RIGHT, BTN_MIDDLE).
+        for b in 0..3 {
+            if changed & (1 << b) != 0 {
+                input::emit(EV_KEY, BTN_MOUSE + b as u16, ((flags >> b) & 1) as i32);
+            }
+        }
+        input::sync();
     }
 }
 
@@ -91,6 +108,9 @@ impl crate::vfs::FileLike for MouseDev {
     }
     fn write(&self, b: &[u8], _nb: bool) -> crate::errno::KResult<usize> {
         Ok(b.len())
+    }
+    fn wait_queue(&self) -> &crate::sched::WaitQueue {
+        &WQ
     }
     fn poll(&self) -> u16 {
         if EVENTS.lock().is_empty() {

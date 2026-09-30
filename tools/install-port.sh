@@ -18,7 +18,8 @@ if [ -z "$NAME" ] || [ ! -f "$ROOT/ports/$NAME/build.sh" ]; then
     exit 2
 fi
 "$ROOT/tools/build-musl.sh"
-SRC="$ROOT/target/ports/src"
+# Downloaded sources are kept here (CI caches it).
+SRC="${RUSTOS_PORTS_CACHE:-$ROOT/target/ports/src}"
 BUILD="$ROOT/target/ports/build/$NAME"
 DEST="$ROOT/target/ports/$NAME"
 mkdir -p "$SRC" "$BUILD"

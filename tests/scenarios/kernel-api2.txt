@@ -1,0 +1,36 @@
+# Wake-ups from per-object wait queues (poll, select, epoll, nested epoll)
+# and read/write/mmap coherency through the page cache on ext4 and FAT,
+# with fsync'd data surviving a remount.
+wait # $ 240
+send kapitest wakeups
+wait PASS poll wakes on pipe write 30
+wait PASS epoll wakes on socketpair 30
+wait PASS poll on epoll fd wakes 30
+wait kapitest: \d+ passed, 0 failed 30
+wait # $
+send kapitest files /mnt/vda
+wait PASS read\(\) returns written data 60
+wait PASS mapping store visible to read\(\) 30
+wait PASS truncate-extend reads zeros 30
+wait kapitest: \d+ passed, 0 failed 30
+wait # $
+send kapitest files /storage
+wait kapitest: \d+ passed, 0 failed 60
+wait # $
+send sha256sum /mnt/vda/kapitest.keep > /tmp/k1; umount /mnt/vda && mount /dev/vda /mnt/vda && sha256sum /mnt/vda/kapitest.keep > /tmp/k2 && cmp /tmp/k1 /tmp/k2 && echo KEEP-OK
+wait KEEP-OK 60
+wait # $
+# Page cache counters are exported.
+send grep Dirty: /proc/meminfo | cat
+wait Dirty:\s+\d+ kB
+wait # $
+send sync && umount /mnt/vda
+wait # $
+hostrun e2fsck -fn "$RUSTOS_DISK0"
+# Graphics mode on the console and back.
+send kapitest vt
+wait PASS KDSETMODE KD_GRAPHICS
+wait PASS VT_SETMODE VT_PROCESS
+wait PASS KDSETMODE KD_TEXT
+wait kapitest: \d+ passed, 0 failed 30
+wait # $

@@ -1,0 +1,5 @@
+# Ports built into the default image (under /usr/bin); see tools/install-port.sh.
+# Set RUSTOS_PORTS=0 to build without them.
+busybox
+curl
+quickjs

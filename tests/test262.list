@@ -1,0 +1,26 @@
+# test262 directories (under test/) run by the musl scenario with QuickJS.
+built-ins/Array/prototype/map
+built-ins/Array/prototype/reduce
+built-ins/Array/prototype/sort
+built-ins/Array/from
+built-ins/JSON
+built-ins/Math
+built-ins/Promise
+built-ins/String/prototype/replace
+built-ins/String/prototype/split
+built-ins/String/prototype/padStart
+built-ins/Object/keys
+built-ins/Object/assign
+built-ins/RegExp/prototype/exec
+built-ins/Map
+built-ins/Symbol
+built-ins/Date/prototype/toISOString
+built-ins/Date/parse
+built-ins/parseInt
+built-ins/Number/prototype/toFixed
+language/expressions/arrow-function
+language/expressions/async-function
+language/statements/class/subclass
+language/destructuring
+language/rest-parameters
+language/expressions/template-literal

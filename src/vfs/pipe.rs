@@ -9,22 +9,23 @@ pub struct PipeInner {
     buf: Mutex<VecDeque<u8>>,
     readers: AtomicU32,
     writers: AtomicU32,
-    wq: WaitQueue,
+    /// Readers, writers and pollers wait here (shared by both directions
+    /// of a socketpair).
+    wq: Arc<WaitQueue>,
 }
 
 impl PipeInner {
-    fn new() -> Arc<PipeInner> {
+    fn new(wq: Arc<WaitQueue>) -> Arc<PipeInner> {
         Arc::new(PipeInner {
             buf: Mutex::new(VecDeque::new()),
             readers: AtomicU32::new(0),
             writers: AtomicU32::new(0),
-            wq: WaitQueue::new(),
+            wq,
         })
     }
 
     fn notify(&self) {
         self.wq.wake_all();
-        notify_poll();
     }
 }
 
@@ -49,7 +50,13 @@ impl PipeEnd {
 
 /// Create an anonymous pipe: (read end, write end).
 pub fn pipe() -> (Arc<dyn FileLike>, Arc<dyn FileLike>) {
-    let inner = PipeInner::new();
+    pipe_on(Arc::new(WaitQueue::new()))
+}
+
+/// A pipe whose wake-ups go to `wq` (a socketpair shares one queue between
+/// its two pipes).
+pub fn pipe_on(wq: Arc<WaitQueue>) -> (Arc<dyn FileLike>, Arc<dyn FileLike>) {
+    let inner = PipeInner::new(wq);
     (PipeEnd::new(&inner, false), PipeEnd::new(&inner, true))
 }
 
@@ -166,6 +173,10 @@ impl FileLike for PipeEnd {
         Err(ENOTTY)
     }
 
+    fn wait_queue(&self) -> &WaitQueue {
+        &self.inner.wq
+    }
+
     fn close(&self) {
         if self.write {
             self.inner.writers.fetch_sub(1, Ordering::SeqCst);
@@ -209,7 +220,7 @@ pub struct Pipe;
 impl Pipe {
     pub fn new_fifo() -> Arc<dyn FileLike> {
         Arc::new(FifoHub {
-            inner: PipeInner::new(),
+            inner: PipeInner::new(Arc::new(WaitQueue::new())),
         })
     }
 }

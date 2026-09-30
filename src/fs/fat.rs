@@ -1090,6 +1090,10 @@ impl Inode for FatInode {
             .collect())
     }
 
+    fn cacheable(&self) -> bool {
+        !self.is_dir
+    }
+
     fn read_at(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
         if self.is_dir {
             return Err(EISDIR);

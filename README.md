@@ -51,8 +51,8 @@ pseudo-terminals; optional logins.
 
 **C programs** — upstream **musl** builds into a sysroot; `tools/rustos-cc`
 compiles C programs (static or dynamic, pthreads, `dlopen`) that run
-unchanged; BusyBox and curl are available as ports
-([docs/PORTING.md](docs/PORTING.md)).
+unchanged; BusyBox, curl and the QuickJS-ng JavaScript engine (`qjs`)
+ship in the default image ([docs/PORTING.md](docs/PORTING.md)).
 
 Status of every component on real hardware is tracked in
 [docs/HARDWARE.md](docs/HARDWARE.md); gaps are listed in
@@ -124,7 +124,7 @@ root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | known gaps |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | the completion plan (M0–M16) and its status |
 | [docs/BROWSER.md](docs/BROWSER.md) | the `browse` text web browser and captive-portal login |
-| [docs/PORTING.md](docs/PORTING.md) | musl sysroot, `rustos-cc`, ports (BusyBox, curl) |
+| [docs/PORTING.md](docs/PORTING.md) | musl sysroot, `rustos-cc`, ports (BusyBox, curl, QuickJS) |
 | [docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md) | shell and command reference |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | contributing, debugging |
 

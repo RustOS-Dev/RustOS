@@ -34,6 +34,8 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: cargo check
+        env:
+          RUSTOS_PORTS: "0" # busybox/curl/QuickJS are built by the test job
         run: cargo check
 
   fmt:
@@ -112,6 +114,13 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-
+
+      - name: Cache port sources and test262
+        uses: actions/cache@v4
+        with:
+          path: target/ports/src
+          key: ports-src-${{ hashFiles('ports/*/build.sh', 'tools/fetch-test262.sh', 'tests/test262.list') }}
+          restore-keys: ports-src-
 
       - name: Install QEMU and OVMF
         run: |

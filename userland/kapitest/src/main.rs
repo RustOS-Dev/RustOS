@@ -48,6 +48,11 @@ mod nr {
     pub const SIGNALFD4: usize = 289;
     pub const EVENTFD2: usize = 290;
     pub const EPOLL_CREATE1: usize = 291;
+    pub const POLL: usize = 7;
+    pub const SELECT: usize = 23;
+    pub const SOCKETPAIR: usize = 53;
+    pub const FSYNC: usize = 74;
+    pub const UNLINK: usize = 87;
 }
 
 const EAGAIN: isize = -11;
@@ -718,13 +723,294 @@ fn pty(r: &mut Report) {
     sc(nr::CLOSE, &[s as usize]);
 }
 
+static WAKE_FD: AtomicU32 = AtomicU32::new(0);
+static WAKE_DELAY: AtomicU32 = AtomicU32::new(0);
+
+/// Thread: sleep, then write one byte to `WAKE_FD`.
+extern "C" fn late_writer(_arg: usize) {
+    time::sleep_ms(WAKE_DELAY.load(Ordering::SeqCst) as u64);
+    let fd = WAKE_FD.load(Ordering::SeqCst) as usize;
+    sc(nr::WRITE, &[fd, b"x".as_ptr() as usize, 1]);
+}
+
+/// Start `late_writer` on `fd` after `ms`; returns the tid cell to join.
+fn write_later(fd: isize, ms: u32, tid: &AtomicU32) {
+    WAKE_FD.store(fd as u32, Ordering::SeqCst);
+    WAKE_DELAY.store(ms, Ordering::SeqCst);
+    spawn_thread(late_writer, 0, tid);
+}
+
+fn poll1(fd: isize, timeout_ms: i32) -> isize {
+    let mut p = [0u8; 8];
+    p[0..4].copy_from_slice(&(fd as i32).to_ne_bytes());
+    p[4..6].copy_from_slice(&1i16.to_ne_bytes()); // POLLIN
+    sc(
+        nr::POLL,
+        &[p.as_mut_ptr() as usize, 1, timeout_ms as isize as usize],
+    )
+}
+
+/// Wake-ups come from the object's own wait queue: prompt, and no early
+/// return while nothing happens.
+fn wakeups(r: &mut Report) {
+    let mut fds = [0i32; 2];
+    sc(nr::PIPE2, &[fds.as_mut_ptr() as usize, 0]);
+    let (rd, wr) = (fds[0] as isize, fds[1] as isize);
+    let t0 = time::millis();
+    let n = poll1(rd, 200);
+    let dt = time::millis() - t0;
+    r.check(
+        "poll idle pipe sleeps the timeout",
+        n == 0 && dt >= 190,
+        format!("n={} {}ms", n, dt),
+    );
+
+    let tid = AtomicU32::new(0);
+    write_later(wr, 30, &tid);
+    let t0 = time::millis();
+    let n = poll1(rd, 2000);
+    let dt = time::millis() - t0;
+    join(&tid);
+    r.check(
+        "poll wakes on pipe write",
+        n == 1 && dt < 30 + 25,
+        format!("n={} {}ms", n, dt),
+    );
+    let mut b = [0u8; 8];
+    sc(nr::READ, &[rd as usize, b.as_mut_ptr() as usize, 8]);
+
+    // select() on the same pipe.
+    write_later(wr, 30, &tid);
+    let mut set = [0u64; 1];
+    set[0] = 1 << rd;
+    let tv: [i64; 2] = [2, 0];
+    let t0 = time::millis();
+    let n = sc(
+        nr::SELECT,
+        &[
+            rd as usize + 1,
+            set.as_mut_ptr() as usize,
+            0,
+            0,
+            tv.as_ptr() as usize,
+        ],
+    );
+    let dt = time::millis() - t0;
+    join(&tid);
+    r.check(
+        "select wakes on pipe write",
+        n == 1 && dt < 30 + 25,
+        format!("n={} {}ms", n, dt),
+    );
+    sc(nr::READ, &[rd as usize, b.as_mut_ptr() as usize, 8]);
+
+    // epoll: a socketpair and an eventfd; edge-triggered on the socket.
+    let mut sv = [0i32; 2];
+    let rc = sc(nr::SOCKETPAIR, &[1, 1, 0, sv.as_mut_ptr() as usize]); // AF_UNIX, SOCK_STREAM
+    r.check("socketpair", rc == 0, format!("{}", rc));
+    let ep = sc(nr::EPOLL_CREATE1, &[0]);
+    let efd = sc(nr::EVENTFD2, &[0, 0]);
+    epoll_add(ep, sv[0] as isize, EPOLLIN | (1 << 31), 7); // EPOLLET
+    epoll_add(ep, efd, EPOLLIN, 9);
+    write_later(sv[1] as isize, 30, &tid);
+    let t0 = time::millis();
+    let (n, data) = epoll_wait(ep, 2000);
+    let dt = time::millis() - t0;
+    join(&tid);
+    r.check(
+        "epoll wakes on socketpair",
+        n == 1 && data == 7 && dt < 30 + 25,
+        format!("n={} data={} {}ms", n, data, dt),
+    );
+    let (n, _) = epoll_wait(ep, 100);
+    r.check(
+        "epoll edge-triggered: no repeat",
+        n == 0,
+        format!("n={}", n),
+    );
+    write_later(sv[1] as isize, 10, &tid);
+    let (n, data) = epoll_wait(ep, 2000);
+    join(&tid);
+    r.check(
+        "epoll edge-triggered: new data",
+        n == 1 && data == 7,
+        format!("n={} data={}", n, data),
+    );
+    // Nested: poll() on the epoll descriptor itself.
+    let t0 = time::millis();
+    let n = poll1(ep, 300);
+    let dt = time::millis() - t0;
+    r.check(
+        "poll on idle epoll fd",
+        n == 0 && dt >= 290,
+        format!("n={} {}ms", n, dt),
+    );
+    write_later(sv[1] as isize, 30, &tid);
+    let t0 = time::millis();
+    let n = poll1(ep, 2000);
+    let dt = time::millis() - t0;
+    join(&tid);
+    r.check(
+        "poll on epoll fd wakes",
+        n == 1 && dt < 30 + 25,
+        format!("n={} {}ms", n, dt),
+    );
+    write_u64(efd, 1);
+    let n = poll1(ep, 300);
+    r.check("poll on epoll fd sees eventfd", n == 1, format!("n={}", n));
+    for fd in [rd, wr, sv[0] as isize, sv[1] as isize, ep, efd] {
+        sc(nr::CLOSE, &[fd as usize]);
+    }
+}
+
+/// Graphics mode on the console (KDSETMODE / KDGETMODE / VT_SETMODE).
+fn vt(r: &mut Report) {
+    const KDSETMODE: usize = 0x4B3A;
+    const KDGETMODE: usize = 0x4B3B;
+    const VT_GETMODE: usize = 0x5601;
+    const VT_SETMODE: usize = 0x5602;
+    let mut mode = 9u32;
+    let rc = sc(nr::IOCTL, &[0, KDSETMODE, 1]);
+    sc(nr::IOCTL, &[0, KDGETMODE, &mut mode as *mut u32 as usize]);
+    r.check(
+        "KDSETMODE KD_GRAPHICS",
+        rc == 0 && mode == 1,
+        format!("rc={} mode={}", rc, mode),
+    );
+    // VT_PROCESS with SIGUSR1/SIGUSR2 for release/acquire.
+    let mut vm = [0u8; 8];
+    vm[0] = 1;
+    vm[2..4].copy_from_slice(&10i16.to_ne_bytes());
+    vm[4..6].copy_from_slice(&12i16.to_ne_bytes());
+    let rc = sc(nr::IOCTL, &[0, VT_SETMODE, vm.as_ptr() as usize]);
+    let mut got = [0u8; 8];
+    sc(nr::IOCTL, &[0, VT_GETMODE, got.as_mut_ptr() as usize]);
+    r.check(
+        "VT_SETMODE VT_PROCESS",
+        rc == 0 && got[..6] == vm[..6],
+        format!("rc={} {:?}", rc, got),
+    );
+    vm = [0; 8];
+    sc(nr::IOCTL, &[0, VT_SETMODE, vm.as_ptr() as usize]);
+    let rc = sc(nr::IOCTL, &[0, KDSETMODE, 0]);
+    sc(nr::IOCTL, &[0, KDGETMODE, &mut mode as *mut u32 as usize]);
+    r.check(
+        "KDSETMODE KD_TEXT",
+        rc == 0 && mode == 0,
+        format!("rc={} mode={}", rc, mode),
+    );
+}
+
+/// read()/write()/mmap coherency and fsync on a file under `dir`.
+fn files(r: &mut Report, dir: &str) {
+    let path = format!("{}/kapitest.io\0", dir);
+    let fd = sc(nr::OPEN, &[path.as_ptr() as usize, 0o102 | 0o1000, 0o644]);
+    r.check("create test file", fd >= 0, format!("{} {}", fd, dir));
+    if fd < 0 {
+        return;
+    }
+    // 1 MiB of a position-dependent pattern, written in odd-sized chunks.
+    let pat = |i: usize| (i * 7 + i / 4096) as u8;
+    let data: Vec<u8> = (0..1 << 20).map(pat).collect();
+    let mut off = 0;
+    while off < data.len() {
+        let n = (data.len() - off).min(12345);
+        sc(
+            nr::PWRITE64,
+            &[fd as usize, data[off..].as_ptr() as usize, n, off],
+        );
+        off += n;
+    }
+    let mut back = alloc::vec![0u8; data.len()];
+    let mut off = 0;
+    while off < back.len() {
+        let n = sc(
+            nr::PREAD64,
+            &[fd as usize, back[off..].as_mut_ptr() as usize, 65536, off],
+        );
+        if n <= 0 {
+            break;
+        }
+        off += n as usize;
+    }
+    let bad = back.iter().zip(&data).position(|(a, b)| a != b);
+    r.check(
+        "read() returns written data",
+        off == data.len() && bad.is_none(),
+        format!("got {} first diff {:?}", off, bad),
+    );
+    // Overwrite inside cached pages; read sees it.
+    sc(
+        nr::PWRITE64,
+        &[fd as usize, b"HELLO".as_ptr() as usize, 5, 4094],
+    );
+    let mut b = [0u8; 8];
+    sc(
+        nr::PREAD64,
+        &[fd as usize, b.as_mut_ptr() as usize, 8, 4093],
+    );
+    r.check(
+        "overwrite visible to read()",
+        &b[1..6] == b"HELLO" && b[0] == pat(4093),
+        format!("{:?}", b),
+    );
+    // Shared mapping store -> read(); write() -> mapping.
+    let m = mmap(8192, MAP_SHARED, fd, 0);
+    unsafe { *((m as usize + 100) as *mut u8) = b'M' };
+    sc(nr::PREAD64, &[fd as usize, b.as_mut_ptr() as usize, 1, 100]);
+    r.check(
+        "mapping store visible to read()",
+        b[0] == b'M',
+        format!("{}", b[0]),
+    );
+    sc(nr::PWRITE64, &[fd as usize, b"w".as_ptr() as usize, 1, 200]);
+    let w = unsafe { *((m as usize + 200) as *const u8) };
+    r.check("write() visible in mapping", w == b'w', format!("{}", w));
+    sc(nr::MUNMAP, &[m as usize, 8192]);
+    // Truncate: reads stop at the new size; growing again reads zeros.
+    sc(nr::FTRUNCATE, &[fd as usize, 5000]);
+    let n = sc(
+        nr::PREAD64,
+        &[fd as usize, b.as_mut_ptr() as usize, 8, 4998],
+    );
+    r.check("truncate shortens reads", n == 2, format!("{}", n));
+    sc(nr::FTRUNCATE, &[fd as usize, 9000]);
+    let n = sc(
+        nr::PREAD64,
+        &[fd as usize, b.as_mut_ptr() as usize, 8, 5000],
+    );
+    r.check(
+        "truncate-extend reads zeros",
+        n == 8 && b == [0; 8],
+        format!("{} {:?}", n, b),
+    );
+    let rc = sc(nr::FSYNC, &[fd as usize]);
+    r.check("fsync", rc == 0, format!("{}", rc));
+    sc(nr::CLOSE, &[fd as usize]);
+    // Keep a file for the scenario to check after a remount.
+    let keep = format!("{}/kapitest.keep\0", dir);
+    let fd = sc(nr::OPEN, &[keep.as_ptr() as usize, 0o102 | 0o1000, 0o644]);
+    sc(
+        nr::PWRITE64,
+        &[fd as usize, data.as_ptr() as usize, 300_000, 0],
+    );
+    sc(nr::FSYNC, &[fd as usize]);
+    sc(nr::CLOSE, &[fd as usize]);
+    sc(nr::UNLINK, &[path.as_ptr() as usize]);
+}
+
 fn main(args: Vec<String>) -> i32 {
     let only = args.get(1).cloned();
     let mut r = Report {
         passed: 0,
         failed: 0,
     };
-    let tests: [(&str, fn(&mut Report)); 9] = [
+    if only.as_deref() == Some("files") {
+        files(&mut r, args.get(2).map_or("/tmp", |s| s.as_str()));
+        println!("kapitest: {} passed, {} failed", r.passed, r.failed);
+        return (r.failed != 0) as i32;
+    }
+    let tests: [(&str, fn(&mut Report)); 11] = [
         ("eventfd", eventfd),
         ("timerfd", timerfd),
         ("epoll", epoll),
@@ -734,6 +1020,8 @@ fn main(args: Vec<String>) -> i32 {
         ("process", fork_exit),
         ("memory", memory),
         ("pty", pty),
+        ("wakeups", wakeups),
+        ("vt", vt),
     ];
     for (name, f) in tests {
         if only.as_deref().is_none_or(|o| o == name) {

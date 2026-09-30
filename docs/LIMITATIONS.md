@@ -21,13 +21,13 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   for more than 500 ms is skipped with a warning (seen only under heavily
   overloaded emulators).
 * No swap, no huge pages; writes through shared file mappings beyond the
-  end of the file are not stored (Linux raises SIGBUS there). The page
-  cache serves mappings only; `read`/`write` go to the filesystem.
+  end of the file are not stored (Linux raises SIGBUS there). `write()`
+  goes through to the filesystem (write-through, then the cached pages
+  are updated) rather than dirtying the page cache.
 * No kernel modules; drivers are built in.
 * Missing system calls: `inotify`, `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
-  [SYSCALLS.md](SYSCALLS.md)). poll/epoll waiters share one wake-up
-  queue (sources that do not notify are re-checked every 50 ms).
+  [SYSCALLS.md](SYSCALLS.md)).
 
 ## Filesystems and storage
 

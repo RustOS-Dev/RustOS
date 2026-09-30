@@ -844,6 +844,10 @@ fn recv_icmp(
 }
 
 impl FileLike for Socket {
+    fn wait_queue(&self) -> &crate::sched::WaitQueue {
+        &super::SOCK_WQ
+    }
+
     fn read(&self, buf: &mut [u8], nonblock: bool) -> KResult<usize> {
         self.recv_from(buf, nonblock, false).map(|(n, _)| n)
     }

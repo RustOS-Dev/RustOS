@@ -112,6 +112,32 @@ static VC_LOG: [Mutex<VecDeque<u8>>; NUM_VCS] = [const { Mutex::new(VecDeque::ne
 const VC_LOG_MAX: usize = 32 * 1024;
 static ACTIVE_VC: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
+/// Per virtual console display state for programs that draw on the
+/// framebuffer themselves (KDSETMODE / VT_SETMODE).
+struct VcDisplay {
+    graphics: bool,
+    /// Pixels of a graphics console while another console is shown.
+    pixels: Option<alloc::vec::Vec<u8>>,
+    /// VT_PROCESS mode: (pid, release signal, acquire signal).
+    process: Option<(u32, u32, u32)>,
+}
+
+static VC_DISPLAY: [Mutex<VcDisplay>; NUM_VCS] = [const {
+    Mutex::new(VcDisplay {
+        graphics: false,
+        pixels: None,
+        process: None,
+    })
+}; NUM_VCS];
+
+fn vc_signal(pid: u32, sig: u32) {
+    if sig != 0
+        && let Some(p) = crate::process::find(pid as _)
+    {
+        signal::send(&p, sig);
+    }
+}
+
 impl Tty {
     fn new(sink: Sink, rows: u16, cols: u16) -> Arc<Tty> {
         Arc::new_cyclic(|me| Tty {
@@ -165,9 +191,45 @@ pub fn active_index() -> usize {
 /// Show virtual console `n` (0-based): clear the screen and replay its
 /// recent output.
 pub fn switch_vc(n: usize) {
-    if n >= NUM_VCS || n == ACTIVE_VC.swap(n, Ordering::SeqCst) {
+    if n >= NUM_VCS {
         return;
     }
+    let old = ACTIVE_VC.swap(n, Ordering::SeqCst);
+    if n == old {
+        return;
+    }
+    // Leaving a graphics console: keep its pixels.
+    let (graphics, release) = {
+        let d = VC_DISPLAY[old].lock();
+        (d.graphics, d.process)
+    };
+    if graphics {
+        let px = crate::drivers::framebuffer::save_pixels();
+        VC_DISPLAY[old].lock().pixels = px;
+    }
+    if let Some((pid, rel, _)) = release {
+        vc_signal(pid, rel);
+    }
+    let (graphics, acquire, pixels) = {
+        let mut d = VC_DISPLAY[n].lock();
+        (d.graphics, d.process, d.pixels.take())
+    };
+    if let Some((pid, _, acq)) = acquire {
+        vc_signal(pid, acq);
+    }
+    if graphics {
+        crate::drivers::framebuffer::set_graphics(true);
+        if let Some(px) = pixels {
+            crate::drivers::framebuffer::restore_pixels(&px);
+        }
+        return;
+    }
+    crate::drivers::framebuffer::set_graphics(false);
+    replay_vc(n);
+}
+
+/// Redraw text console `n` from its output log.
+fn replay_vc(n: usize) {
     let log: alloc::vec::Vec<u8> = VC_LOG[n].lock().iter().copied().collect();
     crate::drivers::console::reset_view();
     x86_64::instructions::interrupts::without_interrupts(|| {
@@ -283,7 +345,6 @@ impl Tty {
 
     fn notify(&self) {
         self.wq.wake_all();
-        vfs::notify_poll();
     }
 
     fn signal_fg(&self, sig: u32) {
@@ -470,6 +531,10 @@ impl FileLike for Tty {
         Ok(buf.len())
     }
 
+    fn wait_queue(&self) -> &WaitQueue {
+        &self.wq
+    }
+
     fn poll(&self) -> u16 {
         if self.hung_up.load(Ordering::SeqCst) {
             return vfs::POLLIN | vfs::POLLHUP;
@@ -522,9 +587,72 @@ impl FileLike for Tty {
         const VT_GETSTATE: u64 = 0x5603;
         const VT_ACTIVATE: u64 = 0x5606;
         const VT_WAITACTIVE: u64 = 0x5607;
+        const VT_GETMODE: u64 = 0x5601;
+        const VT_SETMODE: u64 = 0x5602;
+        const VT_RELDISP: u64 = 0x5605;
+        const KDSETMODE: u64 = 0x4B3A;
+        const KDGETMODE: u64 = 0x4B3B;
+        const KDGKBMODE: u64 = 0x4B44;
+        const KDSKBMODE: u64 = 0x4B45;
+        const KD_GRAPHICS: u64 = 1;
+        const VT_PROCESS: u8 = 1;
+        let vc = match self.sink {
+            Sink::Console(n) => Some(n),
+            _ => None,
+        };
         match cmd {
-            VT_GETSTATE | VT_ACTIVATE | VT_WAITACTIVE if !matches!(self.sink, Sink::Console(_)) => {
+            VT_GETSTATE | VT_ACTIVATE | VT_WAITACTIVE | VT_GETMODE | VT_SETMODE | VT_RELDISP
+            | KDSETMODE | KDGETMODE | KDGKBMODE | KDSKBMODE
+                if vc.is_none() =>
+            {
                 Err(ENOTTY)
+            }
+            KDSETMODE => {
+                let n = vc.unwrap();
+                let on = arg == KD_GRAPHICS;
+                VC_DISPLAY[n].lock().graphics = on;
+                if n == active_index() {
+                    crate::drivers::framebuffer::set_graphics(on);
+                    if !on {
+                        replay_vc(n);
+                    }
+                }
+                Ok(0)
+            }
+            KDGETMODE => {
+                let mode = VC_DISPLAY[vc.unwrap()].lock().graphics as u32;
+                uaccess::write_user(arg, &mode)?;
+                Ok(0)
+            }
+            KDGKBMODE => {
+                uaccess::write_user(arg, &1u32)?; // K_XLATE
+                Ok(0)
+            }
+            KDSKBMODE | VT_RELDISP => Ok(0),
+            VT_GETMODE => {
+                // struct vt_mode { char mode, waitv; short relsig, acqsig, frsig; }
+                let d = VC_DISPLAY[vc.unwrap()].lock();
+                let (mode, rel, acq) = d
+                    .process
+                    .map_or((0, 0, 0), |(_, r, a)| (1u8, r as i16, a as i16));
+                let raw: [u8; 8] = {
+                    let mut b = [0u8; 8];
+                    b[0] = mode;
+                    b[2..4].copy_from_slice(&rel.to_ne_bytes());
+                    b[4..6].copy_from_slice(&acq.to_ne_bytes());
+                    b
+                };
+                uaccess::write_user(arg, &raw)?;
+                Ok(0)
+            }
+            VT_SETMODE => {
+                let raw: [u8; 8] = uaccess::read_user(arg)?;
+                let rel = i16::from_ne_bytes([raw[2], raw[3]]) as u32;
+                let acq = i16::from_ne_bytes([raw[4], raw[5]]) as u32;
+                let pid = crate::process::current().map_or(0, |p| p.pid);
+                VC_DISPLAY[vc.unwrap()].lock().process =
+                    (raw[0] == VT_PROCESS).then_some((pid, rel, acq));
+                Ok(0)
             }
             VT_GETSTATE => {
                 // struct vt_stat { v_active, v_signal, v_state } (u16 each).

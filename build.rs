@@ -48,6 +48,13 @@ fn main() {
             *mode = 0o755;
         }
     }
+    // Ports listed in ports/default.list (busybox, curl, QuickJS), built
+    // against musl on first use and installed under /usr/bin.
+    println!("cargo:rerun-if-env-changed=RUSTOS_PORTS");
+    println!("cargo:rerun-if-changed=ports");
+    if !skip && std::env::var("RUSTOS_PORTS").as_deref() != Ok("0") {
+        add_default_ports(&manifest_dir, &mut files);
+    }
     // Trust store for `wget https://`: the build host's CA bundle, or the
     // file named by RUSTOS_CA_BUNDLE (empty to leave it out).
     println!("cargo:rerun-if-env-changed=RUSTOS_CA_BUNDLE");
@@ -62,6 +69,49 @@ fn main() {
         ));
     }
     std::fs::write(&cpio, make_cpio(&files)).expect("write initramfs");
+}
+
+/// Build (if needed) and add the ports named in ports/default.list. A port
+/// that cannot be built (no network for its sources, no C compiler) is
+/// left out with a warning.
+fn add_default_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
+    let Ok(list) = std::fs::read_to_string(root.join("ports/default.list")) else {
+        return;
+    };
+    for name in list
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
+        let script = root.join("ports").join(name).join("build.sh");
+        let staged = root.join("target/ports").join(name);
+        let stamp = staged.join(".built-from");
+        let recipe = std::fs::read(&script).unwrap_or_default();
+        if std::fs::read(&stamp).ok().as_deref() != Some(&recipe[..]) {
+            let ok = Command::new("sh")
+                .arg(root.join("tools/install-port.sh"))
+                .arg(name)
+                .status()
+                .is_ok_and(|s| s.success());
+            if !ok {
+                println!("cargo:warning=port {name} could not be built; not installed");
+                continue;
+            }
+            let _ = std::fs::write(&stamp, &recipe);
+        }
+        for dir in ["usr", "usr/bin"] {
+            if !files.iter().any(|(n, _)| n == dir) {
+                files.push((dir.into(), Entry::Dir));
+            }
+        }
+        let before = files.len();
+        add_tree(&staged.join("bin"), "usr/bin/", files);
+        for (_, e) in files[before..].iter_mut() {
+            if let Entry::File(_, mode) = e {
+                *mode = 0o755;
+            }
+        }
+    }
 }
 
 enum Entry {

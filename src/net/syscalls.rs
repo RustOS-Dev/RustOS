@@ -304,6 +304,9 @@ impl FileLike for PairEnd {
     fn poll(&self) -> u16 {
         (self.rx.poll() & (POLLIN | POLLHUP)) | (self.tx.poll() & POLLOUT)
     }
+    fn wait_queue(&self) -> &crate::sched::WaitQueue {
+        self.rx.wait_queue() // shared with `tx`
+    }
     fn stat(&self) -> KResult<crate::vfs::Metadata> {
         Ok(crate::vfs::Metadata::new(
             crate::vfs::FileType::Socket,
@@ -324,8 +327,9 @@ fn socketpair(domain: u16, ty: u32, sv: u64) -> KResult<i64> {
         return Err(EOPNOTSUPP);
     }
     let flags = ty & (SOCK_NONBLOCK | SOCK_CLOEXEC);
-    let (r1, w1) = vfs::pipe::pipe();
-    let (r2, w2) = vfs::pipe::pipe();
+    let wq = Arc::new(crate::sched::WaitQueue::new());
+    let (r1, w1) = vfs::pipe::pipe_on(wq.clone());
+    let (r2, w2) = vfs::pipe::pipe_on(wq);
     let a = Arc::new(PairEnd { rx: r1, tx: w2 });
     let b = Arc::new(PairEnd { rx: r2, tx: w1 });
     let fa = install(a, flags)? as i32;

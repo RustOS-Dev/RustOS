@@ -9,6 +9,10 @@ wait PASS futex wake \+ CLEARTID join 30
 wait PASS scheduler fairness 30
 wait PASS MAP_SHARED\|MAP_ANONYMOUS across fork 30
 wait PASS msync/munmap wrote the file 30
+wait PASS pty hangup gives EOF 30
+wait PASS epoll edge-triggered: no repeat 30
+wait PASS poll on epoll fd sees eventfd 30
+wait PASS KDSETMODE KD_TEXT 30
 wait kapitest: \d+ passed, 0 failed 30
 wait # $
 send grep -c Cached /proc/meminfo

@@ -171,6 +171,16 @@ pub trait Inode: Send + Sync + Any {
     fn write_at(&self, _off: u64, _buf: &[u8]) -> KResult<usize> {
         Err(EISDIR)
     }
+    /// Whether `read()` of this file goes through the page cache (regular
+    /// files on disk filesystems).
+    fn cacheable(&self) -> bool {
+        false
+    }
+    /// Read for the page cache: like `read_at`, but may bypass lower
+    /// caches since the page cache keeps the data.
+    fn read_direct(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
+        self.read_at(off, buf)
+    }
     fn truncate(&self, _size: u64) -> KResult<()> {
         Err(EINVAL)
     }
@@ -221,6 +231,11 @@ pub trait FileLike: Send + Sync + Any {
     fn poll(&self) -> u16 {
         POLLIN | POLLOUT
     }
+    /// The queue woken when `poll()` may have changed. Objects without one
+    /// of their own use the global [`POLL_WQ`] (woken by `notify_poll`).
+    fn wait_queue(&self) -> &WaitQueue {
+        &POLL_WQ
+    }
     fn ioctl(&self, _cmd: u64, _arg: u64) -> KResult<i64> {
         Err(ENOTTY)
     }
@@ -252,17 +267,12 @@ pub trait FileLike: Send + Sync + Any {
 // Poll wake-ups
 // ---------------------------------------------------------------------------
 
-/// Woken whenever any file may have become ready; poll/select sleep here.
+/// Readiness queue for objects without one of their own (see
+/// [`FileLike::wait_queue`]).
 pub static POLL_WQ: WaitQueue = WaitQueue::new();
-static POLL_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 pub fn notify_poll() {
-    POLL_EPOCH.fetch_add(1, Ordering::SeqCst);
     POLL_WQ.wake_all();
-}
-
-pub fn poll_epoch() -> u64 {
-    POLL_EPOCH.load(Ordering::SeqCst)
 }
 
 // ---------------------------------------------------------------------------
@@ -331,8 +341,7 @@ impl File {
         match &self.object {
             FileObject::Inode(i) => {
                 let mut off = self.offset.lock();
-                let n = i.read_at(*off, buf)?;
-                crate::mm::pagecache::read_overlay(i, *off, buf, n);
+                let n = Self::read_inode(i, *off, buf)?;
                 *off += n as u64;
                 Ok(n)
             }
@@ -375,13 +384,19 @@ impl File {
         }
     }
 
+    fn read_inode(i: &Arc<dyn Inode>, off: u64, buf: &mut [u8]) -> KResult<usize> {
+        if i.cacheable() {
+            crate::mm::pagecache::read(i, off, buf)
+        } else {
+            let n = i.read_at(off, buf)?;
+            crate::mm::pagecache::read_overlay(i, off, buf, n);
+            Ok(n)
+        }
+    }
+
     pub fn pread(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
         match &self.object {
-            FileObject::Inode(i) => {
-                let n = i.read_at(off, buf)?;
-                crate::mm::pagecache::read_overlay(i, off, buf, n);
-                Ok(n)
-            }
+            FileObject::Inode(i) => Self::read_inode(i, off, buf),
             FileObject::Stream(s) => s.read_at(off, buf).unwrap_or(Err(ESPIPE)),
         }
     }
@@ -441,6 +456,15 @@ impl File {
         match &self.object {
             FileObject::Inode(_) => POLLIN | POLLOUT,
             FileObject::Stream(s) => s.poll(),
+        }
+    }
+
+    /// Where to wait for `poll()` to change (None: regular files are
+    /// always ready).
+    pub fn wait_queue(&self) -> Option<&WaitQueue> {
+        match &self.object {
+            FileObject::Inode(_) => None,
+            FileObject::Stream(s) => Some(s.wait_queue()),
         }
     }
 

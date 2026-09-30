@@ -54,7 +54,6 @@ impl Pty {
         q.extend(&bytes[..bytes.len().min(room)]);
         drop(q);
         self.wq.wake_all();
-        vfs::notify_poll();
     }
 
     pub(super) fn slave_opened(&self) -> KResult<()> {
@@ -69,7 +68,6 @@ impl Pty {
     pub(super) fn slave_closed(&self) {
         if self.slave_opens.fetch_sub(1, Ordering::SeqCst) == 1 {
             self.wq.wake_all();
-            vfs::notify_poll();
             self.maybe_release();
         }
     }
@@ -121,6 +119,10 @@ impl FileLike for Master {
     fn write(&self, buf: &[u8], _nonblock: bool) -> KResult<usize> {
         self.0.slave.receive_bytes(buf);
         Ok(buf.len())
+    }
+
+    fn wait_queue(&self) -> &WaitQueue {
+        &self.0.wq
     }
 
     fn poll(&self) -> u16 {

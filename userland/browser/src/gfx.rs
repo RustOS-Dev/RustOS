@@ -7,16 +7,16 @@
 use crate::load::{LoadError, Loader};
 use crate::script::{self, Action, Sessions, Ui};
 use crate::term::{Key, Term};
-use crate::{document, dom_state, fetch_sheets, use_js, Entry, BatchUi};
+use crate::{BatchUi, Entry, document, dom_state, fetch_sheets, use_js};
 use alloc::collections::BTreeMap;
 use html::NodeId;
 use jsproto::Json;
 use layout::{FieldKind, Target};
 use paint::image::{decode, encode_png};
-use paint::painter::{paint, Scene};
+use paint::painter::{Scene, paint};
 use paint::{Canvas, Family, Fonts, Image, PixelPage, Rgba};
 use rustos_rt::fs::{self, File};
-use rustos_rt::io::{self, PollFd, POLLIN};
+use rustos_rt::io::{self, POLLIN, PollFd};
 use rustos_rt::prelude::*;
 use webclient::httpc::cookie::Context;
 use webclient::httpc::{Request, Url};
@@ -77,7 +77,15 @@ impl Screen {
             return None;
         }
         let bpp = bits as usize / 8;
-        Some(Screen { fb, w, h, stride, bpp, bgr: red_off == 16, row: vec![0; w as usize * bpp] })
+        Some(Screen {
+            fb,
+            w,
+            h,
+            stride,
+            bpp,
+            bgr: red_off == 16,
+            row: vec![0; w as usize * bpp],
+        })
     }
 
     /// Copy `c` to the screen at (0, y0), in one write when rows are
@@ -120,7 +128,10 @@ impl Screen {
             let mut off = 0;
             let total = line * rows;
             while off < total {
-                match self.fb.write_at(y0 as u64 * self.stride as u64 + off as u64, &self.row[off..total]) {
+                match self.fb.write_at(
+                    y0 as u64 * self.stride as u64 + off as u64,
+                    &self.row[off..total],
+                ) {
                     Ok(n) if n > 0 => off += n,
                     _ => break,
                 }
@@ -150,7 +161,14 @@ pub struct View {
 
 impl View {
     fn new() -> View {
-        View { page: None, images: BTreeMap::new(), sizes: BTreeMap::new(), scroll: 0.0, focus: None, hover: None }
+        View {
+            page: None,
+            images: BTreeMap::new(),
+            sizes: BTreeMap::new(),
+            scroll: 0.0,
+            focus: None,
+            hover: None,
+        }
     }
 }
 
@@ -171,7 +189,13 @@ fn fetch_images(e: &Entry, v: &mut View, loader: &mut Loader) {
         let tag = e.doc.tag(id);
         let src = match tag {
             "img" => e.doc.attr(id, "src"),
-            "input" if e.doc.attr(id, "type").is_some_and(|t| t.eq_ignore_ascii_case("image")) => e.doc.attr(id, "src"),
+            "input"
+                if e.doc
+                    .attr(id, "type")
+                    .is_some_and(|t| t.eq_ignore_ascii_case("image")) =>
+            {
+                e.doc.attr(id, "src")
+            }
             _ => None,
         };
         let mut urls: Vec<String> = src.map(|s| String::from(s.trim())).into_iter().collect();
@@ -179,7 +203,12 @@ fn fetch_images(e: &Entry, v: &mut View, loader: &mut Loader) {
             if let Some(i) = st.find("url(") {
                 let rest = &st[i + 4..];
                 if let Some(j) = rest.find(')') {
-                    urls.push(rest[..j].trim().trim_matches(|c| c == '"' || c == '\'').to_string());
+                    urls.push(
+                        rest[..j]
+                            .trim()
+                            .trim_matches(|c| c == '"' || c == '\'')
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -209,7 +238,11 @@ pub fn load_web_fonts(e: &mut Entry, loader: &mut Loader, fonts: &mut Fonts, w: 
         e.sheets = fetch_sheets(loader, &e.loaded, &e.doc, cols);
         e.sheet_key = key;
     }
-    let set = layout::style_set(paint::device(w as f32, h as f32, false), &e.sheets, &mut |_| None);
+    let set = layout::style_set(
+        paint::device(w as f32, h as f32, false),
+        &e.sheets,
+        &mut |_| None,
+    );
     let base = base_of(e);
     let mut n = 0;
     for face in &set.font_faces {
@@ -239,9 +272,23 @@ pub fn layout(e: &mut Entry, v: &mut View, loader: &mut Loader, fonts: &Fonts, w
         e.sheet_key = key;
     }
     let base = base_of(e);
-    let resolve = move |s: &str| base.join(s.trim()).map(|u| u.to_string()).unwrap_or_default();
+    let resolve = move |s: &str| {
+        base.join(s.trim())
+            .map(|u| u.to_string())
+            .unwrap_or_default()
+    };
     let state = dom_state(e);
-    let page = paint::layout_page(&e.doc, &e.sheets, fonts, &v.sizes, &resolve, w as f32, h as f32, &state, e.scripting());
+    let page = paint::layout_page(
+        &e.doc,
+        &e.sheets,
+        fonts,
+        &v.sizes,
+        &resolve,
+        w as f32,
+        h as f32,
+        &state,
+        e.scripting(),
+    );
     // The script bridge uses the entry's fields (node ids, values).
     e.fields = page.fields.clone();
     e.dirty = false;
@@ -274,12 +321,26 @@ fn focusables(p: &PixelPage) -> Vec<(Target, layout::geom::Rect)> {
 
 /// Render the page into a canvas of `w`×`h` starting at the view's scroll.
 pub fn render(v: &View, fonts: &Fonts, e: &Entry, w: u32, h: u32) -> Canvas {
-    let Some(p) = &v.page else { return Canvas::new(w, h, Rgba::WHITE) };
+    let Some(p) = &v.page else {
+        return Canvas::new(w, h, Rgba::WHITE);
+    };
     let mut c = Canvas::new(w, h, paint::page_background(&p.root));
     let base = base_of(e);
-    let resolve = move |s: &str| base.join(s.trim()).map(|u| u.to_string()).unwrap_or_default();
+    let resolve = move |s: &str| {
+        base.join(s.trim())
+            .map(|u| u.to_string())
+            .unwrap_or_default()
+    };
     let focus = v.focus.and_then(|i| focusables(p).get(i).map(|x| x.0));
-    let scene = Scene { fonts, fields: &e.fields, images: &v.images, resolve: &resolve, scroll: (0.0, v.scroll), focus, hover: v.hover };
+    let scene = Scene {
+        fonts,
+        fields: &e.fields,
+        images: &v.images,
+        resolve: &resolve,
+        scroll: (0.0, v.scroll),
+        focus,
+        hover: v.hover,
+    };
     paint(&mut c, &p.root, &scene);
     c
 }
@@ -307,7 +368,9 @@ pub fn dump_png(url: Url, insecure: bool, out: &str, w: u32, h: u32, full: bool)
             next = crate::batch_scripts(&mut e, &mut loader, &mut sessions, 5000);
         }
         match next {
-            Some(Action::Navigate { url, .. }) if url.without_fragment() != e.loaded.url.without_fragment() => {
+            Some(Action::Navigate { url, .. })
+                if url.without_fragment() != e.loaded.url.without_fragment() =>
+            {
                 req = Request::get(url);
                 continue;
             }
@@ -328,15 +391,34 @@ pub fn dump_png(url: Url, insecure: bool, out: &str, w: u32, h: u32, full: bool)
         fetch_images(&e, &mut v, &mut loader);
         layout(&mut e, &mut v, &mut loader, &fonts, w, h);
         // Canvases drawn by scripts.
-        canvases(&mut e, &mut v, &mut loader, &mut sessions, &mut BatchUi, &fonts, w, h);
-        let height = if full { v.page.as_ref().map_or(h as f32, |p| p.height).min(8000.0) as u32 } else { h };
+        canvases(
+            &mut e,
+            &mut v,
+            &mut loader,
+            &mut sessions,
+            &mut BatchUi,
+            &fonts,
+            w,
+            h,
+        );
+        let height = if full {
+            v.page.as_ref().map_or(h as f32, |p| p.height).min(8000.0) as u32
+        } else {
+            h
+        };
         let c = render(&v, &fonts, &e, w, height.max(1));
         let png = encode_png(&c.to_image());
         if let Err(err) = fs::write(out, &png) {
             eprintln!("browse: {}: {}", out, err);
             return 1;
         }
-        println!("{}: {}x{} ({})", out, w, height, v.page.as_ref().map_or(String::new(), |p| p.title.clone()));
+        println!(
+            "{}: {}x{} ({})",
+            out,
+            w,
+            height,
+            v.page.as_ref().map_or(String::new(), |p| p.title.clone())
+        );
         return 0;
     }
     1
@@ -345,21 +427,44 @@ pub fn dump_png(url: Url, insecure: bool, out: &str, w: u32, h: u32, full: bool)
 /// Ask the page's scripts for the pixels of its `<canvas>` elements
 /// (drawn with the 2D context in jsd) and treat them as images.
 #[allow(clippy::too_many_arguments)]
-fn canvases(e: &mut Entry, v: &mut View, loader: &mut Loader, sessions: &mut Sessions, ui: &mut dyn Ui, fonts: &Fonts, w: u32, h: u32) {
+fn canvases(
+    e: &mut Entry,
+    v: &mut View,
+    loader: &mut Loader,
+    sessions: &mut Sessions,
+    ui: &mut dyn Ui,
+    fonts: &Fonts,
+    w: u32,
+    h: u32,
+) {
     if !e.scripting() {
         return;
     }
-    let ids: Vec<NodeId> = e.doc.descendants(0).into_iter().filter(|&n| e.doc.tag(n) == "canvas").collect();
+    let ids: Vec<NodeId> = e
+        .doc
+        .descendants(0)
+        .into_iter()
+        .filter(|&n| e.doc.tag(n) == "canvas")
+        .collect();
     if ids.is_empty() {
         return;
     }
     let code = "JSON.stringify(Array.from(document.querySelectorAll('canvas')).map(c => [c.__id, c.width, c.height, c._pixels ? __jsd_b64(c._pixels) : '']))";
     let r = script::eval(e, loader, sessions, ui, code);
-    let Ok(Json::Arr(list)) = Json::parse(&r) else { return };
+    let Ok(Json::Arr(list)) = Json::parse(&r) else {
+        return;
+    };
     let mut changed = false;
     for item in list {
         let Some(a) = item.as_arr() else { continue };
-        let (Some(id), Some(w), Some(h), Some(b64)) = (a.first().and_then(|x| x.as_i64()), a.get(1).and_then(|x| x.as_i64()), a.get(2).and_then(|x| x.as_i64()), a.get(3).and_then(|x| x.as_str())) else { continue };
+        let (Some(id), Some(w), Some(h), Some(b64)) = (
+            a.first().and_then(|x| x.as_i64()),
+            a.get(1).and_then(|x| x.as_i64()),
+            a.get(2).and_then(|x| x.as_i64()),
+            a.get(3).and_then(|x| x.as_str()),
+        ) else {
+            continue;
+        };
         if b64.is_empty() || w <= 0 || h <= 0 {
             continue;
         }
@@ -443,15 +548,42 @@ impl Gfx {
         // Top bar.
         let mut bar = Canvas::new(w, BAR, Rgba::new(232, 234, 237, 255));
         let (title, url) = match self.hist.get(self.cur) {
-            Some((e, v)) => (v.page.as_ref().map(|p| p.title.clone()).unwrap_or_default(), e.loaded.url.to_string()),
+            Some((e, v)) => (
+                v.page.as_ref().map(|p| p.title.clone()).unwrap_or_default(),
+                e.loaded.url.to_string(),
+            ),
             None => (String::new(), String::new()),
         };
-        bar.fill_round_rect(6.0, 4.0, w as f32 - 12.0, BAR as f32 - 8.0, [10.0; 4], Rgba::WHITE);
+        bar.fill_round_rect(
+            6.0,
+            4.0,
+            w as f32 - 12.0,
+            BAR as f32 - 8.0,
+            [10.0; 4],
+            Rgba::WHITE,
+        );
         let st = css::ComputedStyle::default();
         let id = self.fonts.face_for(&st);
-        let js = if self.hist.get(self.cur).is_some_and(|(e, _)| e.scripting()) { "  [JS]" } else { "" };
-        let label = if title.is_empty() { format!("{}{}", url, js) } else { format!("{}  —  {}{}", title, url, js) };
-        self.fonts.draw(&mut bar, id, &label, 14.0, 16.0, 19.0, Rgba::new(32, 33, 36, 255), 0.0);
+        let js = if self.hist.get(self.cur).is_some_and(|(e, _)| e.scripting()) {
+            "  [JS]"
+        } else {
+            ""
+        };
+        let label = if title.is_empty() {
+            format!("{}{}", url, js)
+        } else {
+            format!("{}  —  {}{}", title, url, js)
+        };
+        self.fonts.draw(
+            &mut bar,
+            id,
+            &label,
+            14.0,
+            16.0,
+            19.0,
+            Rgba::new(32, 33, 36, 255),
+            0.0,
+        );
         self.screen.blit(&bar, 0);
         // Page.
         let page = match self.hist.get(self.cur) {
@@ -462,8 +594,26 @@ impl Gfx {
         // Pointer.
         let (px, py) = (self.pointer.0 as f32, self.pointer.1 as f32 - BAR as f32);
         if py >= 0.0 {
-            page.fill_polygon(&[(px, py), (px, py + 16.0), (px + 4.5, py + 12.0), (px + 11.0, py + 12.0)], Rgba::BLACK, true);
-            page.fill_polygon(&[(px + 1.5, py + 3.5), (px + 1.5, py + 12.5), (px + 4.5, py + 10.0), (px + 8.0, py + 10.0)], Rgba::WHITE, true);
+            page.fill_polygon(
+                &[
+                    (px, py),
+                    (px, py + 16.0),
+                    (px + 4.5, py + 12.0),
+                    (px + 11.0, py + 12.0),
+                ],
+                Rgba::BLACK,
+                true,
+            );
+            page.fill_polygon(
+                &[
+                    (px + 1.5, py + 3.5),
+                    (px + 1.5, py + 12.5),
+                    (px + 4.5, py + 10.0),
+                    (px + 8.0, py + 10.0),
+                ],
+                Rgba::WHITE,
+                true,
+            );
         }
         self.screen.blit(&page, BAR);
         // Status bar.
@@ -474,25 +624,46 @@ impl Gfx {
             None if !self.msg.is_empty() => self.msg.clone(),
             None => self.describe_focus(),
         };
-        self.fonts.draw(&mut sb, id, &status, 13.0, 8.0, 16.0, Rgba::new(60, 64, 67, 255), 0.0);
+        self.fonts.draw(
+            &mut sb,
+            id,
+            &status,
+            13.0,
+            8.0,
+            16.0,
+            Rgba::new(60, 64, 67, 255),
+            0.0,
+        );
         self.screen.blit(&sb, h - STATUS);
         dbg("drawn");
     }
 
     fn describe_focus(&self) -> String {
-        let Some((e, v)) = self.hist.get(self.cur) else { return String::new() };
-        let Some(p) = &v.page else { return String::new() };
+        let Some((e, v)) = self.hist.get(self.cur) else {
+            return String::new();
+        };
+        let Some(p) = &v.page else {
+            return String::new();
+        };
         match v.focus.and_then(|i| focusables(p).get(i).map(|x| x.0)) {
             Some(Target::Link(i)) => {
                 let l = &p.links[i];
                 if l.href.is_empty() {
                     format!("[*] {} (click: Enter)", l.text)
                 } else {
-                    base_of(e).join(&l.href).map(|u| u.to_string()).unwrap_or_else(|_| l.href.clone())
+                    base_of(e)
+                        .join(&l.href)
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|_| l.href.clone())
                 }
             }
-            Some(Target::Field(i)) => format!("{:?} field {} — Enter to use", p.fields[i].kind, p.fields[i].name),
-            _ => String::from("Tab/arrows: move  Enter: follow  Space: page down  g: go  Left: back  q: quit"),
+            Some(Target::Field(i)) => format!(
+                "{:?} field {} — Enter to use",
+                p.fields[i].kind, p.fields[i].name
+            ),
+            _ => String::from(
+                "Tab/arrows: move  Enter: follow  Space: page down  g: go  Left: back  q: quit",
+            ),
         }
     }
 
@@ -507,34 +678,83 @@ impl Gfx {
             }
         };
         self.leave();
-        let referrer = self.hist.get(self.cur).map(|(e, _)| e.loaded.url.to_string()).unwrap_or_default();
+        let referrer = self
+            .hist
+            .get(self.cur)
+            .map(|(e, _)| e.loaded.url.to_string())
+            .unwrap_or_default();
         let fragment = l.url.fragment.clone();
         let doc = document(&l, false);
         let mut e = Entry::new(l, doc, (self.screen.w / 8) as usize);
         e.referrer = referrer.clone();
         let mut v = View::new();
         let (cols, rows) = ((self.screen.w / 8) as usize, (self.page_h() / 16) as usize);
-        if use_js() && e.loaded.mime.contains("html") && crate::js::available() && script::start(&mut e, &referrer, cols, rows) {
+        if use_js()
+            && e.loaded.mime.contains("html")
+            && crate::js::available()
+            && script::start(&mut e, &referrer, cols, rows)
+        {
             let mut notice = String::new();
-            let mut ui = GfxUi { term: &mut self.term, notice: &mut notice };
+            let mut ui = GfxUi {
+                term: &mut self.term,
+                notice: &mut notice,
+            };
             dbg("scripts started");
-            script::pump(&mut e, &mut self.loader, &mut self.sessions, &mut ui, &mut |m| m.str("t") == Some("loaded"), false, 10_000);
+            script::pump(
+                &mut e,
+                &mut self.loader,
+                &mut self.sessions,
+                &mut ui,
+                &mut |m| m.str("t") == Some("loaded"),
+                false,
+                10_000,
+            );
             dbg("loaded");
-            script::pump(&mut e, &mut self.loader, &mut self.sessions, &mut ui, &mut |_| false, true, 300);
+            script::pump(
+                &mut e,
+                &mut self.loader,
+                &mut self.sessions,
+                &mut ui,
+                &mut |_| false,
+                true,
+                300,
+            );
             if !notice.is_empty() {
                 self.msg = notice;
             }
         }
         dbg("scripts idle");
         let ph0 = self.page_h();
-        load_web_fonts(&mut e, &mut self.loader, &mut self.fonts, self.screen.w, ph0);
+        load_web_fonts(
+            &mut e,
+            &mut self.loader,
+            &mut self.fonts,
+            self.screen.w,
+            ph0,
+        );
         fetch_images(&e, &mut v, &mut self.loader);
         dbg("images");
         let ph = self.page_h();
-        layout(&mut e, &mut v, &mut self.loader, &self.fonts, self.screen.w, ph);
+        layout(
+            &mut e,
+            &mut v,
+            &mut self.loader,
+            &self.fonts,
+            self.screen.w,
+            ph,
+        );
         dbg("layout");
         let mut ui = BatchUi;
-        canvases(&mut e, &mut v, &mut self.loader, &mut self.sessions, &mut ui, &self.fonts, self.screen.w, ph);
+        canvases(
+            &mut e,
+            &mut v,
+            &mut self.loader,
+            &mut self.sessions,
+            &mut ui,
+            &self.fonts,
+            self.screen.w,
+            ph,
+        );
         dbg("canvases");
         if let (Some(f), Some(p)) = (fragment, &v.page) {
             if let Some((_, y)) = p.anchors.iter().find(|(n, _)| *n == f) {
@@ -569,7 +789,9 @@ impl Gfx {
     }
 
     fn after_script(&mut self) {
-        let Some((e, v)) = self.hist.get_mut(self.cur) else { return };
+        let Some((e, v)) = self.hist.get_mut(self.cur) else {
+            return;
+        };
         let Some(s) = e.script.as_mut() else { return };
         if let Some(n) = s.notice.take() {
             self.msg = n;
@@ -577,7 +799,11 @@ impl Gfx {
         if let Some(y) = s.scroll.take() {
             v.scroll = y.max(0.0);
         }
-        let action = if s.actions.is_empty() { None } else { Some(s.actions.remove(0)) };
+        let action = if s.actions.is_empty() {
+            None
+        } else {
+            Some(s.actions.remove(0))
+        };
         s.actions.clear();
         match action {
             Some(Action::Navigate { url, replace }) => self.open(Request::get(url), !replace),
@@ -602,7 +828,9 @@ impl Gfx {
 
     fn move_focus(&mut self, down: bool) {
         let ph = self.page_h() as f32;
-        let Some((_, v)) = self.hist.get_mut(self.cur) else { return };
+        let Some((_, v)) = self.hist.get_mut(self.cur) else {
+            return;
+        };
         let Some(p) = &v.page else { return };
         let f = focusables(p);
         if f.is_empty() {
@@ -623,14 +851,23 @@ impl Gfx {
 
     /// Activate the focused target (or the one under the pointer).
     fn activate(&mut self, t: Target) {
-        let Some((e, v)) = self.hist.get_mut(self.cur) else { return };
+        let Some((e, v)) = self.hist.get_mut(self.cur) else {
+            return;
+        };
         let Some(p) = &v.page else { return };
         match t {
             Target::Link(i) => {
                 let l = p.links[i].clone();
                 if e.scripting() {
                     let mut ui = BatchUi;
-                    script::event(e, &mut self.loader, &mut self.sessions, &mut ui, "click", l.node);
+                    script::event(
+                        e,
+                        &mut self.loader,
+                        &mut self.sessions,
+                        &mut ui,
+                        "click",
+                        l.node,
+                    );
                     self.after_script();
                     return;
                 }
@@ -647,29 +884,65 @@ impl Gfx {
                 let js = e.scripting();
                 if js {
                     let mut ui = BatchUi;
-                    if script::event(e, &mut self.loader, &mut self.sessions, &mut ui, "click", f.node) == Some(true) {
+                    if script::event(
+                        e,
+                        &mut self.loader,
+                        &mut self.sessions,
+                        &mut ui,
+                        "click",
+                        f.node,
+                    ) == Some(true)
+                    {
                         return;
                     }
                 }
                 match f.kind {
-                    FieldKind::Text | FieldKind::Password | FieldKind::Textarea | FieldKind::File => {
-                        let label = if f.label.is_empty() { f.name.clone() } else { f.label.clone() };
+                    FieldKind::Text
+                    | FieldKind::Password
+                    | FieldKind::Textarea
+                    | FieldKind::File => {
+                        let label = if f.label.is_empty() {
+                            f.name.clone()
+                        } else {
+                            f.label.clone()
+                        };
                         if let Some(val) = self.edit(&label, &f.value) {
                             let (e, _) = &mut self.hist[self.cur];
                             e.overrides.entry(f.node).or_default().value = Some(val.clone());
                             e.dirty = true;
                             if js {
-                                script::input(e, f.node, Json::obj([("value", Json::from(val.as_str()))]));
+                                script::input(
+                                    e,
+                                    f.node,
+                                    Json::obj([("value", Json::from(val.as_str()))]),
+                                );
                                 let mut ui = BatchUi;
-                                script::pump(e, &mut self.loader, &mut self.sessions, &mut ui, &mut |_| false, true, 500);
+                                script::pump(
+                                    e,
+                                    &mut self.loader,
+                                    &mut self.sessions,
+                                    &mut ui,
+                                    &mut |_| false,
+                                    true,
+                                    500,
+                                );
                             }
                         }
                     }
                     FieldKind::Checkbox | FieldKind::Radio if !js => {
                         let o = e.overrides.entry(f.node).or_default();
-                        o.checked = Some(if f.kind == FieldKind::Radio { true } else { !f.checked });
+                        o.checked = Some(if f.kind == FieldKind::Radio {
+                            true
+                        } else {
+                            !f.checked
+                        });
                         if f.kind == FieldKind::Radio {
-                            for x in p.fields.iter().filter(|x| x.kind == FieldKind::Radio && x.name == f.name && x.node != f.node && x.form == f.form) {
+                            for x in p.fields.iter().filter(|x| {
+                                x.kind == FieldKind::Radio
+                                    && x.name == f.name
+                                    && x.node != f.node
+                                    && x.form == f.form
+                            }) {
                                 e.overrides.entry(x.node).or_default().checked = Some(false);
                             }
                         }
@@ -682,7 +955,11 @@ impl Gfx {
                         if js {
                             script::input(e, f.node, Json::obj([("index", Json::from(n))]));
                         }
-                        self.msg = format!("{}: {}", f.name, f.options.get(n).map(|o| o.label.as_str()).unwrap_or(""));
+                        self.msg = format!(
+                            "{}: {}",
+                            f.name,
+                            f.options.get(n).map(|o| o.label.as_str()).unwrap_or("")
+                        );
                     }
                     FieldKind::Submit | FieldKind::Image if !js => {
                         if let Some(fi) = f.form {
@@ -733,10 +1010,14 @@ impl Gfx {
     }
 
     fn click_at(&mut self, x: i32, y: i32) {
-        let Some((_, v)) = self.hist.get(self.cur) else { return };
+        let Some((_, v)) = self.hist.get(self.cur) else {
+            return;
+        };
         let Some(p) = &v.page else { return };
         let (px, py) = (x as f32, y as f32 - BAR as f32 + v.scroll);
-        let Some(node) = p.root.hit(px, py) else { return };
+        let Some(node) = p.root.hit(px, py) else {
+            return;
+        };
         // The link or control containing the node.
         let mut n = Some(node);
         let doc = &self.hist[self.cur].0.doc;
@@ -788,18 +1069,35 @@ impl Gfx {
                 self.redraw = false;
             }
             // Wait for keys, the mouse, or the page's scripts.
-            let mut fds = vec![PollFd { fd: 0, events: POLLIN, revents: 0 }];
+            let mut fds = vec![PollFd {
+                fd: 0,
+                events: POLLIN,
+                revents: 0,
+            }];
             if let Some(m) = &self.mouse {
-                fds.push(PollFd { fd: m.fd(), events: POLLIN, revents: 0 });
+                fds.push(PollFd {
+                    fd: m.fd(),
+                    events: POLLIN,
+                    revents: 0,
+                });
             }
-            let js_fd = self.hist.get(self.cur).and_then(|(e, _)| e.script.as_ref().filter(|s| !s.js.dead).map(|s| s.js.fd()));
+            let js_fd = self
+                .hist
+                .get(self.cur)
+                .and_then(|(e, _)| e.script.as_ref().filter(|s| !s.js.dead).map(|s| s.js.fd()));
             if let Some(fd) = js_fd {
-                fds.push(PollFd { fd, events: POLLIN, revents: 0 });
+                fds.push(PollFd {
+                    fd,
+                    events: POLLIN,
+                    revents: 0,
+                });
             }
             if !self.term.has_pending() {
                 let _ = io::poll(&mut fds, 100);
             }
-            let js_ready = fds.last().is_some_and(|f| js_fd == Some(f.fd) && f.revents != 0);
+            let js_ready = fds
+                .last()
+                .is_some_and(|f| js_fd == Some(f.fd) && f.revents != 0);
             if let Some((e, _)) = self.hist.get_mut(self.cur) {
                 crate::sockets::service(e);
                 let mut ui = BatchUi;
@@ -837,7 +1135,11 @@ impl Gfx {
                 Key::Char('j') => self.scroll_by(48.0),
                 Key::Char('k') => self.scroll_by(-48.0),
                 Key::Right | Key::Enter => {
-                    let t = self.hist.get(self.cur).and_then(|(_, v)| v.page.as_ref().and_then(|p| v.focus.and_then(|i| focusables(p).get(i).map(|x| x.0))));
+                    let t = self.hist.get(self.cur).and_then(|(_, v)| {
+                        v.page
+                            .as_ref()
+                            .and_then(|p| v.focus.and_then(|i| focusables(p).get(i).map(|x| x.0)))
+                    });
                     if let Some(t) = t {
                         self.activate(t);
                     }

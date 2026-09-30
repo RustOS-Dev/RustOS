@@ -4,7 +4,7 @@
 //! descriptor is closed before exec.
 
 use jsproto::Json;
-use rustos_rt::io::{self, PollFd, POLLIN};
+use rustos_rt::io::{self, POLLIN, PollFd};
 use rustos_rt::prelude::*;
 use rustos_rt::{env, fs, process, time};
 
@@ -58,7 +58,13 @@ impl Js {
         process::close(from_child_w);
         process::set_cloexec(to_child_w, true);
         process::set_cloexec(from_child_r, true);
-        Some(Js { pid, tx: to_child_w, rx: from_child_r, buf: Vec::new(), dead: false })
+        Some(Js {
+            pid,
+            tx: to_child_w,
+            rx: from_child_r,
+            buf: Vec::new(),
+            dead: false,
+        })
     }
 
     pub fn fd(&self) -> i32 {
@@ -102,7 +108,11 @@ impl Js {
     /// The next message, waiting up to `timeout_ms` (-1: forever). None on
     /// timeout or when jsd has gone.
     pub fn recv(&mut self, timeout_ms: i32) -> Option<Json> {
-        let deadline = if timeout_ms >= 0 { Some(time::millis() + timeout_ms as u64) } else { None };
+        let deadline = if timeout_ms >= 0 {
+            Some(time::millis() + timeout_ms as u64)
+        } else {
+            None
+        };
         loop {
             if let Some(m) = self.take_line() {
                 return Some(m);
@@ -114,7 +124,11 @@ impl Js {
                 Some(d) => d.saturating_sub(time::millis()) as i32,
                 None => -1,
             };
-            let mut fds = [PollFd { fd: self.rx, events: POLLIN, revents: 0 }];
+            let mut fds = [PollFd {
+                fd: self.rx,
+                events: POLLIN,
+                revents: 0,
+            }];
             if io::poll(&mut fds, wait).unwrap_or(0) == 0 {
                 return None;
             }

@@ -50,6 +50,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("fgconsole", sys::fgconsole),
     ("find", files::find),
     ("free", sys::free),
+    ("getfattr", fsutil::getfattr),
     ("grep", text::grep),
     ("head", text::head),
     ("hexdump", files::hexdump),

@@ -706,13 +706,22 @@ pub fn mkfs(args: &[String]) -> i32 {
         Err(e) => return err("mkfs", &dev, e),
     };
     let mut size = 0u64;
-    if f.ioctl(0x8008_1272, &mut size as *mut u64 as usize).is_err() {
+    if f.ioctl(0x8008_1272, &mut size as *mut u64 as usize)
+        .is_err()
+    {
         size = f.metadata().map(|m| m.size).unwrap_or(0);
     }
     let sectors = size / 512;
     let serial = time::now() as u32;
-    let opts = fat_format::Options { label: &label, serial, fat_type: kind, hidden_sectors: 0 };
-    match fat_format::format(sectors, &opts, |lba, s| f.write_at(lba * 512, s).map(|_| ())) {
+    let opts = fat_format::Options {
+        label: &label,
+        serial,
+        fat_type: kind,
+        hidden_sectors: 0,
+    };
+    match fat_format::format(sectors, &opts, |lba, s| {
+        f.write_at(lba * 512, s).map(|_| ())
+    }) {
         Ok(l) => {
             let _ = f.sync();
             println!(

@@ -150,6 +150,12 @@ pub mod nr {
     pub const MKNOD: u64 = 133;
     pub const STATFS: u64 = 137;
     pub const FSTATFS: u64 = 138;
+    pub const GETXATTR: u64 = 191;
+    pub const LGETXATTR: u64 = 192;
+    pub const FGETXATTR: u64 = 193;
+    pub const LISTXATTR: u64 = 194;
+    pub const LLISTXATTR: u64 = 195;
+    pub const FLISTXATTR: u64 = 196;
     pub const PRCTL: u64 = 157;
     pub const ARCH_PRCTL: u64 = 158;
     pub const SYNC: u64 = 162;
@@ -347,6 +353,12 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         MKNOD => v(fs::mknod(a[0], a[1] as u32)),
         STATFS => v(fs::statfs(a[0], a[1])),
         FSTATFS => v(fs::fstatfs(a[0] as i32, a[1])),
+        GETXATTR => v(fs::getxattr(a[0], a[1], a[2], a[3], true)),
+        LGETXATTR => v(fs::getxattr(a[0], a[1], a[2], a[3], false)),
+        FGETXATTR => v(fs::fgetxattr(a[0] as i32, a[1], a[2], a[3])),
+        LISTXATTR => v(fs::listxattr(a[0], a[1], a[2], true)),
+        LLISTXATTR => v(fs::listxattr(a[0], a[1], a[2], false)),
+        FLISTXATTR => v(fs::flistxattr(a[0] as i32, a[1], a[2])),
         POLL => v(fs::poll(a[0], a[1], a[2] as i32 as i64)),
         PPOLL => v(fs::ppoll(a[0], a[1], a[2])),
         SELECT => v(fs::select(a[0] as i32, a[1], a[2], a[3], a[4], false)),

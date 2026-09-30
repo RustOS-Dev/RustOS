@@ -206,6 +206,14 @@ pub trait Inode: Send + Sync + Any {
     fn sync(&self) -> KResult<()> {
         Ok(())
     }
+    /// The value of extended attribute `name` ("user.comment").
+    fn getxattr(&self, _name: &str) -> KResult<Vec<u8>> {
+        Err(ENODATA)
+    }
+    /// Names of the extended attributes.
+    fn listxattr(&self) -> KResult<Vec<String>> {
+        Ok(Vec::new())
+    }
     /// Device and special nodes return a stream object to use instead of
     /// `read_at`/`write_at`.
     fn open(&self, _flags: u32) -> KResult<Option<Arc<dyn FileLike>>> {

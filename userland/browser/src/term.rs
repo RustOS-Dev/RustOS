@@ -1,7 +1,7 @@
 //! Terminal handling: raw mode, alternate screen, key decoding and a
 //! single-line editor for prompts and form fields.
 
-use rustos_rt::io::{self, PollFd, POLLIN};
+use rustos_rt::io::{self, POLLIN, PollFd};
 use rustos_rt::prelude::*;
 use rustos_rt::term::{self, Termios};
 
@@ -44,7 +44,10 @@ impl Term {
             term::set(0, &t);
         }
         out("\x1b[?1049h\x1b[?25l");
-        Term { saved, pending: Vec::new() }
+        Term {
+            saved,
+            pending: Vec::new(),
+        }
     }
 
     pub fn leave(&mut self) {
@@ -69,7 +72,11 @@ impl Term {
             return Some(self.pending.remove(0));
         }
         if timeout_ms >= 0 {
-            let mut fds = [PollFd { fd: 0, events: POLLIN, revents: 0 }];
+            let mut fds = [PollFd {
+                fd: 0,
+                events: POLLIN,
+                revents: 0,
+            }];
             if io::poll(&mut fds, timeout_ms).unwrap_or(0) == 0 {
                 return None;
             }
@@ -93,13 +100,17 @@ impl Term {
             b'\t' => Key::Tab,
             0x7f | 0x08 => Key::Backspace,
             0x1b => {
-                let Some(b1) = self.byte(60) else { return Some(Key::Esc) };
+                let Some(b1) = self.byte(60) else {
+                    return Some(Key::Esc);
+                };
                 if b1 != b'[' && b1 != b'O' {
                     return Some(Key::Esc);
                 }
                 let mut params = Vec::new();
                 let fin = loop {
-                    let Some(c) = self.byte(60) else { return Some(Key::Esc) };
+                    let Some(c) = self.byte(60) else {
+                        return Some(Key::Esc);
+                    };
                     if c.is_ascii_digit() || c == b';' {
                         params.push(c);
                     } else {
@@ -136,7 +147,12 @@ impl Term {
                         bytes.push(c);
                     }
                 }
-                Key::Char(String::from_utf8_lossy(&bytes).chars().next().unwrap_or('?'))
+                Key::Char(
+                    String::from_utf8_lossy(&bytes)
+                        .chars()
+                        .next()
+                        .unwrap_or('?'),
+                )
             }
         })
     }
@@ -159,7 +175,14 @@ pub fn goto(row: usize, col: usize) -> String {
 
 /// Edit one line at the bottom of the screen. Returns `None` when the
 /// user cancels (Esc, Ctrl-C, Ctrl-G).
-pub fn edit_line(t: &mut Term, row: usize, width: usize, prompt: &str, initial: &str, masked: bool) -> Option<String> {
+pub fn edit_line(
+    t: &mut Term,
+    row: usize,
+    width: usize,
+    prompt: &str,
+    initial: &str,
+    masked: bool,
+) -> Option<String> {
     let mut buf: Vec<char> = initial.chars().collect();
     let mut cur = buf.len();
     let plen = layout::text_width(prompt);

@@ -24,7 +24,15 @@ fn addr(s: &str) -> String {
     let port = u16::from_str_radix(p, 16).unwrap_or(0);
     if a.len() == 8 {
         let ip = Ipv4(u32::from_str_radix(a, 16).unwrap_or(0).to_le_bytes());
-        format!("{}:{}", ip, if port == 0 { String::from("*") } else { port.to_string() })
+        format!(
+            "{}:{}",
+            ip,
+            if port == 0 {
+                String::from("*")
+            } else {
+                port.to_string()
+            }
+        )
     } else {
         // IPv6: 4 little-endian words.
         let mut b = [0u8; 16];
@@ -47,7 +55,10 @@ pub fn netstat(args: &[String]) -> i32 {
         .flat_map(|a| a.chars().skip(1))
         .collect();
     if flags.contains('i') {
-        print!("{}", fs::read_to_string("/proc/net/dev").unwrap_or_default());
+        print!(
+            "{}",
+            fs::read_to_string("/proc/net/dev").unwrap_or_default()
+        );
         return 0;
     }
     if flags.contains('r') {
@@ -57,8 +68,14 @@ pub fn netstat(args: &[String]) -> i32 {
     let want_udp = flags.contains('u') || !flags.contains('t');
     let listening_only = flags.contains('l');
     let all = flags.contains('a');
-    println!("Proto Recv-Q Send-Q {:<23} {:<23} State", "Local Address", "Foreign Address");
-    for (proto, file, on) in [("tcp", "/proc/net/tcp", want_tcp), ("udp", "/proc/net/udp", want_udp)] {
+    println!(
+        "Proto Recv-Q Send-Q {:<23} {:<23} State",
+        "Local Address", "Foreign Address"
+    );
+    for (proto, file, on) in [
+        ("tcp", "/proc/net/tcp", want_tcp),
+        ("udp", "/proc/net/udp", want_udp),
+    ] {
         if !on {
             continue;
         }

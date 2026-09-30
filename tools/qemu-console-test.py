@@ -46,6 +46,13 @@ def _disk(m):
         if "bigalloc" in feats:
             cmd += ["-C", "16384"]
         subprocess.run(cmd + [path], check=True, stdout=subprocess.DEVNULL)
+        if "ea_inode" in feats:
+            # A 4096-byte attribute value (debugfs caps it at one block; it
+            # goes to its own inode) and a small one.
+            val = os.path.join(src, "val")
+            open(val, "w").write("V" * 6000)
+            cmds = f"ea_set -f {val} big.bin user.big\nea_set small.txt user.note hello\n"
+            _quiet(["debugfs", "-w", "-f", "-", path], input=cmds.encode())
         if "casefold" in feats:
             # A casefolded directory "cf" with enough entries to be indexed.
             cmds = "mkdir cf\nset_inode_field cf flags 0x40080000\n"

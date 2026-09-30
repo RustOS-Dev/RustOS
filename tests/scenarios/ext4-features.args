@@ -7,3 +7,5 @@
 -device virtio-blk-pci,drive=f2
 -drive if=none,id=f3,format=raw,file=@EXT4F:64:large_dir@
 -device virtio-blk-pci,drive=f3
+-drive if=none,id=f4,format=raw,file=@EXT4F:64:ea_inode@
+-device virtio-blk-pci,drive=f4

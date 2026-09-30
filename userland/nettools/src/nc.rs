@@ -16,10 +16,25 @@ fn pump(sock: &Socket, udp_peer: Option<SocketAddr>, mut idle_ms: i32) -> i32 {
     let mut buf = vec![0u8; 16384];
     loop {
         let mut fds = [
-            PollFd { fd: sock.fd(), events: POLLIN, revents: 0 },
-            PollFd { fd: io::STDIN, events: if stdin_open { POLLIN } else { 0 }, revents: 0 },
+            PollFd {
+                fd: sock.fd(),
+                events: POLLIN,
+                revents: 0,
+            },
+            PollFd {
+                fd: io::STDIN,
+                events: if stdin_open { POLLIN } else { 0 },
+                revents: 0,
+            },
         ];
-        let n = match io::poll(if stdin_open { &mut fds[..] } else { &mut fds[..1] }, idle_ms) {
+        let n = match io::poll(
+            if stdin_open {
+                &mut fds[..]
+            } else {
+                &mut fds[..1]
+            },
+            idle_ms,
+        ) {
             Ok(n) => n,
             Err(e) => return err("nc", "poll", e),
         };
@@ -75,7 +90,10 @@ pub fn nc(args: &[String]) -> i32 {
             "-p" => {}
             "-w" => {
                 i += 1;
-                wait = args.get(i).and_then(|w| w.parse::<i32>().ok()).map_or(-1, |s| s * 1000);
+                wait = args
+                    .get(i)
+                    .and_then(|w| w.parse::<i32>().ok())
+                    .map_or(-1, |s| s * 1000);
             }
             "-n" | "-v" => {}
             a if a.starts_with('-') => return usage(),
@@ -87,7 +105,10 @@ pub fn nc(args: &[String]) -> i32 {
         let Some(port) = pos.last().and_then(|p| p.parse::<u16>().ok()) else {
             return usage();
         };
-        let any = SocketAddr { ip: Ipv4::ANY, port };
+        let any = SocketAddr {
+            ip: Ipv4::ANY,
+            port,
+        };
         if udp {
             let s = match net::udp_bind(any) {
                 Ok(s) => s,

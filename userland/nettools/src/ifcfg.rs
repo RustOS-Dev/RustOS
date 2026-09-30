@@ -10,7 +10,13 @@ fn show_iface(i: &IfInfo, brief: bool) {
         println!(
             "{:<8} {:<5} {}",
             i.name,
-            if i.up && i.link { "UP" } else if i.up { "NO-CARRIER" } else { "DOWN" },
+            if i.up && i.link {
+                "UP"
+            } else if i.up {
+                "NO-CARRIER"
+            } else {
+                "DOWN"
+            },
             i.addrs.join(" ")
         );
         return;
@@ -28,9 +34,20 @@ fn show_iface(i: &IfInfo, brief: bool) {
     if i.up && i.link {
         flags.push("RUNNING");
     }
-    println!("{}: {}: <{}> mtu {}", i.index, i.name, flags.join(","), i.mtu);
+    println!(
+        "{}: {}: <{}> mtu {}",
+        i.index,
+        i.name,
+        flags.join(","),
+        i.mtu
+    );
     if i.driver != "loopback" {
-        println!("    link/ether {} driver {}{}", i.mac, i.driver, if i.dhcp { " dhcp" } else { "" });
+        println!(
+            "    link/ether {} driver {}{}",
+            i.mac,
+            i.driver,
+            if i.dhcp { " dhcp" } else { "" }
+        );
     } else {
         println!("    link/loopback");
     }
@@ -58,7 +75,10 @@ pub fn ip(args: &[String]) -> i32 {
     match obj {
         "a" | "addr" | "address" | "l" | "link" => match rest.first().copied() {
             None | Some("show") | Some("list") => {
-                let only = rest.iter().position(|&w| w == "dev").and_then(|p| rest.get(p + 1));
+                let only = rest
+                    .iter()
+                    .position(|&w| w == "dev")
+                    .and_then(|p| rest.get(p + 1));
                 for i in net::interfaces() {
                     if only.is_none_or(|o| *o == i.name) {
                         show_iface(&i, brief);
@@ -71,7 +91,11 @@ pub fn ip(args: &[String]) -> i32 {
                     eprintln!("usage: ip addr add|del A.B.C.D/P dev IFACE");
                     return 1;
                 };
-                let Some(dev) = rest.iter().position(|&w| w == "dev").and_then(|p| rest.get(p + 1)) else {
+                let Some(dev) = rest
+                    .iter()
+                    .position(|&w| w == "dev")
+                    .and_then(|p| rest.get(p + 1))
+                else {
                     eprintln!("ip: missing 'dev IFACE'");
                     return 1;
                 };
@@ -131,7 +155,11 @@ fn show_routes() {
         println!(
             "{:<18} {:<16} {:<8}",
             format!("{}/{}", dst, net::mask_prefix(mask)),
-            if gw == Ipv4::ANY { String::from("*") } else { gw.to_string() },
+            if gw == Ipv4::ANY {
+                String::from("*")
+            } else {
+                gw.to_string()
+            },
             f[0]
         );
     }
@@ -166,7 +194,11 @@ fn route_cmd(a: &[&str]) -> i32 {
                 .and_then(|p| a.get(p + 1))
                 .and_then(|g| Ipv4::parse(g))
                 .unwrap_or(Ipv4::ANY);
-            let dev = a.iter().position(|&w| w == "dev").and_then(|p| a.get(p + 1)).copied();
+            let dev = a
+                .iter()
+                .position(|&w| w == "dev")
+                .and_then(|p| a.get(p + 1))
+                .copied();
             net::route(add, dst, prefix, gw, dev).map_or_else(|e| err("ip route", target, e), |_| 0)
         }
         Some(o) => {
@@ -178,18 +210,29 @@ fn route_cmd(a: &[&str]) -> i32 {
 
 /// route [-n] | route add|del default gw GW | route add -net N netmask M gw GW [dev IF]
 pub fn route(args: &[String]) -> i32 {
-    let a: Vec<&str> = args[1..].iter().map(|s| s.as_str()).filter(|s| *s != "-n").collect();
+    let a: Vec<&str> = args[1..]
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| *s != "-n")
+        .collect();
     match a.first().copied() {
         None => {
             show_routes();
             0
         }
         Some(op @ ("add" | "del")) => {
-            let get = |k: &str| a.iter().position(|&w| w == k).and_then(|p| a.get(p + 1)).copied();
+            let get = |k: &str| {
+                a.iter()
+                    .position(|&w| w == k)
+                    .and_then(|p| a.get(p + 1))
+                    .copied()
+            };
             let (dst, prefix) = if a.contains(&"default") {
                 (Ipv4::ANY, 0)
             } else if let Some(n) = get("-net").or(get("-host")) {
-                let p = get("netmask").and_then(Ipv4::parse).map_or(32, net::mask_prefix);
+                let p = get("netmask")
+                    .and_then(Ipv4::parse)
+                    .map_or(32, net::mask_prefix);
                 match net::parse_cidr(n, p) {
                     Some(c) => c,
                     None => {
@@ -202,7 +245,8 @@ pub fn route(args: &[String]) -> i32 {
                 return 1;
             };
             let gw = get("gw").and_then(Ipv4::parse).unwrap_or(Ipv4::ANY);
-            net::route(op == "add", dst, prefix, gw, get("dev")).map_or_else(|e| err("route", op, e), |_| 0)
+            net::route(op == "add", dst, prefix, gw, get("dev"))
+                .map_or_else(|e| err("route", op, e), |_| 0)
         }
         Some(o) => {
             eprintln!("route: unknown command '{}'", o);
@@ -222,7 +266,11 @@ pub fn ifconfig(args: &[String]) -> i32 {
             "{}: flags=<{}{}> mtu {}",
             i.name,
             if i.up { "UP," } else { "" },
-            if i.driver == "loopback" { "LOOPBACK" } else { "BROADCAST,MULTICAST" },
+            if i.driver == "loopback" {
+                "LOOPBACK"
+            } else {
+                "BROADCAST,MULTICAST"
+            },
             i.mtu
         );
         if let Some((ip, p)) = v4 {
@@ -235,11 +283,22 @@ pub fn ifconfig(args: &[String]) -> i32 {
             println!("        ether {}  ({})", i.mac, i.driver);
         }
         let stats = fs::read_to_string("/proc/net/dev").unwrap_or_default();
-        if let Some(l) = stats.lines().find(|l| l.trim_start().starts_with(&format!("{}:", i.name))) {
-            let f: Vec<&str> = l.split(':').nth(1).unwrap_or("").split_whitespace().collect();
+        if let Some(l) = stats
+            .lines()
+            .find(|l| l.trim_start().starts_with(&format!("{}:", i.name)))
+        {
+            let f: Vec<&str> = l
+                .split(':')
+                .nth(1)
+                .unwrap_or("")
+                .split_whitespace()
+                .collect();
             if f.len() >= 10 {
                 println!("        RX packets {}  bytes {}", f[1], f[0]);
-                println!("        TX packets {}  bytes {}  errors {}", f[9], f[8], f[10]);
+                println!(
+                    "        TX packets {}  bytes {}  errors {}",
+                    f[9], f[8], f[10]
+                );
             }
         }
         println!();
@@ -277,7 +336,10 @@ pub fn ifconfig(args: &[String]) -> i32 {
                     eprintln!("ifconfig: bad netmask");
                     return 1;
                 };
-                let ip = addr.map(|x| x.0).or(i.ipv4().map(|x| x.0)).unwrap_or(Ipv4::ANY);
+                let ip = addr
+                    .map(|x| x.0)
+                    .or(i.ipv4().map(|x| x.0))
+                    .unwrap_or(Ipv4::ANY);
                 addr = Some((ip, net::mask_prefix(m)));
             }
             w => match net::parse_cidr(w, i.ipv4().map_or(24, |x| x.1)) {
@@ -299,7 +361,10 @@ pub fn ifconfig(args: &[String]) -> i32 {
 }
 
 pub fn arp(_args: &[String]) -> i32 {
-    print!("{}", fs::read_to_string("/proc/net/arp").unwrap_or_default());
+    print!(
+        "{}",
+        fs::read_to_string("/proc/net/arp").unwrap_or_default()
+    );
     0
 }
 
@@ -324,7 +389,10 @@ pub fn dhcp(args: &[String]) -> i32 {
     }
     let name = match name {
         Some(n) => n,
-        None => match net::interfaces().into_iter().find(|i| i.driver != "loopback") {
+        None => match net::interfaces()
+            .into_iter()
+            .find(|i| i.driver != "loopback")
+        {
             Some(i) => i.name,
             None => {
                 eprintln!("dhcp: no network interfaces");
@@ -356,14 +424,18 @@ pub fn dhcp(args: &[String]) -> i32 {
                 name,
                 ip,
                 p,
-                i.gateway.map_or(String::new(), |g| format!(" gateway {}", g))
+                i.gateway
+                    .map_or(String::new(), |g| format!(" gateway {}", g))
             );
             // The network may announce a captive portal (DHCP option 114).
             time::sleep_ms(100);
             if let Some((ifc, src, url)) = webclient::portal::announced()
                 && ifc == name
             {
-                println!("{}: captive portal {} (from {}); log in with 'browse --portal'", name, url, src);
+                println!(
+                    "{}: captive portal {} (from {}); log in with 'browse --portal'",
+                    name, url, src
+                );
             }
             return 0;
         }

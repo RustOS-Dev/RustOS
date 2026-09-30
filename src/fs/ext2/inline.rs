@@ -13,12 +13,13 @@ const INLINE_SIZE: usize = 60;
 
 /// One in-inode extended attribute: (name index, name, value, raw entry
 /// header fields hash / value inode kept for round-tripping).
-struct IbodyAttr {
-    index: u8,
-    name: Vec<u8>,
-    value: Vec<u8>,
-    value_inum: u32,
-    hash: u32,
+pub(super) struct IbodyAttr {
+    pub index: u8,
+    pub name: Vec<u8>,
+    pub value: Vec<u8>,
+    pub value_inum: u32,
+    pub value_size: u32,
+    pub hash: u32,
 }
 
 /// Start of the in-inode xattr area (`128 + i_extra_isize`), if any.
@@ -30,7 +31,7 @@ fn ibody_start(raw: &[u8]) -> Option<usize> {
     (s + 4 <= raw.len()).then_some(s)
 }
 
-fn parse_ibody(raw: &[u8]) -> Vec<IbodyAttr> {
+pub(super) fn parse_ibody(raw: &[u8]) -> Vec<IbodyAttr> {
     let mut out = Vec::new();
     let Some(s) = ibody_start(raw) else {
         return out;
@@ -64,6 +65,7 @@ fn parse_ibody(raw: &[u8]) -> Vec<IbodyAttr> {
             name,
             value,
             value_inum,
+            value_size: vsize as u32,
             hash,
         });
         o += (16 + nl).next_multiple_of(4);

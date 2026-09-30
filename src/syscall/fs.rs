@@ -661,6 +661,64 @@ fn write_statfs(path: &str, buf: u64) -> SysResult {
     Ok(0)
 }
 
+/// Copy an xattr value or name list out (size 0 asks for the length).
+fn xattr_out(v: &[u8], buf: u64, size: u64) -> SysResult {
+    if size == 0 {
+        return Ok(v.len() as i64);
+    }
+    if (size as usize) < v.len() {
+        return Err(ERANGE);
+    }
+    uaccess::copy_to_user(buf, v)?;
+    Ok(v.len() as i64)
+}
+
+fn xattr_names(names: Vec<String>) -> Vec<u8> {
+    let mut out = Vec::new();
+    for n in names {
+        out.extend_from_slice(n.as_bytes());
+        out.push(0);
+    }
+    out
+}
+
+pub fn getxattr(path: u64, name: u64, value: u64, size: u64, follow: bool) -> SysResult {
+    let abs = path_at(AT_FDCWD, path)?;
+    let name = uaccess::read_cstr(name, 256)?;
+    let ino = if follow {
+        vfs::lookup(&abs)?
+    } else {
+        vfs::lookup_nofollow(&abs)?
+    };
+    xattr_out(&ino.getxattr(&name)?, value, size)
+}
+
+pub fn fgetxattr(fd: i32, name: u64, value: u64, size: u64) -> SysResult {
+    let name = uaccess::read_cstr(name, 256)?;
+    let f = file(fd)?;
+    xattr_out(
+        &f.inode.as_ref().ok_or(EINVAL)?.getxattr(&name)?,
+        value,
+        size,
+    )
+}
+
+pub fn listxattr(path: u64, list: u64, size: u64, follow: bool) -> SysResult {
+    let abs = path_at(AT_FDCWD, path)?;
+    let ino = if follow {
+        vfs::lookup(&abs)?
+    } else {
+        vfs::lookup_nofollow(&abs)?
+    };
+    xattr_out(&xattr_names(ino.listxattr()?), list, size)
+}
+
+pub fn flistxattr(fd: i32, list: u64, size: u64) -> SysResult {
+    let f = file(fd)?;
+    let names = f.inode.as_ref().ok_or(EINVAL)?.listxattr()?;
+    xattr_out(&xattr_names(names), list, size)
+}
+
 pub fn statfs(path: u64, buf: u64) -> SysResult {
     let abs = path_at(AT_FDCWD, path)?;
     vfs::lookup(&abs)?;

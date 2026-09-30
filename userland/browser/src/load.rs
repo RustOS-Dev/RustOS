@@ -6,7 +6,7 @@ use rustos_rt::prelude::*;
 use rustos_rt::{fs, time};
 use webclient::httpc::client::Sink;
 use webclient::httpc::cookie::Context;
-use webclient::httpc::{self, encoding, Request, ResponseHead, Url};
+use webclient::httpc::{self, Request, ResponseHead, Url, encoding};
 use webclient::{Client, Net};
 
 pub struct Loaded {
@@ -33,7 +33,10 @@ pub struct Loader {
 }
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn mime_for_path(p: &str) -> &'static str {
@@ -53,11 +56,15 @@ impl Loader {
         net.insecure = insecure;
         net.timeout_ms = 30_000;
         let mut client = webclient::client(net);
-        client.opts.accept = String::from("text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8");
+        client.opts.accept =
+            String::from("text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8");
         client.opts.user_agent = String::from("Mozilla/5.0 (compatible; RustOS browse/1.0; text)");
         let cookie_path = webclient::cookie_file();
         webclient::load_cookies(&mut client.jar, cookie_path);
-        Loader { client, cookie_path }
+        Loader {
+            client,
+            cookie_path,
+        }
     }
 
     pub fn save_cookies(&self) {
@@ -78,7 +85,9 @@ impl Loader {
                     }
                 }
                 let now = time::now();
-                let mut s = String::from("<title>Cookies</title><h1>Cookies</h1><table><tr><th>Domain<th>Name<th>Expires<th></tr>");
+                let mut s = String::from(
+                    "<title>Cookies</title><h1>Cookies</h1><table><tr><th>Domain<th>Name<th>Expires<th></tr>",
+                );
                 let mut domains: Vec<String> = Vec::new();
                 for c in &self.client.jar.cookies {
                     if c.expires.is_some_and(|e| e <= now) {
@@ -106,7 +115,10 @@ impl Loader {
                 if domains.is_empty() {
                     s.push_str("<p>No cookies stored.</p>");
                 }
-                s.push_str(&format!("<p>Persistent cookies are saved in {}.</p>", self.cookie_path));
+                s.push_str(&format!(
+                    "<p>Persistent cookies are saved in {}.</p>",
+                    self.cookie_path
+                ));
                 s
             }
             _ => String::from("<title>about:blank</title>"),
@@ -124,11 +136,20 @@ impl Loader {
 
     fn file(&self, url: &Url) -> Result<Loaded, LoadError> {
         let path = httpc::weburl::percent_decode_str(&url.path);
-        let path = if path.is_empty() { String::from("/") } else { path };
+        let path = if path.is_empty() {
+            String::from("/")
+        } else {
+            path
+        };
         let (mime, text) = if fs::is_dir(&path) {
-            let mut entries = fs::read_dir(&path).map_err(|e| LoadError::Other(format!("{}: {}", path, e)))?;
+            let mut entries =
+                fs::read_dir(&path).map_err(|e| LoadError::Other(format!("{}: {}", path, e)))?;
             entries.sort_by(|a, b| a.name.cmp(&b.name));
-            let mut s = format!("<title>{}</title><h1>Index of {}</h1><ul>", escape(&path), escape(&path));
+            let mut s = format!(
+                "<title>{}</title><h1>Index of {}</h1><ul>",
+                escape(&path),
+                escape(&path)
+            );
             if path != "/" {
                 s.push_str("<li><a href=\"../\">../</a>");
             }
@@ -147,8 +168,15 @@ impl Loader {
         } else {
             let data = fs::read(&path).map_err(|e| LoadError::Other(format!("{}: {}", path, e)))?;
             let mime = mime_for_path(&path);
-            let cs = if mime == "text/html" { html::sniff_charset(&data) } else { None };
-            (String::from(mime), encoding::decode_text(&data, cs.as_deref()))
+            let cs = if mime == "text/html" {
+                html::sniff_charset(&data)
+            } else {
+                None
+            };
+            (
+                String::from(mime),
+                encoding::decode_text(&data, cs.as_deref()),
+            )
         };
         Ok(Loaded {
             url: url.clone(),
@@ -167,7 +195,12 @@ impl Loader {
             "about" => return Ok(self.about(&req.url)),
             "file" => return self.file(&req.url),
             "http" | "https" => {}
-            other => return Err(LoadError::Other(format!("'{}:' links are not supported", other))),
+            other => {
+                return Err(LoadError::Other(format!(
+                    "'{}:' links are not supported",
+                    other
+                )));
+            }
         }
         let host = req.url.host_str().to_string();
         let r = match self.client.send(req, ctx) {
@@ -175,14 +208,26 @@ impl Loader {
             Err(e) => {
                 let tls = self.client.connector.last_tls_error.take();
                 return Err(match tls {
-                    Some(t) if t.is_certificate_error() => LoadError::Certificate(host, t.to_string()),
+                    Some(t) if t.is_certificate_error() => {
+                        LoadError::Certificate(host, t.to_string())
+                    }
                     _ => LoadError::Other(e.to_string()),
                 });
             }
         };
         let (mime, cs) = r.head.content_type();
-        let mime = if mime.is_empty() { mime_for_path(&r.url.path).to_string() } else { mime };
-        let cs = cs.or_else(|| if mime.contains("html") { html::sniff_charset(&r.body) } else { None });
+        let mime = if mime.is_empty() {
+            mime_for_path(&r.url.path).to_string()
+        } else {
+            mime
+        };
+        let cs = cs.or_else(|| {
+            if mime.contains("html") {
+                html::sniff_charset(&r.body)
+            } else {
+                None
+            }
+        });
         let text = encoding::decode_text(&r.body, cs.as_deref());
         if r.head.headers.contains("Set-Cookie") {
             self.save_cookies();
@@ -193,13 +238,22 @@ impl Loader {
             mime,
             text,
             headers: r.head.headers.0.clone(),
-            tls: if r.url.is_secure() { self.client.connector.last_tls.clone() } else { String::new() },
+            tls: if r.url.is_secure() {
+                self.client.connector.last_tls.clone()
+            } else {
+                String::new()
+            },
             redirects: r.redirects.len(),
         })
     }
 
     /// Fetch a resource as bytes (images, fonts): (body, content type).
-    pub fn fetch_bytes(&mut self, url: &Url, referrer: &Url, limit: usize) -> Option<(Vec<u8>, String)> {
+    pub fn fetch_bytes(
+        &mut self,
+        url: &Url,
+        referrer: &Url,
+        limit: usize,
+    ) -> Option<(Vec<u8>, String)> {
         match url.scheme.as_str() {
             "file" => {
                 let path = httpc::weburl::percent_decode_str(&url.path);
@@ -219,7 +273,11 @@ impl Loader {
             "http" | "https" => {}
             _ => return None,
         }
-        let ctx = Context { same_site: httpc::client::site(url.host_str()) == httpc::client::site(referrer.host_str()), top_level_safe: false };
+        let ctx = Context {
+            same_site: httpc::client::site(url.host_str())
+                == httpc::client::site(referrer.host_str()),
+            top_level_safe: false,
+        };
         let max = self.client.opts.max_body;
         self.client.opts.max_body = limit;
         let r = self.client.send(Request::get(url.clone()), ctx);
@@ -247,9 +305,16 @@ impl Loader {
             }
             fn data(&mut self, d: &[u8]) -> httpc::Result<()> {
                 if self.f.is_none() {
-                    self.f = Some(fs::File::create(&self.path).map_err(|e| httpc::Error::Io(e.to_string()))?);
+                    self.f = Some(
+                        fs::File::create(&self.path)
+                            .map_err(|e| httpc::Error::Io(e.to_string()))?,
+                    );
                 }
-                self.f.as_ref().unwrap().write_all(d).map_err(|e| httpc::Error::Io(e.to_string()))?;
+                self.f
+                    .as_ref()
+                    .unwrap()
+                    .write_all(d)
+                    .map_err(|e| httpc::Error::Io(e.to_string()))?;
                 self.n += d.len() as u64;
                 Ok(())
             }
@@ -258,10 +323,17 @@ impl Loader {
             let src = httpc::weburl::percent_decode_str(&url.path);
             return fs::copy(&src, path).map_err(|e| e.to_string());
         }
-        let mut sink = ToFile { f: None, path: path.to_string(), n: 0, status: 0 };
+        let mut sink = ToFile {
+            f: None,
+            path: path.to_string(),
+            n: 0,
+            status: 0,
+        };
         let compression = self.client.opts.compression;
         self.client.opts.compression = false;
-        let r = self.client.send_streaming(Request::get(url), Context::USER, &mut sink);
+        let r = self
+            .client
+            .send_streaming(Request::get(url), Context::USER, &mut sink);
         self.client.opts.compression = compression;
         r.map_err(|e| e.to_string())?;
         if sink.status >= 400 {

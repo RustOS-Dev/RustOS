@@ -19,6 +19,7 @@ mod extent;
 mod htree;
 mod inline;
 mod journal;
+mod xattr;
 
 use crate::block::cache::CachedDevice;
 use crate::errno::*;
@@ -2013,9 +2014,11 @@ impl Ext2Inode {
             return Ok(());
         }
         let (seed, use_csum) = (self.fs.seed, self.fs.csum);
+        let mut refs = Vec::new();
         let free = self.fs.modify(xb, |blk| {
             let rc = u32le(blk, 4);
             if rc <= 1 {
+                refs = Self::block_ea_refs(blk);
                 return true;
             }
             put32(blk, 4, rc - 1);
@@ -2031,7 +2034,7 @@ impl Ext2Inode {
             self.add_blocks(st, -1);
         }
         st.set_xattr_block(0);
-        Ok(())
+        self.put_ea_inodes(&refs)
     }
 
     /// Release the inode's storage once it has no links and no users.
@@ -2043,6 +2046,8 @@ impl Ext2Inode {
             self.free_from(&mut st, 0)?;
         }
         self.release_xattr(&mut st)?;
+        let ibody_refs = Self::ibody_ea_refs(&st);
+        self.put_ea_inodes(&ibody_refs)?;
         let next_orphan = st.dtime;
         st.size = 0;
         st.dtime = now();
@@ -2174,6 +2179,14 @@ impl Drop for Ext2Inode {
 }
 
 impl Inode for Ext2Inode {
+    fn getxattr(&self, name: &str) -> KResult<Vec<u8>> {
+        self.xattr_get(name)
+    }
+
+    fn listxattr(&self) -> KResult<Vec<String>> {
+        self.xattr_list()
+    }
+
     fn metadata(&self) -> KResult<Metadata> {
         let st = self.st.lock();
         let mut m = Metadata::new(st.kind(), (st.mode & 0o7777) as u32);

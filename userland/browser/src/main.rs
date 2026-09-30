@@ -23,16 +23,16 @@ mod script;
 mod sockets;
 mod term;
 
-use load::{LoadError, Loaded, Loader};
 use alloc::collections::BTreeMap;
-use rustos_rt::prelude::*;
-use rustos_rt::io::{PollFd, POLLIN};
-use rustos_rt::{fs, io, time};
-use term::{goto, out, Key, Term};
 use html::NodeId;
 use jsproto::Json;
-use layout::{field_text, DomState, Field, FieldKind, Page, SheetSource, Style, Target};
+use layout::{DomState, Field, FieldKind, Page, SheetSource, Style, Target, field_text};
+use load::{LoadError, Loaded, Loader};
+use rustos_rt::io::{POLLIN, PollFd};
+use rustos_rt::prelude::*;
+use rustos_rt::{fs, io, time};
 use script::{Action, Override, Sessions, Ui};
+use term::{Key, Term, goto, out};
 use webclient::httpc::cookie::Context;
 use webclient::httpc::{Request, Url};
 use webclient::portal;
@@ -128,13 +128,23 @@ struct App {
 }
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn document(l: &Loaded, source: bool) -> html::Document {
     let src = if source || !l.mime.contains("html") {
-        let title = if source { format!("Source of {}", l.url) } else { l.url.to_string() };
-        format!("<title>{}</title><pre>{}</pre>", escape(&title), escape(&l.text))
+        let title = if source {
+            format!("Source of {}", l.url)
+        } else {
+            l.url.to_string()
+        };
+        format!(
+            "<title>{}</title><pre>{}</pre>",
+            escape(&title),
+            escape(&l.text)
+        )
     } else {
         l.text.clone()
     };
@@ -142,18 +152,37 @@ fn document(l: &Loaded, source: bool) -> html::Document {
 }
 
 fn render_opts(width: usize, scripting: bool) -> layout::Options {
-    let rows = if io::isatty(1) { rustos_rt::term::size(1).0 as usize } else { 24 };
-    layout::Options { width: width.max(20), height: rows.max(10), author_css: use_css(), scripting, ..layout::Options::default() }
+    let rows = if io::isatty(1) {
+        rustos_rt::term::size(1).0 as usize
+    } else {
+        24
+    };
+    layout::Options {
+        width: width.max(20),
+        height: rows.max(10),
+        author_css: use_css(),
+        scripting,
+        ..layout::Options::default()
+    }
 }
 
 /// Fetch the author style sheets of `doc` (`<link rel=stylesheet>`
 /// resolved against the base URL, `@import`s inlined before the sheet
 /// that imports them).
-fn fetch_sheets(loader: &mut Loader, l: &Loaded, doc: &html::Document, width: usize) -> Vec<String> {
+fn fetch_sheets(
+    loader: &mut Loader,
+    l: &Loaded,
+    doc: &html::Document,
+    width: usize,
+) -> Vec<String> {
     if !use_css() || !l.mime.contains("html") {
         return Vec::new();
     }
-    let base = doc.base.as_deref().and_then(|b| l.url.join(b).ok()).unwrap_or_else(|| l.url.clone());
+    let base = doc
+        .base
+        .as_deref()
+        .and_then(|b| l.url.join(b).ok())
+        .unwrap_or_else(|| l.url.clone());
     let device = layout::cell_device(&render_opts(width, false));
     let mut out = Vec::new();
     let mut budget = 16; // at most this many downloads per page
@@ -170,20 +199,35 @@ fn fetch_sheets(loader: &mut Loader, l: &Loaded, doc: &html::Document, width: us
     out
 }
 
-fn fetch_css(loader: &mut Loader, base: &Url, href: &str, budget: &mut u32) -> Option<(String, Url)> {
+fn fetch_css(
+    loader: &mut Loader,
+    base: &Url,
+    href: &str,
+    budget: &mut u32,
+) -> Option<(String, Url)> {
     if *budget == 0 {
         return None;
     }
     *budget -= 1;
     let url = base.join(href).ok()?;
-    let ctx = Context { same_site: url.host_str() == base.host_str(), top_level_safe: false };
+    let ctx = Context {
+        same_site: url.host_str() == base.host_str(),
+        top_level_safe: false,
+    };
     match loader.fetch(Request::get(url), ctx) {
         Ok(r) if r.status < 400 && !r.mime.contains("html") => Some((r.text, r.url)),
         _ => None,
     }
 }
 
-fn add_sheet(loader: &mut Loader, base: &Url, css: String, out: &mut Vec<String>, budget: &mut u32, depth: u32) {
+fn add_sheet(
+    loader: &mut Loader,
+    base: &Url,
+    css: String,
+    out: &mut Vec<String>,
+    budget: &mut u32,
+    depth: u32,
+) {
     if depth < 3 {
         for href in layout::imports_of(&css) {
             if let Some((t, u)) = fetch_css(loader, base, &href, budget) {
@@ -252,7 +296,10 @@ pub(crate) fn relayout(e: &mut Entry, loader: &mut Loader) {
     }
     let scripting = e.scripting();
     let state = dom_state(e);
-    let opts = layout::Options { state, ..render_opts(e.width, scripting) };
+    let opts = layout::Options {
+        state,
+        ..render_opts(e.width, scripting)
+    };
     let sheets: &[String] = if e.source { &[] } else { &e.sheets };
     e.page = layout::render_with(&e.doc, &opts, sheets, &mut |_| None);
     e.fields = e.page.fields.clone();
@@ -301,7 +348,11 @@ impl TermUi<'_> {
     fn show(&mut self, text: &str, hint: &str) {
         let (rows, cols) = self.term.size();
         let t = text.replace('\n', " ");
-        out(&format!("{}\x1b[0;7m{}\x1b[0m", goto(rows - 1, 0), pad(&format!("{} {}", t, hint), cols.saturating_sub(1))));
+        out(&format!(
+            "{}\x1b[0;7m{}\x1b[0m",
+            goto(rows - 1, 0),
+            pad(&format!("{} {}", t, hint), cols.saturating_sub(1))
+        ));
     }
 }
 
@@ -312,7 +363,10 @@ impl Ui for TermUi<'_> {
     }
     fn confirm(&mut self, text: &str) -> bool {
         self.show(text, "(y/N)");
-        matches!(self.term.key(-1), Some(Key::Char('y')) | Some(Key::Char('Y')))
+        matches!(
+            self.term.key(-1),
+            Some(Key::Char('y')) | Some(Key::Char('Y'))
+        )
     }
     fn prompt(&mut self, text: &str, default: &str) -> Option<String> {
         let (rows, cols) = self.term.size();
@@ -403,7 +457,11 @@ impl App {
                 e.width = cols;
                 e.dirty = true;
                 if let Some(s) = e.script.as_mut() {
-                    s.js.send(&Json::obj([("t", Json::from("resize")), ("width", Json::from(cols * 8)), ("height", Json::from(rows * 16))]));
+                    s.js.send(&Json::obj([
+                        ("t", Json::from("resize")),
+                        ("width", Json::from(cols * 8)),
+                        ("height", Json::from(rows * 16)),
+                    ]));
                 }
             }
             if e.dirty {
@@ -420,9 +478,17 @@ impl App {
             out("\x1b[H\x1b[2J");
             return;
         };
-        let title = if e.page.title.is_empty() { e.loaded.url.to_string() } else { e.page.title.clone() };
+        let title = if e.page.title.is_empty() {
+            e.loaded.url.to_string()
+        } else {
+            e.page.title.clone()
+        };
         let pos = if e.page.lines.len() > body {
-            format!(" ({}/{})", e.top / body.max(1) + 1, e.page.lines.len().div_ceil(body.max(1)))
+            format!(
+                " ({}/{})",
+                e.top / body.max(1) + 1,
+                e.page.lines.len().div_ceil(body.max(1))
+            )
         } else {
             String::new()
         };
@@ -451,7 +517,11 @@ impl App {
                     };
                     let text = layout::truncate(&text, cols - col);
                     col += layout::text_width(&text);
-                    s.push_str(&sgr(span.style, span.target, sel == Some(span.target) && !matches!(span.target, Target::None)));
+                    s.push_str(&sgr(
+                        span.style,
+                        span.target,
+                        sel == Some(span.target) && !matches!(span.target, Target::None),
+                    ));
                     s.push_str(&text);
                 }
             }
@@ -464,7 +534,10 @@ impl App {
             format!("Link number: {}", self.number)
         } else {
             match sel {
-                Some(Target::Link(i)) if e.page.links[i].href.is_empty() => format!("[*] {} - press Enter to click (script)", e.page.links[i].text),
+                Some(Target::Link(i)) if e.page.links[i].href.is_empty() => format!(
+                    "[*] {} - press Enter to click (script)",
+                    e.page.links[i].text
+                ),
                 Some(Target::Link(i)) => {
                     let href = &e.page.links[i].href;
                     match self.resolve(href) {
@@ -473,11 +546,16 @@ impl App {
                     }
                 }
                 Some(Target::Field(i)) => describe_field(&e.fields[i]),
-                _ => String::from("Arrows: move  Enter: follow  Left: back  g: go  /: search  h: help  q: quit"),
+                _ => String::from(
+                    "Arrows: move  Enter: follow  Left: back  g: go  /: search  h: help  q: quit",
+                ),
             }
         };
         s.push_str(&goto(rows - 1, 0));
-        s.push_str(&format!("\x1b[0;7m{}\x1b[0m", pad(&status, cols.saturating_sub(1))));
+        s.push_str(&format!(
+            "\x1b[0;7m{}\x1b[0m",
+            pad(&status, cols.saturating_sub(1))
+        ));
         out(&s);
     }
 
@@ -513,8 +591,15 @@ impl App {
                 Err(LoadError::Certificate(host, why)) => {
                     let (rows, cols) = self.term.size();
                     let prompt = format!("Certificate problem: {}. Continue anyway? (y/N)", why);
-                    out(&format!("{}\x1b[0;7m{}\x1b[0m", goto(rows - 1, 0), pad(&prompt, cols.saturating_sub(1))));
-                    if matches!(self.term.key(-1), Some(Key::Char('y')) | Some(Key::Char('Y'))) {
+                    out(&format!(
+                        "{}\x1b[0;7m{}\x1b[0m",
+                        goto(rows - 1, 0),
+                        pad(&prompt, cols.saturating_sub(1))
+                    ));
+                    if matches!(
+                        self.term.key(-1),
+                        Some(Key::Char('y')) | Some(Key::Char('Y'))
+                    ) {
                         self.loader.client.connector.trusted_hosts.push(host);
                         continue;
                     }
@@ -534,7 +619,10 @@ impl App {
         let width = self.term.size().1;
         let doc = document(&loaded, false);
         let status = loaded.status;
-        let referrer = self.entry().map(|e| e.loaded.url.to_string()).unwrap_or_default();
+        let referrer = self
+            .entry()
+            .map(|e| e.loaded.url.to_string())
+            .unwrap_or_default();
         self.leave_page();
         let mut entry = Entry::new(loaded, doc, width);
         entry.referrer = referrer;
@@ -548,7 +636,11 @@ impl App {
             self.hist.push(entry);
             self.cur = self.hist.len() - 1;
         }
-        self.msg = if status >= 400 { format!("HTTP error {}", status) } else { String::new() };
+        self.msg = if status >= 400 {
+            format!("HTTP error {}", status)
+        } else {
+            String::new()
+        };
         self.start_page(fragment);
         if self.portal {
             self.check_portal();
@@ -558,7 +650,14 @@ impl App {
 
     /// Stop the scripts of the page being left.
     fn leave_page(&mut self) {
-        let App { term, loader, hist, cur, sessions, .. } = self;
+        let App {
+            term,
+            loader,
+            hist,
+            cur,
+            sessions,
+            ..
+        } = self;
         if let Some(e) = hist.get_mut(*cur) {
             if e.script.is_some() {
                 script::unload(e, loader, sessions, &mut TermUi { term });
@@ -573,18 +672,46 @@ impl App {
         let (rows, cols) = self.term.size();
         let body = self.body_rows();
         {
-            let App { term, loader, hist, cur, sessions, .. } = self;
+            let App {
+                term,
+                loader,
+                hist,
+                cur,
+                sessions,
+                ..
+            } = self;
             let e = &mut hist[*cur];
             e.width = cols;
-            if use_js() && !e.source && e.loaded.mime.contains("html") && e.loaded.url.scheme != "about" && js::available() {
+            if use_js()
+                && !e.source
+                && e.loaded.mime.contains("html")
+                && e.loaded.url.scheme != "about"
+                && js::available()
+            {
                 let referrer = e.referrer.clone();
                 if script::start(e, &referrer, cols, rows) {
                     // Until the load event (or 10 s).
-                    script::pump(e, loader, sessions, &mut TermUi { term }, &mut |m| m.str("t") == Some("loaded"), false, 10_000);
+                    script::pump(
+                        e,
+                        loader,
+                        sessions,
+                        &mut TermUi { term },
+                        &mut |m| m.str("t") == Some("loaded"),
+                        false,
+                        10_000,
+                    );
                     if let Some(s) = e.script.as_mut() {
                         s.loaded = true;
                     }
-                    script::pump(e, loader, sessions, &mut TermUi { term }, &mut |_| false, true, 300);
+                    script::pump(
+                        e,
+                        loader,
+                        sessions,
+                        &mut TermUi { term },
+                        &mut |_| false,
+                        true,
+                        300,
+                    );
                 }
             }
             relayout(e, loader);
@@ -595,7 +722,9 @@ impl App {
                 }
             }
             // First focusable on the first screen.
-            e.sel = focusables(&e.page).iter().position(|x| x.0 >= e.top && x.0 < e.top + body);
+            e.sel = focusables(&e.page)
+                .iter()
+                .position(|x| x.0 >= e.top && x.0 < e.top + body);
         }
         self.after_script();
     }
@@ -603,7 +732,9 @@ impl App {
     /// Carry out what the page's scripts asked for.
     fn after_script(&mut self) {
         loop {
-            let Some(e) = self.hist.get_mut(self.cur) else { return };
+            let Some(e) = self.hist.get_mut(self.cur) else {
+                return;
+            };
             let Some(s) = e.script.as_mut() else { return };
             if let Some(n) = s.notice.take() {
                 self.msg = n;
@@ -638,19 +769,37 @@ impl App {
             s.actions.clear();
             match a {
                 Action::Navigate { url, replace } => {
-                    let same_site = webclient::httpc::client::site(e.loaded.url.host_str()) == webclient::httpc::client::site(url.host_str());
+                    let same_site = webclient::httpc::client::site(e.loaded.url.host_str())
+                        == webclient::httpc::client::site(url.host_str());
                     self.refreshes = 0;
-                    if url.fragment.is_some() && url.without_fragment() == e.loaded.url.without_fragment() {
+                    if url.fragment.is_some()
+                        && url.without_fragment() == e.loaded.url.without_fragment()
+                    {
                         self.navigate(url);
                     } else {
-                        self.open(Request::get(url), Context { same_site, top_level_safe: true }, !replace);
+                        self.open(
+                            Request::get(url),
+                            Context {
+                                same_site,
+                                top_level_safe: true,
+                            },
+                            !replace,
+                        );
                     }
                 }
                 Action::Submit(req) => {
-                    let same_site = webclient::httpc::client::site(req.url.host_str()) == webclient::httpc::client::site(e.loaded.url.host_str());
+                    let same_site = webclient::httpc::client::site(req.url.host_str())
+                        == webclient::httpc::client::site(e.loaded.url.host_str());
                     let safe = req.method == "GET";
                     self.refreshes = 0;
-                    self.open(req, Context { same_site, top_level_safe: safe }, true);
+                    self.open(
+                        req,
+                        Context {
+                            same_site,
+                            top_level_safe: safe,
+                        },
+                        true,
+                    );
                 }
                 Action::Go(d) => {
                     let to = self.cur as i64 + d as i64;
@@ -686,7 +835,14 @@ impl App {
 
     /// Something arrived from the page's scripts or sockets.
     fn service_page(&mut self) {
-        let App { term, loader, hist, cur, sessions, .. } = self;
+        let App {
+            term,
+            loader,
+            hist,
+            cur,
+            sessions,
+            ..
+        } = self;
         let Some(e) = hist.get_mut(*cur) else { return };
         sockets::service(e);
         script::drain(e, loader, sessions, &mut TermUi { term });
@@ -699,7 +855,11 @@ impl App {
             if self.term.has_pending() {
                 return self.term.key(-1);
             }
-            let mut fds = vec![PollFd { fd: 0, events: POLLIN, revents: 0 }];
+            let mut fds = vec![PollFd {
+                fd: 0,
+                events: POLLIN,
+                revents: 0,
+            }];
             if let Some(e) = self.entry() {
                 if let Some(s) = e.script.as_ref().filter(|s| !s.js.dead) {
                     if s.js.has_buffered() {
@@ -707,10 +867,18 @@ impl App {
                         self.draw();
                         continue;
                     }
-                    fds.push(PollFd { fd: s.js.fd(), events: POLLIN, revents: 0 });
+                    fds.push(PollFd {
+                        fd: s.js.fd(),
+                        events: POLLIN,
+                        revents: 0,
+                    });
                 }
                 for fd in sockets::fds(e) {
-                    fds.push(PollFd { fd, events: POLLIN, revents: 0 });
+                    fds.push(PollFd {
+                        fd,
+                        events: POLLIN,
+                        revents: 0,
+                    });
                 }
             }
             if fds.len() == 1 {
@@ -728,7 +896,14 @@ impl App {
     /// Send a user event to the page's scripts; Some(cancelled) when they
     /// ran.
     fn js_event(&mut self, kind: &str, node: NodeId) -> Option<bool> {
-        let App { term, loader, hist, cur, sessions, .. } = self;
+        let App {
+            term,
+            loader,
+            hist,
+            cur,
+            sessions,
+            ..
+        } = self;
         let e = hist.get_mut(*cur)?;
         if !e.scripting() {
             return None;
@@ -750,26 +925,51 @@ impl App {
     fn console(&mut self) {
         let (rows, cols) = self.term.size();
         loop {
-            let lines: Vec<String> = self.entry().and_then(|e| e.script.as_ref()).map(|s| s.console.clone()).unwrap_or_default();
-            let mut s = format!("\x1b[H\x1b[0;7m{}\x1b[0m", pad(" JavaScript console (Enter an expression; empty line: back)", cols));
+            let lines: Vec<String> = self
+                .entry()
+                .and_then(|e| e.script.as_ref())
+                .map(|s| s.console.clone())
+                .unwrap_or_default();
+            let mut s = format!(
+                "\x1b[H\x1b[0;7m{}\x1b[0m",
+                pad(
+                    " JavaScript console (Enter an expression; empty line: back)",
+                    cols
+                )
+            );
             let body = rows.saturating_sub(2);
             let first = lines.len().saturating_sub(body);
             for k in 0..body {
                 s.push_str(&goto(k + 1, 0));
                 s.push_str("\x1b[0m\x1b[K");
                 if let Some(l) = lines.get(first + k) {
-                    let color = if l.starts_with("error") { "\x1b[31m" } else if l.starts_with("warn") { "\x1b[33m" } else { "" };
+                    let color = if l.starts_with("error") {
+                        "\x1b[31m"
+                    } else if l.starts_with("warn") {
+                        "\x1b[33m"
+                    } else {
+                        ""
+                    };
                     s.push_str(color);
                     s.push_str(&layout::truncate(l, cols));
                     s.push_str("\x1b[0m");
                 }
             }
             out(&s);
-            let Some(code) = term::edit_line(&mut self.term, rows - 1, cols, ">", "", false) else { break };
+            let Some(code) = term::edit_line(&mut self.term, rows - 1, cols, ">", "", false) else {
+                break;
+            };
             if code.trim().is_empty() {
                 break;
             }
-            let App { term, loader, hist, cur, sessions, .. } = self;
+            let App {
+                term,
+                loader,
+                hist,
+                cur,
+                sessions,
+                ..
+            } = self;
             let Some(e) = hist.get_mut(*cur) else { break };
             let v = script::eval(e, loader, sessions, &mut TermUi { term }, &code);
             if let Some(sc) = e.script.as_mut() {
@@ -794,24 +994,38 @@ impl App {
                 }
             }
         }
-        let same_site = self
-            .entry()
-            .is_none_or(|e| webclient::httpc::client::site(e.loaded.url.host_str()) == webclient::httpc::client::site(url.host_str()));
+        let same_site = self.entry().is_none_or(|e| {
+            webclient::httpc::client::site(e.loaded.url.host_str())
+                == webclient::httpc::client::site(url.host_str())
+        });
         self.refreshes = 0;
-        self.open(Request::get(url), Context { same_site, top_level_safe: true }, true);
+        self.open(
+            Request::get(url),
+            Context {
+                same_site,
+                top_level_safe: true,
+            },
+            true,
+        );
     }
 
     /// Follow `<meta http-equiv=refresh>` after a short countdown.
     fn auto_refresh(&mut self) {
         let Some(e) = self.entry() else { return };
-        let Some((secs, target)) = e.doc.refresh.clone() else { return };
+        let Some((secs, target)) = e.doc.refresh.clone() else {
+            return;
+        };
         if secs > 15 || self.refreshes >= 5 {
             if self.msg.is_empty() {
                 self.msg = format!("This page refreshes after {} s to {}", secs, target);
             }
             return;
         }
-        let url = if target.is_empty() { Some(e.loaded.url.clone()) } else { self.resolve(&target) };
+        let url = if target.is_empty() {
+            Some(e.loaded.url.clone())
+        } else {
+            self.resolve(&target)
+        };
         let Some(url) = url else { return };
         self.msg = format!("Refreshing to {} in {} s (any key cancels)", url, secs);
         self.draw();
@@ -842,7 +1056,9 @@ impl App {
 
     fn move_sel(&mut self, down: bool) {
         let body = self.body_rows();
-        let Some(e) = self.hist.get_mut(self.cur) else { return };
+        let Some(e) = self.hist.get_mut(self.cur) else {
+            return;
+        };
         let f = focusables(&e.page);
         let visible = |line: usize, top: usize| line >= top && line < top + body;
         let next = match (e.sel, down) {
@@ -853,16 +1069,28 @@ impl App {
         };
         match next {
             // Jump only within reach; otherwise scroll a page first.
-            Some(n) if visible(f[n].0, e.top) || (down && f[n].0 < e.top + 2 * body) || (!down && f[n].0 + body >= e.top) => {
+            Some(n)
+                if visible(f[n].0, e.top)
+                    || (down && f[n].0 < e.top + 2 * body)
+                    || (!down && f[n].0 + body >= e.top) =>
+            {
                 e.sel = Some(n);
                 let line = f[n].0;
                 if !visible(line, e.top) {
-                    e.top = if down { line.saturating_sub(body - 1) } else { line };
+                    e.top = if down {
+                        line.saturating_sub(body - 1)
+                    } else {
+                        line
+                    };
                 }
             }
             _ => {
                 let max_top = e.page.lines.len().saturating_sub(body);
-                e.top = if down { (e.top + body).min(max_top) } else { e.top.saturating_sub(body) };
+                e.top = if down {
+                    (e.top + body).min(max_top)
+                } else {
+                    e.top.saturating_sub(body)
+                };
                 e.sel = f.iter().position(|x| visible(x.0, e.top));
             }
         }
@@ -872,9 +1100,15 @@ impl App {
         let body = self.body_rows();
         if let Some(e) = self.hist.get_mut(self.cur) {
             let max_top = e.page.lines.len().saturating_sub(body);
-            e.top = if down { (e.top + body).min(max_top) } else { e.top.saturating_sub(body) };
+            e.top = if down {
+                (e.top + body).min(max_top)
+            } else {
+                e.top.saturating_sub(body)
+            };
             let top = e.top;
-            e.sel = focusables(&e.page).iter().position(|x| x.0 >= top && x.0 < top + body);
+            e.sel = focusables(&e.page)
+                .iter()
+                .position(|x| x.0 >= top && x.0 < top + body);
         }
     }
 
@@ -907,13 +1141,28 @@ impl App {
 
     /// Tell the page's scripts the user changed a control.
     fn js_input(&mut self, node: NodeId, what: Json) {
-        let App { term, loader, hist, cur, sessions, .. } = self;
+        let App {
+            term,
+            loader,
+            hist,
+            cur,
+            sessions,
+            ..
+        } = self;
         let Some(e) = hist.get_mut(*cur) else { return };
         if !e.scripting() {
             return;
         }
         script::input(e, node, what);
-        script::pump(e, loader, sessions, &mut TermUi { term }, &mut |_| false, true, 500);
+        script::pump(
+            e,
+            loader,
+            sessions,
+            &mut TermUi { term },
+            &mut |_| false,
+            true,
+            500,
+        );
         if e.dirty {
             relayout(e, loader);
         }
@@ -926,7 +1175,11 @@ impl App {
             self.show_message("This field is disabled");
             return;
         }
-        let label = if f.label.is_empty() { f.name.clone() } else { f.label.clone() };
+        let label = if f.label.is_empty() {
+            f.name.clone()
+        } else {
+            f.label.clone()
+        };
         // With scripts: the click (focus, handlers, and for buttons and
         // check boxes the default action) happens in the page.
         if let Some(cancelled) = self.js_event("click", f.node) {
@@ -940,12 +1193,22 @@ impl App {
                     if f.readonly {
                         return;
                     }
-                    let cur = self.entry().and_then(|e| find(e).map(|k| e.fields[k].value.clone())).unwrap_or(f.value.clone());
+                    let cur = self
+                        .entry()
+                        .and_then(|e| find(e).map(|k| e.fields[k].value.clone()))
+                        .unwrap_or(f.value.clone());
                     let v = if f.kind == FieldKind::Textarea {
                         edit_textarea(&mut self.term, &label, &cur)
                     } else {
                         let prompt = format!("{}:", if label.is_empty() { "Text" } else { &label });
-                        term::edit_line(&mut self.term, rows - 1, cols, &prompt, &cur, f.kind == FieldKind::Password)
+                        term::edit_line(
+                            &mut self.term,
+                            rows - 1,
+                            cols,
+                            &prompt,
+                            &cur,
+                            f.kind == FieldKind::Password,
+                        )
                     };
                     if let Some(v) = v {
                         if let Some(k) = self.entry().and_then(find) {
@@ -957,7 +1220,10 @@ impl App {
                         self.js_input(node, Json::obj([("value", Json::from(v.as_str()))]));
                         if f.kind != FieldKind::Textarea && f.form.is_some() {
                             let e = &self.hist[self.cur];
-                            let has_button = e.fields.iter().any(|x| x.form == f.form && matches!(x.kind, FieldKind::Submit | FieldKind::Image));
+                            let has_button = e.fields.iter().any(|x| {
+                                x.form == f.form
+                                    && matches!(x.kind, FieldKind::Submit | FieldKind::Image)
+                            });
                             if !has_button {
                                 self.js_event("submit", node);
                                 return;
@@ -967,7 +1233,10 @@ impl App {
                     }
                 }
                 FieldKind::Select => {
-                    let cur = self.entry().and_then(|e| find(e).map(|k| e.fields[k].clone())).unwrap_or(f.clone());
+                    let cur = self
+                        .entry()
+                        .and_then(|e| find(e).map(|k| e.fields[k].clone()))
+                        .unwrap_or(f.clone());
                     if let Some(n) = choose(&mut self.term, &label, &cur) {
                         if let Some(k) = self.entry().and_then(find) {
                             self.hist[self.cur].set_override(k, |f, o| {
@@ -989,17 +1258,24 @@ impl App {
                     return;
                 }
                 let prompt = format!("{}:", if label.is_empty() { "Text" } else { &label });
-                if let Some(v) = term::edit_line(&mut self.term, rows - 1, cols, &prompt, &f.value, f.kind == FieldKind::Password) {
+                if let Some(v) = term::edit_line(
+                    &mut self.term,
+                    rows - 1,
+                    cols,
+                    &prompt,
+                    &f.value,
+                    f.kind == FieldKind::Password,
+                ) {
                     self.hist[self.cur].set_override(i, |f, o| {
                         f.value = v.clone();
                         o.value = Some(v);
                     });
                     // Implicit submission: a form without a submit button.
                     if let Some(fi) = f.form {
-                        let has_button = self.hist[self.cur]
-                            .fields
-                            .iter()
-                            .any(|x| x.form == Some(fi) && matches!(x.kind, FieldKind::Submit | FieldKind::Image));
+                        let has_button = self.hist[self.cur].fields.iter().any(|x| {
+                            x.form == Some(fi)
+                                && matches!(x.kind, FieldKind::Submit | FieldKind::Image)
+                        });
                         if !has_button {
                             self.submit(fi, None);
                             return;
@@ -1065,10 +1341,18 @@ impl App {
         let e = &self.hist[self.cur];
         match form::submission(&e.page.forms, &e.fields, fi, submitter, &base) {
             Ok(req) => {
-                let same_site = webclient::httpc::client::site(req.url.host_str()) == webclient::httpc::client::site(e.loaded.url.host_str());
+                let same_site = webclient::httpc::client::site(req.url.host_str())
+                    == webclient::httpc::client::site(e.loaded.url.host_str());
                 let safe = req.method == "GET";
                 self.refreshes = 0;
-                self.open(req, Context { same_site, top_level_safe: safe }, true);
+                self.open(
+                    req,
+                    Context {
+                        same_site,
+                        top_level_safe: safe,
+                    },
+                    true,
+                );
             }
             Err(err) => self.show_message(&format!("Cannot submit: {}", err)),
         }
@@ -1076,7 +1360,14 @@ impl App {
 
     fn prompt_url(&mut self, initial: &str) {
         let (rows, cols) = self.term.size();
-        if let Some(u) = term::edit_line(&mut self.term, rows - 1, cols, "URL to open:", initial, false) {
+        if let Some(u) = term::edit_line(
+            &mut self.term,
+            rows - 1,
+            cols,
+            "URL to open:",
+            initial,
+            false,
+        ) {
             if u.trim().is_empty() {
                 return;
             }
@@ -1090,13 +1381,22 @@ impl App {
     fn search(&mut self, again: bool) {
         let (rows, cols) = self.term.size();
         if !again || self.search.is_empty() {
-            match term::edit_line(&mut self.term, rows - 1, cols, "Search for:", &self.search.clone(), false) {
+            match term::edit_line(
+                &mut self.term,
+                rows - 1,
+                cols,
+                "Search for:",
+                &self.search.clone(),
+                false,
+            ) {
                 Some(s) if !s.is_empty() => self.search = s,
                 _ => return,
             }
         }
         let needle = self.search.to_lowercase();
-        let Some(e) = self.hist.get_mut(self.cur) else { return };
+        let Some(e) = self.hist.get_mut(self.cur) else {
+            return;
+        };
         let start = if again { e.top + 1 } else { e.top };
         let found = (start..e.page.lines.len())
             .chain(0..start)
@@ -1130,7 +1430,11 @@ impl App {
             escape(&e.page.title),
             e.loaded.status,
             escape(&e.loaded.mime),
-            if e.loaded.tls.is_empty() { String::from("not encrypted") } else { escape(&e.loaded.tls) },
+            if e.loaded.tls.is_empty() {
+                String::from("not encrypted")
+            } else {
+                escape(&e.loaded.tls)
+            },
             escape(&host),
             cookies,
             e.loaded.redirects,
@@ -1138,7 +1442,13 @@ impl App {
             e.page.links.len(),
             e.page.forms.len(),
             e.page.fields.len(),
-            if e.scripting() { "running" } else if use_js() { "not running" } else { "off (-nojs, K)" }
+            if e.scripting() {
+                "running"
+            } else if use_js() {
+                "not running"
+            } else {
+                "off (-nojs, K)"
+            }
         );
         for (k, v) in &e.loaded.headers {
             html.push_str(&format!("{}: {}\n", escape(k), escape(v)));
@@ -1173,15 +1483,32 @@ impl App {
             return;
         };
         let href = self.hist[self.cur].page.links[i].href.clone();
-        let Some(url) = self.resolve(&href) else { return };
-        let dir = if fs::is_dir("/storage") { "/storage/Downloads" } else { "/tmp" };
+        let Some(url) = self.resolve(&href) else {
+            return;
+        };
+        let dir = if fs::is_dir("/storage") {
+            "/storage/Downloads"
+        } else {
+            "/tmp"
+        };
         let _ = fs::create_dir_all(dir);
         let name = {
             let n = url.file_name();
-            if n.is_empty() { String::from("download.html") } else { n }
+            if n.is_empty() {
+                String::from("download.html")
+            } else {
+                n
+            }
         };
         let (rows, cols) = self.term.size();
-        let Some(path) = term::edit_line(&mut self.term, rows - 1, cols, "Save as:", &format!("{}/{}", dir, name), false) else {
+        let Some(path) = term::edit_line(
+            &mut self.term,
+            rows - 1,
+            cols,
+            "Save as:",
+            &format!("{}/{}", dir, name),
+            false,
+        ) else {
             return;
         };
         self.show_message(&format!("Downloading {} ...", url));
@@ -1204,7 +1531,9 @@ impl App {
             if !self.number.is_empty() && matches!(k, Key::Enter | Key::Char('g')) {
                 let n: usize = self.number.parse().unwrap_or(0);
                 self.number.clear();
-                let target = self.entry().and_then(|e| e.page.links.get(n.wrapping_sub(1)).map(|l| l.href.clone()));
+                let target = self
+                    .entry()
+                    .and_then(|e| e.page.links.get(n.wrapping_sub(1)).map(|l| l.href.clone()));
                 match target.and_then(|h| self.resolve(&h)) {
                     Some(u) => self.navigate(u),
                     None => self.show_message(&format!("No link number {}", n)),
@@ -1242,7 +1571,10 @@ impl App {
                 }
                 Key::Char('g') => self.prompt_url(""),
                 Key::Char('G') => {
-                    let u = self.entry().map(|e| e.loaded.url.to_string()).unwrap_or_default();
+                    let u = self
+                        .entry()
+                        .map(|e| e.loaded.url.to_string())
+                        .unwrap_or_default();
                     self.prompt_url(&u);
                 }
                 Key::Char('/') => self.search(false),
@@ -1272,7 +1604,11 @@ impl App {
                     if !self.hist.is_empty() {
                         self.go_to(to);
                     }
-                    self.msg = String::from(if on { "JavaScript on" } else { "JavaScript off" });
+                    self.msg = String::from(if on {
+                        "JavaScript on"
+                    } else {
+                        "JavaScript off"
+                    });
                 }
                 Key::Char('=') => self.info(),
                 Key::Char('d') => self.download(),
@@ -1309,20 +1645,37 @@ fn describe_field(f: &Field) -> String {
         FieldKind::File => "File (enter a path)",
         FieldKind::Hidden => "Hidden",
     };
-    let name = if f.label.is_empty() { &f.name } else { &f.label };
-    format!("{} {} - press Enter to {}", what, name, match f.kind {
-        FieldKind::Submit | FieldKind::Image => "submit",
-        FieldKind::Checkbox | FieldKind::Radio => "toggle",
-        FieldKind::Select => "choose",
-        _ => "edit",
-    })
+    let name = if f.label.is_empty() {
+        &f.name
+    } else {
+        &f.label
+    };
+    format!(
+        "{} {} - press Enter to {}",
+        what,
+        name,
+        match f.kind {
+            FieldKind::Submit | FieldKind::Image => "submit",
+            FieldKind::Checkbox | FieldKind::Radio => "toggle",
+            FieldKind::Select => "choose",
+            _ => "edit",
+        }
+    )
 }
 
 /// Pop-up menu for a `<select>`.
 fn choose(t: &mut Term, label: &str, f: &Field) -> Option<usize> {
     let (rows, cols) = t.size();
     let h = f.options.len().min(rows.saturating_sub(4)).max(1);
-    let w = f.options.iter().map(|o| layout::text_width(&o.label)).max().unwrap_or(10).max(layout::text_width(label)).min(cols - 4) + 4;
+    let w = f
+        .options
+        .iter()
+        .map(|o| layout::text_width(&o.label))
+        .max()
+        .unwrap_or(10)
+        .max(layout::text_width(label))
+        .min(cols - 4)
+        + 4;
     let (r0, c0) = ((rows - h) / 2, (cols - w) / 2);
     let mut sel = f.selected;
     let mut first = 0;
@@ -1333,12 +1686,28 @@ fn choose(t: &mut Term, label: &str, f: &Field) -> Option<usize> {
         if sel >= first + h {
             first = sel + 1 - h;
         }
-        let mut s = format!("{}\x1b[0;7m{}\x1b[0m", goto(r0 - 1, c0), pad(&format!(" {}", label), w));
+        let mut s = format!(
+            "{}\x1b[0;7m{}\x1b[0m",
+            goto(r0 - 1, c0),
+            pad(&format!(" {}", label), w)
+        );
         for k in 0..h {
             let i = first + k;
-            let text = f.options.get(i).map_or(String::new(), |o| format!("  {}", o.label));
-            let style = if i == sel { "\x1b[0;7;32m" } else { "\x1b[0;32m" };
-            s.push_str(&format!("{}{}{}\x1b[0m", goto(r0 + k, c0), style, pad(&text, w)));
+            let text = f
+                .options
+                .get(i)
+                .map_or(String::new(), |o| format!("  {}", o.label));
+            let style = if i == sel {
+                "\x1b[0;7;32m"
+            } else {
+                "\x1b[0;32m"
+            };
+            s.push_str(&format!(
+                "{}{}{}\x1b[0m",
+                goto(r0 + k, c0),
+                style,
+                pad(&text, w)
+            ));
         }
         out(&s);
         match t.key(-1)? {
@@ -1371,16 +1740,37 @@ fn edit_textarea(t: &mut Term, label: &str, initial: &str) -> Option<String> {
         if r >= top + body {
             top = r + 1 - body;
         }
-        let mut s = format!("\x1b[H\x1b[0;7m{}\x1b[0m", pad(&format!(" Editing: {}   (Ctrl-X: done, Esc: cancel)", label), cols));
+        let mut s = format!(
+            "\x1b[H\x1b[0;7m{}\x1b[0m",
+            pad(
+                &format!(" Editing: {}   (Ctrl-X: done, Esc: cancel)", label),
+                cols
+            )
+        );
         for k in 0..body {
-            let text: String = lines.get(top + k).map(|l| l.iter().collect()).unwrap_or_default();
-            s.push_str(&format!("{}\x1b[K{}", goto(k + 1, 0), layout::truncate(&text, cols - 1)));
+            let text: String = lines
+                .get(top + k)
+                .map(|l| l.iter().collect())
+                .unwrap_or_default();
+            s.push_str(&format!(
+                "{}\x1b[K{}",
+                goto(k + 1, 0),
+                layout::truncate(&text, cols - 1)
+            ));
         }
         s.push_str(&goto(r - top + 1, c.min(cols - 1)));
         out(&s);
         match t.key(-1) {
             None | Some(Key::Esc) | Some(Key::Ctrl('c')) => break None,
-            Some(Key::Ctrl('x')) => break Some(lines.iter().map(|l| l.iter().collect::<String>()).collect::<Vec<_>>().join("\n")),
+            Some(Key::Ctrl('x')) => {
+                break Some(
+                    lines
+                        .iter()
+                        .map(|l| l.iter().collect::<String>())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+            }
             Some(Key::Enter) => {
                 let rest = lines[r].split_off(c);
                 lines.insert(r + 1, rest);
@@ -1454,13 +1844,26 @@ fn portal_url() -> Option<Url> {
 /// Run a page's scripts in batch mode: until the load event, then while
 /// they stay busy (timers, requests; at most `settle_ms`). Returns what
 /// they asked for (a navigation or a form submission).
-fn batch_scripts(e: &mut Entry, loader: &mut Loader, sessions: &mut Sessions, settle_ms: u64) -> Option<Action> {
+fn batch_scripts(
+    e: &mut Entry,
+    loader: &mut Loader,
+    sessions: &mut Sessions,
+    settle_ms: u64,
+) -> Option<Action> {
     if !script::start(e, "", e.width, 24) {
         return None;
     }
     let mut ui = BatchUi;
     let start = rustos_rt::time::millis();
-    script::pump(e, loader, sessions, &mut ui, &mut |m| m.str("t") == Some("loaded"), false, 10_000);
+    script::pump(
+        e,
+        loader,
+        sessions,
+        &mut ui,
+        &mut |m| m.str("t") == Some("loaded"),
+        false,
+        10_000,
+    );
     // Keep serving timers, requests and sockets until quiet for 300 ms.
     let mut quiet_since = rustos_rt::time::millis();
     loop {
@@ -1473,12 +1876,20 @@ fn batch_scripts(e: &mut Entry, loader: &mut Loader, sessions: &mut Sessions, se
         }
         let mut fds = Vec::new();
         if let Some(s) = e.script.as_ref().filter(|s| !s.js.dead) {
-            fds.push(PollFd { fd: s.js.fd(), events: POLLIN, revents: 0 });
+            fds.push(PollFd {
+                fd: s.js.fd(),
+                events: POLLIN,
+                revents: 0,
+            });
         } else {
             break;
         }
         for fd in sockets::fds(e) {
-            fds.push(PollFd { fd, events: POLLIN, revents: 0 });
+            fds.push(PollFd {
+                fd,
+                events: POLLIN,
+                revents: 0,
+            });
         }
         let buffered = e.script.as_ref().is_some_and(|s| s.js.has_buffered());
         if buffered || io::poll(&mut fds, 50).unwrap_or(0) > 0 {
@@ -1493,7 +1904,11 @@ fn batch_scripts(e: &mut Entry, loader: &mut Loader, sessions: &mut Sessions, se
             eprintln!("js {}", l);
         }
     }
-    let a = if s.actions.is_empty() { None } else { Some(s.actions.remove(0)) };
+    let a = if s.actions.is_empty() {
+        None
+    } else {
+        Some(s.actions.remove(0))
+    };
     a
 }
 
@@ -1507,7 +1922,10 @@ fn batch(url: Url, insecure: bool, source: bool, width: usize) -> i32 {
         let l = match loader.fetch(req.clone(), ctx) {
             Ok(l) => l,
             Err(LoadError::Certificate(_, e)) => {
-                eprintln!("browse: server certificate {} (use -k to continue anyway)", e);
+                eprintln!(
+                    "browse: server certificate {} (use -k to continue anyway)",
+                    e
+                );
                 return 1;
             }
             Err(LoadError::Other(e)) => {
@@ -1524,20 +1942,34 @@ fn batch(url: Url, insecure: bool, source: bool, width: usize) -> i32 {
         let doc = document(&l, false);
         let mut e = Entry::new(l, doc, width);
         let mut next = None;
-        if use_js() && e.loaded.mime.contains("html") && e.loaded.url.scheme != "about" && js::available() {
+        if use_js()
+            && e.loaded.mime.contains("html")
+            && e.loaded.url.scheme != "about"
+            && js::available()
+        {
             next = batch_scripts(&mut e, &mut loader, &mut sessions, 5000);
         }
         let from = e.loaded.url.clone();
         match next {
-            Some(Action::Navigate { url, .. }) if url.without_fragment() != from.without_fragment() => {
+            Some(Action::Navigate { url, .. })
+                if url.without_fragment() != from.without_fragment() =>
+            {
                 eprintln!("browse: script navigated to {}", url);
-                ctx = Context { same_site: webclient::httpc::client::site(url.host_str()) == webclient::httpc::client::site(from.host_str()), top_level_safe: true };
+                ctx = Context {
+                    same_site: webclient::httpc::client::site(url.host_str())
+                        == webclient::httpc::client::site(from.host_str()),
+                    top_level_safe: true,
+                };
                 req = Request::get(url);
                 continue;
             }
             Some(Action::Submit(r)) => {
                 eprintln!("browse: script submitted a form to {}", r.url);
-                ctx = Context { same_site: webclient::httpc::client::site(r.url.host_str()) == webclient::httpc::client::site(from.host_str()), top_level_safe: r.method == "GET" };
+                ctx = Context {
+                    same_site: webclient::httpc::client::site(r.url.host_str())
+                        == webclient::httpc::client::site(from.host_str()),
+                    top_level_safe: r.method == "GET",
+                };
                 req = r;
                 continue;
             }
@@ -1546,7 +1978,12 @@ fn batch(url: Url, insecure: bool, source: bool, width: usize) -> i32 {
         relayout(&mut e, &mut loader);
         let mut page = e.page.clone();
         // References are listed as absolute URLs.
-        let base = e.doc.base.as_deref().and_then(|b| e.loaded.url.join(b).ok()).unwrap_or_else(|| e.loaded.url.clone());
+        let base = e
+            .doc
+            .base
+            .as_deref()
+            .and_then(|b| e.loaded.url.join(b).ok())
+            .unwrap_or_else(|| e.loaded.url.clone());
         for link in &mut page.links {
             if link.href.is_empty() {
                 link.href = String::from("(script)");
@@ -1577,7 +2014,10 @@ fn batch_plain(url: Url, insecure: bool, width: usize) -> i32 {
             if l.status >= 400 { 1 } else { 0 }
         }
         Err(LoadError::Certificate(_, e)) => {
-            eprintln!("browse: server certificate {} (use -k to continue anyway)", e);
+            eprintln!(
+                "browse: server certificate {} (use -k to continue anyway)",
+                e
+            );
             1
         }
         Err(LoadError::Other(e)) => {
@@ -1618,7 +2058,10 @@ fn main(args: Vec<String>) -> i32 {
             "-size" | "--size" => {
                 i += 1;
                 if let Some((w, h)) = args.get(i).and_then(|s| s.split_once('x')) {
-                    size = (w.parse().unwrap_or(800).clamp(64, 4096), h.parse().unwrap_or(600).clamp(64, 4096));
+                    size = (
+                        w.parse().unwrap_or(800).clamp(64, 4096),
+                        h.parse().unwrap_or(600).clamp(64, 4096),
+                    );
                 }
             }
             "-width" | "--width" => {
@@ -1648,7 +2091,10 @@ fn main(args: Vec<String>) -> i32 {
         (None, true) => match portal_url() {
             Some(u) => u,
             None => {
-                println!("browse: no captive portal found ({})", portal::describe(&portal::check(5000)));
+                println!(
+                    "browse: no captive portal found ({})",
+                    portal::describe(&portal::check(5000))
+                );
                 return 1;
             }
         },
@@ -1661,7 +2107,13 @@ fn main(args: Vec<String>) -> i32 {
         return gfx::run(url, insecure);
     }
     if dump || source || !io::isatty(1) {
-        let w = if width > 0 { width } else if io::isatty(1) { rustos_rt::term::size(1).1 as usize } else { 80 };
+        let w = if width > 0 {
+            width
+        } else if io::isatty(1) {
+            rustos_rt::term::size(1).1 as usize
+        } else {
+            80
+        };
         return batch(url, insecure, source, w);
     }
     let mut app = App {

@@ -2,14 +2,14 @@
 //! scripts. They belong to the page's entry; the browser's event loop
 //! polls their sockets and forwards what arrives to jsd.
 
+use crate::Entry;
 use crate::load::Loader;
 use crate::script::{b64d, b64e};
-use crate::Entry;
-use jsproto::Json;
 use alloc::collections::BTreeMap;
+use jsproto::Json;
 use rustos_rt::prelude::*;
 use rustos_rt::time;
-use webclient::httpc::client::{site, Connector, Stream};
+use webclient::httpc::client::{Connector, Stream, site};
 use webclient::httpc::cookie::Context;
 use webclient::httpc::{self, BodyDecoder, ResponseHead, Url};
 
@@ -56,7 +56,12 @@ fn sha1(data: &[u8]) -> [u8; 20] {
     for block in m.chunks(64) {
         let mut w = [0u32; 80];
         for i in 0..16 {
-            w[i] = u32::from_be_bytes([block[4 * i], block[4 * i + 1], block[4 * i + 2], block[4 * i + 3]]);
+            w[i] = u32::from_be_bytes([
+                block[4 * i],
+                block[4 * i + 1],
+                block[4 * i + 2],
+                block[4 * i + 3],
+            ]);
         }
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
@@ -69,7 +74,12 @@ fn sha1(data: &[u8]) -> [u8; 20] {
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDC),
                 _ => (b ^ c ^ d, 0xCA62C1D6),
             };
-            let t = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(wi);
+            let t = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(wi);
             e = d;
             d = c;
             c = b.rotate_left(30);
@@ -89,7 +99,9 @@ fn sha1(data: &[u8]) -> [u8; 20] {
 
 /// The Sec-WebSocket-Accept value for `key`.
 pub fn ws_accept(key: &str) -> String {
-    b64e(&sha1(format!("{}258EAFA5-E914-47DA-95CA-C5AB0DC85B11", key).as_bytes()))
+    b64e(&sha1(
+        format!("{}258EAFA5-E914-47DA-95CA-C5AB0DC85B11", key).as_bytes(),
+    ))
 }
 
 // ---- opening ----
@@ -119,10 +131,20 @@ fn read_head(stream: &mut Box<dyn Stream>, buf: &mut Vec<u8>) -> Option<Response
 pub fn open(e: &mut Entry, loader: &mut Loader, m: &Json) {
     let id = m.int("id").unwrap_or(0);
     let ws = m.str("t") == Some("wsOpen");
-    let (t, fail) = if ws { ("ws", msg("error", vec![])) } else { ("es", msg("error", vec![("fatal", Json::Bool(true))])) };
-    let Some(mut url) = m.str("url").and_then(|u| Url::parse(u).ok()) else { return send_js(e, t, id, fail) };
+    let (t, fail) = if ws {
+        ("ws", msg("error", vec![]))
+    } else {
+        ("es", msg("error", vec![("fatal", Json::Bool(true))]))
+    };
+    let Some(mut url) = m.str("url").and_then(|u| Url::parse(u).ok()) else {
+        return send_js(e, t, id, fail);
+    };
     let page = e.loaded.url.clone();
-    let secure_scheme = if ws { url.scheme == "wss" } else { url.scheme == "https" };
+    let secure_scheme = if ws {
+        url.scheme == "wss"
+    } else {
+        url.scheme == "https"
+    };
     if page.is_secure() && !secure_scheme {
         return send_js(e, t, id, fail); // mixed content
     }
@@ -135,9 +157,18 @@ pub fn open(e: &mut Entry, loader: &mut Loader, m: &Json) {
     };
     let origin = page.origin();
     let now = time::now();
-    let ctx = Context { same_site: site(url.host_str()) == site(page.host_str()), top_level_safe: false };
+    let ctx = Context {
+        same_site: site(url.host_str()) == site(page.host_str()),
+        top_level_safe: false,
+    };
     let cookies = loader.client.jar.header(&url, now, ctx);
-    let mut req = format!("GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\nOrigin: {}\r\n", url.request_target(), url.authority(), loader.client.opts.user_agent, origin);
+    let mut req = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\nOrigin: {}\r\n",
+        url.request_target(),
+        url.authority(),
+        loader.client.opts.user_agent,
+        origin
+    );
     if let Some(c) = &cookies {
         req.push_str(&format!("Cookie: {}\r\n", c));
     }
@@ -148,9 +179,17 @@ pub fn open(e: &mut Entry, loader: &mut Loader, m: &Json) {
     };
     if ws {
         req.push_str(&format!("Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n", key));
-        let protos: Vec<String> = m.arr("protocols").unwrap_or(&[]).iter().filter_map(|p| p.as_str().map(String::from)).collect();
+        let protos: Vec<String> = m
+            .arr("protocols")
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|p| p.as_str().map(String::from))
+            .collect();
         if !protos.is_empty() {
-            req.push_str(&format!("Sec-WebSocket-Protocol: {}\r\n", protos.join(", ")));
+            req.push_str(&format!(
+                "Sec-WebSocket-Protocol: {}\r\n",
+                protos.join(", ")
+            ));
         }
     } else {
         req.push_str("Accept: text/event-stream\r\nCache-Control: no-cache\r\n");
@@ -163,16 +202,29 @@ pub fn open(e: &mut Entry, loader: &mut Loader, m: &Json) {
         return send_js(e, t, id, fail);
     }
     let mut buf = Vec::new();
-    let Some(head) = read_head(&mut stream, &mut buf) else { return send_js(e, t, id, fail) };
-    loader.client.jar.store_all(&url, head.headers.get_all("Set-Cookie"), now);
+    let Some(head) = read_head(&mut stream, &mut buf) else {
+        return send_js(e, t, id, fail);
+    };
+    loader
+        .client
+        .jar
+        .store_all(&url, head.headers.get_all("Set-Cookie"), now);
     if ws {
         let ok = head.status == 101
-            && head.headers.get("Upgrade").is_some_and(|u| u.eq_ignore_ascii_case("websocket"))
-            && head.headers.get("Sec-WebSocket-Accept").map(str::trim) == Some(ws_accept(&key).as_str());
+            && head
+                .headers
+                .get("Upgrade")
+                .is_some_and(|u| u.eq_ignore_ascii_case("websocket"))
+            && head.headers.get("Sec-WebSocket-Accept").map(str::trim)
+                == Some(ws_accept(&key).as_str());
         if !ok {
             return send_js(e, t, id, fail);
         }
-        let proto = head.headers.get("Sec-WebSocket-Protocol").unwrap_or("").to_string();
+        let proto = head
+            .headers
+            .get("Sec-WebSocket-Protocol")
+            .unwrap_or("")
+            .to_string();
         send_js(e, t, id, msg("open", vec![("protocol", Json::from(proto))]));
     } else {
         let ct = head.headers.get("Content-Type").unwrap_or("");
@@ -182,8 +234,20 @@ pub fn open(e: &mut Entry, loader: &mut Loader, m: &Json) {
         send_js(e, t, id, msg("open", vec![]));
     }
     stream.set_timeout(1);
-    let body = if ws { None } else { httpc::framing("GET", &head).ok().map(BodyDecoder::new) };
-    let mut c = Conn { id, ws, stream, buf, body, frag: None, closing: false };
+    let body = if ws {
+        None
+    } else {
+        httpc::framing("GET", &head).ok().map(BodyDecoder::new)
+    };
+    let mut c = Conn {
+        id,
+        ws,
+        stream,
+        buf,
+        body,
+        frag: None,
+        closing: false,
+    };
     // Bytes that came with the head.
     let pending = core::mem::take(&mut c.buf);
     e.sockets.push(c);
@@ -216,7 +280,9 @@ fn frame(op: u8, data: &[u8]) -> Vec<u8> {
 
 pub fn command(e: &mut Entry, m: &Json) {
     let id = m.int("id").unwrap_or(0);
-    let Some(i) = e.sockets.iter().position(|c| c.id == id) else { return };
+    let Some(i) = e.sockets.iter().position(|c| c.id == id) else {
+        return;
+    };
     match m.str("t") {
         Some("wsSend") => {
             let f = match (m.str("text"), m.str("b64")) {
@@ -246,15 +312,36 @@ pub fn command(e: &mut Entry, m: &Json) {
 fn close(e: &mut Entry, i: usize, code: u16, reason: &str, clean: bool) {
     let c = e.sockets.remove(i);
     let t = if c.ws { "ws" } else { "es" };
-    let kind = if c.ws && clean { "close" } else if c.ws { "error" } else { "end" };
-    send_js(e, t, c.id, msg(kind, vec![("code", Json::from(code as usize)), ("reason", Json::from(reason))]));
+    let kind = if c.ws && clean {
+        "close"
+    } else if c.ws {
+        "error"
+    } else {
+        "end"
+    };
+    send_js(
+        e,
+        t,
+        c.id,
+        msg(
+            kind,
+            vec![
+                ("code", Json::from(code as usize)),
+                ("reason", Json::from(reason)),
+            ],
+        ),
+    );
 }
 
 // ---- incoming data ----
 
 /// Sockets to poll.
 pub fn fds(e: &Entry) -> Vec<i32> {
-    e.sockets.iter().map(|c| c.stream.fd()).filter(|&f| f >= 0).collect()
+    e.sockets
+        .iter()
+        .map(|c| c.stream.fd())
+        .filter(|&f| f >= 0)
+        .collect()
 }
 
 /// Read whatever the connections have and pass it on.
@@ -311,7 +398,18 @@ fn feed(e: &mut Entry, i: usize, data: &[u8]) -> bool {
         let done = c.body.as_ref().is_some_and(|d| d.is_done());
         let id = c.id;
         if !out.is_empty() {
-            send_js(e, "es", id, msg("chunk", vec![("text", Json::from(String::from_utf8_lossy(&out).into_owned()))]));
+            send_js(
+                e,
+                "es",
+                id,
+                msg(
+                    "chunk",
+                    vec![(
+                        "text",
+                        Json::from(String::from_utf8_lossy(&out).into_owned()),
+                    )],
+                ),
+            );
         }
         if done {
             close(e, i, 0, "", false);
@@ -384,17 +482,29 @@ fn feed(e: &mut Entry, i: usize, data: &[u8]) -> bool {
                     continue;
                 }
                 let m = if kind == 1 {
-                    msg("message", vec![("text", Json::from(String::from_utf8_lossy(&all).into_owned()))])
+                    msg(
+                        "message",
+                        vec![(
+                            "text",
+                            Json::from(String::from_utf8_lossy(&all).into_owned()),
+                        )],
+                    )
                 } else {
                     msg("message", vec![("b64", Json::from(b64e(&all)))])
                 };
                 send_js(e, "ws", id, m);
             }
             8 => {
-                let code = if payload.len() >= 2 { u16::from_be_bytes([payload[0], payload[1]]) } else { 1005 };
+                let code = if payload.len() >= 2 {
+                    u16::from_be_bytes([payload[0], payload[1]])
+                } else {
+                    1005
+                };
                 let reason = String::from_utf8_lossy(payload.get(2..).unwrap_or(&[])).into_owned();
                 if !c.closing {
-                    let _ = c.stream.write_all(&frame(8, &payload[..payload.len().min(2)]));
+                    let _ = c
+                        .stream
+                        .write_all(&frame(8, &payload[..payload.len().min(2)]));
                 }
                 close(e, i, code, &reason, true);
                 return false;

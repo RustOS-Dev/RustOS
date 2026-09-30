@@ -45,13 +45,19 @@ pub fn ntpdate(args: &[String]) -> i32 {
             let usec = (frac * 1_000_000 >> 32) + rtt * 500;
             let unix = secs - NTP_UNIX_OFFSET + usec / 1_000_000;
             let offset = unix as i64 - time::now() as i64;
-            println!("server {}, stratum {}, offset {} s, delay {} ms", ip, buf[1], offset, rtt);
+            println!(
+                "server {}, stratum {}, offset {} s, delay {} ms",
+                ip, buf[1], offset, rtt
+            );
             if !query_only {
                 if let Err(e) = time::set_time(unix, usec % 1_000_000) {
                     return err("ntpdate", "settimeofday", e);
                 }
                 let (y, mo, d, h, mi, sec) = time::civil(unix);
-                println!("clock set to {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", y, mo, d, h, mi, sec);
+                println!(
+                    "clock set to {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+                    y, mo, d, h, mi, sec
+                );
             }
             return 0;
         }

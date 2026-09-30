@@ -6,6 +6,7 @@ wait /dev/vda /mnt/vda ext4 rw
 wait /dev/vdb /mnt/vdb ext4 rw
 wait /dev/vdc /mnt/vdc ext4 rw
 wait /dev/vdd /mnt/vdd ext4 rw
+wait /dev/vde /mnt/vde ext4 rw
 wait # $
 # inline_data: files and a directory stored in their inodes are read in
 # place, then converted to extents by the first write.
@@ -40,12 +41,20 @@ send mkdir /mnt/vdd/big && i=0; while [ $i -lt 600 ]; do echo $i > /mnt/vdd/big/
 wait 600 400
 wait 555
 wait # $
-send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd
+# ea_inode: a large attribute value lives in its own inode, which is
+# freed with the file.
+send getfattr -d /mnt/vde/small.txt; getfattr -n user.big /mnt/vde/big.bin | wc -c; rm /mnt/vde/big.bin && echo removed
+wait user.note="hello"
+wait 4133
+wait removed
+wait # $
+send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd && umount /mnt/vde
 wait # $
 hostrun e2fsck -fn "$RUSTOS_DISK0"
 hostrun e2fsck -fn "$RUSTOS_DISK1"
 hostrun e2fsck -fn "$RUSTOS_DISK2"
 hostrun e2fsck -fn "$RUSTOS_DISK3"
+hostrun e2fsck -fn "$RUSTOS_DISK4"
 send mount /dev/vda /mnt/f0 && mount /dev/vdb /mnt/f1 && cat /mnt/f0/idir/d /mnt/f0/small.txt /mnt/f1/d1/x
 wait new
 wait more

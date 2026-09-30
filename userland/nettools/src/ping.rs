@@ -32,7 +32,11 @@ pub fn ping(args: &[String]) -> i32 {
                     .map_or(1000, |s| (s * 1000.0) as u64)
                     .max(10)
             }
-            "-W" => wait_ms = val().and_then(|v| v.parse::<u64>().ok()).map_or(2000, |s| s * 1000),
+            "-W" => {
+                wait_ms = val()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .map_or(2000, |s| s * 1000)
+            }
             "-s" => size = val().and_then(|v| v.parse().ok()).unwrap_or(56).min(8192),
             "-q" => quiet = true,
             h if !h.starts_with('-') => host = Some(h.to_string()),
@@ -50,7 +54,13 @@ pub fn ping(args: &[String]) -> i32 {
         Err(e) => return err("ping", "socket", e),
     };
     let _ = sock.set_timeout(wait_ms.max(1));
-    println!("PING {} ({}) {}({}) bytes of data.", host, ip, size, size + 28);
+    println!(
+        "PING {} ({}) {}({}) bytes of data.",
+        host,
+        ip,
+        size,
+        size + 28
+    );
     let stop = signal::interrupted_flag();
     let (mut sent, mut recv) = (0u32, 0u32);
     let (mut tmin, mut tmax, mut tsum) = (u64::MAX, 0u64, 0u64);
@@ -121,7 +131,11 @@ pub fn ping(args: &[String]) -> i32 {
     }
     let elapsed = time::millis() - start;
     println!("\n--- {} ping statistics ---", host);
-    let loss = if sent == 0 { 0 } else { (sent - recv) * 100 / sent };
+    let loss = if sent == 0 {
+        0
+    } else {
+        (sent - recv) * 100 / sent
+    };
     println!(
         "{} packets transmitted, {} received, {}% packet loss, time {}ms",
         sent, recv, loss, elapsed

@@ -84,10 +84,14 @@ are in `/etc/passwd`, overridable by `/storage/etc/passwd`). `login [-f]
 
 | Command | Synopsis |
 |---------|----------|
-| `mount` | `mount [-t TYPE] [-o ro] SOURCE TARGET`; no arguments lists mounts |
+| `mount` | `mount [-t TYPE] [-o ro,data=journal|writeback|ordered] SOURCE TARGET`; no arguments lists mounts |
 | `umount` | `umount TARGET` (refuses while files are open) |
 | `mkfs` / `mkfs.fat` / `mkfs.vfat` | `mkfs.vfat [-F 12|16|32] [-n LABEL] DEVICE` |
 | `lsblk` | disks, partitions, filesystems and mount points |
+| `quota` | `quota -u|-g|-P ID DEVICE` — usage and limits (ext4 quotas) |
+| `setquota` | `setquota -u|-g|-P ID BSOFT BHARD ISOFT IHARD DEVICE` (blocks in KiB) |
+| `getfattr` | `getfattr [-d] [-n NAME] FILE...` — extended attributes |
+| `chown` | `chown UID[:GID] FILE...` (numeric ids) |
 | `lspci`, `lsusb` | PCI and USB devices |
 | `hwcheck` | `hwcheck [-y] [-o DIR] [--ssid S --pass P] [--open S] [--http URL] [--https URL] [--dns NAME] [--big URL] [--rekey SECS] [SECTION...]` — hardware checklist with logged results ([HARDWARE.md](HARDWARE.md)) |
 | `evtest` | `evtest [-c N] [DEVICE]` — print input events from `/dev/input/event0` (or a `/dev/input/js*` device) |

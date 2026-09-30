@@ -130,8 +130,11 @@ the switch is not delayed). `KDGKBMODE` reports `K_XLATE`.
 | 133 | `mknod` |
 | 137 | `statfs` |
 | 138 | `fstatfs` |
-| 165 | `mount` |
+| 165 | `mount` (MS_RDONLY and the option string, e.g. `data=journal`) |
 | 166 | `umount2` |
+| 179 | `quotactl` (Q_GETQUOTA, Q_SETQUOTA, Q_SYNC, Q_GETFMT, Q_GETINFO) |
+| 191–193 | `getxattr`, `lgetxattr`, `fgetxattr` (ext4) |
+| 194–196 | `listxattr`, `llistxattr`, `flistxattr` (ext4) |
 | 217 | `getdents64` |
 | 235 | `utimes` |
 | 258 | `mkdirat` |

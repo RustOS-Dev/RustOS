@@ -31,12 +31,18 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 ## Filesystems and storage
 
-* ext2/ext3/ext4 are read/write (journal replay, metadata journaling in
-  ordered mode, extents, metadata checksums, htree inserts). ext4 images
-  with inline_data, bigalloc, quotas, meta_bg or an external journal are
-  mounted read-only (the kernel log names the features); directory
-  lookups scan linearly instead of using the htree index; only metadata
-  is journaled (no `data=journal`).
+* ext2/ext3/ext4 are read/write: journal replay (including fast
+  commits) and journaling in data=ordered, writeback or journal mode;
+  extents, metadata checksums, htree (large_dir, casefold), inline_data,
+  bigalloc, meta_bg, quotas, ea_inode. Filesystems with encrypt, verity
+  or an external journal mount read-only (encrypted files are not
+  decrypted; verity files are not verified).
+* ext4 limits: this kernel never writes fast commits (it always does full
+  commits); extended attributes can be read but not set; inline files
+  are converted to extents on their first change; casefolding uses the
+  Unicode 14 tables (Linux uses 12.1, so names made of characters added
+  since may compare differently); quota limits are not applied to files
+  owned by root, and grace periods are not enforced.
 * FAT has no Unix permissions (files appear as root-owned 0755/0644);
   timestamps have 2-second resolution.
 * No NTFS, exFAT, btrfs, XFS; no software RAID or LVM; no disk

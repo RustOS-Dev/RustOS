@@ -60,7 +60,7 @@ EVIOCG* ioctls yet.
 - [x] **M19** JavaScript in `browse`: QuickJS-based `jsd` helper with a DOM, events, fetch/XHR, storage
 - [x] **M20** Graphical browser `browse -g`: fonts, images, painting, mouse, canvas
 - [x] **M21** Wi-Fi remainder: 12 KiB receive buffers, BAID receive BA, power save, 6 GHz with SAE-H2E, 160 MHz, BT coexistence
-- [ ] **M22** ext4 remainder: multi-transaction journal, data=journal, fast_commit replay, htree lookups, inline_data, bigalloc, meta_bg, quotas, casefold, large_dir, ea_inode
+- [x] **M22** ext4 remainder: multi-transaction journal, data=journal, fast_commit replay, htree lookups, inline_data, bigalloc, meta_bg, quotas, casefold, large_dir, ea_inode
 - [ ] **M23** USB remainder: UAS queueing and USB 2 UAS, isochronous transfers, evdev ioctls
 - [ ] **M24** `hwcheck`/`bugreport` coverage for round 3 features
 - [ ] **M25** Audio: sound core with OSS `/dev/dsp`, Intel HDA, USB Audio Class 1/2, virtio-sound
@@ -96,6 +96,17 @@ Round 3 deviations so far:
   - Active probes go only to BSSIDs and short SSIDs learned from neighbor reports.
   - FILS discovery frames and unsolicited broadcast probe responses are not used to shorten the dwell.
 - **M21** — power save: power save is device and MAC power save with beacon filtering. uAPSD and TWT are not used.
+- **M22** — journal:
+  - Transactions accumulate in the log and are checkpointed in batches. There is no background kworker; the 5 s flusher and the pressure points trigger checkpoints instead.
+  - Journal barriers are the existing device flushes.
+  - Async commit only drops the flush before the commit block.
+- **M22** — fast_commit is replayed but never written.
+- **M22** — test images: fast-commit images come from `tools/fc-inject.py`, a synthetic writer checked against e2fsck's own replay, not from a Linux crash. `mke2fs -d` with quota writes wrong usage, so the test harness repairs those images first.
+- **M22** — features:
+  - inline_data converts on first change.
+  - ea_inode is read-only for values: there is no setxattr.
+  - encrypt and verity mount read-only.
+  - Project quotas are accounted but not settable via ioctl: there is no FS_IOC_FSSETXATTR.
 - **M19** — tests: a host end-to-end suite (`crates/jsproto/tests/jsd.rs`) plus the `browser-js` and `captive-portal-js` scenarios stand in for the WPT subset.
 
 ## Context

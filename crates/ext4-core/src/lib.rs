@@ -7,6 +7,9 @@
 
 extern crate alloc;
 
+pub mod casefold;
+#[rustfmt::skip]
+mod casefold_data;
 pub mod csum;
 pub mod hash;
 pub mod jbd2;

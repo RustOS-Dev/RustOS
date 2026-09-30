@@ -4,6 +4,8 @@ wait # $ 240
 send grep /mnt/vd /proc/mounts | cat
 wait /dev/vda /mnt/vda ext4 rw
 wait /dev/vdb /mnt/vdb ext4 rw
+wait /dev/vdc /mnt/vdc ext4 rw
+wait /dev/vdd /mnt/vdd ext4 rw
 wait # $
 # inline_data: files and a directory stored in their inodes are read in
 # place, then converted to extents by the first write.
@@ -21,10 +23,29 @@ send dd if=/dev/zero of=/mnt/vdb/fill bs=65536 count=400 2>/dev/null; ls -l /mnt
 wait 26214400
 wait inline hello
 wait # $
-send sync && umount /mnt/vda && umount /mnt/vdb
+# casefold: names in the indexed directory match in any case (and in
+# any Unicode normalization); new entries hash their folded names.
+send cat /mnt/vdc/cf/SEED-FILE-0007 /mnt/vdc/cf/seed-file-0299 && echo cf-read-ok; echo hi > /mnt/vdc/cf/Hello.TXT && cat /mnt/vdc/cf/hello.txt; mkdir /mnt/vdc/cf/HELLO.txt 2>&1 | grep -c exists
+wait cf-read-ok
+wait hi
+wait 1\r\n
+wait # $
+send i=0; while [ $i -lt 300 ]; do echo $i > /mnt/vdc/cf/Added-$i; i=$((i+1)); done; cat /mnt/vdc/cf/ADDED-150; ls /mnt/vdc/cf | wc -l; mkdir /mnt/vdc/cf/Sub && echo s > /mnt/vdc/cf/sub/F && cat /mnt/vdc/cf/SUB/f
+wait 150 400
+wait 601
+wait s\r\n
+wait # $
+# large_dir: a large indexed directory.
+send mkdir /mnt/vdd/big && i=0; while [ $i -lt 600 ]; do echo $i > /mnt/vdd/big/entry-with-a-long-name-to-fill-blocks-$i; i=$((i+1)); done; ls /mnt/vdd/big | wc -l; cat /mnt/vdd/big/entry-with-a-long-name-to-fill-blocks-555
+wait 600 400
+wait 555
+wait # $
+send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd
 wait # $
 hostrun e2fsck -fn "$RUSTOS_DISK0"
 hostrun e2fsck -fn "$RUSTOS_DISK1"
+hostrun e2fsck -fn "$RUSTOS_DISK2"
+hostrun e2fsck -fn "$RUSTOS_DISK3"
 send mount /dev/vda /mnt/f0 && mount /dev/vdb /mnt/f1 && cat /mnt/f0/idir/d /mnt/f0/small.txt /mnt/f1/d1/x
 wait new
 wait more

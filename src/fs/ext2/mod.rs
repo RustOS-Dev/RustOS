@@ -49,6 +49,7 @@ const INCOMPAT_EA_INODE: u32 = 0x400;
 const INCOMPAT_CSUM_SEED: u32 = 0x2000;
 const INCOMPAT_LARGEDIR: u32 = 0x4000;
 const INCOMPAT_INLINE_DATA: u32 = 0x8000;
+const INCOMPAT_CASEFOLD: u32 = 0x20000;
 /// Features we can read.
 const INCOMPAT_READ: u32 = INCOMPAT_FILETYPE
     | INCOMPAT_RECOVER
@@ -59,7 +60,8 @@ const INCOMPAT_READ: u32 = INCOMPAT_FILETYPE
     | INCOMPAT_EA_INODE
     | INCOMPAT_CSUM_SEED
     | INCOMPAT_LARGEDIR
-    | INCOMPAT_INLINE_DATA;
+    | INCOMPAT_INLINE_DATA
+    | INCOMPAT_CASEFOLD;
 /// Features we can keep consistent while writing.
 const INCOMPAT_WRITE: u32 = INCOMPAT_READ;
 const RO_COMPAT_SPARSE: u32 = 0x1;
@@ -96,6 +98,7 @@ const FL_INDEX: u32 = 0x1000;
 const FL_HUGE_FILE: u32 = 0x40000;
 const FL_EXTENTS: u32 = 0x80000;
 const FL_INLINE: u32 = 0x1000_0000;
+const FL_CASEFOLD: u32 = 0x4000_0000;
 
 const S_IFMT: u16 = 0xF000;
 
@@ -157,6 +160,13 @@ pub struct Ext2Fs {
     sparse_super: bool,
     is64: bool,
     largedir: bool,
+    /// dir_index: linear directories become indexed when they outgrow
+    /// one block (hashed with `def_hash_version`).
+    dir_index: bool,
+    def_hash_version: u8,
+    /// casefold with the UTF-8 encoding: directories with FL_CASEFOLD
+    /// match names case-insensitively.
+    casefold: bool,
     seed: u32,
     uuid: [u8; 16],
     hash_seed: [u32; 4],
@@ -209,6 +219,8 @@ pub struct Ext2Inode {
     /// Last block allocated for this file: the next allocation starts
     /// there so files grow contiguously (and allocation stays O(1)).
     alloc_hint: AtomicU64,
+    /// A casefolded directory (names compare case-insensitively).
+    folded: bool,
 }
 
 impl RawInode {
@@ -622,6 +634,10 @@ impl Ext2Fs {
             sparse_super: ro_compat & RO_COMPAT_SPARSE != 0,
             is64,
             largedir: incompat & INCOMPAT_LARGEDIR != 0,
+            dir_index: compat & COMPAT_DIR_INDEX != 0,
+            def_hash_version: sb[0xFC],
+            casefold: incompat & INCOMPAT_CASEFOLD != 0
+                && u16le(&sb, 0x27C) == ext4_core::casefold::ENCODING_UTF8,
             seed: csum::fs_seed(&sb, incompat & INCOMPAT_CSUM_SEED != 0),
             uuid,
             hash_seed,
@@ -672,9 +688,8 @@ impl Ext2Fs {
         // superblock and group descriptors, and the flags above are final.
         drop(fs);
         let mut sb2 = vec![0u8; 1024];
-        let raw2;
         drop(raw);
-        match &journal {
+        let raw2 = match &journal {
             Some(j) if replayed && !dev_writable => {
                 // Read through the overlay.
                 let mut blk = vec![0u8; block_size as usize];
@@ -684,21 +699,21 @@ impl Ext2Fs {
                 }
                 let o = (1024 % block_size) as usize;
                 sb2.copy_from_slice(&blk[o..o + 1024]);
-                raw2 = layout.read(ngroups, |b, buf| {
+                layout.read(ngroups, |b, buf| {
                     if !j.cached(b, buf) {
                         dev.read_bytes(b * block_size, buf)?;
                     }
                     Ok(())
-                })?;
+                })?
             }
             _ => {
                 dev.read_bytes(1024, &mut sb2)?;
-                raw2 = layout.read(ngroups, |b, buf| {
+                layout.read(ngroups, |b, buf| {
                     dev.read_bytes(b * block_size, buf)?;
                     Ok(())
-                })?;
+                })?
             }
-        }
+        };
         let groups = parse_groups(&raw2, ngroups, desc_size as usize, is64);
         let free_blocks = groups.iter().map(|g| g.free_blocks as u64).sum();
         let free_inodes = groups.iter().map(|g| g.free_inodes).sum();
@@ -723,6 +738,10 @@ impl Ext2Fs {
             sparse_super: ro_compat & RO_COMPAT_SPARSE != 0,
             is64,
             largedir: incompat & INCOMPAT_LARGEDIR != 0,
+            dir_index: compat & COMPAT_DIR_INDEX != 0,
+            def_hash_version: sb[0xFC],
+            casefold: incompat & INCOMPAT_CASEFOLD != 0
+                && u16le(&sb, 0x27C) == ext4_core::casefold::ENCODING_UTF8,
             seed: csum::fs_seed(&sb2, incompat & INCOMPAT_CSUM_SEED != 0),
             uuid,
             hash_seed,
@@ -766,7 +785,6 @@ impl Ext2Fs {
             fs.dev.sync()?;
             fs.cleanup_orphans()?;
         }
-        let _ = compat & COMPAT_DIR_INDEX;
         Ok(fs)
     }
 
@@ -943,11 +961,13 @@ impl Ext2Fs {
             return Ok(i);
         }
         let raw = self.read_raw_inode(ino)?;
+        let folded = self.casefold && raw.flags & FL_CASEFOLD != 0;
         let i = Arc::new(Ext2Inode {
             fs: self.arc(),
             ino,
             st: Mutex::new(raw),
             alloc_hint: AtomicU64::new(0),
+            folded,
         });
         let mut t = self.inodes.lock();
         if let Some(existing) = t.get(&ino).and_then(|w| w.upgrade()) {
@@ -1481,13 +1501,17 @@ impl Drop for Ext2Fs {
 /// Directory leaf helpers shared by linear and indexed directories. `end`
 /// is where entries stop (before the checksum tail).
 fn leaf_insert(buf: &mut [u8], end: usize, name: &str, ino: u32, tcode: u8) -> bool {
+    leaf_insert_raw(buf, end, name.as_bytes(), ino, tcode)
+}
+
+fn leaf_insert_raw(buf: &mut [u8], end: usize, name: &[u8], ino: u32, tcode: u8) -> bool {
     let need = (8 + name.len()).next_multiple_of(4);
     let write_rec = |buf: &mut [u8], o: usize, rec: usize| {
         put32(buf, o, ino);
         put16(buf, o + 4, rec as u16);
         buf[o + 6] = name.len() as u8;
         buf[o + 7] = tcode;
-        buf[o + 8..o + 8 + name.len()].copy_from_slice(name.as_bytes());
+        buf[o + 8..o + 8 + name.len()].copy_from_slice(name);
     };
     let mut o = 0;
     while o + 8 <= end {
@@ -1865,9 +1889,13 @@ impl Ext2Inode {
                 }
             }
         }
+        let folded = self.folded;
         self.dir_entries()?
             .into_iter()
-            .find(|(n, ..)| n == name)
+            .find(|(n, ..)| {
+                n == name
+                    || folded && ext4_core::casefold::names_equal(n.as_bytes(), name.as_bytes())
+            })
             .map(|(_, i, t, l, o)| (i, t, l, o))
             .ok_or(ENOENT)
     }
@@ -1900,6 +1928,12 @@ impl Ext2Inode {
                 self.write_dir_block(&st, l, pb, &mut buf)?;
                 return self.save(&st);
             }
+        }
+        // A full one-block directory becomes indexed (as Linux does).
+        if nblocks == 1 && fs.dir_index && fs.def_hash_version <= 2 {
+            self.dx_make_indexed(&mut st)?;
+            self.dx_add(&mut st, name, ino, tcode)?;
+            return self.save(&st);
         }
         // Append a new block.
         let pb = self.bmap(&mut st, nblocks, true)?.ok_or(EIO)?;
@@ -2066,6 +2100,9 @@ impl Ext2Inode {
         {
             r.flags |= FL_EXTENTS;
             r.set_block_bytes(&extent::empty_root());
+        }
+        if self.folded && kind == FileType::Directory {
+            r.flags |= FL_CASEFOLD;
         }
         fs.write_raw_inode(ino, &r)?;
         // Drop any stale cached object for a reused inode number.
@@ -2290,7 +2327,12 @@ impl Inode for Ext2Inode {
         let (_, _, l2, off2) = if nd.ino == self.ino {
             self.dir_entries()?
                 .into_iter()
-                .find(|(n, i, ..)| n == old && *i == ino)
+                .find(|(n, i, ..)| {
+                    *i == ino
+                        && (n == old
+                            || self.folded
+                                && ext4_core::casefold::names_equal(n.as_bytes(), old.as_bytes()))
+                })
                 .map(|(_, i, t, l, o)| (i, t, l, o))
                 .ok_or(EIO)?
         } else {

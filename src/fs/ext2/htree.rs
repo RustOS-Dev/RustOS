@@ -56,7 +56,14 @@ impl Ext2Inode {
         if self.fs.hash_unsigned && v <= hash::TEA {
             v += 3;
         }
-        hash::dx_hash(name, v, self.fs.hash_seed).0
+        // Casefolded directories hash the folded name (invalid UTF-8 is
+        // hashed as it is).
+        let folded = if self.folded {
+            ext4_core::casefold::casefold(name)
+        } else {
+            None
+        };
+        hash::dx_hash(folded.as_deref().unwrap_or(name), v, self.fs.hash_seed).0
     }
 
     fn dx_node_limit(&self, co: usize) -> usize {
@@ -88,6 +95,65 @@ impl Ext2Inode {
         let pb = self.bmap(st, l, true)?.ok_or(EIO)?;
         st.size = (l + 1) * bs;
         Ok((l, pb))
+    }
+
+    /// Turn a full one-block linear directory into an indexed one: block
+    /// 0 becomes the root (".", ".." and a one-entry index) and its other
+    /// entries move to a new leaf, block 1.
+    pub(super) fn dx_make_indexed(&self, st: &mut RawInode) -> KResult<()> {
+        let bs = self.fs.block_size as usize;
+        let end = self.dir_end();
+        let pb0 = self.bmap(st, 0, false)?.ok_or(EIO)?;
+        let mut b0 = vec![0u8; bs];
+        self.fs.read_block(pb0, &mut b0)?;
+        let mut parent = 0;
+        let mut ents: Vec<(Vec<u8>, u32, u8)> = Vec::new();
+        let mut o = 0;
+        while o + 8 <= end {
+            let ino = u32le(&b0, o);
+            let rec = u16le(&b0, o + 4) as usize;
+            let nl = b0[o + 6] as usize;
+            if rec < 8 || o + rec > end || o + 8 + nl > end {
+                return Err(EIO);
+            }
+            let name = &b0[o + 8..o + 8 + nl];
+            if ino != 0 {
+                match name {
+                    b"." => {}
+                    b".." => parent = ino,
+                    _ => ents.push((name.to_vec(), ino, b0[o + 7])),
+                }
+            }
+            o += rec;
+        }
+        let (l1, pb1) = self.dir_append(st)?;
+        let mut leaf = vec![0u8; bs];
+        leaf_empty(&mut leaf, end);
+        for (name, ino, t) in &ents {
+            if !leaf_insert_raw(&mut leaf, end, name, *ino, *t) {
+                return Err(EIO);
+            }
+        }
+        st.flags |= FL_INDEX;
+        self.write_dir_block(st, l1, pb1, &mut leaf)?;
+        let t = if self.fs.filetype { 2 } else { 0 };
+        b0.fill(0);
+        put32(&mut b0, 0, self.ino);
+        put16(&mut b0, 4, 12);
+        b0[6] = 1;
+        b0[7] = t;
+        b0[8] = b'.';
+        put32(&mut b0, 12, parent);
+        put16(&mut b0, 16, (bs - 12) as u16);
+        b0[18] = 2;
+        b0[19] = t;
+        b0[20..22].copy_from_slice(b"..");
+        b0[0x1C] = self.fs.def_hash_version;
+        b0[0x1D] = 8; // info length
+        put16(&mut b0, ROOT_COUNT, self.dx_node_limit(ROOT_COUNT) as u16);
+        put16(&mut b0, ROOT_COUNT + 2, 1);
+        put32(&mut b0, ROOT_COUNT + 4, l1 as u32);
+        self.write_dir_block(st, 0, pb0, &mut b0)
     }
 
     pub(super) fn dx_add(&self, st: &mut RawInode, name: &str, ino: u32, tcode: u8) -> KResult<()> {
@@ -166,7 +232,7 @@ impl Ext2Inode {
             return Err(EIO);
         }
         let levels = root.buf[0x1E] as usize;
-        if levels > 2 {
+        if levels >= if self.fs.largedir { 3 } else { 2 } {
             return Err(EIO);
         }
         let h = self.dx_hash_of(&root.buf, name.as_bytes());
@@ -201,7 +267,7 @@ impl Ext2Inode {
                 block_at(&lv.buf, lv.co, lv.pos) as u64
             };
             let leaf = self.dx_read(st, leaf_l, 0, 0)?;
-            if let Some((ino, t, off)) = leaf_find(&leaf.buf, bs, name.as_bytes()) {
+            if let Some((ino, t, off)) = leaf_find(&leaf.buf, bs, name.as_bytes(), self.folded) {
                 return Ok(Some((ino, t, leaf_l, off)));
             }
             // Continue in the next leaf only if its first hash collides
@@ -376,7 +442,7 @@ impl Ext2Inode {
 }
 
 /// Find `name` in one directory leaf block: (inode, type, offset).
-fn leaf_find(b: &[u8], bs: usize, name: &[u8]) -> Option<(u32, u8, usize)> {
+fn leaf_find(b: &[u8], bs: usize, name: &[u8], folded: bool) -> Option<(u32, u8, usize)> {
     let mut o = 0;
     while o + 8 <= bs {
         let ino = u32le(b, o);
@@ -385,8 +451,11 @@ fn leaf_find(b: &[u8], bs: usize, name: &[u8]) -> Option<(u32, u8, usize)> {
         if rec < 8 || o + rec > bs {
             return None;
         }
-        if ino != 0 && nl == name.len() && o + 8 + nl <= bs && &b[o + 8..o + 8 + nl] == name {
-            return Some((ino, b[o + 7], o));
+        if ino != 0 && o + 8 + nl <= bs {
+            let n = &b[o + 8..o + 8 + nl];
+            if n == name || folded && ext4_core::casefold::names_equal(n, name) {
+                return Some((ino, b[o + 7], o));
+            }
         }
         o += rec;
     }

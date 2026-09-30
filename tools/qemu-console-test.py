@@ -46,6 +46,12 @@ def _disk(m):
         if "bigalloc" in feats:
             cmd += ["-C", "16384"]
         subprocess.run(cmd + [path], check=True, stdout=subprocess.DEVNULL)
+        if "casefold" in feats:
+            # A casefolded directory "cf" with enough entries to be indexed.
+            cmds = "mkdir cf\nset_inode_field cf flags 0x40080000\n"
+            cmds += "".join(f"write /dev/null cf/Seed-File-{i:04d}\n" for i in range(300))
+            _quiet(["debugfs", "-w", "-f", "-", path], input=cmds.encode())
+            subprocess.run(["e2fsck", "-fyD", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return path
     if kind == "TREE":
         src = os.path.join(root, m.group(3))

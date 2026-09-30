@@ -59,3 +59,32 @@ wait mounted /dev/sd[a-z]+ \(ext2\) 30
 send grep -c " /mnt/sd" /proc/mounts; dmesg | grep -c "removed; unmounted"
 wait \r\n1\r\n[4-9]\r\n
 wait # $
+# evdev: every device has its own node described by the EVIOCG* ioctls;
+# the USB keyboard reports key codes there, and Caps Lock lights its LED.
+send evtest -l
+wait /dev/input/event1:\s+AT Translated Set 2 keyboard
+wait /dev/input/event[0-9]+:\s+QEMU QEMU USB Keyboard
+wait /dev/input/event[0-9]+:\s+QEMU QEMU USB Mouse
+wait # $
+send k=$(evtest -l | grep "USB Keyboard" | cut -d: -f1); evtest -i $k | head -7; evtest -c 2 $k > /tmp/k.txt &
+wait Input device ID: bus 0x3 vendor 0x627 product 0x1
+wait Input device name: "QEMU QEMU USB Keyboard"
+wait Event type 1 \(KEY\): 248 codes
+wait # $
+sleep 3
+monitor sendkey x
+sleep 2
+monitor sendkey backspace
+sleep 2
+send wait; cat /tmp/k.txt
+wait event KEY code 0x2d value 1\r\n 60
+wait event KEY code 0x2d value 0\r\n
+wait # $
+# Num Lock starts on; Caps Lock adds LED 1.
+monitor sendkey caps_lock
+sleep 3
+send evtest -i $k | tail -1
+wait LEDs on: 0 1\r\n
+wait # $
+monitor sendkey caps_lock
+sleep 1

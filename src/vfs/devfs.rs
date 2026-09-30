@@ -369,7 +369,7 @@ fn register_builtin() {
         "input/event0",
         FileType::CharDevice,
         (13 << 8) | 64,
-        Arc::new(crate::drivers::input::EventDev),
+        crate::drivers::input::event0(),
     );
     register(
         "input/js0",

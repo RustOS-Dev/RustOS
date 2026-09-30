@@ -4,13 +4,14 @@
 //! The report descriptor is fetched and parsed (`usb_desc::hid`), and the
 //! device is driven in report protocol: keyboards (including NKRO bitmaps
 //! and media keys) produce PS/2 set-1 scancodes for the console decoder;
-//! pointers feed `/dev/input/mice` and `/dev/input/event0`; game pads and
-//! joysticks feed `/dev/input/js0` and `/dev/input/event0` (see
-//! `drivers::input`). Boot-protocol keyboards and mice whose descriptor
-//! cannot be parsed fall back to the boot protocol.
+//! pointers feed `/dev/input/mice`; game pads and joysticks feed
+//! `/dev/input/js0`. Every device also gets its own evdev node
+//! (`/dev/input/eventN`, see `drivers::input`), and keyboards show the
+//! lock LEDs. Boot-protocol keyboards and mice whose descriptor cannot be
+//! parsed fall back to the boot protocol.
 
 use super::UsbDevice;
-use crate::drivers::input::{self, EV_ABS, EV_KEY, EV_REL};
+use crate::drivers::input::{self, EV_ABS, EV_KEY, EV_REL, InputDev};
 use crate::drivers::mouse::{self, MouseEvent};
 use crate::mm::dma::DmaBuffer;
 use alloc::sync::Arc;
@@ -19,6 +20,7 @@ use usb_desc::hid::{self, Decoded, ReportDescriptor, usage};
 use usb_desc::{CLASS_HID, Interface, KeyboardState, MouseReport, TransferType};
 
 const GET_DESCRIPTOR: u8 = 0x06;
+const SET_REPORT: u8 = 0x09;
 const SET_IDLE: u8 = 0x0A;
 const SET_PROTOCOL: u8 = 0x0B;
 const DT_REPORT: u16 = 0x22;
@@ -84,7 +86,35 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
         Mode::BootMouse => alloc::string::String::from("boot mouse"),
         Mode::Report(r) => describe(r),
     };
-    crate::println!("[usb] {}: HID {}", dev.name(), what);
+    let ev = input::register(evdev_info(dev, iface.number, &mode));
+    crate::println!(
+        "[usb] {}: HID {} (/dev/input/event{})",
+        dev.name(),
+        what,
+        ev.idx
+    );
+    if keyboard {
+        // Lock LEDs: a one-byte output report (after its ID, if any).
+        let id = match &mode {
+            Mode::Report(r) if r.has_ids => r
+                .fields
+                .iter()
+                .find(|f| f.application == usage(GD, hid::USAGE_KEYBOARD))
+                .map_or(1, |f| f.report_id),
+            _ => 0,
+        };
+        let d = Arc::downgrade(dev);
+        ev.set_led_sink(alloc::boxed::Box::new(move |bits| {
+            if let Some(d) = d.upgrade() {
+                let data = if id != 0 {
+                    alloc::vec![id, bits]
+                } else {
+                    alloc::vec![bits]
+                };
+                let _ = d.control_out(0x21, SET_REPORT, (2 << 8) | id as u16, ifn, &data);
+            }
+        }));
+    }
     let d = dev.clone();
     crate::sched::spawn(&alloc::format!("usb-hid{}", dev.slot), move || {
         let Some(buf) = DmaBuffer::new(64.max(ep.packet_size() as usize)) else {
@@ -92,12 +122,104 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
         };
         let len = (ep.packet_size() as usize).clamp(3, buf.len());
         match mode {
-            Mode::BootKeyboard => keyboard_loop(&d, &ep, &buf, len),
-            Mode::BootMouse => mouse_loop(&d, &ep, &buf, len),
-            Mode::Report(r) => report_loop(&d, &ep, &buf, len, r),
+            Mode::BootKeyboard => keyboard_loop(&d, &ep, &buf, len, &ev),
+            Mode::BootMouse => mouse_loop(&d, &ep, &buf, len, &ev),
+            Mode::Report(r) => report_loop(&d, &ep, &buf, len, r, &ev),
         }
+        input::unregister(&ev);
     });
     true
+}
+
+/// The evdev description of a HID device.
+fn evdev_info(dev: &UsbDevice, ifn: u8, mode: &Mode) -> input::Info {
+    let desc = *dev.desc.lock();
+    let mut name = alloc::string::String::from(
+        alloc::format!(
+            "{} {}",
+            dev.manufacturer.lock().trim(),
+            dev.product.lock().trim()
+        )
+        .trim(),
+    );
+    if name.is_empty() {
+        name = alloc::format!("USB HID {:04x}:{:04x}", desc.vendor, desc.product);
+    }
+    let phys = alloc::format!("usb-{}/input{}", dev.name(), ifn);
+    let info = input::Info::new(
+        &name,
+        &phys,
+        [
+            input::BUS_USB,
+            desc.vendor,
+            desc.product,
+            desc.device_version,
+        ],
+    );
+    let r = match mode {
+        Mode::BootKeyboard => return info.keyboard(),
+        Mode::BootMouse => return info.mouse(5, true),
+        Mode::Report(r) => r,
+    };
+    let mut info = info;
+    if r.has_application(usage(GD, hid::USAGE_KEYBOARD)) {
+        info = info.keyboard();
+    }
+    let game = r.has_application(usage(GD, hid::USAGE_GAMEPAD))
+        || r.has_application(usage(GD, hid::USAGE_JOYSTICK));
+    let digitizer = r
+        .applications
+        .iter()
+        .any(|a| (a >> 16) as u16 == hid::PAGE_DIGITIZER);
+    let btn_base = if r.has_application(usage(GD, hid::USAGE_GAMEPAD)) {
+        input::BTN_GAMEPAD
+    } else if game {
+        input::BTN_JOYSTICK
+    } else {
+        input::BTN_MOUSE
+    };
+    let mut buttons = 0u16;
+    let mut axes = 0u8;
+    for f in r.fields.iter().filter(|f| !f.is_constant()) {
+        for i in 0..f.count.max(1) {
+            let Some(u) = f.usage_of(i) else { continue };
+            match ((u >> 16) as u16, u as u16) {
+                (hid::PAGE_BUTTON, b) if (1..=32).contains(&b) => buttons = buttons.max(b),
+                (GD, hid::USAGE_X) if f.is_relative() => info.rel.push(input::REL_X),
+                (GD, hid::USAGE_Y) if f.is_relative() => info.rel.push(input::REL_Y),
+                (GD, hid::USAGE_WHEEL) if f.is_relative() => info.rel.push(input::REL_WHEEL),
+                (hid::PAGE_CONSUMER, hid::USAGE_AC_PAN) => info.rel.push(input::REL_HWHEEL),
+                _ if !f.is_relative() && f.is_variable() => {
+                    if let Some(code) = abs_code(u)
+                        && !info.abs.iter().any(|a| a.0 == code)
+                    {
+                        info.abs.push((
+                            code,
+                            input::AbsInfo {
+                                min: f.logical_min,
+                                max: f.logical_max,
+                                ..Default::default()
+                            },
+                        ));
+                        axes += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    info.rel.sort_unstable();
+    info.rel.dedup();
+    info.keys.extend((0..buttons).map(|b| btn_base + b));
+    if digitizer {
+        info.keys.push(input::BTN_TOUCH);
+    }
+    if game {
+        info.game = Some((axes, buttons as u8));
+    } else if !info.rel.is_empty() || !info.abs.is_empty() {
+        info.props |= input::touch_props(digitizer);
+    }
+    info
 }
 
 fn describe(r: &ReportDescriptor) -> alloc::string::String {
@@ -132,9 +254,11 @@ fn describe(r: &ReportDescriptor) -> alloc::string::String {
     alloc::format!("{} (report protocol)", parts.join(" + "))
 }
 
-fn emit(codes: &[u8]) {
+/// Keyboard scancodes: to the console and the device's evdev node.
+fn emit(codes: &[u8], ev: &InputDev) {
     for &c in codes {
         crate::task::keyboard::add_scancode(c);
+        ev.scancode(c);
     }
 }
 
@@ -187,7 +311,13 @@ fn read_loop(
     }
 }
 
-fn keyboard_loop(dev: &UsbDevice, ep: &usb_desc::Endpoint, buf: &DmaBuffer, len: usize) {
+fn keyboard_loop(
+    dev: &UsbDevice,
+    ep: &usb_desc::Endpoint,
+    buf: &DmaBuffer,
+    len: usize,
+    ev: &InputDev,
+) {
     let mut state = KeyboardState::default();
     let mut rep = Repeat { held: None };
     let mut out = Vec::new();
@@ -198,14 +328,21 @@ fn keyboard_loop(dev: &UsbDevice, ep: &usb_desc::Endpoint, buf: &DmaBuffer, len:
         out.clear();
         let pressed = state.update(&report[..8], &mut out);
         rep.update(&state, &pressed, &mut out);
-        emit(&out);
+        emit(&out, ev);
     });
     out.clear();
     state.release_all(&mut out);
-    emit(&out);
+    emit(&out, ev);
 }
 
-fn mouse_loop(dev: &UsbDevice, ep: &usb_desc::Endpoint, buf: &DmaBuffer, len: usize) {
+fn mouse_loop(
+    dev: &UsbDevice,
+    ep: &usb_desc::Endpoint,
+    buf: &DmaBuffer,
+    len: usize,
+    ev: &InputDev,
+) {
+    let mut last_buttons = 0u8;
     read_loop(dev, ep, buf, len, |report| {
         if let Some(r) = MouseReport::parse(report) {
             mouse::push(MouseEvent {
@@ -214,9 +351,23 @@ fn mouse_loop(dev: &UsbDevice, ep: &usb_desc::Endpoint, buf: &DmaBuffer, len: us
                 wheel: r.wheel as i32,
                 buttons: r.buttons,
             });
-            input::emit(EV_REL, input::REL_X, r.dx as i32);
-            input::emit(EV_REL, input::REL_Y, r.dy as i32);
-            input::sync();
+            let changed = r.buttons ^ last_buttons;
+            last_buttons = r.buttons;
+            for b in 0..5 {
+                if changed & (1 << b) != 0 {
+                    ev.emit(EV_KEY, input::BTN_MOUSE + b, ((r.buttons >> b) & 1) as i32);
+                }
+            }
+            for (code, v) in [
+                (input::REL_X, r.dx as i32),
+                (input::REL_Y, r.dy as i32),
+                (input::REL_WHEEL, r.wheel as i32),
+            ] {
+                if v != 0 {
+                    ev.emit(EV_REL, code, v);
+                }
+            }
+            ev.sync();
         }
     });
 }
@@ -265,6 +416,7 @@ fn report_loop(
     buf: &DmaBuffer,
     len: usize,
     r: ReportDescriptor,
+    ev: &InputDev,
 ) {
     let mut st = ReportState::default();
     let game = r.has_application(usage(GD, hid::USAGE_GAMEPAD))
@@ -280,12 +432,12 @@ fn report_loop(
     read_loop(dev, ep, buf, len, |report| {
         let d = r.decode(report);
         out.clear();
-        handle(&r, &d, &mut st, &mut out, game, btn_base);
-        emit(&out);
+        handle(&r, &d, &mut st, &mut out, game, btn_base, ev);
+        emit(&out, ev);
     });
     out.clear();
     st.keyboard.release_all(&mut out);
-    emit(&out);
+    emit(&out, ev);
 }
 
 fn handle(
@@ -295,6 +447,7 @@ fn handle(
     out: &mut Vec<u8>,
     game: bool,
     btn_base: u16,
+    ev: &InputDev,
 ) {
     // Which applications this report belongs to decides what it drives.
     let apps: Vec<u32> = r
@@ -325,7 +478,7 @@ fn handle(
     for b in 0..32 {
         if changed & (1 << b) != 0 {
             let down = d.buttons & (1 << b) != 0;
-            input::emit(EV_KEY, btn_base + b as u16, down as i32);
+            ev.emit(EV_KEY, btn_base + b as u16, down as i32);
             if game {
                 input::js_emit(true, b as u8, down as i16);
             }
@@ -345,7 +498,7 @@ fn handle(
         (input::REL_HWHEEL, pan),
     ] {
         if v != 0 {
-            input::emit(EV_REL, code, v);
+            ev.emit(EV_REL, code, v);
             any = true;
         }
     }
@@ -358,14 +511,14 @@ fn handle(
             Some((_, pv)) => *pv = v,
             None => st.axes.push((u, v)),
         }
-        input::emit(EV_ABS, code, v);
+        ev.emit(EV_ABS, code, v);
         if game {
             input::js_emit(false, i as u8, input::js_scale(v, lo, hi));
         }
         any = true;
     }
     if any {
-        input::sync();
+        ev.sync();
     }
     if pointer {
         // Absolute pointers move the /dev/input/mice pointer too.

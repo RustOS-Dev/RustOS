@@ -50,23 +50,26 @@ pub fn ps2_byte(b: u8) {
             wheel: 0,
             buttons: flags & 7,
         });
-        // Also as evdev events (/dev/input/event0).
-        use crate::drivers::input::{self, BTN_MOUSE, EV_KEY, EV_REL, REL_X, REL_Y};
+        // Also as evdev events (its /dev/input/event node and event0).
+        use crate::drivers::input::{BTN_MOUSE, EV_KEY, EV_REL, REL_X, REL_Y};
         let changed = (flags & 7) ^ p.2;
         p.2 = flags & 7;
+        let Some(ev) = crate::drivers::ps2::MOUSE.get() else {
+            return;
+        };
         if dx != 0 {
-            input::emit(EV_REL, REL_X, dx);
+            ev.emit(EV_REL, REL_X, dx);
         }
         if dy != 0 {
-            input::emit(EV_REL, REL_Y, -dy);
+            ev.emit(EV_REL, REL_Y, -dy);
         }
         // PS/2 bit order: left, right, middle (BTN_LEFT, BTN_RIGHT, BTN_MIDDLE).
         for b in 0..3 {
             if changed & (1 << b) != 0 {
-                input::emit(EV_KEY, BTN_MOUSE + b as u16, ((flags >> b) & 1) as i32);
+                ev.emit(EV_KEY, BTN_MOUSE + b as u16, ((flags >> b) & 1) as i32);
             }
         }
-        input::sync();
+        ev.sync();
     }
 }
 

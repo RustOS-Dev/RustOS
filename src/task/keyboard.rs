@@ -13,6 +13,8 @@ static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static KEYBOARD_IRQ_SEEN: AtomicBool = AtomicBool::new(false);
 static SHIFT: AtomicBool = AtomicBool::new(false);
 static ALT: AtomicBool = AtomicBool::new(false);
+/// Lock states for the keyboard LEDs (bit 0 num, 1 caps, 2 scroll).
+static LOCKS: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(1);
 
 static DECODER: Mutex<Option<Keyboard<layouts::Us104Key, ScancodeSet1>>> = Mutex::new(None);
 
@@ -81,6 +83,18 @@ fn decode(scancode: u8) -> Option<Key> {
     }
     if matches!(ev.code, KeyCode::LAlt | KeyCode::RAltGr | KeyCode::RAlt2) {
         ALT.store(ev.state == KeyState::Down, Ordering::Relaxed);
+    }
+    if ev.state == KeyState::Down {
+        let bit = match ev.code {
+            KeyCode::NumpadLock => 1,
+            KeyCode::CapsLock => 2,
+            KeyCode::ScrollLock => 4,
+            _ => 0,
+        };
+        if bit != 0 {
+            let l = LOCKS.fetch_xor(bit, Ordering::Relaxed) ^ bit;
+            crate::drivers::input::console_leds(l);
+        }
     }
     let shift = SHIFT.load(Ordering::Relaxed);
     let alt = ALT.load(Ordering::Relaxed);

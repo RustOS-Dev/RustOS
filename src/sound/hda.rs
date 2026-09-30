@@ -178,7 +178,7 @@ impl Hda {
             }
             // Output amplifier (both sides), and the selected input of
             // mixers / input amps.
-            let steps = |caps: u32| ((caps >> 8) & 0x7F) as u32;
+            let steps = |caps: u32| (caps >> 8) & 0x7F;
             let amp_out = if w.caps & audio::hda::WCAP_AMP_OVERRIDE != 0 {
                 w.amp_out
             } else {
@@ -391,7 +391,7 @@ impl Card for Hda {
                 return Err(EIO);
             }
             let hw = self.lpib(&s);
-            let avail = (hw + BUF_BYTES - s.pos) % BUF_BYTES & !3;
+            let avail = ((hw + BUF_BYTES - s.pos) % BUF_BYTES) & !3;
             if avail >= PERIOD_BYTES / 4 {
                 let mut p = s.pos;
                 for _ in 0..avail / 2 {

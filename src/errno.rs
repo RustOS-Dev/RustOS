@@ -94,6 +94,7 @@ errnos! {
     ENOTCONN = 107, "Transport endpoint is not connected";
     ESHUTDOWN = 108, "Cannot send after transport endpoint shutdown";
     ETIMEDOUT = 110, "Connection timed out";
+    EDQUOT = 122, "Disk quota exceeded";
     ENOMEDIUM = 123, "No medium found";
     ECONNREFUSED = 111, "Connection refused";
     EHOSTDOWN = 112, "Host is down";

@@ -1,4 +1,4 @@
-//! truncate, fallocate, getfattr.
+//! truncate, fallocate, getfattr, chown, quota, setquota.
 
 use crate::err;
 use rustos_rt::fs;
@@ -9,6 +9,11 @@ const SYS_FTRUNCATE: usize = 77;
 const SYS_FALLOCATE: usize = 285;
 const SYS_LGETXATTR: usize = 192;
 const SYS_LLISTXATTR: usize = 195;
+const SYS_QUOTACTL: usize = 179;
+const SYS_LCHOWN: usize = 94;
+const Q_GETQUOTA: usize = 0x80_0007;
+const Q_SETQUOTA: usize = 0x80_0008;
+const QIF_LIMITS: u32 = 1 | 4;
 const O_WRONLY: u32 = 1;
 const O_CREAT: u32 = 0o100;
 
@@ -172,6 +177,119 @@ pub fn getfattr(args: &[String]) -> i32 {
                     rc = 1;
                 }
             }
+        }
+    }
+    rc
+}
+
+/// Quota type from -u / -g / -P.
+fn quota_kind(flag: &str) -> Option<usize> {
+    match flag {
+        "-u" => Some(0),
+        "-g" => Some(1),
+        "-P" => Some(2),
+        _ => None,
+    }
+}
+
+/// quota -u|-g|-P ID DEVICE: usage and limits of one id.
+pub fn quota(args: &[String]) -> i32 {
+    let (Some(kind), Some(id), Some(dev)) = (
+        args.get(1).and_then(|f| quota_kind(f)),
+        args.get(2).and_then(|i| i.parse::<u32>().ok()),
+        args.get(3),
+    ) else {
+        eprintln!("usage: quota -u|-g|-P ID DEVICE");
+        return 2;
+    };
+    let d = cstring(dev);
+    let mut b = [0u8; 72];
+    let r = check(syscall(
+        SYS_QUOTACTL,
+        &[
+            (Q_GETQUOTA << 8) | kind,
+            d.as_ptr() as usize,
+            id as usize,
+            b.as_mut_ptr() as usize,
+        ],
+    ));
+    if let Err(e) = r {
+        return err("quota", dev, e);
+    }
+    let g = |i: usize| u64::from_le_bytes(b[i * 8..i * 8 + 8].try_into().unwrap());
+    println!(
+        "{:>10} {:>8} {:>8} {:>8} {:>8} {:>8}",
+        "KiB", "soft", "hard", "inodes", "soft", "hard"
+    );
+    println!(
+        "{:>10} {:>8} {:>8} {:>8} {:>8} {:>8}",
+        g(2).div_ceil(1024),
+        g(1),
+        g(0),
+        g(5),
+        g(4),
+        g(3)
+    );
+    0
+}
+
+/// setquota -u|-g|-P ID BSOFT BHARD ISOFT IHARD DEVICE (blocks in KiB).
+pub fn setquota(args: &[String]) -> i32 {
+    let kind = args.get(1).and_then(|f| quota_kind(f));
+    let nums: Vec<Option<u64>> = (2..7)
+        .map(|i| args.get(i).and_then(|s| s.parse().ok()))
+        .collect();
+    let (Some(kind), Some(dev)) = (kind, args.get(7)) else {
+        eprintln!("usage: setquota -u|-g|-P ID BSOFT BHARD ISOFT IHARD DEVICE");
+        return 2;
+    };
+    let [Some(id), Some(bs), Some(bh), Some(is), Some(ih)] = nums[..] else {
+        eprintln!("setquota: bad number");
+        return 2;
+    };
+    let mut b = [0u8; 72];
+    for (i, v) in [bh, bs, 0, ih, is].iter().enumerate() {
+        b[i * 8..i * 8 + 8].copy_from_slice(&v.to_le_bytes());
+    }
+    b[64..68].copy_from_slice(&QIF_LIMITS.to_le_bytes());
+    let d = cstring(dev);
+    match check(syscall(
+        SYS_QUOTACTL,
+        &[
+            (Q_SETQUOTA << 8) | kind,
+            d.as_ptr() as usize,
+            id as usize,
+            b.as_mut_ptr() as usize,
+        ],
+    )) {
+        Ok(_) => 0,
+        Err(e) => err("setquota", dev, e),
+    }
+}
+
+/// chown UID[:GID] FILE... (numeric ids; ":GID" alone changes the group).
+pub fn chown(args: &[String]) -> i32 {
+    let Some(spec) = args.get(1) else {
+        eprintln!("usage: chown UID[:GID] FILE...");
+        return 2;
+    };
+    let (u, g) = spec.split_once(':').unwrap_or((spec, ""));
+    let id = |s: &str| -> Option<usize> {
+        if s.is_empty() {
+            Some(u32::MAX as usize)
+        } else {
+            s.parse::<u32>().ok().map(|v| v as usize)
+        }
+    };
+    let (Some(uid), Some(gid)) = (id(u), id(g)) else {
+        eprintln!("chown: numeric ids only: {}", spec);
+        return 2;
+    };
+    let mut rc = 0;
+    for f in &args[2..] {
+        let p = cstring(f);
+        if let Err(e) = check(syscall(SYS_LCHOWN, &[p.as_ptr() as usize, uid, gid])) {
+            rc = err("chown", f, e);
         }
     }
     rc

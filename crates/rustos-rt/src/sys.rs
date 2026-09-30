@@ -198,6 +198,7 @@ pub fn strerror(e: i32) -> &'static str {
         113 => "No route to host",
         114 => "Operation already in progress",
         115 => "Operation now in progress",
+        122 => "Disk quota exceeded",
         _ => "Unknown error",
     }
 }

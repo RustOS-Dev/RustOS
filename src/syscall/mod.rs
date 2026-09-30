@@ -150,6 +150,7 @@ pub mod nr {
     pub const MKNOD: u64 = 133;
     pub const STATFS: u64 = 137;
     pub const FSTATFS: u64 = 138;
+    pub const QUOTACTL: u64 = 179;
     pub const GETXATTR: u64 = 191;
     pub const LGETXATTR: u64 = 192;
     pub const FGETXATTR: u64 = 193;
@@ -353,6 +354,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         MKNOD => v(fs::mknod(a[0], a[1] as u32)),
         STATFS => v(fs::statfs(a[0], a[1])),
         FSTATFS => v(fs::fstatfs(a[0] as i32, a[1])),
+        QUOTACTL => v(fs::quotactl(a[0] as u32, a[1], a[2] as u32, a[3])),
         GETXATTR => v(fs::getxattr(a[0], a[1], a[2], a[3], true)),
         LGETXATTR => v(fs::getxattr(a[0], a[1], a[2], a[3], false)),
         FGETXATTR => v(fs::fgetxattr(a[0] as i32, a[1], a[2], a[3])),

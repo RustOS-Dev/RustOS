@@ -19,6 +19,7 @@ mod extent;
 mod htree;
 mod inline;
 mod journal;
+mod quota;
 mod xattr;
 
 use crate::block::cache::CachedDevice;
@@ -71,7 +72,9 @@ const RO_COMPAT_HUGE_FILE: u32 = 0x8;
 const RO_COMPAT_GDT_CSUM: u32 = 0x10;
 const RO_COMPAT_DIR_NLINK: u32 = 0x20;
 const RO_COMPAT_EXTRA_ISIZE: u32 = 0x40;
+const RO_COMPAT_QUOTA: u32 = 0x100;
 const RO_COMPAT_BIGALLOC: u32 = 0x200;
+const RO_COMPAT_PROJECT: u32 = 0x2000;
 const RO_COMPAT_METADATA_CSUM: u32 = 0x400;
 const RO_COMPAT_WRITE: u32 = RO_COMPAT_SPARSE
     | RO_COMPAT_LARGE_FILE
@@ -80,7 +83,9 @@ const RO_COMPAT_WRITE: u32 = RO_COMPAT_SPARSE
     | RO_COMPAT_DIR_NLINK
     | RO_COMPAT_EXTRA_ISIZE
     | RO_COMPAT_METADATA_CSUM
-    | RO_COMPAT_BIGALLOC;
+    | RO_COMPAT_BIGALLOC
+    | RO_COMPAT_QUOTA
+    | RO_COMPAT_PROJECT;
 
 // Superblock offsets.
 const SB_FREE_BLOCKS: usize = 0x0C;
@@ -182,6 +187,7 @@ pub struct Ext2Fs {
     pub kind: &'static str,
     id: usize,
     journal: spin::Once<journal::Journal>,
+    quota: spin::Once<crate::sync::Mutex<quota::Quotas>>,
     /// Free counts changed since the superblock was last written.
     counts_dirty: core::sync::atomic::AtomicBool,
     /// Serialises read-modify-write of metadata blocks.
@@ -672,6 +678,7 @@ impl Ext2Fs {
             kind,
             id: 0,
             journal: spin::Once::new(),
+            quota: spin::Once::new(),
             counts_dirty: core::sync::atomic::AtomicBool::new(false),
             rmw: Mutex::new(()),
             orphans: Mutex::new(()),
@@ -778,6 +785,7 @@ impl Ext2Fs {
             kind,
             id: NEXT_ID.fetch_add(1, Ordering::SeqCst) as usize | (3 << 40),
             journal: spin::Once::new(),
+            quota: spin::Once::new(),
             counts_dirty: core::sync::atomic::AtomicBool::new(false),
             rmw: Mutex::new(()),
             orphans: Mutex::new(()),
@@ -812,6 +820,14 @@ impl Ext2Fs {
             })?;
             fs.dev.sync()?;
             fs.cleanup_orphans()?;
+        }
+        if ro_compat & RO_COMPAT_QUOTA != 0 {
+            match fs.quota_load(&sb2, ro_compat & RO_COMPAT_PROJECT != 0) {
+                Ok(q) => {
+                    fs.quota.call_once(|| crate::sync::Mutex::new(q));
+                }
+                Err(e) => crate::println!("[ext4] cannot read quota files ({:?})", e),
+            }
         }
         Ok(fs)
     }
@@ -1497,8 +1513,17 @@ impl FileSystem for Ext2Fs {
         self.kind
     }
     fn sync(&self) -> KResult<()> {
+        self.quota_flush()?;
         self.commit()?;
         self.dev.sync()
+    }
+    fn quota(
+        &self,
+        op: crate::vfs::QuotaOp,
+        kind: u32,
+        id: u32,
+    ) -> KResult<Option<crate::vfs::DiskQuota>> {
+        self.quota_op(op, kind, id)
     }
     fn statfs(&self) -> StatFs {
         let m = self.meta.lock();
@@ -1606,6 +1631,8 @@ impl Ext2Inode {
             (self.fs.block_size / 512) as i64
         };
         st.blocks512 = (st.blocks512 as i64 + n * per).max(0) as u64;
+        self.fs
+            .quota_charge(self.ino, st, n * self.fs.block_size as i64, 0);
     }
 
     /// Where the next allocation for this file should start.
@@ -1621,6 +1648,8 @@ impl Ext2Inode {
 
     /// Allocate a block for this file (data or mapping metadata).
     fn alloc_for(&self, st: &mut RawInode, goal: u64) -> KResult<u64> {
+        self.fs
+            .quota_check(self.ino, st, self.fs.block_size << self.fs.cbits, 0)?;
         let b = self.fs.alloc_block(goal)?;
         self.alloc_hint.store(b, Ordering::Relaxed);
         self.add_blocks(st, 1 << self.fs.cbits);
@@ -2087,6 +2116,7 @@ impl Ext2Inode {
         self.release_xattr(&mut st)?;
         let ibody_refs = Self::ibody_ea_refs(&st);
         self.put_ea_inodes(&ibody_refs)?;
+        self.fs.quota_charge(self.ino, &st, 0, -1);
         let next_orphan = st.dtime;
         st.size = 0;
         st.dtime = now();
@@ -2148,7 +2178,17 @@ impl Ext2Inode {
         if self.folded && kind == FileType::Directory {
             r.flags |= FL_CASEFOLD;
         }
+        // New files inherit the directory's project (project quotas).
+        if r.raw.len() >= 0xA0 && self.st.lock().raw.len() >= 0xA0 {
+            let prj = u32le(&self.st.lock().raw, 0x9C);
+            put32(&mut r.raw, 0x9C, prj);
+        }
+        if let Err(e) = fs.quota_check(ino, &r, 0, 1) {
+            fs.free_inode(ino, kind == FileType::Directory)?;
+            return Err(e);
+        }
         fs.write_raw_inode(ino, &r)?;
+        fs.quota_charge(ino, &r, 0, 1);
         // Drop any stale cached object for a reused inode number.
         fs.inodes.lock().remove(&ino);
         fs.inode(ino)
@@ -2547,12 +2587,16 @@ impl Inode for Ext2Inode {
     fn chown(&self, uid: u32, gid: u32) -> KResult<()> {
         let _h = self.fs.begin();
         let mut st = self.st.lock();
+        // Move the file's usage to its new owners.
+        let bytes = (st.blocks512 * 512) as i64;
+        self.fs.quota_charge(self.ino, &st, -bytes, -1);
         if uid != u32::MAX {
             st.uid = uid;
         }
         if gid != u32::MAX {
             st.gid = gid;
         }
+        self.fs.quota_charge(self.ino, &st, bytes, 1);
         st.ctime = now();
         self.save(&st)
     }

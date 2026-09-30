@@ -719,6 +719,88 @@ pub fn flistxattr(fd: i32, list: u64, size: u64) -> SysResult {
     xattr_out(&xattr_names(names), list, size)
 }
 
+/// quotactl(cmd, special, id, addr): Q_GETQUOTA, Q_SETQUOTA, Q_SYNC,
+/// Q_GETFMT and Q_GETINFO on the filesystem of device `special`; quotas
+/// are always on where the filesystem has them (Q_QUOTAON/OFF succeed).
+pub fn quotactl(cmd: u32, special: u64, id: u32, addr: u64) -> SysResult {
+    use vfs::{DiskQuota, QuotaOp};
+    const Q_SYNC: u32 = 0x80_0001;
+    const Q_QUOTAON: u32 = 0x80_0002;
+    const Q_QUOTAOFF: u32 = 0x80_0003;
+    const Q_GETFMT: u32 = 0x80_0004;
+    const Q_GETINFO: u32 = 0x80_0005;
+    const Q_GETQUOTA: u32 = 0x80_0007;
+    const Q_SETQUOTA: u32 = 0x80_0008;
+    let (sub, kind) = (cmd >> 8, cmd & 0xFF);
+    let fs = if special == 0 {
+        None
+    } else {
+        let dev = uaccess::read_cstr(special, 4096)?;
+        vfs::fs_by_source(&vfs::normalize(&dev))
+    };
+    let fs = match (sub, fs) {
+        (Q_SYNC, None) => {
+            vfs::sync_all();
+            return Ok(0);
+        }
+        (_, Some(fs)) => fs,
+        _ => return Err(ENODEV),
+    };
+    match sub {
+        Q_GETQUOTA => {
+            let q = fs.quota(QuotaOp::Get, kind, id)?.unwrap_or_default();
+            let mut b = [0u8; 72];
+            let vals = [
+                q.bhard, q.bsoft, q.space, q.ihard, q.isoft, q.inodes, q.btime, q.itime,
+            ];
+            for (i, v) in vals.iter().enumerate() {
+                b[i * 8..i * 8 + 8].copy_from_slice(&v.to_le_bytes());
+            }
+            b[64..68].copy_from_slice(&0x3Fu32.to_le_bytes()); // QIF_ALL
+            uaccess::copy_to_user(addr, &b)?;
+            Ok(0)
+        }
+        Q_SETQUOTA => {
+            let mut b = [0u8; 72];
+            uaccess::copy_from_user(&mut b, addr)?;
+            let g = |i: usize| u64::from_le_bytes(b[i * 8..i * 8 + 8].try_into().unwrap());
+            let d = DiskQuota {
+                bhard: g(0),
+                bsoft: g(1),
+                ihard: g(3),
+                isoft: g(4),
+                ..Default::default()
+            };
+            let valid = u32::from_le_bytes(b[64..68].try_into().unwrap());
+            fs.quota(QuotaOp::Set(d, valid), kind, id)?;
+            Ok(0)
+        }
+        Q_SYNC => {
+            fs.quota(QuotaOp::Sync, kind, 0)?;
+            Ok(0)
+        }
+        Q_GETFMT => {
+            fs.quota(QuotaOp::Get, kind, 0)?;
+            uaccess::copy_to_user(addr, &4u32.to_le_bytes())?; // QFMT_VFS_V1
+            Ok(0)
+        }
+        Q_GETINFO => {
+            fs.quota(QuotaOp::Get, kind, 0)?;
+            let mut b = [0u8; 24];
+            b[0..8].copy_from_slice(&604800u64.to_le_bytes());
+            b[8..16].copy_from_slice(&604800u64.to_le_bytes());
+            b[20..24].copy_from_slice(&3u32.to_le_bytes());
+            uaccess::copy_to_user(addr, &b)?;
+            Ok(0)
+        }
+        Q_QUOTAON | Q_QUOTAOFF => {
+            fs.quota(QuotaOp::Get, kind, 0)?;
+            Ok(0)
+        }
+        _ => Err(EINVAL),
+    }
+}
+
 pub fn statfs(path: u64, buf: u64) -> SysResult {
     let abs = path_at(AT_FDCWD, path)?;
     vfs::lookup(&abs)?;

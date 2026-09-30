@@ -8,6 +8,7 @@ wait /dev/vdc /mnt/vdc ext4 rw
 wait /dev/vdd /mnt/vdd ext4 rw
 wait /dev/vde /mnt/vde ext4 rw
 wait /dev/vdf /mnt/vdf ext4 rw
+wait /dev/vdg /mnt/vdg ext4 rw
 wait # $
 # inline_data: files and a directory stored in their inodes are read in
 # place, then converted to extents by the first write.
@@ -55,7 +56,13 @@ send sha256sum /mnt/vdf/big.bin | cut -c1-12; dd if=/dev/urandom of=/mnt/vdf/r b
 wait 30000
 wait 163846
 wait # $
-send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd && umount /mnt/vde && umount /mnt/vdf
+# quota: usage follows allocation and chown; a hard limit stops writes
+# with EDQUOT; the quota files are rewritten for e2fsck to agree.
+send echo hi > /mnt/vdg/owned && chown 1000:1000 /mnt/vdg/owned && setquota -u 1000 0 100 0 0 /dev/vdg && dd if=/dev/zero of=/mnt/vdg/owned bs=4096 count=50 2>&1 | grep -c quota; quota -u 1000 /dev/vdg | tail -1; mkdir /mnt/vdg/q && i=0; while [ $i -lt 20 ]; do echo $i > /mnt/vdg/q/f$i; i=$((i+1)); done; rm /mnt/vdg/q/f3 /mnt/vdg/big.bin; quota -g 0 /dev/vdg | tail -1
+wait 1\r\n
+wait \s+100\s+0\s+100\s+1
+wait # $
+send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd && umount /mnt/vde && umount /mnt/vdf && umount /mnt/vdg
 wait # $
 hostrun e2fsck -fn "$RUSTOS_DISK0"
 hostrun e2fsck -fn "$RUSTOS_DISK1"
@@ -63,6 +70,7 @@ hostrun e2fsck -fn "$RUSTOS_DISK2"
 hostrun e2fsck -fn "$RUSTOS_DISK3"
 hostrun e2fsck -fn "$RUSTOS_DISK4"
 hostrun e2fsck -fn "$RUSTOS_DISK5"
+hostrun e2fsck -fn "$RUSTOS_DISK6"
 send mount /dev/vda /mnt/f0 && mount /dev/vdb /mnt/f1 && cat /mnt/f0/idir/d /mnt/f0/small.txt /mnt/f1/d1/x
 wait new
 wait more

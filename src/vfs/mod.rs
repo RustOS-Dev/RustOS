@@ -125,6 +125,31 @@ pub struct StatFs {
     pub name_max: u64,
 }
 
+/// Usage and limits of one quota id (Linux `struct if_dqblk`; block
+/// limits in 1 KiB units, space in bytes).
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct DiskQuota {
+    pub bhard: u64,
+    pub bsoft: u64,
+    pub space: u64,
+    pub ihard: u64,
+    pub isoft: u64,
+    pub inodes: u64,
+    pub btime: u64,
+    pub itime: u64,
+}
+
+pub const QIF_BLIMITS: u32 = 1;
+pub const QIF_ILIMITS: u32 = 4;
+
+/// quotactl operations.
+pub enum QuotaOp {
+    Get,
+    /// New limits and the QIF_* fields to take from them.
+    Set(DiskQuota, u32),
+    Sync,
+}
+
 pub trait FileSystem: Send + Sync {
     fn root(&self) -> Arc<dyn Inode>;
     fn name(&self) -> &'static str;
@@ -136,6 +161,10 @@ pub trait FileSystem: Send + Sync {
     }
     fn read_only(&self) -> bool {
         false
+    }
+    /// quotactl for quota type `kind` (0 user, 1 group, 2 project).
+    fn quota(&self, _op: QuotaOp, _kind: u32, _id: u32) -> KResult<Option<DiskQuota>> {
+        Err(ENOSYS)
     }
 }
 
@@ -569,6 +598,17 @@ pub fn mounts() -> Vec<(String, &'static str, String)> {
         .iter()
         .map(|m| (m.path.clone(), m.fs.name(), m.source.clone()))
         .collect()
+}
+
+/// The filesystem mounted from device `source` (or, for quotactl
+/// convenience, the one containing path `source`).
+pub fn fs_by_source(source: &str) -> Option<Arc<dyn FileSystem>> {
+    let by_dev = MOUNTS
+        .read()
+        .iter()
+        .find(|m| m.source == source)
+        .map(|m| m.fs.clone());
+    by_dev.or_else(|| mount_fs(source))
 }
 
 pub fn mount_fs(path: &str) -> Option<Arc<dyn FileSystem>> {

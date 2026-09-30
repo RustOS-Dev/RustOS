@@ -46,6 +46,9 @@ def _disk(m):
         if "bigalloc" in feats:
             cmd += ["-C", "16384"]
         subprocess.run(cmd + [path], check=True, stdout=subprocess.DEVNULL)
+        if "quota" in feats:
+            # mke2fs -d leaves the seeded files out of the quota files.
+            subprocess.run(["e2fsck", "-fy", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if "ea_inode" in feats:
             # A 4096-byte attribute value (debugfs caps it at one block; it
             # goes to its own inode) and a small one.

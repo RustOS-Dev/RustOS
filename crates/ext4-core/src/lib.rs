@@ -11,5 +11,6 @@ pub mod casefold;
 #[rustfmt::skip]
 mod casefold_data;
 pub mod csum;
+pub mod fastcommit;
 pub mod hash;
 pub mod jbd2;

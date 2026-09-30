@@ -366,7 +366,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         SELECT => v(fs::select(a[0] as i32, a[1], a[2], a[3], a[4], false)),
         PSELECT6 => v(fs::select(a[0] as i32, a[1], a[2], a[3], a[4], true)),
         SENDFILE => v(fs::sendfile(a[0] as i32, a[1] as i32, a[2], a[3])),
-        MOUNT => v(fs::mount(a[0], a[1], a[2], a[3])),
+        MOUNT => v(fs::mount(a[0], a[1], a[2], a[3], a[4])),
         UMOUNT2 => v(fs::umount(a[0])),
 
         // Memory

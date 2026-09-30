@@ -162,6 +162,10 @@ pub trait FileSystem: Send + Sync {
     fn read_only(&self) -> bool {
         false
     }
+    /// Called when the filesystem is unmounted: leave it clean on disk.
+    fn unmount(&self) -> KResult<()> {
+        self.sync()
+    }
     /// quotactl for quota type `kind` (0 user, 1 group, 2 project).
     fn quota(&self, _op: QuotaOp, _kind: u32, _id: u32) -> KResult<Option<DiskQuota>> {
         Err(ENOSYS)
@@ -586,7 +590,7 @@ pub fn umount(path: &str) -> KResult<()> {
     }
     let idx = m.iter().position(|x| x.path == path).ok_or(EINVAL)?;
     let fs = m[idx].fs.clone();
-    let _ = fs.sync();
+    let _ = fs.unmount();
     m.remove(idx);
     Ok(())
 }
@@ -622,6 +626,13 @@ pub fn mount_fs(path: &str) -> Option<Arc<dyn FileSystem>> {
         })
         .max_by_key(|m| m.path.len())
         .map(|m| m.fs.clone())
+}
+
+/// Before power-off: leave every filesystem clean (as at unmount).
+pub fn finish_all() {
+    for m in MOUNTS.read().iter() {
+        let _ = m.fs.unmount();
+    }
 }
 
 pub fn sync_all() {

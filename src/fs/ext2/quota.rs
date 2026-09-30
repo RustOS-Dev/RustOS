@@ -42,7 +42,10 @@ fn le64(b: &[u8], o: usize) -> u64 {
 }
 
 /// Parse a quota file: its grace times and entries.
-fn parse(kind: usize, f: &[u8]) -> Option<((u32, u32), Vec<(u32, DiskQuota)>)> {
+/// Grace times (blocks, inodes) and the (id, quota) entries of a file.
+type Parsed = ((u32, u32), Vec<(u32, DiskQuota)>);
+
+fn parse(kind: usize, f: &[u8]) -> Option<Parsed> {
     if f.len() < 2 * QBLK || le32(f, 0) != MAGIC[kind] || le32(f, 4) != 1 {
         return None;
     }

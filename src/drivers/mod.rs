@@ -21,7 +21,8 @@ pub fn mmap_phys(obj: &dyn crate::vfs::FileLike) -> Option<(u64, u64)> {
 /// Quiesce devices before reboot or power-off: flush filesystems and
 /// caches, then tell controllers to shut down cleanly.
 pub fn shutdown() {
-    crate::vfs::sync_all();
+    crate::mm::pagecache::sync_all();
+    crate::vfs::finish_all();
     crate::block::sync_all();
     block::nvme::shutdown_all();
     crate::net::shutdown_devices();

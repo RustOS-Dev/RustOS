@@ -21,8 +21,12 @@ pub const INCOMPAT_ASYNC_COMMIT: u32 = 0x4;
 pub const INCOMPAT_CSUM_V2: u32 = 0x8;
 pub const INCOMPAT_CSUM_V3: u32 = 0x10;
 pub const INCOMPAT_FAST_COMMIT: u32 = 0x20;
-const SUPPORTED_INCOMPAT: u32 =
-    INCOMPAT_REVOKE | INCOMPAT_64BIT | INCOMPAT_ASYNC_COMMIT | INCOMPAT_CSUM_V2 | INCOMPAT_CSUM_V3;
+const SUPPORTED_INCOMPAT: u32 = INCOMPAT_REVOKE
+    | INCOMPAT_64BIT
+    | INCOMPAT_ASYNC_COMMIT
+    | INCOMPAT_CSUM_V2
+    | INCOMPAT_CSUM_V3
+    | INCOMPAT_FAST_COMMIT;
 
 const FLAG_ESCAPE: u32 = 1;
 const FLAG_SAME_UUID: u32 = 2;
@@ -46,7 +50,12 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub struct Super {
     pub block_size: u32,
+    /// End of the regular log (the journal length, less the fast-commit
+    /// area when there is one).
     pub maxlen: u32,
+    /// Fast-commit blocks: `fc_first..fc_end` (empty without fast_commit).
+    pub fc_first: u32,
+    pub fc_end: u32,
     pub first: u32,
     pub sequence: u32,
     /// First block of the log; 0 = journal empty (clean).
@@ -70,9 +79,22 @@ impl Super {
         if incompat & !SUPPORTED_INCOMPAT != 0 {
             return Err(Error::Unsupported(incompat & !SUPPORTED_INCOMPAT));
         }
+        let total = be32(b, 0x10);
+        let fc = if incompat & INCOMPAT_FAST_COMMIT != 0 {
+            match be32(b, 0x54) {
+                0 => 256,
+                n => n,
+            }
+        } else {
+            0
+        };
+        let maxlen = total.saturating_sub(fc);
         let s = Super {
             block_size: be32(b, 0xC),
-            maxlen: be32(b, 0x10),
+            maxlen,
+            // Linux leaves the block at the end of the log unused.
+            fc_first: if fc > 0 { maxlen + 1 } else { total },
+            fc_end: total,
             first: be32(b, 0x14),
             sequence: be32(b, 0x18),
             start: be32(b, 0x1C),

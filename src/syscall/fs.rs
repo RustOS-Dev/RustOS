@@ -983,18 +983,29 @@ pub fn sendfile(out_fd: i32, in_fd: i32, offset: u64, count: u64) -> SysResult {
     Ok(dst.write(&buf[..n])? as i64)
 }
 
-pub fn mount(source: u64, target: u64, fstype: u64, _flags: u64) -> SysResult {
+pub fn mount(source: u64, target: u64, fstype: u64, flags: u64, data: u64) -> SysResult {
     let src = if source != 0 {
         uaccess::read_cstr(source, 4096)?
     } else {
         String::new()
     };
     let tgt = path_at(AT_FDCWD, target)?;
-    let ty = if fstype != 0 {
+    let mut ty = if fstype != 0 {
         uaccess::read_cstr(fstype, 64)?
     } else {
         String::from("auto")
     };
+    // MS_RDONLY and the option string travel as ",option" suffixes.
+    if flags & 1 != 0 {
+        ty.push_str(",ro");
+    }
+    if data != 0 {
+        let d = uaccess::read_cstr(data, 256)?;
+        if !d.is_empty() {
+            ty.push(',');
+            ty.push_str(&d);
+        }
+    }
     let src_abs = if src.starts_with('/') {
         src.clone()
     } else {

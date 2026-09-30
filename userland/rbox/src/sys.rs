@@ -344,6 +344,7 @@ pub fn lsusb(_: &[String]) -> i32 {
 pub fn mount(args: &[String]) -> i32 {
     let mut ty = String::from("auto");
     let mut ro = false;
+    let mut extra: Vec<String> = Vec::new();
     let mut ops = Vec::new();
     let mut i = 1;
     while i < args.len() {
@@ -355,7 +356,13 @@ pub fn mount(args: &[String]) -> i32 {
             }
             "-o" => {
                 if let Some(o) = args.get(i + 1) {
-                    ro |= o.split(',').any(|x| x == "ro");
+                    for x in o.split(',').filter(|x| !x.is_empty()) {
+                        match x {
+                            "ro" => ro = true,
+                            "rw" => {}
+                            _ => extra.push(x.to_string()),
+                        }
+                    }
                 }
                 i += 2;
                 continue;
@@ -367,6 +374,10 @@ pub fn mount(args: &[String]) -> i32 {
     }
     if ro {
         ty.push_str(",ro");
+    }
+    for x in &extra {
+        ty.push(',');
+        ty.push_str(x);
     }
     if ops.is_empty() {
         print!("{}", fs::read_to_string("/proc/mounts").unwrap_or_default());

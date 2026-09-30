@@ -398,6 +398,44 @@ impl Ext2Inode {
         Ok(b)
     }
 
+    /// Map `len` blocks at logical `lblk` to physical `pblk` (fast-commit
+    /// replay; the range must be unmapped).
+    pub(super) fn ext_map_range(
+        &self,
+        st: &mut RawInode,
+        lblk: u32,
+        len: u32,
+        pblk: u64,
+        uninit: bool,
+    ) -> KResult<()> {
+        let max = if uninit { UNINIT_MAX } else { INIT_MAX };
+        let mut done = 0;
+        while done < len {
+            let n = (len - done).min(max);
+            self.ext_insert(
+                st,
+                Extent {
+                    lblk: lblk + done,
+                    len: n,
+                    pblk: pblk + done as u64,
+                    uninit,
+                },
+            )?;
+            done += n;
+        }
+        Ok(())
+    }
+
+    /// Physical ranges (first, count) the file uses: data and tree nodes.
+    pub(super) fn ext_blocks(&self, st: &RawInode) -> KResult<Vec<(u64, u64)>> {
+        let mut exts = Vec::new();
+        let mut nodes = Vec::new();
+        self.ext_collect(&st.block_bytes(), &mut exts, &mut nodes)?;
+        let mut v: Vec<(u64, u64)> = exts.iter().map(|e| (e.pblk, e.len as u64)).collect();
+        v.extend(nodes.iter().map(|&b| (b, 1)));
+        Ok(v)
+    }
+
     /// bigalloc: the physical block for `l` if another block of its
     /// logical cluster is mapped (all blocks of a logical cluster share one
     /// physical cluster, at the same offsets).
@@ -549,23 +587,41 @@ impl Ext2Inode {
     /// from the extents that remain.
     pub(super) fn ext_truncate(&self, st: &mut RawInode, keep: u64) -> KResult<()> {
         let keep = keep.min(u32::MAX as u64) as u32;
+        self.ext_punch(st, keep, u32::MAX)
+    }
+
+    /// Unmap and free logical blocks `start..end`, then rebuild the tree
+    /// from the extents that remain.
+    pub(super) fn ext_punch(&self, st: &mut RawInode, start: u32, end: u32) -> KResult<()> {
         let mut exts = Vec::new();
         let mut nodes = Vec::new();
         self.ext_collect(&st.block_bytes(), &mut exts, &mut nodes)?;
-        if exts.iter().all(|e| e.lblk + e.len <= keep) {
+        if exts
+            .iter()
+            .all(|e| e.lblk + e.len <= start || e.lblk >= end)
+        {
             return Ok(());
         }
         let mut kept = Vec::with_capacity(exts.len());
         let mut gone: Vec<(u64, u64)> = Vec::new();
         for e in exts {
-            if e.lblk >= keep {
-                gone.push((e.pblk, e.len as u64));
-            } else if e.lblk + e.len > keep {
-                let n = keep - e.lblk;
-                gone.push((e.pblk + n as u64, (e.len - n) as u64));
-                kept.push(Extent { len: n, ..e });
-            } else {
+            let (a, b) = (e.lblk, e.lblk + e.len);
+            if b <= start || a >= end {
                 kept.push(e);
+                continue;
+            }
+            let (ca, cb) = (a.max(start), b.min(end));
+            gone.push((e.pblk + (ca - a) as u64, (cb - ca) as u64));
+            if a < ca {
+                kept.push(Extent { len: ca - a, ..e });
+            }
+            if cb < b {
+                kept.push(Extent {
+                    lblk: cb,
+                    len: b - cb,
+                    pblk: e.pblk + (cb - a) as u64,
+                    uninit: e.uninit,
+                });
             }
         }
         let cb = self.fs.cbits;

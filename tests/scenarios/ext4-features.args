@@ -13,3 +13,5 @@
 -device virtio-blk-pci,drive=f5
 -drive if=none,id=f6,format=raw,file=@EXT4F:64:quota,project@
 -device virtio-blk-pci,drive=f6
+-drive if=none,id=f7,format=raw,file=@EXT4F:64:fast_commit,fcreplay@
+-device virtio-blk-pci,drive=f7

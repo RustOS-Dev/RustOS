@@ -9,6 +9,7 @@ wait /dev/vdd /mnt/vdd ext4 rw
 wait /dev/vde /mnt/vde ext4 rw
 wait /dev/vdf /mnt/vdf ext4 rw
 wait /dev/vdg /mnt/vdg ext4 rw
+wait /dev/vdh /mnt/vdh ext4 rw
 wait # $
 # inline_data: files and a directory stored in their inodes are read in
 # place, then converted to extents by the first write.
@@ -62,7 +63,17 @@ send echo hi > /mnt/vdg/owned && chown 1000:1000 /mnt/vdg/owned && setquota -u 1
 wait 1\r\n
 wait \s+100\s+0\s+100\s+1
 wait # $
-send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd && umount /mnt/vde && umount /mnt/vdf && umount /mnt/vdg
+# fast_commit: the records after the last full commit were replayed at
+# mount (a created file, an appended block and a hard link, a punched
+# range, an unlink).
+send dmesg | grep -c "fast commit: replayed 10 "; cat /mnt/vdh/fc-new.txt; dd if=/mnt/vdh/small-link bs=4096 skip=1 2>/dev/null | head -1; ls -l /mnt/vdh/big.bin | cut -c24-40; ls /mnt/vdh | tr '\n' ' '; echo
+wait 1\r\n
+wait fast commit!
+wait SECOND BLOCK
+wait 8192
+wait big.bin fc-new.txt idir lost\+found medium.txt small-link small.txt
+wait # $
+send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd && umount /mnt/vde && umount /mnt/vdf && umount /mnt/vdg && umount /mnt/vdh
 wait # $
 hostrun e2fsck -fn "$RUSTOS_DISK0"
 hostrun e2fsck -fn "$RUSTOS_DISK1"
@@ -71,8 +82,19 @@ hostrun e2fsck -fn "$RUSTOS_DISK3"
 hostrun e2fsck -fn "$RUSTOS_DISK4"
 hostrun e2fsck -fn "$RUSTOS_DISK5"
 hostrun e2fsck -fn "$RUSTOS_DISK6"
+hostrun e2fsck -fn "$RUSTOS_DISK7"
 send mount /dev/vda /mnt/f0 && mount /dev/vdb /mnt/f1 && cat /mnt/f0/idir/d /mnt/f0/small.txt /mnt/f1/d1/x
 wait new
 wait more
 wait x\r\n
 wait # $
+# Journal modes: file data logged (data=journal) or not ordered
+# (data=writeback); the data survives a remount either way.
+send umount /mnt/f0 && umount /mnt/f1 && mount -o data=journal /dev/vda /mnt/dj && mount -o data=writeback /dev/vdb /mnt/dw && dd if=/dev/urandom of=/mnt/dj/j bs=4096 count=64 2>/dev/null && cp /mnt/dj/j /mnt/dw/w && sha256sum /mnt/dj/j | cut -c1-16 > /tmp/j.sum && cat /mnt/dj/j | sha256sum | cut -c1-16 | cmp - /tmp/j.sum && echo journal-read-ok
+wait journal-read-ok
+wait # $
+send umount /mnt/dj && umount /mnt/dw && mount /dev/vda /mnt/dk && mount /dev/vdb /mnt/dl && sha256sum /mnt/dk/j /mnt/dl/w | cut -c1-16 | uniq | wc -l; umount /mnt/dk; umount /mnt/dl
+wait 1\r\n
+wait # $
+hostrun e2fsck -fn "$RUSTOS_DISK0"
+hostrun e2fsck -fn "$RUSTOS_DISK1"

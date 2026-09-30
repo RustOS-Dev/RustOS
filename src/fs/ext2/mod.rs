@@ -1,12 +1,14 @@
 //! ext2, ext3 and ext4, read/write.
 //!
 //! Supported for writing: extents (allocation, uninitialized extents,
-//! truncation), 64-bit block numbers, flex_bg, uninitialized block groups,
-//! metadata checksums (crc32c) and the older group-descriptor checksums,
-//! hashed directory indexes (htree), and the jbd2 journal (replayed at mount;
-//! metadata changes are logged in ordered mode, see `journal.rs`).
-//! Filesystems with other features (bigalloc, quotas, meta_bg, inline data,
-//! an external journal, ...) are mounted read-only; the kernel log lists the
+//! truncation), 64-bit block numbers, flex_bg, meta_bg, uninitialized block
+//! groups, metadata checksums (crc32c) and the older group-descriptor
+//! checksums, hashed directory indexes (htree, including large_dir and
+//! casefold), inline data, bigalloc, quotas (user, group, project),
+//! ea_inode attribute values, and the jbd2 journal (replayed at mount,
+//! including fast commits; data=ordered, writeback or journal, see
+//! `journal.rs`). Filesystems with other features (encrypt, verity, an
+//! external journal, ...) are mounted read-only; the kernel log lists the
 //! features that caused it.
 //!
 //! All metadata (superblock, group descriptors, bitmaps, inode tables,
@@ -16,6 +18,7 @@
 //! directly.
 
 mod extent;
+mod fastcommit;
 mod htree;
 mod inline;
 mod journal;
@@ -51,6 +54,7 @@ const INCOMPAT_EA_INODE: u32 = 0x400;
 const INCOMPAT_CSUM_SEED: u32 = 0x2000;
 const INCOMPAT_LARGEDIR: u32 = 0x4000;
 const INCOMPAT_INLINE_DATA: u32 = 0x8000;
+const INCOMPAT_ENCRYPT: u32 = 0x10000;
 const INCOMPAT_CASEFOLD: u32 = 0x20000;
 /// Features we can read.
 const INCOMPAT_READ: u32 = INCOMPAT_FILETYPE
@@ -63,9 +67,12 @@ const INCOMPAT_READ: u32 = INCOMPAT_FILETYPE
     | INCOMPAT_CSUM_SEED
     | INCOMPAT_LARGEDIR
     | INCOMPAT_INLINE_DATA
-    | INCOMPAT_CASEFOLD;
+    | INCOMPAT_CASEFOLD
+    | INCOMPAT_ENCRYPT;
 /// Features we can keep consistent while writing.
-const INCOMPAT_WRITE: u32 = INCOMPAT_READ;
+/// encrypt mounts read-only: unencrypted files read normally, encrypted
+/// names and contents are not decrypted.
+const INCOMPAT_WRITE: u32 = INCOMPAT_READ & !INCOMPAT_ENCRYPT;
 const RO_COMPAT_SPARSE: u32 = 0x1;
 const RO_COMPAT_LARGE_FILE: u32 = 0x2;
 const RO_COMPAT_HUGE_FILE: u32 = 0x8;
@@ -188,6 +195,8 @@ pub struct Ext2Fs {
     id: usize,
     journal: spin::Once<journal::Journal>,
     quota: spin::Once<crate::sync::Mutex<quota::Quotas>>,
+    /// data=journal: file data is logged like metadata.
+    data_journal: core::sync::atomic::AtomicBool,
     /// Free counts changed since the superblock was last written.
     counts_dirty: core::sync::atomic::AtomicBool,
     /// Serialises read-modify-write of metadata blocks.
@@ -679,6 +688,7 @@ impl Ext2Fs {
             id: 0,
             journal: spin::Once::new(),
             quota: spin::Once::new(),
+            data_journal: core::sync::atomic::AtomicBool::new(false),
             counts_dirty: core::sync::atomic::AtomicBool::new(false),
             rmw: Mutex::new(()),
             orphans: Mutex::new(()),
@@ -786,6 +796,7 @@ impl Ext2Fs {
             id: NEXT_ID.fetch_add(1, Ordering::SeqCst) as usize | (3 << 40),
             journal: spin::Once::new(),
             quota: spin::Once::new(),
+            data_journal: core::sync::atomic::AtomicBool::new(false),
             counts_dirty: core::sync::atomic::AtomicBool::new(false),
             rmw: Mutex::new(()),
             orphans: Mutex::new(()),
@@ -819,6 +830,14 @@ impl Ext2Fs {
                 put32(sb, 48, now()); // s_wtime
             })?;
             fs.dev.sync()?;
+            if let Some(j) = fs.jnl() {
+                let tags = j.take_fc_tags();
+                if !tags.is_empty() {
+                    fs.fc_replay(tags)?;
+                    fs.commit()?;
+                    j.checkpoint(&fs)?;
+                }
+            }
             fs.cleanup_orphans()?;
         }
         if ro_compat & RO_COMPAT_QUOTA != 0 {
@@ -1540,22 +1559,64 @@ impl FileSystem for Ext2Fs {
     fn read_only(&self) -> bool {
         self.read_only
     }
+    fn unmount(&self) -> KResult<()> {
+        self.quota_flush()?;
+        self.clean_shutdown()
+    }
+}
+
+impl Ext2Fs {
+    /// Mount options: data=ordered (default), data=writeback (file data
+    /// is not flushed before a commit) or data=journal (file data is
+    /// logged too). Without a journal they are ignored.
+    pub fn set_options(&self, opts: &[&str]) -> KResult<()> {
+        for o in opts {
+            match *o {
+                "data=journal" | "data=writeback" | "data=ordered" => {
+                    let Some(j) = self.jnl() else { continue };
+                    j.writeback.store(*o == "data=writeback", Ordering::SeqCst);
+                    self.data_journal
+                        .store(*o == "data=journal", Ordering::SeqCst);
+                }
+                "ro" | "rw" | "defaults" | "noatime" | "relatime" | "sync" | "async" => {}
+                _ => crate::println!("[ext4] ignoring mount option {}", o),
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether writes to this file's data go through the journal
+    /// (data=journal, or the file's journal-data flag).
+    fn journals_data(&self, st: &RawInode) -> bool {
+        const FL_JOURNAL_DATA: u32 = 0x4000;
+        self.jnl().is_some()
+            && (self.data_journal.load(Ordering::Relaxed) || st.flags & FL_JOURNAL_DATA != 0)
+    }
+
+    /// Commit, checkpoint everything and mark the filesystem clean.
+    fn clean_shutdown(&self) -> KResult<()> {
+        if self.read_only {
+            return Ok(());
+        }
+        self.commit()?;
+        if let Some(j) = self.jnl() {
+            j.checkpoint(self)?;
+        }
+        self.dev.sync()?;
+        // Clean: the journal is empty and everything is on disk.
+        self.sb_direct(|sb| {
+            put16(sb, SB_STATE, 1);
+            let f = u32le(sb, SB_INCOMPAT);
+            put32(sb, SB_INCOMPAT, f & !INCOMPAT_RECOVER);
+            put32(sb, 48, now());
+        })?;
+        self.dev.sync()
+    }
 }
 
 impl Drop for Ext2Fs {
     fn drop(&mut self) {
-        if !self.read_only {
-            let _ = self.commit();
-            let _ = self.dev.sync();
-            // Clean: the journal is empty and everything is on disk.
-            let _ = self.sb_direct(|sb| {
-                put16(sb, SB_STATE, 1);
-                let f = u32le(sb, SB_INCOMPAT);
-                put32(sb, SB_INCOMPAT, f & !INCOMPAT_RECOVER);
-                put32(sb, 48, now());
-            });
-            let _ = self.dev.sync();
-        }
+        let _ = self.clean_shutdown();
     }
 }
 
@@ -1764,7 +1825,19 @@ impl Ext2Inode {
                         next += 1;
                     }
                     let dst = &mut buf[done..done + n];
-                    if direct {
+                    if self.fs.journals_data(st) {
+                        // Logged data: the journal may hold newer images.
+                        let mut blk = vec![0u8; bs as usize];
+                        let mut o = 0;
+                        while o < n {
+                            let p = pos + o as u64;
+                            let w = (p % bs) as usize;
+                            let k = (bs as usize - w).min(n - o);
+                            self.fs.mread(pb + (p / bs - l), &mut blk)?;
+                            dst[o..o + k].copy_from_slice(&blk[w..w + k]);
+                            o += k;
+                        }
+                    } else if direct {
                         self.fs.dev.read_bytes_nocache(pb * bs + within, dst)?;
                     } else {
                         self.fs.dev.read_bytes(pb * bs + within, dst)?;
@@ -1793,9 +1866,16 @@ impl Ext2Inode {
                 let within = pos % bs;
                 let n = ((bs - within) as usize).min(buf.len() - done);
                 let pb = self.bmap(st, l, true)?.ok_or(EIO)?;
-                self.fs
-                    .dev
-                    .write_bytes(pb * bs + within, &buf[done..done + n])?;
+                if self.fs.journals_data(st) {
+                    let src = &buf[done..done + n];
+                    let w = within as usize;
+                    self.fs
+                        .modify(pb, |b| b[w..w + src.len()].copy_from_slice(src))?;
+                } else {
+                    self.fs
+                        .dev
+                        .write_bytes(pb * bs + within, &buf[done..done + n])?;
+                }
                 done += n;
             }
             Ok(())

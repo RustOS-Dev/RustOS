@@ -9,12 +9,13 @@ use alloc::string::String;
 use alloc::sync::Arc;
 
 /// Mount `source` at `target` as filesystem type `fstype` ("auto" probes).
-/// A `,ro` suffix on the type (e.g. "ext2,ro") requests a read-only mount.
+/// Mount options follow the type after commas (e.g. "ext4,ro" or
+/// "auto,data=journal").
 pub fn mount_by_type(fstype: &str, source: &str, target: &str) -> KResult<()> {
-    let (fstype, ro) = match fstype.strip_suffix(",ro") {
-        Some(t) => (t, true),
-        None => (fstype, false),
-    };
+    let mut parts = fstype.split(',');
+    let fstype = parts.next().unwrap_or("auto");
+    let opts: alloc::vec::Vec<&str> = parts.filter(|o| !o.is_empty()).collect();
+    let ro = opts.contains(&"ro");
     match fstype {
         "tmpfs" | "ramfs" => crate::vfs::mount(target, crate::vfs::tmpfs::TmpFs::new(), "tmpfs"),
         "proc" => crate::vfs::mount(target, crate::vfs::procfs::ProcFs::new(), "proc"),
@@ -23,7 +24,7 @@ pub fn mount_by_type(fstype: &str, source: &str, target: &str) -> KResult<()> {
             crate::vfs::mount(target, crate::vfs::devfs::DevFs::new(), "devtmpfs")
         }
         _ => {
-            let fs = probe_block_fs(fstype, source, ro)?;
+            let fs = probe_block_fs(fstype, source, ro, &opts)?;
             crate::vfs::mount(target, fs, source)
         }
     }
@@ -67,6 +68,7 @@ fn probe_block_fs(
     fstype: &str,
     source: &str,
     ro: bool,
+    opts: &[&str],
 ) -> KResult<Arc<dyn crate::vfs::FileSystem>> {
     let disk = crate::block::find(source).ok_or(ENODEV)?;
     let dev = disk.dev.clone();
@@ -83,6 +85,10 @@ fn probe_block_fs(
             }
             Ok(fat::FatFs::open(dev)?)
         }
-        _ => Ok(ext2::Ext2Fs::open(dev, ro)?),
+        _ => {
+            let fs = ext2::Ext2Fs::open(dev, ro)?;
+            fs.set_options(opts)?;
+            Ok(fs)
+        }
     }
 }

@@ -19,7 +19,8 @@ img = tempfile.mktemp(suffix=".img")
 # missing), @EXT4F:<MiB>:<feature,...>@ (ext4 made with mke2fs -O
 # <features> and seeded with small files, an inline-sized directory and a
 # larger file; "casefold" adds -E encoding=utf8, "bigalloc" a 16 KiB
-# cluster), @BLANK:<MiB>@ (zeros). Their paths are
+# cluster, "fcreplay" leaves a fast commit to recover, see
+# tools/fc-inject.py), @BLANK:<MiB>@ (zeros). Their paths are
 # exported to host commands as $RUSTOS_DISK0, $RUSTOS_DISK1, ...
 scratch = []
 def _quiet(cmd, **kw):
@@ -29,6 +30,10 @@ def _disk(m):
     path = tempfile.mktemp(suffix=".disk")
     if kind == "EXT4F":
         feats = m.group(3)
+        # "fcreplay": an image left needing fast-commit recovery.
+        fc = "fcreplay" in feats.split(",")
+        if fc:
+            feats = ",".join(f for f in feats.split(",") if f != "fcreplay") or "fast_commit"
         os.environ[f"RUSTOS_DISK{len(scratch)}"] = path
         scratch.append(path)
         with open(path, "wb") as f:
@@ -46,6 +51,10 @@ def _disk(m):
         if "bigalloc" in feats:
             cmd += ["-C", "16384"]
         subprocess.run(cmd + [path], check=True, stdout=subprocess.DEVNULL)
+        if fc:
+            cmds = "ln medium.txt alias\nsif medium.txt links_count 2\n"
+            _quiet(["debugfs", "-w", "-f", "-", path], input=cmds.encode())
+            _quiet([sys.executable, os.path.join(root, "tools", "fc-inject.py"), path])
         if "quota" in feats:
             # mke2fs -d leaves the seeded files out of the quota files.
             subprocess.run(["e2fsck", "-fy", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -86,6 +86,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c074a3d1075b26ed77e502d6af8ab1263abbdc3d026c166e46480f973287293"
 
 [[package]]
+name = "bt"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "cmac",
+ "p256",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -254,9 +263,11 @@ checksum = "b5e6043086bf7973472e0c7dff2142ea0b680d30e18d9cc40f267efbf222bd47"
 dependencies = [
  "base16ct",
  "crypto-bigint",
+ "digest",
  "ff",
  "generic-array",
  "group",
+ "hkdf",
  "rand_core",
  "sec1",
  "subtle",
@@ -471,6 +482,7 @@ dependencies = [
  "acpi",
  "audio",
  "bootloader_api",
+ "bt",
  "conquer-once",
  "crossbeam-queue",
  "ext4-core",

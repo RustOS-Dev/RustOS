@@ -6,6 +6,7 @@
 //! [`register_driver`], e.g. USB networking) bind per interface.
 
 pub mod audio;
+pub mod btusb;
 pub mod cdc_ether;
 pub mod hid;
 pub mod hub;
@@ -368,13 +369,14 @@ fn bind(dev: &Arc<UsbDevice>) {
         .map(|c| c.default_interfaces().cloned().collect())
         .unwrap_or_default();
     for iface in &ifaces {
-        let builtin: [(&'static str, DriverProbe); 6] = [
+        let builtin: [(&'static str, DriverProbe); 7] = [
             ("hub", hub::probe),
             ("usbhid", hid::probe),
             ("uas", uas::probe),
             ("usb-storage", storage::probe),
             ("cdc_ether", cdc_ether::probe),
             ("snd-usb-audio", audio::probe),
+            ("btusb", btusb::probe),
         ];
         let extra = DRIVERS.lock().clone();
         for (name, probe) in builtin.iter().chain(extra.iter()) {

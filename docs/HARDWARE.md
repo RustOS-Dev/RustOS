@@ -40,7 +40,9 @@ devices are cached (write-back buffer cache, `sync`).
 | HID tablet (absolute pointer) | CI (`usb-tablet`) |
 | HID game pads, NKRO keyboards, media keys | host tests only |
 | Mass storage (Bulk-Only) | CI (`usb-storage`) |
-| USB Attached SCSI (bulk streams) | CI (`usb-uas`) |
+| USB Attached SCSI (bulk streams, 8 commands queued; USB 2 without streams) | CI (`usb-uas` on SuperSpeed and high-speed ports) |
+| USB Audio Class 1/2 playback (isochronous) | CI (`usb-audio`) |
+| Bluetooth controllers (class E0/01/01), Intel AX200/AX210/AX211 firmware | written ([BLUETOOTH.md](BLUETOOTH.md)) |
 | Ethernet: CDC ECM, RNDIS | CI (`usb-net`) |
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
 
@@ -53,7 +55,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Intel I217/I218/I219 (PCH LAN) | written |
 | Intel I225/I226 (`igc`) | written |
 | Realtek RTL8111/8168/8125 (`r8169`) | written |
-| Intel AX210 Wi-Fi, AX211/AX201 CNVi | written ([WIFI.md](WIFI.md)) |
+| Intel AX210 Wi-Fi, AX211/AX201 CNVi (incl. 6 GHz, power save) | written ([WIFI.md](WIFI.md)) |
 
 ## Input and display
 
@@ -63,6 +65,17 @@ devices are cached (write-back buffer cache, `sync`).
 | USB HID keyboard/mouse | CI |
 | GOP framebuffer text console (8x16 font, ANSI escapes, scrollback) | CI |
 | `/dev/fb0` for user programs (mmap) | CI |
+| Per-device evdev nodes with EVIOCG* ioctls, keyboard LEDs | CI |
+| Bluetooth LE keyboards/mice (HID over GATT) | CI (`tools/fake-hci.py` over H4) |
+| Bluetooth BR/EDR keyboards/mice (HIDP) | written |
+
+## Audio
+
+| Device | Status |
+|--------|--------|
+| Intel HD Audio (legacy, non-DSP) codecs | CI (`intel-hda`, `ich9-intel-hda`) |
+| virtio-sound | CI |
+| USB Audio Class 1/2 (playback) | CI (`usb-audio`) |
 
 ## Target machines
 
@@ -92,7 +105,11 @@ its complete command output:
 | `ethernet` | per wired interface: link/driver/speed, DHCP, ping gateway, DNS, HTTP, HTTPS, optional throughput (`--big URL`) |
 | `wifi` | firmware loaded, scan, open network, WPA2/WPA3 network (asks for SSID and passphrase, or `--ssid`/`--pass`/`--open`), the same connectivity steps, group-key refresh wait (`--rekey 3600`), disconnect/reconnect |
 | `storage` | 8 MiB write + sync + read-back with SHA-256 on `/storage` and every writable `/mnt/*` (throughput shown) |
-| `usb` | stick insertion and removal (interactive) |
+| `wifi` (continued) | 6 GHz networks in the scan (Wi-Fi 6E access point needed), power-save status |
+| `storage` (continued) | ext4 mounts, journal and quota messages |
+| `usb` | UAS queue depth, audio and Bluetooth devices from the log; stick insertion and removal (interactive) |
+| `audio` | every card plays a tone (asks whether it was heard) and records one second |
+| `bluetooth` | controller up (firmware loaded), scan, then interactively: pair a keyboard or mouse, see its input, disconnect, and check it reconnects with the stored key |
 
 Results go to `/storage/hwcheck-DATE/` (`summary.txt`, one log per step,
 and a full `bugreport.txt`). Run one section with e.g. `hwcheck wifi`;
@@ -111,12 +128,13 @@ and is read at boot once the storage partition is mounted;
 | `log.persist=1` | mirror the kernel log to `/storage/log/kernel.log` every 2 s (rotated at 4 MiB) — survives hangs |
 | `iwlwifi.debug=1` | log every Wi-Fi firmware command and notification |
 | `net.debug=1` | log a one-line summary of every Ethernet frame sent and received |
+| `bt.h4=com2` | start a Bluetooth H4 (UART) controller on a serial port at boot |
 
 A Wi-Fi firmware crash always dumps the firmware's LMAC/UMAC error tables
 to the log.
 
 ## Not supported
 
-GPU acceleration, audio, Bluetooth (the AX210's Bluetooth is a separate
-USB function), Broadcom/Realtek Wi-Fi, USB Wi-Fi dongles, Thunderbolt
+GPU acceleration, Bluetooth audio, HD Audio behind an Intel SOF DSP,
+Broadcom/Realtek Wi-Fi, USB Wi-Fi dongles, Thunderbolt
 tunnelling beyond what firmware sets up, suspend/resume (S3).

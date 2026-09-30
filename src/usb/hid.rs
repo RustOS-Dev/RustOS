@@ -156,12 +156,16 @@ fn evdev_info(dev: &UsbDevice, ifn: u8, mode: &Mode) -> input::Info {
             desc.device_version,
         ],
     );
-    let r = match mode {
-        Mode::BootKeyboard => return info.keyboard(),
-        Mode::BootMouse => return info.mouse(5, true),
-        Mode::Report(r) => r,
-    };
-    let mut info = info;
+    match mode {
+        Mode::BootKeyboard => info.keyboard(),
+        Mode::BootMouse => info.mouse(5, true),
+        Mode::Report(r) => report_info(info, r),
+    }
+}
+
+/// Fill in an evdev description (keys, axes, properties) from a HID
+/// report descriptor. Shared with Bluetooth HID.
+pub fn report_info(mut info: input::Info, r: &ReportDescriptor) -> input::Info {
     if r.has_application(usage(GD, hid::USAGE_KEYBOARD)) {
         info = info.keyboard();
     }
@@ -222,7 +226,7 @@ fn evdev_info(dev: &UsbDevice, ifn: u8, mode: &Mode) -> input::Info {
     info
 }
 
-fn describe(r: &ReportDescriptor) -> alloc::string::String {
+pub fn describe(r: &ReportDescriptor) -> alloc::string::String {
     let mut parts: Vec<&str> = Vec::new();
     for &a in &r.applications {
         let name = match ((a >> 16) as u16, a as u16) {
@@ -416,28 +420,82 @@ fn report_loop(
     buf: &DmaBuffer,
     len: usize,
     r: ReportDescriptor,
-    ev: &InputDev,
+    ev: &Arc<InputDev>,
 ) {
-    let mut st = ReportState::default();
-    let game = r.has_application(usage(GD, hid::USAGE_GAMEPAD))
-        || r.has_application(usage(GD, hid::USAGE_JOYSTICK));
-    let btn_base = if r.has_application(usage(GD, hid::USAGE_GAMEPAD)) {
-        input::BTN_GAMEPAD
-    } else if game {
-        input::BTN_JOYSTICK
-    } else {
-        input::BTN_MOUSE
-    };
-    let mut out = Vec::new();
-    read_loop(dev, ep, buf, len, |report| {
-        let d = r.decode(report);
-        out.clear();
-        handle(&r, &d, &mut st, &mut out, game, btn_base, ev);
-        emit(&out, ev);
-    });
-    out.clear();
-    st.keyboard.release_all(&mut out);
-    emit(&out, ev);
+    let mut sink = HidSink::new(r, ev.clone());
+    read_loop(dev, ep, buf, len, |report| sink.feed(report));
+    sink.finish();
+}
+
+/// Turns the input reports of a report-protocol HID device into console
+/// scancodes and evdev events, whatever the transport (USB, Bluetooth).
+pub struct HidSink {
+    r: ReportDescriptor,
+    st: ReportState,
+    game: bool,
+    btn_base: u16,
+    pub ev: Arc<InputDev>,
+    out: Vec<u8>,
+}
+
+impl HidSink {
+    pub fn new(r: ReportDescriptor, ev: Arc<InputDev>) -> HidSink {
+        let game = r.has_application(usage(GD, hid::USAGE_GAMEPAD))
+            || r.has_application(usage(GD, hid::USAGE_JOYSTICK));
+        let btn_base = if r.has_application(usage(GD, hid::USAGE_GAMEPAD)) {
+            input::BTN_GAMEPAD
+        } else if game {
+            input::BTN_JOYSTICK
+        } else {
+            input::BTN_MOUSE
+        };
+        HidSink {
+            r,
+            st: ReportState::default(),
+            game,
+            btn_base,
+            ev,
+            out: Vec::new(),
+        }
+    }
+
+    pub fn is_keyboard(&self) -> bool {
+        self.r.has_application(usage(GD, hid::USAGE_KEYBOARD))
+    }
+
+    /// One input report (with its report ID byte, if the device uses IDs).
+    pub fn feed(&mut self, report: &[u8]) {
+        let d = self.r.decode(report);
+        self.out.clear();
+        handle(
+            &self.r,
+            &d,
+            &mut self.st,
+            &mut self.out,
+            self.game,
+            self.btn_base,
+            &self.ev,
+        );
+        emit(&self.out, &self.ev);
+    }
+
+    /// Typematic repeat for devices that only report changes (call every
+    /// few tens of milliseconds while a key may be held).
+    pub fn tick(&mut self) {
+        let Some(rep) = self.st.repeat.as_mut() else {
+            return;
+        };
+        self.out.clear();
+        rep.update(&self.st.keyboard, &[], &mut self.out);
+        emit(&self.out, &self.ev);
+    }
+
+    /// The device went away: release everything held.
+    pub fn finish(&mut self) {
+        self.out.clear();
+        self.st.keyboard.release_all(&mut self.out);
+        emit(&self.out, &self.ev);
+    }
 }
 
 fn handle(

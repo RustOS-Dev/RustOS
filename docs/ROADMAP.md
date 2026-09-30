@@ -62,9 +62,9 @@ EVIOCG* ioctls yet.
 - [x] **M21** Wi-Fi remainder: 12 KiB receive buffers, BAID receive BA, power save, 6 GHz with SAE-H2E, 160 MHz, BT coexistence
 - [x] **M22** ext4 remainder: multi-transaction journal, data=journal, fast_commit replay, htree lookups, inline_data, bigalloc, meta_bg, quotas, casefold, large_dir, ea_inode
 - [x] **M23** USB remainder: UAS queueing and USB 2 UAS, isochronous transfers, evdev ioctls
-- [ ] **M24** `hwcheck`/`bugreport` coverage for round 3 features
+- [x] **M24** `hwcheck`/`bugreport` coverage for round 3 features
 - [x] **M25** Audio: sound core with OSS `/dev/dsp`, Intel HDA, USB Audio Class 1/2, virtio-sound
-- [ ] **M26** Bluetooth: USB/H4 HCI, AX210 firmware, L2CAP/SMP/GATT, HID over GATT and BR/EDR HID
+- [x] **M26** Bluetooth: USB/H4 HCI, AX210 firmware, L2CAP/SMP/GATT, HID over GATT and BR/EDR HID
 
 Round 3 deviations so far:
 - **M18**
@@ -117,6 +117,14 @@ Round 3 deviations so far:
     - there is no HDMI/ELD support and no quirk table beyond EAPD and GPIO 0.
   - USB audio: playback only, with no explicit feedback. Its volume is applied in software, and the feature unit is set to 0 dB.
   - The browser plays WAV and MP3 (`nanomp3`); there is no Ogg/Vorbis. The QEMU wav backend cannot feed capture, so recording is tested on a card with the `none` backend (silence).
+- **M24** — the checks are written: 6 GHz and power save in `wifi`, the ext4/UAS summaries, and the new `audio` and `bluetooth` sections, plus `bugreport` additions. Running them on the AX210 laptop is up to the user; fixes from those reports come later.
+- **M26**:
+  - The control interface is `/dev/bluetooth`, a command-line device that `bt` writes commands to and reads output from, not a socket family.
+  - A2DP is not done (optional in the plan).
+  - Legacy PIN pairing is refused.
+  - BR/EDR HID and the USB transport, including Intel firmware loading, are written but untested in QEMU. The scenario covers LE over H4 with `tools/fake-hci.py`.
+  - H4 on COM3/COM4 is polled; COM2 uses IRQ 3.
+- **Found during M26:** smoltcp's SLAAC keeps a stale router-solicitation deadline after its retries go unanswered, so `netd` polled in a busy loop and used a whole CPU on networks without an IPv6 router. `netd` now waits (20 ms, or until kicked) when a poll moves no packets.
 - **M19** — tests: a host end-to-end suite (`crates/jsproto/tests/jsd.rs`) plus the `browser-js` and `captive-portal-js` scenarios stand in for the WPT subset.
 
 ## Context

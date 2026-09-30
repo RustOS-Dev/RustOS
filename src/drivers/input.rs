@@ -60,6 +60,7 @@ pub const LED_SCROLLL: u16 = 2;
 
 pub const BUS_I8042: u16 = 0x11;
 pub const BUS_USB: u16 = 0x03;
+pub const BUS_BLUETOOTH: u16 = 0x05;
 pub const BUS_VIRTUAL: u16 = 0x06;
 
 const INPUT_PROP_POINTER: u32 = 0;

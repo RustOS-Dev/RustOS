@@ -67,6 +67,7 @@ const REPORT_FILES: &[&str] = &[
     "/etc/resolv.conf",
     "/storage/etc/network.conf",
     "/storage/etc/kernel.conf",
+    "/proc/asound/cards",
 ];
 
 const REPORT_COMMANDS: &[&str] = &[
@@ -76,7 +77,12 @@ const REPORT_COMMANDS: &[&str] = &[
     "ip addr",
     "ip route",
     "wifi status",
-    "ls -l /storage/lib/firmware /lib/firmware",
+    "wifi power",
+    "ls -l /storage/lib/firmware /lib/firmware /lib/firmware/intel",
+    "evtest -l",
+    "mixer",
+    "bt status",
+    "bt list",
 ];
 
 /// Build the report text.
@@ -413,6 +419,27 @@ fn wifi_section(c: &mut Check, o: &Opts, iface: &str) {
         &format!("wifi -i {} scan", iface),
         |out| out.lines().count() >= 2,
     );
+    // 6 GHz networks are listed as CHANNEL/6G.
+    let (_, scan) = sh(&format!("wifi -i {} scan", iface));
+    let six = scan.lines().filter(|l| l.contains("/6G")).count();
+    if six > 0 {
+        c.record(
+            &format!("{} 6 GHz scan", iface),
+            Res::Pass,
+            &format!("{} network(s) on 6 GHz", six),
+            &scan,
+        );
+    } else {
+        c.skip(
+            &format!("{} 6 GHz scan", iface),
+            "no 6 GHz network seen (needs a Wi-Fi 6E access point nearby)",
+        );
+    }
+    c.step(
+        &format!("{} power save status", iface),
+        &format!("wifi -i {} power", iface),
+        |out| out.contains("power"),
+    );
     let open = o.open_ssid.clone().or_else(|| {
         c.ask("  SSID of an OPEN network to test (Enter to skip): ")
             .filter(|s| !s.is_empty())
@@ -576,6 +603,102 @@ fn wait_for(secs: u64, f: impl Fn() -> bool) -> bool {
     false
 }
 
+/// Sound cards: each one plays a tone (the user confirms hearing it) and
+/// records a second where it can.
+fn audio_section(c: &mut Check) {
+    let cards = fs::read_to_string("/proc/asound/cards").unwrap_or_default();
+    c.info("sound cards", "cat /proc/asound/cards; dmesg | grep -e \"\\[sound\\]\" -e \"\\[hda\\]\"");
+    let n = (0..8)
+        .filter(|i| fs::exists(&format!("/dev/dsp{}", i)))
+        .count();
+    if n == 0 {
+        c.skip("audio", "no sound card found");
+        return;
+    }
+    for i in 0..n {
+        let dev = format!("/dev/dsp{}", i);
+        let name = cards
+            .lines()
+            .find(|l| l.trim_start().starts_with(&format!("{} ", i)))
+            .map(|l| l.trim().to_string())
+            .unwrap_or_else(|| dev.clone());
+        let r = c.step(
+            &format!("{} plays", dev),
+            &format!("beep -f 440 -l 700 -v 40 -d {}", dev),
+            |_| true,
+        );
+        if r == Res::Pass {
+            match c.ask(&format!("  Did you hear a tone from {}? [y/n] ", name)) {
+                Some(a) if a.starts_with('y') => {
+                    c.record(&format!("{} audible", dev), Res::Pass, "", &name);
+                }
+                Some(_) => {
+                    c.record(&format!("{} audible", dev), Res::Fail, "no sound heard", &name);
+                }
+                None => c.skip(&format!("{} audible", dev), "interactive only"),
+            }
+        }
+        c.step(
+            &format!("{} records", dev),
+            &format!("rec -d {} -t 1 /tmp/hwcheck-rec{}.wav", dev, i),
+            |out| out.contains("bytes recorded"),
+        );
+    }
+}
+
+/// Bluetooth: the controller comes up, scans, and (interactively) pairs
+/// with a keyboard or mouse whose input then arrives.
+fn bluetooth_section(c: &mut Check) {
+    c.info("controller", "bt status; dmesg | grep -e \"\\[bt\\]\" -e ibt-");
+    let (_, st) = sh("bt status");
+    if st.contains("no Bluetooth controller") || st.contains("No such file") {
+        c.skip("Bluetooth", "no controller found");
+        return;
+    }
+    let r = c.step("controller up", "bt status", |out| out.contains(", up"));
+    if r != Res::Pass {
+        println!("    a USB Bluetooth controller (or AX210 firmware intel/ibt-*.sfi) is needed");
+        return;
+    }
+    c.step("scan", "bt scan 8", |out| !out.contains("no devices found"));
+    let Some(addr) = c
+        .ask("  Put a Bluetooth keyboard or mouse in pairing mode; its address from the scan above (Enter to skip): ")
+        .filter(|s| !s.is_empty())
+    else {
+        c.skip("pair", "no device given");
+        return;
+    };
+    // Pairing may ask for a passkey: run it on the terminal.
+    let code = process::run(&["bt", "pair", &addr]).unwrap_or(1);
+    c.record(
+        &format!("pair {}", addr),
+        if code == 0 { Res::Pass } else { Res::Fail },
+        "",
+        &format!("bt pair exited {}", code),
+    );
+    if code != 0 {
+        return;
+    }
+    let (_, list) = sh("evtest -l");
+    c.info("input devices", "evtest -l");
+    if let Some(node) = list.lines().last().and_then(|l| l.split(':').next()) {
+        println!("    press a key or move the device...");
+        c.step(
+            &format!("input from {}", addr),
+            &format!("evtest -c 1 {}", node),
+            |out| out.contains("event"),
+        );
+    }
+    c.step("disconnect", &format!("bt disconnect {}", addr), |_| true);
+    println!("    waiting 15 s for the device to reconnect (press a key if it sleeps)...");
+    time::sleep_ms(15000);
+    c.step(
+        "reconnect with the stored key",
+        "bt status",
+        |out| out.contains(&addr.to_uppercase()),
+    );
+}
+
 fn hotplug(c: &mut Check) {
     if c.batch {
         c.skip("USB stick hot-plug", "interactive only");
@@ -612,7 +735,7 @@ fn hotplug(c: &mut Check) {
 
 fn usage() {
     println!("usage: hwcheck [options] [section...]");
-    println!("sections: system ethernet wifi storage usb (default: all)");
+    println!("sections: system ethernet wifi storage usb audio bluetooth (default: all)");
     println!("  -y, --batch        never prompt (skip interactive steps)");
     println!("  -o DIR             result directory (default /storage/hwcheck-DATE)");
     println!("  --ssid S --pass P  WPA2/WPA3 network for the Wi-Fi steps");
@@ -750,9 +873,27 @@ pub fn hwcheck(args: &[String]) -> i32 {
             storage_rw(&mut c, &m);
         }
     }
+    if want("storage") {
+        c.info(
+            "ext4 features and journal modes",
+            "grep ext4 /proc/mounts; dmesg | grep -i -e ext4 -e jbd2 -e quota",
+        );
+    }
     if want("usb") {
         c.section("USB");
+        c.info(
+            "UAS queueing and USB devices",
+            "lsusb; dmesg | grep -e \"Attached SCSI\" -e \"audio:\" -e \"Bluetooth controller\"",
+        );
         hotplug(&mut c);
+    }
+    if want("audio") {
+        c.section("Audio");
+        audio_section(&mut c);
+    }
+    if want("bluetooth") {
+        c.section("Bluetooth");
+        bluetooth_section(&mut c);
     }
 
     let count = |r: Res| c.results.iter().filter(|x| x.1 == r).count();

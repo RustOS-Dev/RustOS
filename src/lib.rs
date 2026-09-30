@@ -12,6 +12,7 @@ use core::panic::PanicInfo;
 pub mod allocator;
 pub mod arch;
 pub mod block;
+pub mod bluetooth;
 pub mod drivers;
 pub mod errno;
 pub mod firmware;
@@ -119,6 +120,7 @@ pub fn start_userspace() -> ! {
     if params::flag("log.persist") {
         klog::start_persist();
     }
+    bluetooth::late_init();
 
     if option_env!("RUSTOS_STRACE").is_some() {
         syscall::TRACE.store(true, core::sync::atomic::Ordering::Relaxed);

@@ -77,6 +77,16 @@ AX210_FIRMWARE_PATTERNS=(
     "iwlwifi-so-a0-hr-b0-6[0-9].ucode"
 )
 
+# The Bluetooth half of the same cards (btusb loads intel/ibt-*.sfi/.ddc).
+AX210_BT_FIRMWARE_PATTERNS=(
+    "intel/ibt-0041-0041.sfi"
+    "intel/ibt-0041-0041.ddc"
+    "intel/ibt-0040-0041.sfi"
+    "intel/ibt-0040-0041.ddc"
+    "intel/ibt-0040-0040.sfi"
+    "intel/ibt-0040-0040.ddc"
+)
+
 # Print "<file>" for every matching firmware blob in directory $1
 # (plain, .xz or .zst - distributions ship compressed firmware).
 find_ax210_firmware_files() {
@@ -85,6 +95,22 @@ find_ax210_firmware_files() {
     for pattern in "${AX210_FIRMWARE_PATTERNS[@]}"; do
         for f in "$dir"/$pattern "$dir"/$pattern.xz "$dir"/$pattern.zst; do
             [[ -f "$f" ]] && printf '%s\n' "$f"
+        done
+    done
+    shopt -u nullglob
+}
+
+# Copy the Bluetooth firmware found under $1 (a linux-firmware tree) into
+# $2/intel.
+install_bt_firmware() {
+    local dir="$1" fwdir="$2" pattern f
+    shopt -s nullglob
+    for pattern in "${AX210_BT_FIRMWARE_PATTERNS[@]}"; do
+        for f in "$dir"/$pattern "$dir"/$pattern.xz "$dir"/$pattern.zst; do
+            if [[ -f "$f" ]]; then
+                run_as_root mkdir -p "$fwdir/intel"
+                install_firmware_file "$f" "$fwdir/intel"
+            fi
         done
     done
     shopt -u nullglob
@@ -119,7 +145,7 @@ install_firmware_file() {
             run_as_root cp "$src" "$dir/$name"
             ;;
     esac
-    echo "Provisioned WiFi firmware: /lib/firmware/$name"
+    echo "Provisioned firmware: $dir/$name"
 }
 
 provision_ax210_firmware() {
@@ -143,6 +169,7 @@ provision_ax210_firmware() {
     fi
 
     if [[ -d "$source" ]]; then
+        install_bt_firmware "$source" "$firmware_dir"
         while IFS= read -r f; do
             [[ -n "$f" ]] || continue
             install_firmware_file "$f" "$firmware_dir"

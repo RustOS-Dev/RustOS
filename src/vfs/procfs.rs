@@ -585,6 +585,7 @@ fn register_builtin() {
     register("cpuinfo", gen_cpuinfo);
     register("mounts", gen_mounts);
     register("interrupts", gen_interrupts);
+    register("asound/cards", crate::sound::proc_cards);
     register("stat", gen_stat);
     register("loadavg", gen_loadavg);
     register("bus/pci/devices", gen_pci);

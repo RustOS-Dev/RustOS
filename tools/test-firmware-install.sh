@@ -15,6 +15,9 @@ echo ucode72 > "$T/fw/iwlwifi-ty-a0-gf-a0-72.ucode"
 echo pnvm > "$T/fw/iwlwifi-ty-a0-gf-a0.pnvm"
 echo so-ucode > "$T/fw/iwlwifi-so-a0-gf-a0-72.ucode"
 echo unrelated > "$T/fw/regulatory.db"
+mkdir -p "$T/fw/intel"
+echo sfi > "$T/fw/intel/ibt-0041-0041.sfi"
+echo ddc > "$T/fw/intel/ibt-0041-0041.ddc"
 if command -v xz >/dev/null; then
     echo ucode71 | xz > "$T/fw/iwlwifi-ty-a0-gf-a0-71.ucode.xz"
 fi
@@ -24,6 +27,8 @@ provision_ax210_firmware "$T/mnt1" "$T/fw" >/dev/null
 [[ "$(cat "$T/mnt1/lib/firmware/iwlwifi-ty-a0-gf-a0-72.ucode")" == ucode72 ]] || fail "ucode not copied"
 [[ -f "$T/mnt1/lib/firmware/iwlwifi-ty-a0-gf-a0.pnvm" ]] || fail "pnvm not copied"
 [[ ! -e "$T/mnt1/lib/firmware/regulatory.db" ]] || fail "unrelated file copied"
+[[ "$(cat "$T/mnt1/lib/firmware/intel/ibt-0041-0041.sfi")" == sfi ]] || fail "Bluetooth sfi not copied"
+[[ -f "$T/mnt1/lib/firmware/intel/ibt-0041-0041.ddc" ]] || fail "Bluetooth ddc not copied"
 if command -v xz >/dev/null; then
     [[ "$(cat "$T/mnt1/lib/firmware/iwlwifi-ty-a0-gf-a0-71.ucode")" == ucode71 ]] || fail "xz not decompressed"
 fi

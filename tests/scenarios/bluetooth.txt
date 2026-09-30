@@ -1,0 +1,46 @@
+# Bluetooth LE HID over the H4 transport: scan, pair (LE Secure
+# Connections, checked against the fake keyboard's own SMP), HID over
+# GATT to /dev/input, then reconnection with the stored key.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/fake-hci.py" 18300 /tmp/rustos-fakehci.log
+wait # $ 240
+send bt attach com2
+wait attached com2
+wait # $
+send sleep 1; bt status
+wait hci0: 00:1A:7D:DA:71:13 via UART com2, Bluetooth 5\.3, manufacturer 0x05f1, up, LE
+wait # $
+send bt scan 2
+wait C0:11:22:33:44:55\s+le\s+-60 dBm\s+keyboard\s+RustOS Keys \(random\)
+wait # $
+send bt pair C0:11:22:33:44:55
+wait paired \(LE Secure Connections, unauthenticated\) 30
+wait connected: /dev/input/event
+wait # $
+send dmesg | grep "HID keyboard" | cat
+wait C0:11:22:33:44:55: HID keyboard \(report protocol\)
+wait # $
+# Key presses from the keyboard (it presses Shift every second).
+send k=$(evtest -l | grep "RustOS Keys" | cut -d: -f1); evtest -i $k | head -3; evtest -c 4 $k | cat
+wait bus 0x5 vendor 0x1234 product 0x5678
+wait event KEY code 0x2a value 1 20
+wait # $
+send bt list; grep -c "le random ltk=" /etc/bluetooth/keys /storage/etc/bluetooth/keys 2>/dev/null | cat
+wait C0:11:22:33:44:55  le\s+connected\s+RustOS Keys
+wait keys:1
+wait # $
+# Reconnection: the keyboard advertises again and the kernel reconnects
+# with the stored key (no pairing).
+send bt disconnect C0:11:22:33:44:55
+wait disconnected C0:11:22:33:44:55
+wait # $
+send sleep 6; bt status
+wait connected C0:11:22:33:44:55 \(LE, encrypted\) 30
+wait # $
+send k=$(evtest -l | grep "RustOS Keys" | cut -d: -f1); evtest -c 4 $k | cat
+wait event KEY code 0x2a value 1 20
+wait # $
+send bt remove C0:11:22:33:44:55; bt list
+wait removed C0:11:22:33:44:55
+wait no paired devices
+wait # $
+hostrun grep -q "encrypted with the stored LTK" /tmp/rustos-fakehci.log

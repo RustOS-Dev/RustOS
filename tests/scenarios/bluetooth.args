@@ -1,0 +1,4 @@
+# A Bluetooth controller on COM2 (H4 over a TCP chardev) driven by
+# tools/fake-hci.py: an LE controller with a BLE HID keyboard.
+-chardev socket,id=bt0,host=127.0.0.1,port=18300,server=on,wait=off
+-serial chardev:bt0

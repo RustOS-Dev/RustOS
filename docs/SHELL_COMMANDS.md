@@ -99,6 +99,7 @@ are in `/etc/passwd`, overridable by `/storage/etc/passwd`). `login [-f]
 | `rec` | `rec [-d DEV] [-t SECONDS] [-r RATE] [-c CH] FILE.wav` — record 16-bit WAV |
 | `beep` | `beep [-f HZ] [-l MS] [-v PERCENT] [-d DEV]` — play a sine tone |
 | `mixer` | `mixer [-d DEV] [volume\|pcm [LEVEL]]` — show or set the volumes |
+| `bt` | `bt [status \| power on\|off \| scan [SECONDS] \| devices \| pair ADDR \| connect ADDR \| disconnect ADDR \| remove ADDR \| list \| attach PORT]` — Bluetooth ([BLUETOOTH.md](BLUETOOTH.md)) |
 | `bugreport` | `bugreport [-o FILE \| -]` — kernel log, `/proc`, `/sys/class/net` and tool output in one file |
 
 Types for `mount -t`: `vfat`, `ext2`, `ext3`, `ext4`, `tmpfs`,

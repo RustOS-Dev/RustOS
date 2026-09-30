@@ -721,15 +721,20 @@ impl Net {
             .collect()
     }
 
-    fn poll_all(&mut self) -> Option<u64> {
+    /// Poll every interface: (milliseconds until the next poll is due,
+    /// whether any packet moved).
+    fn poll_all(&mut self) -> (Option<u64>, bool) {
         let now = Instant::from_millis(crate::time::millis() as i64);
         let mut next: Option<u64> = None;
+        let mut moved = false;
         for ifc in self.ifaces.iter_mut() {
+            let before = ifc.stats.rx_packets + ifc.stats.tx_packets;
             if let Some(d) = ifc.poll(now) {
                 next = Some(next.map_or(d, |n| n.min(d)));
             }
+            moved |= ifc.stats.rx_packets + ifc.stats.tx_packets != before;
         }
-        next
+        (next, moved)
     }
 }
 
@@ -892,10 +897,17 @@ pub fn set_dhcp(name: &str, on: bool) -> KResult<()> {
 fn netd() {
     loop {
         KICK.store(false, Ordering::SeqCst);
-        let delay = with(|n| n.poll_all()).flatten();
+        let (delay, moved) = with(|n| n.poll_all()).unwrap_or((None, false));
         EPOCH.fetch_add(1, Ordering::SeqCst);
         SOCK_WQ.wake_all();
-        let ms = delay.unwrap_or(100).min(100);
+        let mut ms = delay.unwrap_or(100).min(100);
+        if ms == 0 && !moved {
+            // smoltcp asks to be polled again at once, yet nothing was
+            // sent or received: a timer it will never advance (SLAAC keeps
+            // its last router-solicitation time once the retries are used
+            // up without an answer). Wait for an event instead of spinning.
+            ms = 20;
+        }
         if ms > 0 {
             NET_WQ.wait_timeout(ms, || KICK.load(Ordering::SeqCst));
         } else {

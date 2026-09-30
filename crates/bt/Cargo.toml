@@ -1,0 +1,17 @@
+[package]
+name = "bt"
+version = "0.1.0"
+edition = "2024"
+description = "no_std Bluetooth host stack pieces: HCI, L2CAP, ATT/GATT, SMP, SDP, HID over GATT and HIDP"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aes = { version = "0.8", default-features = false }
+cmac = { version = "0.7", default-features = false }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdh"] }
+
+# Elliptic-curve code is very slow unoptimised.
+[profile.dev.package."*"]
+opt-level = 2

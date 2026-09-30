@@ -2,7 +2,7 @@ wait # $ 240
 hostbg mkdir -p /tmp/rustos-hw && cd /tmp/rustos-hw && echo hello > index.html && head -c 2097152 /dev/urandom > big.bin && exec python3 -m http.server 18095 --bind 127.0.0.1
 sleep 1
 # Batch run of the non-Wi-Fi checklist against a host web server
-send hwcheck -y -o /storage/hw --http http://10.0.2.2:18095/ --https '' --dns '' --big http://10.0.2.2:18095/big.bin system ethernet wifi storage usb
+send hwcheck -y -o /storage/hw --http http://10.0.2.2:18095/ --https '' --dns '' --big http://10.0.2.2:18095/big.bin system ethernet wifi storage usb audio bluetooth
 wait eth0 DHCP lease 60
 wait eth0 HTTP http://10\.0\.2\.2:18095/ 60
 wait eth0 throughput .* Mbit/s 90
@@ -10,6 +10,8 @@ wait SKIP.*Wi-Fi.*no wireless interface
 wait PASS.*read/write /storage 120
 wait PASS.*read/write /mnt/ 120
 wait SKIP.*USB stick hot-plug
+wait SKIP.*audio.*no sound card
+wait SKIP.*Bluetooth.*no controller
 wait \d+ passed, 0 failed, \d+ skipped 60
 wait # $
 send cat /storage/hw/summary.txt | head -3; ls /storage/hw | grep -c log

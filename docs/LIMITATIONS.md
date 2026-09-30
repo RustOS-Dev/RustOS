@@ -9,7 +9,7 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * Most drivers are verified only under QEMU. The Intel AX210 Wi-Fi,
   I219/I225/RTL8168 Ethernet and CDC NCM drivers are written against
   reference drivers and specifications but have not yet run on hardware.
-* No GPU acceleration, Bluetooth, Thunderbolt management, or
+* No GPU acceleration, Thunderbolt management, or
   suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
 * ATAPI optical drives are detected but not usable.
 
@@ -82,6 +82,13 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * HID: report descriptors are parsed (keyboards incl. NKRO and media
   keys, mice, tablets/touch screens, game pads); multi-touch contacts are
   not tracked separately. Keyboard LEDs are the only output reports.
+
+## Bluetooth
+
+* Keyboards and mice only (LE HID over GATT, BR/EDR HID). No audio
+  (A2DP/SCO), no file transfer or tethering, no legacy PIN pairing.
+* BR/EDR and the Intel AX210 firmware path are untested on hardware so
+  far. See [BLUETOOTH.md](BLUETOOTH.md).
 
 ## Audio
 

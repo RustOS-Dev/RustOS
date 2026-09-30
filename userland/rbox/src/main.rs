@@ -15,6 +15,7 @@ mod hw;
 mod input;
 mod login;
 mod regex;
+mod bluetooth;
 mod sound;
 mod sys;
 mod text;
@@ -29,6 +30,7 @@ pub type Applet = fn(&[String]) -> i32;
 const APPLETS: &[(&str, Applet)] = &[
     ("basename", text::basename),
     ("beep", sound::beep),
+    ("bt", bluetooth::bt),
     ("bugreport", hw::bugreport),
     ("cat", files::cat),
     ("chmod", files::chmod),

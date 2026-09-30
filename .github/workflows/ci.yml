@@ -86,10 +86,11 @@ jobs:
         run: rustup toolchain install
       - name: cargo test (crates/*)
         run: |
-          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/css crates/layout crates/jsproto crates/paint crates/unixcrypt crates/ext4-core crates/audio; do
+          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/css crates/layout crates/jsproto crates/paint crates/unixcrypt crates/ext4-core crates/audio crates/bt; do
             (cd "$c" && cargo test)
           done
           (cd crates/audio && cargo test --features mp3)
+          python3 tools/fake-hci.py --selftest
       - name: Firmware provisioning (write_to_drive.sh)
         run: tools/test-firmware-install.sh
 

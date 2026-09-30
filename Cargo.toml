@@ -25,6 +25,7 @@ wlan = { path = "crates/wlan" }
 netproto = { path = "crates/netproto" }
 ext4-core = { path = "crates/ext4-core" }
 audio = { path = "crates/audio" }
+bt = { path = "crates/bt" }
 # The kernel runs without SSE: force the portable crypto backends.
 sha1 = { version = "0.10", default-features = false, features = ["force-soft"] }
 sha2 = { version = "0.10", default-features = false, features = ["force-soft"] }

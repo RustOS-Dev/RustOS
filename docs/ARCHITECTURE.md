@@ -217,6 +217,10 @@ time (`settimeofday`/`ntpdate` adjust it).
   Bulk-Only and UAS (`usb/uas.rs`, sharing the SCSI layer in
   `usb/storage.rs`), CDC ECM/NCM/RNDIS Ethernet, USB Audio Class
   playback over isochronous transfers (`usb/audio.rs`).
+* **Bluetooth**: `bluetooth/` (HCI core, LE and BR/EDR links, bonds,
+  `/dev/bluetooth`) over `usb/btusb.rs` or H4 UART, with the protocol
+  code in `crates/bt`; HID reports reach evdev through `usb::hid::HidSink`.
+  See [BLUETOOTH.md](BLUETOOTH.md).
 * **Sound**: `sound/` (OSS `/dev/dsp`/`/dev/mixer`, a per-card mixer
   thread), Intel HD Audio and virtio-sound; see [AUDIO.md](AUDIO.md).
 * **Network**: see [NETWORKING.md](NETWORKING.md); Wi-Fi: see

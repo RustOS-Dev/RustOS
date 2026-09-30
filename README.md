@@ -124,6 +124,7 @@ root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 | [docs/SYSCALLS.md](docs/SYSCALLS.md) | system-call ABI and the implemented calls |
 | [docs/NETWORKING.md](docs/NETWORKING.md) | network stack, sockets, configuration, tools, HTTPS |
 | [docs/WIFI.md](docs/WIFI.md) | Intel Wi-Fi driver, firmware, `wifi` usage |
+| [docs/BLUETOOTH.md](docs/BLUETOOTH.md) | Bluetooth keyboards and mice (LE and BR/EDR HID), pairing, `bt` |
 | [docs/AUDIO.md](docs/AUDIO.md) | Sound cards (HD Audio, USB audio, virtio-sound), `/dev/dsp`, `play`/`rec`/`mixer` |
 | [docs/HARDWARE.md](docs/HARDWARE.md) | supported hardware and validation status |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | known gaps |

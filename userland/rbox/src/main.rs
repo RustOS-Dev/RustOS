@@ -15,6 +15,7 @@ mod hw;
 mod input;
 mod login;
 mod regex;
+mod sound;
 mod sys;
 mod text;
 
@@ -27,6 +28,7 @@ pub type Applet = fn(&[String]) -> i32;
 
 const APPLETS: &[(&str, Applet)] = &[
     ("basename", text::basename),
+    ("beep", sound::beep),
     ("bugreport", hw::bugreport),
     ("cat", files::cat),
     ("chmod", files::chmod),
@@ -69,6 +71,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("md5sum", files::md5sum),
     ("meminfo", sys::free),
     ("mkdir", files::mkdir),
+    ("mixer", sound::mixer),
     ("mkfifo", files::mkfifo),
     ("mkfs", sys::mkfs),
     ("mkfs.fat", sys::mkfs),
@@ -79,11 +82,13 @@ const APPLETS: &[(&str, Applet)] = &[
     ("nl", text::nl),
     ("passwd", login::passwd),
     ("poweroff", sys::poweroff),
+    ("play", sound::play),
     ("printf", text::printf),
     ("ps", sys::ps),
     ("quota", fsutil::quota),
     ("pwd", files::pwd),
     ("readlink", files::readlink),
+    ("rec", sound::rec),
     ("realpath", files::realpath),
     ("reboot", sys::reboot),
     ("rev", text::rev),

@@ -1,0 +1,8 @@
+[package]
+name = "audio"
+version = "0.1.0"
+edition = "2024"
+description = "no_std audio building blocks: sample formats, resampling, mixing, WAV, tones, and HD Audio codec path selection"
+
+[lib]
+path = "src/lib.rs"

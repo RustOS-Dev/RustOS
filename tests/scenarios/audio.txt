@@ -1,0 +1,25 @@
+# Tones through each card's /dev/dsp reach the host as sound.
+wait # $ 240
+send dmesg | grep "sound] card" | cat
+wait card 0: HDA
+wait card 1: virtio-sound
+wait card 2: HDA
+wait # $
+send mixer -d /dev/mixer0; mixer -d /dev/mixer0 volume 90
+wait volume\s+90% 90%
+wait # $
+send beep -f 1000 -l 1500 -v 60 -d /dev/dsp0; beep -f 1500 -l 1500 -v 60 -d /dev/dsp1; echo beeped
+wait beeped 90
+wait # $
+# Recording (card 2's backend records silence): a second of 48 kHz
+# stereo 16-bit.
+send rec -d /dev/dsp2 -t 1 /tmp/r.wav && ls -l /tmp/r.wav
+wait 192000 bytes recorded 30
+wait # $
+send play -d /dev/dsp2 /tmp/r.wav
+wait /tmp/r.wav: 48000 Hz, 2 ch, 192000 bytes
+wait # $
+monitor quit
+sleep 2
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-wav.py" /tmp/rustos-audio-hda.wav 1000
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-wav.py" /tmp/rustos-audio-vsnd.wav 1500

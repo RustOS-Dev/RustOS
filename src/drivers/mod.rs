@@ -50,6 +50,7 @@ pub fn probe_all() {
         if dev.class == 0x02 && !net::probe(&dev) {
             wifi::probe(&dev);
         }
+        crate::sound::probe(&dev);
     }
     crate::usb::init();
     crate::block::automount();

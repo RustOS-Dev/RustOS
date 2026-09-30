@@ -1,0 +1,11 @@
+# Sound cards: Intel HDA with a duplex codec, and virtio-sound, both
+# recorded by QEMU's wav audio backend.
+-audiodev wav,id=a0,path=/tmp/rustos-audio-hda.wav
+-device intel-hda
+-device hda-duplex,audiodev=a0
+-audiodev wav,id=a1,path=/tmp/rustos-audio-vsnd.wav
+-device virtio-sound-pci,audiodev=a1
+# A third card whose input works (the none backend records silence).
+-audiodev none,id=a2
+-device ich9-intel-hda
+-device hda-micro,audiodev=a2

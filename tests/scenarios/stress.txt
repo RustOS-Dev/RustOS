@@ -10,7 +10,8 @@ send d=/tmp/deep; i=0; while [ $i -lt 150 ]; do d=$d/n$i; i=$((i+1)); done; mkdi
 wait \b151\b
 wait # $ 60
 send rm -r /mnt/vda/deep /tmp/deep && ls /mnt/vda
-wait seed
+# Takes ~60 s with a debug kernel under TCG (no KVM)
+wait seed 300
 wait # $ 120
 # 112 MiB file: 1 MiB of random data repeated, checksummed before and after a remount
 send dd if=/dev/urandom of=/tmp/chunk bs=1024 count=1024 2>/dev/null; i=0; while [ $i -lt 112 ]; do cat /tmp/chunk; i=$((i+1)); done > /mnt/vda/big.bin; ls -l /mnt/vda/big.bin

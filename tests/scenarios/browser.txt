@@ -8,10 +8,10 @@ wait # $
 send browse -dump -width 60 http://10.0.2.2:18096/
 wait Welcome to the test site
 wait \* First item
-wait Name    Size
-wait kernel  4 MiB
+wait Name +Size
+wait kernel +4 MiB
 wait \[1\]Log in or \[2\]see a refresh
-wait \[rust os_+\] \[ Search \]
+wait \[rust os_+\] ?\[ Search \]
 wait References
 wait 1\. http://10\.0\.2\.2:18096/login
 wait # $
@@ -56,3 +56,19 @@ wait Refreshing to http://10\.0\.2\.2:18096/welcome
 wait Not logged in 30
 raw q
 wait # $
+# CSS: an external sheet with @import, flex navigation, a grid of cards,
+# hidden content and media queries (80 columns = 640 px: wide).
+send browse -dump -width 80 http://10.0.2.2:18096/css | cat
+wait \[1\]Home +\[2\]Login +\[3\]News
+wait Alpha card +Beta card +Gamma card
+wait WIDE-ONLY
+wait SHOUTING TEXT
+wait END-OF-PAGE
+wait # $
+send browse -dump -width 80 http://10.0.2.2:18096/css | grep -c -e SECRET-TEXT -e INLINE-HIDDEN -e NARROW-ONLY
+wait \r\n0\r\n
+wait # $
+send browse -nocss -dump -width 80 http://10.0.2.2:18096/css | grep -c -e SECRET-TEXT -e WIDE-ONLY
+wait \r\n2\r\n
+wait # $
+hostrun grep -q "GET /base.css" /tmp/rustos-web.log

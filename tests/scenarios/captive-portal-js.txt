@@ -1,0 +1,36 @@
+# A captive portal whose login works only with JavaScript: the button is a
+# <span> with a click listener that calls fetch() and then sets
+# location.href; browse --portal notices the connection works.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/test-web-server.py" 18099 /tmp/rustos-portaljs.log --js-portal
+wait # $ 240
+send dhcp eth0 -t 20
+wait leased 10\.0\.2\.15/24 30
+wait # $
+send echo "url=http://10.0.2.2:18099/generate_204" > /etc/portal.conf
+wait # $
+send netcheck -T 5; echo rc=$?
+wait captive portal detected
+wait rc=2
+wait # $
+send browse --portal
+wait Welcome to Script Wi-Fi 30
+wait Check box
+raw \x1b[B
+wait \[\*\] Connect now
+raw \r
+wait PLEASE-ACCEPT 30
+raw \x1b[A
+wait Check box
+raw \r
+raw \x1b[B
+wait \[\*\] Connect now
+raw \r
+wait You are now connected 30
+wait Internet access OK 30
+raw q
+wait # $
+send netcheck; echo rc=$?
+wait Internet access OK
+wait rc=0
+wait # $
+hostrun grep -q "POST /js/api/accept | .*| terms=yes" /tmp/rustos-portaljs.log

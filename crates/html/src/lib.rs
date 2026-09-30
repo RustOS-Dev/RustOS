@@ -60,10 +60,17 @@ pub fn decode_entities(s: &str) -> String {
             };
             let len = digits
                 .bytes()
-                .take_while(|c| if hex { c.is_ascii_hexdigit() } else { c.is_ascii_digit() })
+                .take_while(|c| {
+                    if hex {
+                        c.is_ascii_hexdigit()
+                    } else {
+                        c.is_ascii_digit()
+                    }
+                })
                 .count();
             if len > 0 {
-                let v = u32::from_str_radix(&digits[..len.min(8)], if hex { 16 } else { 10 }).unwrap_or(0xFFFD);
+                let v = u32::from_str_radix(&digits[..len.min(8)], if hex { 16 } else { 10 })
+                    .unwrap_or(0xFFFD);
                 out.push(entities::numeric(v));
                 let mut consumed = 1 + usize::from(hex) + len;
                 if digits.as_bytes().get(len) == Some(&b';') {
@@ -73,13 +80,18 @@ pub fn decode_entities(s: &str) -> String {
                 continue;
             }
         } else {
-            let len = rest.bytes().take_while(|c| c.is_ascii_alphanumeric()).count();
+            let len = rest
+                .bytes()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .count();
             if len > 0 {
                 let name = &rest[..len];
                 let semi = rest.as_bytes().get(len) == Some(&b';');
                 if let Some(v) = entities::named(name) {
                     // Without ';' only the legacy Latin-1 names are honoured.
-                    if semi || matches!(name, "amp" | "lt" | "gt" | "quot" | "nbsp" | "copy" | "reg") {
+                    if semi
+                        || matches!(name, "amp" | "lt" | "gt" | "quot" | "nbsp" | "copy" | "reg")
+                    {
                         out.push_str(v);
                         i += 1 + len + usize::from(semi);
                         continue;
@@ -95,7 +107,10 @@ pub fn decode_entities(s: &str) -> String {
 
 /// Elements whose content is raw text up to the matching end tag.
 fn is_raw_text(name: &str) -> bool {
-    matches!(name, "script" | "style" | "textarea" | "title" | "xmp" | "iframe" | "noembed" | "plaintext")
+    matches!(
+        name,
+        "script" | "style" | "textarea" | "title" | "xmp" | "iframe" | "noembed" | "plaintext"
+    )
 }
 
 /// Split HTML into tokens.
@@ -156,7 +171,9 @@ pub fn tokenize(src: &str) -> Vec<Token> {
         let mut attrs: Vec<(String, String)> = Vec::new();
         let mut self_closing = false;
         loop {
-            while j < n && (b[j].is_ascii_whitespace() || (b[j] == b'/' && b.get(j + 1) != Some(&b'>'))) {
+            while j < n
+                && (b[j].is_ascii_whitespace() || (b[j] == b'/' && b.get(j + 1) != Some(&b'>')))
+            {
                 j += 1;
             }
             if j >= n {
@@ -172,7 +189,12 @@ pub fn tokenize(src: &str) -> Vec<Token> {
                 break;
             }
             let a0 = j;
-            while j < n && !b[j].is_ascii_whitespace() && b[j] != b'>' && b[j] != b'=' && !(b[j] == b'/' && b.get(j + 1) == Some(&b'>')) {
+            while j < n
+                && !b[j].is_ascii_whitespace()
+                && b[j] != b'>'
+                && b[j] != b'='
+                && !(b[j] == b'/' && b.get(j + 1) == Some(&b'>'))
+            {
                 j += 1;
             }
             let aname = src[a0..j].to_ascii_lowercase();
@@ -222,7 +244,11 @@ pub fn tokenize(src: &str) -> Vec<Token> {
             let end = lower.find(&close).map_or(n, |e| i + e);
             if end > i {
                 let t = &src[i..end];
-                let t = if matches!(name.as_str(), "textarea" | "title") { decode_entities(t) } else { t.to_string() };
+                let t = if matches!(name.as_str(), "textarea" | "title") {
+                    decode_entities(t)
+                } else {
+                    t.to_string()
+                };
                 out.push(Token::Text(t));
             }
             let after = src[end..].find('>').map_or(n, |e| end + e + 1);
@@ -246,7 +272,10 @@ pub type NodeId = usize;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
     Document,
-    Element { tag: String, attrs: Vec<(String, String)> },
+    Element {
+        tag: String,
+        attrs: Vec<(String, String)>,
+    },
     Text(String),
 }
 
@@ -273,8 +302,22 @@ pub struct Document {
 pub fn is_void(tag: &str) -> bool {
     matches!(
         tag,
-        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param"
-            | "source" | "track" | "wbr" | "keygen" | "frame"
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+            | "keygen"
+            | "frame"
     )
 }
 
@@ -282,10 +325,43 @@ pub fn is_void(tag: &str) -> bool {
 fn closes_p(tag: &str) -> bool {
     matches!(
         tag,
-        "address" | "article" | "aside" | "blockquote" | "center" | "details" | "dialog" | "dir"
-            | "div" | "dl" | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2"
-            | "h3" | "h4" | "h5" | "h6" | "header" | "hgroup" | "hr" | "main" | "menu" | "nav"
-            | "ol" | "p" | "pre" | "section" | "summary" | "table" | "ul" | "li" | "dd" | "dt"
+        "address"
+            | "article"
+            | "aside"
+            | "blockquote"
+            | "center"
+            | "details"
+            | "dialog"
+            | "dir"
+            | "div"
+            | "dl"
+            | "fieldset"
+            | "figcaption"
+            | "figure"
+            | "footer"
+            | "form"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "header"
+            | "hgroup"
+            | "hr"
+            | "main"
+            | "menu"
+            | "nav"
+            | "ol"
+            | "p"
+            | "pre"
+            | "section"
+            | "summary"
+            | "table"
+            | "ul"
+            | "li"
+            | "dd"
+            | "dt"
     )
 }
 
@@ -342,15 +418,134 @@ impl Document {
         out
     }
 
+    /// Create a detached node with id `id` (ids are indices: missing ones
+    /// in between are filled with empty detached text nodes).
+    pub fn create_with_id(&mut self, id: NodeId, kind: NodeKind) {
+        while self.nodes.len() < id {
+            self.nodes.push(Node { kind: NodeKind::Text(String::new()), parent: None, children: Vec::new() });
+        }
+        let node = Node { kind, parent: None, children: Vec::new() };
+        if id == self.nodes.len() {
+            self.nodes.push(node);
+        } else {
+            self.detach(id);
+            self.nodes[id] = node;
+        }
+    }
+
+    /// Remove `id` from its parent's children (the subtree stays).
+    pub fn detach(&mut self, id: NodeId) {
+        if let Some(p) = self.nodes.get(id).and_then(|n| n.parent) {
+            self.nodes[p].children.retain(|&c| c != id);
+            self.nodes[id].parent = None;
+        }
+    }
+
+    /// Insert `child` into `parent` before `before` (or at the end).
+    /// Returns false if the insertion would make a cycle or ids are bad.
+    pub fn insert_before(&mut self, parent: NodeId, child: NodeId, before: Option<NodeId>) -> bool {
+        if parent >= self.nodes.len() || child >= self.nodes.len() || child == 0 {
+            return false;
+        }
+        // No cycles: `parent` must not be inside `child`.
+        let mut p = Some(parent);
+        while let Some(x) = p {
+            if x == child {
+                return false;
+            }
+            p = self.nodes[x].parent;
+        }
+        self.detach(child);
+        let pos = before.and_then(|b| self.nodes[parent].children.iter().position(|&c| c == b)).unwrap_or(self.nodes[parent].children.len());
+        self.nodes[parent].children.insert(pos, child);
+        self.nodes[child].parent = Some(parent);
+        true
+    }
+
+    /// Set (Some) or remove (None) an attribute.
+    pub fn set_attr(&mut self, id: NodeId, name: &str, value: Option<&str>) {
+        if let Some(NodeKind::Element { attrs, .. }) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
+            match value {
+                Some(v) => match attrs.iter_mut().find(|(k, _)| k == name) {
+                    Some(a) => a.1 = v.to_string(),
+                    None => attrs.push((name.to_string(), v.to_string())),
+                },
+                None => attrs.retain(|(k, _)| k != name),
+            }
+        }
+    }
+
+    /// Replace a text node's data.
+    pub fn set_text(&mut self, id: NodeId, data: &str) {
+        if let Some(NodeKind::Text(t)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
+            *t = data.to_string();
+        }
+    }
+
+    /// Whether `a` is a proper ancestor of `b`.
+    pub fn is_ancestor(&self, a: NodeId, b: NodeId) -> bool {
+        let mut p = self.nodes.get(b).and_then(|n| n.parent);
+        while let Some(x) = p {
+            if x == a {
+                return true;
+            }
+            p = self.nodes.get(x).and_then(|n| n.parent);
+        }
+        false
+    }
+
+    /// Whether `id` is attached to the document.
+    pub fn is_connected(&self, id: NodeId) -> bool {
+        let mut p = Some(id);
+        while let Some(x) = p {
+            if x == 0 {
+                return true;
+            }
+            p = self.nodes.get(x).and_then(|n| n.parent);
+        }
+        false
+    }
+
+    /// Parse an HTML fragment (`innerHTML`): the new nodes are the
+    /// children of the returned document's `<body>`.
+    pub fn parse_fragment(src: &str) -> Document {
+        parse(&alloc::format!("<body>{}", src))
+    }
+
     /// First element with the given tag.
     pub fn find(&self, tag: &str) -> Option<NodeId> {
-        self.descendants(0).into_iter().find(|&n| self.tag(n) == tag)
+        self.descendants(0)
+            .into_iter()
+            .find(|&n| self.tag(n) == tag)
     }
 }
 
 struct Builder {
     doc: Document,
     stack: Vec<NodeId>,
+    html: NodeId,
+    head: Option<NodeId>,
+    body: Option<NodeId>,
+    /// The stack never shrinks below this (html, or html+body).
+    floor: usize,
+}
+
+/// Elements that belong in `<head>` when they come before any body
+/// content.
+fn head_content(tag: &str) -> bool {
+    matches!(
+        tag,
+        "meta"
+            | "link"
+            | "style"
+            | "script"
+            | "base"
+            | "noscript"
+            | "template"
+            | "title"
+            | "basefont"
+            | "bgsound"
+    )
 }
 
 impl Builder {
@@ -386,20 +581,87 @@ impl Builder {
         match depth {
             Some(k) => {
                 let keep = self.stack.len() - 1 - k;
-                self.stack.truncate(keep.max(1));
+                if keep < self.floor {
+                    return false;
+                }
+                self.stack.truncate(keep);
                 true
             }
             None => false,
         }
     }
 
+    fn merge_attrs(&mut self, id: NodeId, attrs: Vec<(String, String)>) {
+        if let NodeKind::Element { attrs: have, .. } = &mut self.doc.nodes[id].kind {
+            for (k, v) in attrs {
+                if !have.iter().any(|(a, _)| *a == k) {
+                    have.push((k, v));
+                }
+            }
+        }
+    }
+
+    fn new_child(&mut self, parent: NodeId, tag: &str) -> NodeId {
+        let id = self.doc.nodes.len();
+        self.doc.nodes.push(Node {
+            kind: NodeKind::Element {
+                tag: String::from(tag),
+                attrs: Vec::new(),
+            },
+            parent: Some(parent),
+            children: Vec::new(),
+        });
+        self.doc.nodes[parent].children.push(id);
+        id
+    }
+
+    /// Open `<head>` if nothing has started the body yet.
+    fn ensure_head(&mut self) {
+        if self.head.is_none() && self.body.is_none() {
+            let h = self.new_child(self.html, "head");
+            self.head = Some(h);
+            self.stack.truncate(2);
+            self.stack.push(h);
+        }
+    }
+
+    /// Open `<body>` (closing `<head>`) if not open yet.
+    fn ensure_body(&mut self) {
+        if self.body.is_none() {
+            if self.head.is_none() {
+                self.head = Some(self.new_child(self.html, "head"));
+            }
+            self.stack.truncate(2);
+            let b = self.new_child(self.html, "body");
+            self.body = Some(b);
+            self.stack.push(b);
+            self.floor = 3;
+        }
+    }
+
     fn start(&mut self, name: String, attrs: Vec<(String, String)>, self_closing: bool) {
-        const SCOPE: &[&str] = &["table", "td", "th", "caption", "html", "body", "button", "object", "template"];
+        const SCOPE: &[&str] = &[
+            "table", "td", "th", "caption", "html", "body", "button", "object", "template",
+        ];
         match name.as_str() {
-            "html" | "head" | "body" => {
-                // Keep a flat structure; merge attributes are irrelevant here.
+            "html" => {
+                self.merge_attrs(self.html, attrs);
                 return;
             }
+            "head" => {
+                self.ensure_head();
+                return;
+            }
+            "body" => {
+                self.ensure_body();
+                let b = self.body.unwrap();
+                self.merge_attrs(b, attrs);
+                return;
+            }
+            t if head_content(t) && self.body.is_none() => self.ensure_head(),
+            _ => self.ensure_body(),
+        }
+        match name.as_str() {
             t if closes_p(t) => {
                 self.close("p", SCOPE);
                 match t {
@@ -416,7 +678,11 @@ impl Builder {
                         let open = self
                             .open_tags()
                             .next()
-                            .filter(|t| t.len() == 2 && t.starts_with('h') && t.as_bytes()[1].is_ascii_digit())
+                            .filter(|t| {
+                                t.len() == 2
+                                    && t.starts_with('h')
+                                    && t.as_bytes()[1].is_ascii_digit()
+                            })
                             .map(String::from);
                         if let Some(h) = open {
                             self.close(&h, SCOPE);
@@ -458,7 +724,10 @@ impl Builder {
         match name.as_str() {
             "base" => {
                 if self.doc.base.is_none() {
-                    self.doc.base = attrs.iter().find(|(k, _)| k == "href").map(|(_, v)| v.trim().to_string());
+                    self.doc.base = attrs
+                        .iter()
+                        .find(|(k, _)| k == "href")
+                        .map(|(_, v)| v.trim().to_string());
                 }
             }
             "meta" => {
@@ -472,7 +741,9 @@ impl Builder {
                     self.doc.refresh = parse_refresh(content);
                 } else if equiv == "content-type" {
                     if let Some(i) = content.to_ascii_lowercase().find("charset=") {
-                        let cs = content[i + 8..].trim_matches(|c: char| c == '"' || c == '\'' || c == ';' || c.is_whitespace());
+                        let cs = content[i + 8..].trim_matches(|c: char| {
+                            c == '"' || c == '\'' || c == ';' || c.is_whitespace()
+                        });
                         self.doc.charset = Some(cs.to_ascii_lowercase());
                     }
                 }
@@ -488,15 +759,26 @@ impl Builder {
 
     fn end(&mut self, name: &str) {
         match name {
-            "html" | "head" | "body" => {}
+            "head" => {
+                if self.body.is_none() && self.stack.len() > 2 {
+                    self.stack.truncate(2);
+                }
+            }
+            "html" | "body" => {}
             "p" => {
                 if !self.close("p", &["table", "td", "th", "button"]) {
                     // A stray </p> creates an empty paragraph (HTML5).
-                    self.add(NodeKind::Element { tag: String::from("p"), attrs: Vec::new() });
+                    self.add(NodeKind::Element {
+                        tag: String::from("p"),
+                        attrs: Vec::new(),
+                    });
                 }
             }
             "br" => {
-                self.add(NodeKind::Element { tag: String::from("br"), attrs: Vec::new() });
+                self.add(NodeKind::Element {
+                    tag: String::from("br"),
+                    attrs: Vec::new(),
+                });
             }
             t => {
                 let boundary: &[&str] = match t {
@@ -516,7 +798,9 @@ pub fn parse_refresh(content: &str) -> Option<(u32, String)> {
     let c = content.trim();
     let digits = c.bytes().take_while(|b| b.is_ascii_digit()).count();
     let secs = c[..digits].parse().unwrap_or(0);
-    let rest = c[digits..].trim_start_matches(|ch: char| ch == '.' || ch.is_ascii_digit()).trim_start_matches([';', ',', ' ']);
+    let rest = c[digits..]
+        .trim_start_matches(|ch: char| ch == '.' || ch.is_ascii_digit())
+        .trim_start_matches([';', ',', ' ']);
     let url = if rest.len() >= 3 && rest[..3].eq_ignore_ascii_case("url") {
         rest[3..].trim_start().trim_start_matches('=').trim()
     } else {
@@ -525,7 +809,10 @@ pub fn parse_refresh(content: &str) -> Option<(u32, String)> {
     if digits == 0 && url.is_empty() {
         return None;
     }
-    Some((secs, url.trim_matches(|ch| ch == '\'' || ch == '"').to_string()))
+    Some((
+        secs,
+        url.trim_matches(|ch| ch == '\'' || ch == '"').to_string(),
+    ))
 }
 
 /// Parse a document.
@@ -540,7 +827,13 @@ pub fn parse(src: &str) -> Document {
             ..Document::default()
         },
         stack: vec![0],
+        html: 0,
+        head: None,
+        body: None,
+        floor: 2,
     };
+    b.html = b.new_child(0, "html");
+    b.stack.push(b.html);
     let mut in_title = false;
     for t in tokenize(src) {
         match t {
@@ -569,6 +862,16 @@ pub fn parse(src: &str) -> Document {
                     }
                     continue;
                 }
+                if b.body.is_none()
+                    && !b.stack.last().is_some_and(|&n| {
+                        matches!(b.doc.tag(n), "style" | "script" | "noscript" | "template")
+                    })
+                {
+                    if t.chars().all(char::is_whitespace) {
+                        continue; // whitespace before the body
+                    }
+                    b.ensure_body();
+                }
                 // Merge adjacent text nodes.
                 let parent = *b.stack.last().unwrap();
                 if let Some(&last) = b.doc.nodes[parent].children.last() {
@@ -582,6 +885,8 @@ pub fn parse(src: &str) -> Document {
             Token::Comment(_) | Token::Doctype(_) => {}
         }
     }
+    // Every document has html, head and body.
+    b.ensure_body();
     b.doc
 }
 
@@ -601,14 +906,21 @@ pub fn collapse_ws(s: &str) -> String {
 /// "prescan"), before it is decoded.
 pub fn sniff_charset(bytes: &[u8]) -> Option<String> {
     let head = &bytes[..bytes.len().min(2048)];
-    let text: String = head.iter().map(|&b| (b as char).to_ascii_lowercase()).collect();
+    let text: String = head
+        .iter()
+        .map(|&b| (b as char).to_ascii_lowercase())
+        .collect();
     let mut from = 0;
     while let Some(i) = text[from..].find("<meta") {
         let start = from + i;
         let end = text[start..].find('>').map_or(text.len(), |e| start + e);
         let tag = &text[start..end];
         if let Some(j) = tag.find("charset") {
-            let v = tag[j + 7..].trim_start().strip_prefix('=').unwrap_or("").trim_start();
+            let v = tag[j + 7..]
+                .trim_start()
+                .strip_prefix('=')
+                .unwrap_or("")
+                .trim_start();
             let v = v.trim_start_matches(['"', '\'']);
             let cs: String = v
                 .chars()

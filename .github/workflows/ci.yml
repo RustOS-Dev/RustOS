@@ -86,7 +86,7 @@ jobs:
         run: rustup toolchain install
       - name: cargo test (crates/*)
         run: |
-          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/textlayout crates/unixcrypt crates/ext4-core; do
+          for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/css crates/layout crates/jsproto crates/paint crates/unixcrypt crates/ext4-core; do
             (cd "$c" && cargo test)
           done
       - name: Firmware provisioning (write_to_drive.sh)
@@ -127,7 +127,7 @@ jobs:
           sudo apt-get update
           # e2fsprogs: ext2/ext4 test disks; openssl + python3: HTTPS test
           # server; gcc: dynamic-linking test programs
-          sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs curl openssl python3 gcc
+          sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs curl openssl python3 gcc fonts-dejavu-core
 
       - name: Make runner script executable
         run: chmod +x run-qemu-uefi.sh
@@ -136,6 +136,12 @@ jobs:
         env:
           RUSTOS_TEST_TIMEOUT: "600"
         run: cargo test
+
+      - name: jsd end-to-end tests (host build of jsd)
+        run: |
+          cargo build
+          sh userland/jsd/host-build.sh "$PWD/target/ports/build/quickjs/rquickjs-sys-0.14.0/quickjs" "$PWD/target/jsd-host"
+          (cd crates/jsproto && JSD_BIN="$PWD/../../target/jsd-host/jsd" cargo test --test jsd)
 
       - name: Boot scenarios (drive the shell over the serial console)
         run: |

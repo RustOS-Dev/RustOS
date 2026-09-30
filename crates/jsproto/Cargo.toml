@@ -1,0 +1,11 @@
+[package]
+name = "jsproto"
+version = "0.1.0"
+edition = "2024"
+description = "Messages between the browser and its JavaScript helper (jsd): a small JSON codec and the message vocabulary"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+html = { path = "../html" }

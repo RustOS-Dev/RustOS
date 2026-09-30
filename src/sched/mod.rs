@@ -704,6 +704,19 @@ pub fn on_trap_exit(frame: &mut TrapFrame) {
     }
     let pc = cpu::this();
     if pc.need_resched.load(Ordering::SeqCst) != 0 && pc.preempt_count.load(Ordering::SeqCst) == 0 {
+        // A thread preempted between marking itself Blocked and calling
+        // schedule() (e.g. while re-checking its wait condition, possibly
+        // holding the lock that condition takes) has not gone to sleep
+        // yet: preemption keeps it runnable. It re-checks and blocks
+        // again itself; if a waker already made it Ready, nothing changes.
+        if let Some(t) = try_current() {
+            let _ = t.state.compare_exchange(
+                State::Blocked as u8,
+                State::Running as u8,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
+        }
         schedule();
     }
     if frame.from_user() {

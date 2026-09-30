@@ -74,9 +74,11 @@ impl FileLike for PipeEnd {
                 let mut q = p.buf.lock();
                 if !q.is_empty() {
                     let n = buf.len().min(q.len());
-                    for slot in buf.iter_mut().take(n) {
-                        *slot = q.pop_front().unwrap();
-                    }
+                    let (a, b) = q.as_slices();
+                    let k = n.min(a.len());
+                    buf[..k].copy_from_slice(&a[..k]);
+                    buf[k..n].copy_from_slice(&b[..n - k]);
+                    q.drain(..n);
                     drop(q);
                     p.notify();
                     return Ok(n);

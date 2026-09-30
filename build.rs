@@ -18,7 +18,9 @@ fn main() {
         "http",
         "nettls",
         "html",
-        "textlayout",
+        "css",
+        "layout",
+        "jsproto",
     ] {
         println!("cargo:rerun-if-changed=crates/{c}/src");
     }
@@ -54,6 +56,8 @@ fn main() {
     println!("cargo:rerun-if-changed=ports");
     if !skip && std::env::var("RUSTOS_PORTS").as_deref() != Ok("0") {
         add_default_ports(&manifest_dir, &mut files);
+        add_jsd(&manifest_dir, &mut files);
+        add_fonts(&mut files);
     }
     // Trust store for `wget https://`: the build host's CA bundle, or the
     // file named by RUSTOS_CA_BUNDLE (empty to leave it out).
@@ -111,6 +115,101 @@ fn add_default_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
                 *mode = 0o755;
             }
         }
+    }
+}
+
+/// DejaVu fonts for the graphical browser (from the host's
+/// fonts-dejavu-core, or RUSTOS_FONTS_DIR), with their license.
+fn add_fonts(files: &mut Vec<(String, Entry)>) {
+    println!("cargo:rerun-if-env-changed=RUSTOS_FONTS_DIR");
+    let dir = std::env::var("RUSTOS_FONTS_DIR")
+        .unwrap_or_else(|_| "/usr/share/fonts/truetype/dejavu".into());
+    let names = [
+        "DejaVuSans.ttf",
+        "DejaVuSans-Bold.ttf",
+        "DejaVuSerif.ttf",
+        "DejaVuSerif-Bold.ttf",
+        "DejaVuSansMono.ttf",
+        "DejaVuSansMono-Bold.ttf",
+    ];
+    let mut found = Vec::new();
+    for n in names {
+        if let Ok(d) = std::fs::read(Path::new(&dir).join(n)) {
+            found.push((n, d));
+        }
+    }
+    if found.is_empty() {
+        println!("cargo:warning=DejaVu fonts not found in {dir}: browse -g has no fonts");
+        return;
+    }
+    for d in ["usr/share", "usr/share/fonts", "usr/share/fonts/dejavu"] {
+        if !files.iter().any(|(n, _)| n == d) {
+            files.push((d.into(), Entry::Dir));
+        }
+    }
+    for (n, d) in found {
+        files.push((format!("usr/share/fonts/dejavu/{n}"), Entry::File(d, 0o644)));
+    }
+    if let Ok(l) = std::fs::read("/usr/share/doc/fonts-dejavu-core/copyright") {
+        files.push((
+            "usr/share/fonts/dejavu/LICENSE".into(),
+            Entry::File(l, 0o644),
+        ));
+    }
+}
+
+/// The browser's JavaScript helper (userland/jsd): C plus the web platform
+/// library in lib/*.js, linked against the QuickJS port. Left out (the
+/// browser then runs without JavaScript) when QuickJS is not built.
+fn add_jsd(root: &Path, files: &mut Vec<(String, Entry)>) {
+    let qjs = root.join("target/ports/quickjs");
+    let lib = qjs.join("lib/libquickjs.a");
+    if !lib.exists() {
+        println!("cargo:warning=QuickJS port not built: jsd not installed");
+        return;
+    }
+    let src = root.join("userland/jsd");
+    let out = root.join("target/jsd");
+    let _ = std::fs::create_dir_all(&out);
+    // The library, embedded as a C array (files in name order).
+    let mut names: Vec<PathBuf> = std::fs::read_dir(src.join("lib"))
+        .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    names.retain(|p| p.extension().is_some_and(|e| e == "js"));
+    names.sort();
+    let mut js = Vec::new();
+    for n in &names {
+        js.extend(std::fs::read(n).unwrap_or_default());
+        js.push(b'\n');
+    }
+    let mut h = String::from("static const char jsd_lib[] = {\n");
+    for chunk in js.chunks(24) {
+        for b in chunk {
+            h.push_str(&b.to_string());
+            h.push(',');
+        }
+        h.push('\n');
+    }
+    h.push_str("0};\n");
+    let _ = std::fs::write(out.join("jsd_lib.h"), h);
+    let status = Command::new("sh")
+        .arg(root.join("tools/rustos-cc"))
+        .args(["-O2", "-static", "-D_GNU_SOURCE"])
+        .arg(format!("-I{}", qjs.join("include/quickjs").display()))
+        .arg(format!("-I{}", out.display()))
+        .arg("-o")
+        .arg(out.join("jsd"))
+        .arg(src.join("jsd.c"))
+        .arg(&lib)
+        .arg("-lm")
+        .status();
+    if !matches!(status, Ok(s) if s.success()) {
+        println!("cargo:warning=jsd failed to build; not installed");
+        return;
+    }
+    if let Ok(data) = std::fs::read(out.join("jsd")) {
+        files.push(("usr/libexec".into(), Entry::Dir));
+        files.push(("usr/libexec/jsd".into(), Entry::File(data, 0o755)));
     }
 }
 

@@ -56,15 +56,41 @@ EVIOCG* ioctls yet.
 ### Round 3
 
 - [x] **M17** Per-object poll wait queues, page cache for read/write, `KD_GRAPHICS` VTs, busybox/curl/QuickJS in the default image
-- [ ] **M18** CSS engine (`crates/css`) and box layout (`crates/layout`) for the text browser
-- [ ] **M19** JavaScript in `browse`: QuickJS-based `jsd` helper with a DOM, events, fetch/XHR, storage
-- [ ] **M20** Graphical browser `browse -g`: fonts, images, painting, mouse, canvas
+- [x] **M18** CSS engine (`crates/css`) and box layout (`crates/layout`) for the text browser
+- [x] **M19** JavaScript in `browse`: QuickJS-based `jsd` helper with a DOM, events, fetch/XHR, storage
+- [x] **M20** Graphical browser `browse -g`: fonts, images, painting, mouse, canvas
 - [ ] **M21** Wi-Fi remainder: 12 KiB receive buffers, BAID receive BA, power save, 6 GHz with SAE-H2E, 160 MHz, BT coexistence
 - [ ] **M22** ext4 remainder: multi-transaction journal, data=journal, fast_commit replay, htree lookups, inline_data, bigalloc, meta_bg, quotas, casefold, large_dir, ea_inode
 - [ ] **M23** USB remainder: UAS queueing and USB 2 UAS, isochronous transfers, evdev ioctls
 - [ ] **M24** `hwcheck`/`bugreport` coverage for round 3 features
 - [ ] **M25** Audio: sound core with OSS `/dev/dsp`, Intel HDA, USB Audio Class 1/2, virtio-sound
 - [ ] **M26** Bluetooth: USB/H4 HCI, AX210 firmware, L2CAP/SMP/GATT, HID over GATT and BR/EDR HID
+
+Round 3 deviations so far:
+- **M18**
+  - Script changes cause a full restyle and relayout of the page, not the planned incremental one; this is fast enough for text-mode pages.
+  - `position: sticky` is laid out as `relative`.
+- **M19** — protocol and library:
+  - The browser–jsd protocol is JSON lines rather than length-prefixed binary.
+  - The JS library is embedded as source; it is not precompiled with `qjsc`.
+- **M19** — parsing and loading:
+  - The HTML parser is not incremental. Scripts run in document order after parsing, and `document.write` inserts its markup after the running script.
+  - Frames are not loaded.
+- **M19** — security and runtime:
+  - CSP is not enforced.
+  - A script past its 10 s budget is stopped and logged; the user is not asked first.
+  - `Intl` is a small English-only implementation.
+- **Fixes found while testing M18/M19**
+  - The scheduler no longer puts a thread to sleep when it is preempted between marking itself blocked and calling `schedule()`. Such a preemption could strand the thread while it held the lock its wait condition takes, for example a pipe's buffer lock.
+  - Pipe reads copy in bulk instead of byte by byte.
+  - ext4 lookups in indexed directories follow the htree, which was planned for M22. Before this, each lookup scanned the directory.
+- **M20** — rendering and formats:
+  - Text uses fontdue with kerning but without rustybuzz shaping, so there are no complex scripts or ligatures.
+  - WOFF2 web fonts are not loaded (they need Brotli), and neither are WebP or SVG images.
+  - GIFs show their first frame.
+- **M20** — interface: there are no tabs, text selection, context menu or zoom.
+- **M20** — canvas: `<canvas>` is rasterized by a JS 2D context in jsd rather than through an RPC to `crates/paint`.
+- **M19** — tests: a host end-to-end suite (`crates/jsproto/tests/jsd.rs`) plus the `browser-js` and `captive-portal-js` scenarios stand in for the WPT subset.
 
 ## Context
 

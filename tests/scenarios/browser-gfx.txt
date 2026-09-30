@@ -1,0 +1,34 @@
+# The graphical browser: a page rendered to PNG (-dump-png) with CSS
+# boxes, a gradient, rounded corners, a PNG image, text and a script-drawn
+# canvas, checked pixel by pixel on the host; then browse -g on the
+# framebuffer, checked with a QEMU screendump.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/test-web-server.py" 18100 /tmp/rustos-gfx.log
+hostrun rm -rf /tmp/rustos-gfx
+wait # $ 240
+send dhcp eth0 -t 20
+wait leased 10\.0\.2\.15/24 30
+wait # $
+send ls /usr/share/fonts/dejavu | cat
+wait DejaVuSans.ttf
+wait # $
+send browse -dump-png /tmp/g.png -size 640x480 http://10.0.2.2:18100/gfx
+wait /tmp/g.png: 640x480 \(GFX test\) 120
+wait # $
+send curl -s -T /tmp/g.png http://10.0.2.2:18100/upload/g.png; echo UP
+wait stored
+wait # $
+# Red box, gradient (dark left, light right), blue image, green rounded
+# box (corner shows the page), blue heading text, the canvas (yellow with
+# a purple disc).
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-gfx/g.png size=640x480 100,50=220,20,20 5,120=5,5,5~30 195,120=250,250,250~30 32,172=10,40,230 50,244=20,160,20 1,211=255,255,255 250,50=255,255,255 'count:0,0,200>=120' 'count:250,200,0>=4000' 'count:128,0,255>=800'
+# Interactive on the framebuffer.
+# (BROWSE_DEBUG prints timing lines: wait for the page's first full draw.)
+send BROWSE_DEBUG=1 browse -g http://10.0.2.2:18100/gfx
+wait \] canvases 240
+wait \] drawn 120
+sleep 2
+monitor screendump /tmp/rustos-gfx/screen.ppm
+sleep 2
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-gfx/screen.ppm 'count:220,20,20>=15000' 'count:10,40,230>=3000' 'count:0,0,200>=120'
+raw q
+wait # $ 30

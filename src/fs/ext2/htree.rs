@@ -1,7 +1,9 @@
 //! Hashed directory indexes (htree): inserting into an indexed directory
 //! keeps the index valid, splitting leaves and index nodes (and adding an
-//! index level) as needed. Lookups scan linearly, which is correct for
-//! indexed directories too (index blocks look like empty entries).
+//! index level) as needed. Lookups follow the index to the leaf for the
+//! name's hash (and the next leaves while hashes collide); a damaged index
+//! falls back to a linear scan, which works because index blocks look like
+//! empty entries.
 //!
 //! Block 0 holds `.`/`..` and the root (`dx_root_info` at 0x18, entries
 //! from 0x20); interior nodes start with an empty entry spanning the block,
@@ -150,6 +152,72 @@ impl Ext2Inode {
             }
         }
         Err(EIO)
+    }
+
+    /// Look `name` up through the index: Some((ino, type, logical block,
+    /// offset)), None if absent, Err if the index looks damaged.
+    pub(super) fn dx_find(
+        &self,
+        st: &mut RawInode,
+        name: &str,
+    ) -> KResult<Option<(u32, u8, u64, usize)>> {
+        let root = self.dx_read(st, 0, ROOT_COUNT, 0)?;
+        if root.buf[0x1D] != 8 || u32le(&root.buf, 0x18) != 0 {
+            return Err(EIO);
+        }
+        let levels = root.buf[0x1E] as usize;
+        if levels > 2 {
+            return Err(EIO);
+        }
+        let h = self.dx_hash_of(&root.buf, name.as_bytes());
+        // Walk down, remembering each level to find the following leaves.
+        let mut path = vec![root];
+        loop {
+            let lv = path.last_mut().unwrap();
+            let c = count(&lv.buf, lv.co);
+            if c == 0 || c > limit(&lv.buf, lv.co) {
+                return Err(EIO);
+            }
+            let mut pos = 0;
+            for i in 1..c {
+                if hash_at(&lv.buf, lv.co, i) <= h {
+                    pos = i;
+                } else {
+                    break;
+                }
+            }
+            lv.pos = pos;
+            let child = block_at(&lv.buf, lv.co, pos) as u64;
+            if path.len() > levels {
+                break;
+            }
+            let n = self.dx_read(st, child, NODE_COUNT, 0)?;
+            path.push(n);
+        }
+        let bs = self.fs.block_size as usize;
+        for _ in 0..64 {
+            let leaf_l = {
+                let lv = path.last().unwrap();
+                block_at(&lv.buf, lv.co, lv.pos) as u64
+            };
+            let leaf = self.dx_read(st, leaf_l, 0, 0)?;
+            if let Some((ino, t, off)) = leaf_find(&leaf.buf, bs, name.as_bytes()) {
+                return Ok(Some((ino, t, leaf_l, off)));
+            }
+            // Continue in the next leaf only if its first hash collides
+            // with ours (the low bit marks a continuation).
+            let lv = path.last_mut().unwrap();
+            let c = count(&lv.buf, lv.co);
+            if lv.pos + 1 >= c {
+                return Ok(None); // (a deeper walk across nodes is not needed for 2 levels in practice)
+            }
+            let next = hash_at(&lv.buf, lv.co, lv.pos + 1);
+            if next & !1 != h & !1 || next & 1 == 0 {
+                return Ok(None);
+            }
+            lv.pos += 1;
+        }
+        Ok(None)
     }
 
     /// Split a full leaf by hash into itself and a new block, and index
@@ -305,4 +373,22 @@ impl Ext2Inode {
         root.buf[0x1E] += 1;
         self.dx_write(st, root)
     }
+}
+
+/// Find `name` in one directory leaf block: (inode, type, offset).
+fn leaf_find(b: &[u8], bs: usize, name: &[u8]) -> Option<(u32, u8, usize)> {
+    let mut o = 0;
+    while o + 8 <= bs {
+        let ino = u32le(b, o);
+        let rec = u16le(b, o + 4) as usize;
+        let nl = b[o + 6] as usize;
+        if rec < 8 || o + rec > bs {
+            return None;
+        }
+        if ino != 0 && nl == name.len() && o + 8 + nl <= bs && &b[o + 8..o + 8 + nl] == name {
+            return Some((ino, b[o + 7], o));
+        }
+        o += rec;
+    }
+    None
 }

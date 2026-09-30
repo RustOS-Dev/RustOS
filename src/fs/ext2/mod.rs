@@ -1752,6 +1752,16 @@ impl Ext2Inode {
     }
 
     fn find_entry(&self, name: &str) -> KResult<(u32, u8, u64, usize)> {
+        {
+            let mut st = self.st.lock();
+            if st.flags & FL_INDEX != 0 {
+                match self.dx_find(&mut st, name) {
+                    Ok(Some(e)) => return Ok(e),
+                    Ok(None) => return Err(ENOENT),
+                    Err(_) => {} // damaged index: scan
+                }
+            }
+        }
         self.dir_entries()?
             .into_iter()
             .find(|(n, ..)| n == name)

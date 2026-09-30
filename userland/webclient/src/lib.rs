@@ -89,6 +89,12 @@ impl Stream for Plain {
     fn write_all(&mut self, data: &[u8]) -> httpc::Result<()> {
         self.0.send_all(data).map_err(|e| Error::Io(e.to_string()))
     }
+    fn fd(&self) -> i32 {
+        self.0.fd()
+    }
+    fn set_timeout(&mut self, ms: u64) {
+        let _ = self.0.set_timeout(ms);
+    }
 }
 
 struct Tls(TlsStream<SockIo>);
@@ -99,6 +105,12 @@ impl Stream for Tls {
     }
     fn write_all(&mut self, data: &[u8]) -> httpc::Result<()> {
         self.0.write_all(data).map_err(|e| Error::Io(e.to_string()))
+    }
+    fn fd(&self) -> i32 {
+        self.0.transport_ref().0.fd()
+    }
+    fn set_timeout(&mut self, ms: u64) {
+        let _ = self.0.transport().0.set_timeout(ms);
     }
 }
 

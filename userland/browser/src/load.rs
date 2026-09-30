@@ -198,6 +198,40 @@ impl Loader {
         })
     }
 
+    /// Fetch a resource as bytes (images, fonts): (body, content type).
+    pub fn fetch_bytes(&mut self, url: &Url, referrer: &Url, limit: usize) -> Option<(Vec<u8>, String)> {
+        match url.scheme.as_str() {
+            "file" => {
+                let path = httpc::weburl::percent_decode_str(&url.path);
+                let d = fs::read(&path).ok()?;
+                return (d.len() <= limit).then(|| (d, String::new()));
+            }
+            "data" => {
+                let s = url.to_string();
+                let (meta, data) = s.strip_prefix("data:")?.split_once(',')?;
+                let bytes = if meta.ends_with(";base64") {
+                    webclient::nettls::base64_decode(&httpc::weburl::percent_decode_str(data))?
+                } else {
+                    httpc::weburl::percent_decode(data)
+                };
+                return Some((bytes, meta.split(';').next().unwrap_or("").to_string()));
+            }
+            "http" | "https" => {}
+            _ => return None,
+        }
+        let ctx = Context { same_site: httpc::client::site(url.host_str()) == httpc::client::site(referrer.host_str()), top_level_safe: false };
+        let max = self.client.opts.max_body;
+        self.client.opts.max_body = limit;
+        let r = self.client.send(Request::get(url.clone()), ctx);
+        self.client.opts.max_body = max;
+        let r = r.ok()?;
+        if r.head.status >= 400 {
+            return None;
+        }
+        let (mime, _) = r.head.content_type();
+        Some((r.body, mime))
+    }
+
     /// Save a URL to a file (streamed).
     pub fn download(&mut self, url: Url, path: &str) -> Result<u64, String> {
         struct ToFile {

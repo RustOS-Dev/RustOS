@@ -1,0 +1,98 @@
+# JavaScript in the text browser (jsd, QuickJS) against
+# tools/test-web-server.py: script-rendered content, a fetch login, XHR,
+# storage, timers, document.write, modules, WebSocket, EventSource and
+# click handlers.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/test-web-server.py" 18098 /tmp/rustos-webjs.log
+wait # $ 240
+send dhcp eth0 -t 20
+wait leased 10\.0\.2\.15/24 30
+wait # $
+send ls -l /usr/libexec/jsd
+wait jsd
+wait # $
+# Content made by a script; <noscript> is hidden.
+send browse -dump -width 70 http://10.0.2.2:18098/js/render | cat
+wait Rendered by JS 30
+wait \* item alpha
+wait \* item gamma
+wait Count: 3
+wait # $
+send browse -dump -width 70 http://10.0.2.2:18098/js/render | grep -c -e NOSCRIPT-SHOWN -e LOADING
+wait \r\n0\r\n 30
+wait # $
+send browse -nojs -dump -width 70 http://10.0.2.2:18098/js/render | grep -c -e NOSCRIPT-SHOWN -e LOADING
+wait \r\n2\r\n 30
+wait # $
+# XMLHttpRequest with a JSON response building a table.
+send browse -dump -width 70 http://10.0.2.2:18098/js/xhr | cat
+wait apples +3 30
+wait pears +5
+wait XHR-DONE 200
+wait # $
+# localStorage persists between runs; sessionStorage does not.
+send browse -dump http://10.0.2.2:18098/js/storage | cat
+wait VISITS=1 SESSION=1 30
+wait # $
+send browse -dump http://10.0.2.2:18098/js/storage | cat
+wait VISITS=2 SESSION=1 30
+wait # $
+# A timer that changes location.
+send browse -dump http://10.0.2.2:18098/js/timer | cat
+wait script navigated to http://10\.0\.2\.2:18098/js/after\?from=timer 30
+wait ARRIVED-AFTER-TIMER 30
+wait # $
+# document.write while parsing.
+send browse -dump http://10.0.2.2:18098/js/write | tr '\n' ' '; echo
+wait before +WRITTEN-5 +after 30
+wait # $
+# Module scripts with an import map.
+send browse -dump http://10.0.2.2:18098/js/module | cat
+wait MODULE-OK-4 42 30
+wait # $
+# WebSocket echo and EventSource.
+send browse -dump http://10.0.2.2:18098/js/ws | cat
+wait ECHO:hello-ws 30
+wait # $
+hostrun grep -q "WS hello-ws" /tmp/rustos-webjs.log
+send browse -dump http://10.0.2.2:18098/js/sse | cat
+wait SSE:a,b,c 30
+wait # $
+# Interactive: a form checked by a script that logs in with fetch() and
+# then sets location.href.
+send browse http://10.0.2.2:18098/js/login
+wait \[JS\] 30
+wait Text field user
+raw \x1b[B\x1b[B
+wait Submit button
+raw \r
+wait NAME-REQUIRED 30
+raw \x1b[A\x1b[A
+wait Text field user
+raw \r
+wait user:
+raw alice\r
+wait Password field pass
+raw \r
+wait pass:
+raw secret\r
+wait Submit button
+raw \r
+wait SCRIPT-LOGIN-OK 30
+raw q
+wait # $
+hostrun grep -q 'POST /js/api/login | .*{"user": *"alice", *"pass": *"secret"}' /tmp/rustos-webjs.log
+hostrun grep -q "GET /js/home | .*jsauth=1" /tmp/rustos-webjs.log
+# An element with a click listener is selectable.
+send browse http://10.0.2.2:18098/js/click
+wait \[\*\] Press me 30
+raw \r
+wait CLICKS=1 30
+raw \r
+wait CLICKS=2 30
+raw J
+wait JavaScript console
+raw document.querySelectorAll("p").length * 10\r
+wait < 10 30
+raw \r
+raw q
+wait # $

@@ -25,18 +25,42 @@ fn dump(d: &Document, id: NodeId) -> String {
     s
 }
 
+/// The body's content (every document gets html/head/body elements).
 fn tree(src: &str) -> String {
     let d = parse(src);
-    dump(&d, 0)
+    match d.find("body") {
+        Some(b) => dump(&d, b),
+        None => String::new(),
+    }
+}
+
+#[test]
+fn implied_structure() {
+    let d = parse("<title>t</title><link rel=x><p class=a>hi</p><body class=late>");
+    assert_eq!(dump(&d, 0), r#"html(head(link) body(p("hi")))"#);
+    let body = d.find("body").unwrap();
+    assert_eq!(d.attr(body, "class"), Some("late"));
+    let d = parse("<html lang=en><body bgcolor=red><script>x</script></body></html>");
+    assert_eq!(d.attr(d.find("html").unwrap(), "lang"), Some("en"));
+    assert_eq!(dump(&d, 0), r#"html(head body(script("x")))"#);
+    // Stray end tags cannot close html/body.
+    let d = parse("<div>a</div></div></body></html>b");
+    assert_eq!(dump(&d, 0), r#"html(head body(div("a") "b"))"#);
 }
 
 #[test]
 fn entities() {
-    assert_eq!(decode_entities("a &amp; b &lt;c&gt; &quot;q&quot;"), "a & b <c> \"q\"");
+    assert_eq!(
+        decode_entities("a &amp; b &lt;c&gt; &quot;q&quot;"),
+        "a & b <c> \"q\""
+    );
     assert_eq!(decode_entities("&eacute;&#233;&#xE9;&#XE9"), "éééé");
     assert_eq!(decode_entities("&copy 2024 &nbsp;x"), "© 2024 \u{a0}x");
     assert_eq!(decode_entities("AT&T &unknown; &;"), "AT&T &unknown; &;");
-    assert_eq!(decode_entities("&#128; &#0; &#x110000;"), "€ \u{FFFD} \u{FFFD}");
+    assert_eq!(
+        decode_entities("&#128; &#0; &#x110000;"),
+        "€ \u{FFFD} \u{FFFD}"
+    );
     assert_eq!(decode_entities("&mdash;&hellip;&rsquo;&euro;"), "—…’€");
     // Named without ';' is only accepted for legacy names.
     assert_eq!(decode_entities("&eacutex"), "&eacutex");
@@ -59,7 +83,14 @@ fn tokenizer_attributes() {
             self_closing: false,
         }
     );
-    assert_eq!(t[1], Token::Start { name: "br".into(), attrs: vec![], self_closing: true });
+    assert_eq!(
+        t[1],
+        Token::Start {
+            name: "br".into(),
+            attrs: vec![],
+            self_closing: true
+        }
+    );
     let t = tokenize("<input value=a&amp;b name = n >");
     assert_eq!(
         t[0],
@@ -72,7 +103,14 @@ fn tokenizer_attributes() {
     // Stray '<' is text; duplicate attributes keep the first.
     let t = tokenize("1 < 2 <p id=a id=b>");
     assert_eq!(t[0], Token::Text("1 < 2 ".into()));
-    assert_eq!(t[1], Token::Start { name: "p".into(), attrs: vec![("id".into(), "a".into())], self_closing: false });
+    assert_eq!(
+        t[1],
+        Token::Start {
+            name: "p".into(),
+            attrs: vec![("id".into(), "a".into())],
+            self_closing: false
+        }
+    );
 }
 
 #[test]
@@ -91,9 +129,18 @@ fn raw_text_and_comments() {
 
 #[test]
 fn implied_end_tags() {
-    assert_eq!(tree("<p>one<p>two<div>three</div>"), r#"p("one") p("two") div("three")"#);
-    assert_eq!(tree("<ul><li>a<li>b<ul><li>c</ul><li>d</ul>"), r#"ul(li("a") li("b" ul(li("c"))) li("d"))"#);
-    assert_eq!(tree("<dl><dt>t<dd>d<dt>t2</dl>"), r#"dl(dt("t") dd("d") dt("t2"))"#);
+    assert_eq!(
+        tree("<p>one<p>two<div>three</div>"),
+        r#"p("one") p("two") div("three")"#
+    );
+    assert_eq!(
+        tree("<ul><li>a<li>b<ul><li>c</ul><li>d</ul>"),
+        r#"ul(li("a") li("b" ul(li("c"))) li("d"))"#
+    );
+    assert_eq!(
+        tree("<dl><dt>t<dd>d<dt>t2</dl>"),
+        r#"dl(dt("t") dd("d") dt("t2"))"#
+    );
     assert_eq!(
         tree("<table><tr><td>1<td>2<tr><th>h</table>after"),
         r#"table(tr(td("1") td("2")) tr(th("h"))) "after""#
@@ -110,11 +157,17 @@ fn misnested_and_stray_tags() {
     assert_eq!(tree("<b><i>x</b>y</i>"), r#"b(i("x")) "y""#);
     assert_eq!(tree("</div>text</span>"), r#""text""#);
     assert_eq!(tree("a</p>b"), r#""a" p "b""#);
-    assert_eq!(tree("<a href=1>one<a href=2>two</a>"), r#"a("one") a("two")"#);
+    assert_eq!(
+        tree("<a href=1>one<a href=2>two</a>"),
+        r#"a("one") a("two")"#
+    );
     assert_eq!(tree("<p>x<br>y</br>z"), r#"p("x" br "y" br "z")"#);
     assert_eq!(tree("<img src=a alt=b><hr/>t"), r#"img hr "t""#);
     // <td> content does not leak out of the table on a stray end tag.
-    assert_eq!(tree("<table><tr><td><b>x</td><td>y</table>"), r#"table(tr(td(b("x")) td("y")))"#);
+    assert_eq!(
+        tree("<table><tr><td><b>x</td><td>y</table>"),
+        r#"table(tr(td(b("x")) td("y")))"#
+    );
 }
 
 #[test]
@@ -128,8 +181,11 @@ fn metadata() {
     assert_eq!(d.base.as_deref(), Some("http://h/dir/"));
     assert_eq!(d.refresh, Some((5, "/next".into())));
     assert_eq!(d.charset.as_deref(), Some("iso-8859-1"));
-    assert_eq!(dump(&d, 0), r#"base meta meta "Hi""#);
-    assert_eq!(parse_refresh("0;url=http://a/"), Some((0, "http://a/".into())));
+    assert_eq!(dump(&d, 0), r#"html(head(base meta meta) body("Hi"))"#);
+    assert_eq!(
+        parse_refresh("0;url=http://a/"),
+        Some((0, "http://a/".into()))
+    );
     assert_eq!(parse_refresh("3"), Some((3, "".into())));
     assert_eq!(parse_refresh(""), None);
     let d = parse("<meta http-equiv=content-type content='text/html; charset=windows-1252'>");
@@ -138,9 +194,13 @@ fn metadata() {
 
 #[test]
 fn charset_prescan() {
-    assert_eq!(sniff_charset(b"<html><META CHARSET=\"Shift_JIS\">").as_deref(), Some("shift_jis"));
     assert_eq!(
-        sniff_charset(b"<meta http-equiv=Content-Type content=\"text/html; charset=iso-8859-15\">").as_deref(),
+        sniff_charset(b"<html><META CHARSET=\"Shift_JIS\">").as_deref(),
+        Some("shift_jis")
+    );
+    assert_eq!(
+        sniff_charset(b"<meta http-equiv=Content-Type content=\"text/html; charset=iso-8859-15\">")
+            .as_deref(),
         Some("iso-8859-15")
     );
     assert_eq!(sniff_charset(b"<p>no meta</p>"), None);

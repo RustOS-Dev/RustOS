@@ -136,6 +136,8 @@ pub struct FbConsole {
     /// Column-80 pending wrap (VT100 semantics).
     wrap_pending: bool,
     utf8_skip: u8,
+    /// Code point being decoded.
+    utf8_cp: u32,
     /// Replies to device status queries, drained by the TTY.
     pub replies: heapless_reply::Reply,
     /// Last cursor position drawn (to erase it on move).
@@ -617,7 +619,20 @@ impl FbConsole {
         match self.state {
             Parse::Ground => {
                 if self.utf8_skip > 0 {
+                    if b & 0xC0 != 0x80 {
+                        // Malformed: drop the partial character.
+                        self.utf8_skip = 0;
+                        self.feed(b);
+                        return;
+                    }
+                    self.utf8_cp = (self.utf8_cp << 6) | (b & 0x3F) as u32;
                     self.utf8_skip -= 1;
+                    if self.utf8_skip == 0 {
+                        let cp = self.utf8_cp;
+                        for &c in unicode_fallback(cp).as_bytes() {
+                            self.put_char(c);
+                        }
+                    }
                     return;
                 }
                 match b {
@@ -642,15 +657,15 @@ impl FbConsole {
                     0x20..=0x7E => self.put_char(b),
                     0xC0..=0xDF => {
                         self.utf8_skip = 1;
-                        self.put_char(b'?');
+                        self.utf8_cp = (b & 0x1F) as u32;
                     }
                     0xE0..=0xEF => {
                         self.utf8_skip = 2;
-                        self.put_char(b'?');
+                        self.utf8_cp = (b & 0x0F) as u32;
                     }
                     0xF0..=0xF7 => {
                         self.utf8_skip = 3;
-                        self.put_char(b'?');
+                        self.utf8_cp = (b & 0x07) as u32;
                     }
                     _ => {}
                 }
@@ -809,6 +824,85 @@ impl FbConsole {
     }
 }
 
+/// An ASCII stand-in for a character the 8×16 font lacks, as wide as the
+/// character is in a terminal (wide East Asian characters take two
+/// cells, combining marks none).
+fn unicode_fallback(cp: u32) -> &'static str {
+    const LATIN1: &[u8; 64] = b"AAAAAAACEEEEIIIIDNOOOOOxOUUUUYPsaaaaaaaceeeeiiiidnooooo/ouuuuypy";
+    const LATIN1_STR: [&str; 64] = {
+        let mut t = [""; 64];
+        let mut i = 0;
+        while i < 64 {
+            // SAFETY: each entry is one ASCII byte of LATIN1.
+            t[i] = unsafe {
+                core::str::from_utf8_unchecked(core::slice::from_raw_parts(&LATIN1[i], 1))
+            };
+            i += 1;
+        }
+        t
+    };
+    match cp {
+        0xA0 => " ",
+        0xA1 => "!",
+        0xA2 => "c",
+        0xA3 => "L",
+        0xA5 => "Y",
+        0xA7 => "S",
+        0xA9 => "c",
+        0xAB => "<",
+        0xAD => "-",
+        0xAE => "R",
+        0xB0 => "o",
+        0xB1 => "+",
+        0xB2 => "2",
+        0xB3 => "3",
+        0xB5 => "u",
+        0xB6 => "P",
+        0xB7 => ".",
+        0xB9 => "1",
+        0xBB => ">",
+        0xBF => "?",
+        0xC0..=0xFF => LATIN1_STR[(cp - 0xC0) as usize],
+        0x300..=0x36F | 0x200B..=0x200F | 0xFE00..=0xFE0F | 0xFEFF => "",
+        0x2010..=0x2015 | 0x2212 => "-",
+        0x2018 | 0x2019 | 0x201A | 0x201B | 0x2032 => "'",
+        0x201C..=0x201F | 0x2033 => "\"",
+        0x2020 | 0x2021 => "+",
+        0x2022 | 0x2023 | 0x2043 | 0x25CF | 0x2605 | 0x2606 => "*",
+        0x2026 | 0x22EF => ".",
+        0x2039 | 0x2190 | 0x25C0 | 0x25C2 => "<",
+        0x203A | 0x2192 | 0x25B6 | 0x25B8 | 0x25BA => ">",
+        0x2191 | 0x25B2 | 0x25B4 => "^",
+        0x2193 | 0x25BC | 0x25BE => "v",
+        0x2194 => "-",
+        0x20AC => "E",
+        0x2122 => "T",
+        0x2248 => "~",
+        0x2260 => "!",
+        0x2264 => "<",
+        0x2265 => ">",
+        0x2500 | 0x2501 | 0x2504 | 0x2505 | 0x2508 | 0x2509 | 0x254C | 0x254D | 0x2550 => "-",
+        0x2502 | 0x2503 | 0x2506 | 0x2507 | 0x250A | 0x250B | 0x254E | 0x254F | 0x2551 => "|",
+        0x250C..=0x254B | 0x2552..=0x256C => "+",
+        0x2574..=0x257F => "-",
+        0x2580..=0x259F => "#",
+        0x25A0..=0x25A3 | 0x25AA | 0x25AB => "#",
+        0x25CB | 0x25E6 => "o",
+        0x2713 | 0x2714 => "v",
+        0x2717 | 0x2718 => "x",
+        0x1100..=0x115F
+        | 0x2E80..=0xA4CF
+        | 0xAC00..=0xD7A3
+        | 0xF900..=0xFAFF
+        | 0xFE30..=0xFE4F
+        | 0xFF00..=0xFF60
+        | 0xFFE0..=0xFFE6
+        | 0x1F300..=0x1FAFF
+        | 0x20000..=0x3FFFD => "??",
+        _ => "?",
+    }
+}
+
 fn fmt_cpr(buf: &mut [u8; 24], row: usize, col: usize) -> &[u8] {
     use core::fmt::Write;
     struct W<'a>(&'a mut [u8; 24], usize);
@@ -881,6 +975,7 @@ pub unsafe fn init(framebuffer: FrameBuffer) {
         private: false,
         wrap_pending: false,
         utf8_skip: 0,
+        utf8_cp: 0,
         replies: heapless_reply::Reply::new(),
         drawn_cursor: None,
     };

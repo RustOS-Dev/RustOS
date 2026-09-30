@@ -1,0 +1,18 @@
+[package]
+name = "paint"
+version = "0.1.0"
+edition = "2024"
+description = "Pixel rendering for the graphical browser: fonts, text metrics, image decoding, painting layout fragments into an RGBA canvas, PNG encoding"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+layout = { path = "../layout" }
+css = { path = "../css" }
+html = { path = "../html" }
+fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
+zune-png = { version = "0.5", default-features = false }
+zune-jpeg = { version = "0.5", default-features = false }
+zune-core = { version = "0.5", default-features = false }
+zune-inflate = { version = "0.2", default-features = false, features = ["zlib"] }

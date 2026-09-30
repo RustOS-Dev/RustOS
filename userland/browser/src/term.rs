@@ -59,6 +59,11 @@ impl Term {
         (r.max(5) as usize, c.max(20) as usize)
     }
 
+    /// Input already read but not yet decoded.
+    pub fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
     fn byte(&mut self, timeout_ms: i32) -> Option<u8> {
         if !self.pending.is_empty() {
             return Some(self.pending.remove(0));
@@ -157,7 +162,7 @@ pub fn goto(row: usize, col: usize) -> String {
 pub fn edit_line(t: &mut Term, row: usize, width: usize, prompt: &str, initial: &str, masked: bool) -> Option<String> {
     let mut buf: Vec<char> = initial.chars().collect();
     let mut cur = buf.len();
-    let plen = textlayout::text_width(prompt);
+    let plen = layout::text_width(prompt);
     out("\x1b[?25h");
     let result = loop {
         let room = width.saturating_sub(plen + 1).max(1);

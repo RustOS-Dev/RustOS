@@ -6,7 +6,7 @@ files and — importantly on a laptop — logging into Wi-Fi networks that
 put a web login page ("captive portal") in front of the Internet.
 
 ```
-browse [-k] [-dump|-source] [-width N] [--portal] [URL]
+browse [-k] [-nocss] [-dump|-source] [-width N] [--portal] [URL]
 ```
 
 | Option | Meaning |
@@ -16,6 +16,7 @@ browse [-k] [-dump|-source] [-width N] [--portal] [URL]
 | `-source` | print the page source, then exit |
 | `-width N` | layout width for `-dump` |
 | `-k` | accept any TLS certificate |
+| `-nocss` | ignore the page's style sheets (the built-in HTML styles only) |
 | `--portal` | open the captive-portal login page (see below) |
 
 Without a URL the built-in help page opens. When the output is not a
@@ -63,16 +64,54 @@ target in the status line. Form fields are drawn as widgets:
 * Cookies (RFC 6265, including `SameSite`), persisted for sessions across
   runs in `/storage/etc/cookies.txt`.
 * HTML: headings, paragraphs, lists, definition lists, block quotes,
-  preformatted text, tables in columns (or one cell after another when
-  the screen is too narrow), images as `[alt text]`, frames and iframes
-  as links, `<meta http-equiv=refresh>` (followed after a short countdown
-  that any key cancels), `<base>`, fragment links, UTF-8 / Latin-1 /
-  windows-1252 pages, IPv6 addresses (`http://[2001:db8::1]/`).
+  preformatted text, tables, images as `[alt text]`, frames and iframes as
+  placeholders, `<meta http-equiv=refresh>` (followed after a short
+  countdown that any key cancels), `<base>`, fragment links, UTF-8 /
+  Latin-1 / windows-1252 pages, IPv6 addresses (`http://[2001:db8::1]/`).
+* CSS: the page's `<style>` elements and `<link rel=stylesheet>` sheets
+  (with `@import`, `@media`, `@supports`, `@layer`, nesting, custom
+  properties) are applied and the page is laid out with the CSS box model
+  — block and inline flow, floats, flexbox, grid, tables, positioning —
+  in character cells (one column = 8 px, one row = 16 px). Colors are
+  shown in 24-bit color where the page sets a background; text colors on
+  the terminal's own background are kept only when readable. See
+  [CSS.md](CSS.md).
 * `file:` URLs and directory listings, `about:help`, `about:cookies`.
 
-Not supported: JavaScript, CSS layout, images, video. Pages that only work
-with JavaScript show their `<noscript>` content and whatever forms they
-contain.
+* JavaScript (QuickJS-ng, in a helper process per page): the DOM, events,
+  forms, `fetch`/XHR, `localStorage`, timers, modules, WebSocket and
+  EventSource. Elements with click handlers are selectable like links
+  (marked `[*]`); `J` opens the JavaScript console, `K` turns scripts
+  off and on, `-nojs` starts with them off. See [JAVASCRIPT.md](JAVASCRIPT.md).
+
+Not supported: images and video in text mode (see graphical mode), frames.
+
+## Graphical mode (`browse -g`)
+
+`browse -g URL` draws pages on the framebuffer (`/dev/fb0`), with the
+console switched to graphics mode (`KDSETMODE KD_GRAPHICS`).
+
+**Rendering**
+- The same CSS engine and layout as text mode, laid out in pixels.
+- Text uses the bundled DejaVu fonts (sans, serif, mono; regular and bold, in `/usr/share/fonts/dejavu`), rasterized with anti-aliasing by fontdue, with kerning.
+- `@font-face` web fonts in TTF/OTF and WOFF 1.0 format are loaded.
+- Pages are painted by `crates/paint`:
+  - backgrounds, including linear gradients and images with `cover`/`contain`/repeat;
+  - borders with rounded corners and dotted, dashed and double styles;
+  - box shadows, `opacity` and overflow clipping;
+  - text decorations, list bullets, and drawn form controls.
+- Images: PNG, JPEG, GIF (first frame) and BMP, scaled with bilinear filtering.
+- `<canvas>` elements show what scripts drew with the 2D context. That context is a software rasterizer in jsd: rectangles, paths, arcs and Bézier curves, strokes, gradients, transforms, `get`/`putImageData` and canvas-to-canvas `drawImage`. Text on a canvas is measured but not drawn.
+
+**Keys**
+- Tab/Down and Shift-Tab/Up move between links and form fields.
+- Enter follows or activates the selected one. Text fields are edited in the status bar.
+- Space/PgDn and b/PgUp scroll by a page; j/k scroll by lines; Home and End jump to the top and bottom.
+- `g` opens a URL; Left goes back; `r` reloads; `q` quits.
+
+**Mouse:** the pointer comes from `/dev/input/mice`, and a click activates what is under it.
+
+**Screenshots:** `browse -dump-png FILE [-size WxH] [-full] URL` renders a page, with its scripts and images, into a PNG without a screen. `-full` captures the whole page height rather than just the viewport.
 
 ## Captive portals
 
@@ -103,7 +142,8 @@ expect=204
 | HTTP client, cookies, gzip, forms | `crates/http` (package `httpc`) |
 | TLS | `crates/nettls` (rustls + RustCrypto) |
 | HTML parser | `crates/html` |
-| Text layout | `crates/textlayout` |
+| CSS (parsing, selectors, cascade, computed style) | `crates/css` |
+| Layout (box tree, flow, flex, grid, tables) and the cell renderer | `crates/layout` |
 | Sockets, CA bundle, portal detection | `userland/webclient` |
 | The program | `userland/browser` |
 

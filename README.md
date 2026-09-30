@@ -40,8 +40,12 @@ RTL8111/8168/8125 (r8169); **Intel AX210 Wi-Fi** (also AX211/AX201) with
 WPA2-PSK and WPA3-SAE; tools `ip`, `ifconfig`, `ifup`, `ping`, `nslookup`,
 `netstat`, `nc`, **`wget` with HTTPS (TLS 1.2/1.3)**, `httpd`, `ntpdate`, `wifi`,
 `netcheck` (captive-portal detection); IPv4 and IPv6 (SLAAC, DHCPv6, RDNSS);
-**`browse`, a lynx-like text web browser** with forms, cookies and HTTPS
-that can log into captive-portal Wi-Fi ([docs/BROWSER.md](docs/BROWSER.md)).
+**`browse`, a lynx-like text web browser** with CSS layout (flexbox, grid,
+tables, floats), JavaScript (QuickJS-ng with a DOM, fetch, storage,
+WebSocket), a graphical mode on the framebuffer (`browse -g`: fonts,
+images, canvas), forms, cookies and HTTPS that can log into captive-portal
+Wi-Fi ([docs/BROWSER.md](docs/BROWSER.md), [docs/CSS.md](docs/CSS.md),
+[docs/JAVASCRIPT.md](docs/JAVASCRIPT.md)).
 
 **Userland** — `init`, `sh` (pipes, redirection, variables, globbing,
 command substitution, functions, job control), `rbox` (≈90 coreutils:
@@ -124,6 +128,8 @@ root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | known gaps |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | the completion plan (M0–M16) and its status |
 | [docs/BROWSER.md](docs/BROWSER.md) | the `browse` text web browser and captive-portal login |
+| [docs/CSS.md](docs/CSS.md) | the CSS engine and layout (supported CSS, character cells) |
+| [docs/JAVASCRIPT.md](docs/JAVASCRIPT.md) | JavaScript in the browser: the `jsd` helper, supported APIs, security model |
 | [docs/PORTING.md](docs/PORTING.md) | musl sysroot, `rustos-cc`, ports (BusyBox, curl, QuickJS) |
 | [docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md) | shell and command reference |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | contributing, debugging |

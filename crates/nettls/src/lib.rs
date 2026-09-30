@@ -361,6 +361,10 @@ impl<T: Transport> TlsStream<T> {
         &mut self.io
     }
 
+    pub fn transport_ref(&self) -> &T {
+        &self.io
+    }
+
     /// Read more TLS bytes from the peer.
     fn fill(&mut self) -> Result<(), TlsError> {
         if self.in_used == self.inbuf.len() {

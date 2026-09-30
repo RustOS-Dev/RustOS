@@ -1,0 +1,12 @@
+[package]
+name = "layout"
+version = "0.1.0"
+edition = "2024"
+description = "CSS box layout (block, inline, flex, grid, table, positioning) for the RustOS browser, with a character-cell renderer"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+html = { path = "../html" }
+css = { path = "../css" }

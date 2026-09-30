@@ -1,0 +1,8 @@
+[package]
+name = "css"
+version = "0.1.0"
+edition = "2024"
+description = "no_std CSS engine: tokenizer, parser, selectors, media queries, cascade and computed styles"
+
+[lib]
+path = "src/lib.rs"

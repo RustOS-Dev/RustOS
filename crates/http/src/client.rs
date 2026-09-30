@@ -19,6 +19,12 @@ pub trait Stream {
     /// Read into `buf`; `Ok(0)` means the peer closed the connection.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
     fn write_all(&mut self, data: &[u8]) -> Result<()>;
+    /// The underlying socket (for poll), if any.
+    fn fd(&self) -> i32 {
+        -1
+    }
+    /// Change the read timeout (ms).
+    fn set_timeout(&mut self, _ms: u64) {}
 }
 
 pub trait Connector {

@@ -2,7 +2,7 @@
 //! values (HTML "constructing the entry list").
 
 use rustos_rt::prelude::*;
-use textlayout::{Field, FieldKind, Form};
+use layout::{Field, FieldKind, Form};
 use webclient::httpc::multipart::{self, Part};
 use webclient::httpc::{form as urlenc, Request, Url};
 
@@ -13,8 +13,7 @@ pub fn submission(forms: &[Form], fields: &[Field], fi: usize, submitter: Option
     let action = sub.and_then(|s| s.formaction.clone()).unwrap_or_else(|| form.action.clone());
     let method = sub.and_then(|s| s.formmethod.clone()).unwrap_or_else(|| form.method.clone());
     let enctype = sub.and_then(|s| s.formenctype.clone()).unwrap_or_else(|| form.enctype.clone());
-    let mut url = if action.is_empty() { base.without_fragment() } else { base.join(&action).map_err(|e| e.to_string())? };
-    url.fragment = None;
+    let url = if action.is_empty() { base.without_fragment() } else { base.join(&action).map_err(|e| e.to_string())? };
 
     let mut entries: Vec<(String, String)> = Vec::new();
     let mut files: Vec<(String, String)> = Vec::new();
@@ -53,37 +52,54 @@ pub fn submission(forms: &[Form], fields: &[Field], fi: usize, submitter: Option
         }
     }
 
-    if method != "post" {
-        let q = urlenc::serialize(entries.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-        url.query = Some(q);
+    let files: Vec<(String, String, String, Vec<u8>)> = files
+        .iter()
+        .map(|(name, path)| {
+            let data = if path.is_empty() { Vec::new() } else { rustos_rt::fs::read(path).unwrap_or_default() };
+            let fname = path.rsplit('/').next().unwrap_or("").to_string();
+            (name.clone(), fname, String::from("application/octet-stream"), data)
+        })
+        .collect();
+    build_request(url, &method, &enctype, &entries, &files)
+}
+
+/// Encode a form data set (`files`: name, file name, type, contents) as a
+/// GET or POST request to `url`.
+pub fn build_request(
+    mut url: Url,
+    method: &str,
+    enctype: &str,
+    entries: &[(String, String)],
+    files: &[(String, String, String, Vec<u8>)],
+) -> Result<Request, String> {
+    url.fragment = None;
+    if !method.eq_ignore_ascii_case("post") {
+        let mut all: Vec<(&str, &str)> = entries.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        all.extend(files.iter().map(|f| (f.0.as_str(), f.1.as_str())));
+        url.query = Some(urlenc::serialize(all.into_iter()));
         return Ok(Request::get(url));
     }
-    match enctype.as_str() {
+    match enctype {
         "multipart/form-data" => {
-            let file_data: Vec<(String, String, Vec<u8>)> = files
-                .iter()
-                .map(|(name, path)| {
-                    let data = if path.is_empty() { Vec::new() } else { rustos_rt::fs::read(path).unwrap_or_default() };
-                    let fname = path.rsplit('/').next().unwrap_or("").to_string();
-                    (name.clone(), fname, data)
-                })
-                .collect();
             let mut parts: Vec<(&str, Part)> = entries.iter().map(|(k, v)| (k.as_str(), Part::Text(v))).collect();
-            for (name, fname, data) in &file_data {
-                parts.push((name.as_str(), Part::File { filename: fname, content_type: "application/octet-stream", data }));
+            for (name, fname, ty, data) in files {
+                let ty = if ty.is_empty() { "application/octet-stream" } else { ty.as_str() };
+                parts.push((name.as_str(), Part::File { filename: fname, content_type: ty, data }));
             }
             let (ct, body) = multipart::encode(&parts, rustos_rt::time::micros());
             Ok(Request::post(url, &ct, body))
         }
         "text/plain" => {
             let mut body = String::new();
-            for (k, v) in &entries {
+            for (k, v) in entries {
                 body.push_str(&format!("{}={}\r\n", k, v));
             }
             Ok(Request::post(url, "text/plain", body.into_bytes()))
         }
         _ => {
-            let body = urlenc::serialize(entries.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+            let mut all: Vec<(&str, &str)> = entries.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            all.extend(files.iter().map(|f| (f.0.as_str(), f.1.as_str())));
+            let body = urlenc::serialize(all.into_iter());
             Ok(Request::post(url, "application/x-www-form-urlencoded", body.into_bytes()))
         }
     }

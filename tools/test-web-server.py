@@ -92,6 +92,20 @@ nav.top { display: flex; gap: 3ch; }
 BASE_CSS = """.secret { display: none }"""
 
 JS_PAGES = {
+    # <audio>: an MP3 clip (0.5 s of 1 kHz) through new Audio(), and a
+    # missing one.
+    "/js/audio": """<!DOCTYPE html><title>JS audio</title><p id=s>log:</p>
+<script>
+const log = (m) => { document.getElementById("s").textContent += " " + m; };
+const a = new Audio("/js/tone.mp3");
+log("can=" + a.canPlayType("audio/mpeg") + "/" + (a.canPlayType("video/webm") || "no"));
+a.addEventListener("loadedmetadata", () => log("dur=" + a.duration.toFixed(1)));
+a.addEventListener("ended", () => log("ENDED paused=" + a.paused + " t=" + a.currentTime.toFixed(1)));
+a.play().then(() => log("PLAYING"), (e) => log("ERR " + e.name));
+const b = document.createElement("audio");
+b.src = "/js/missing.mp3";
+b.play().catch((e) => log("missing=" + e.name + "/" + (b.error && b.error.code)));
+</script>""",
     "/js/render": """<!DOCTYPE html><title>JS render</title><div id=app>LOADING</div>
 <noscript>NOSCRIPT-SHOWN</noscript>
 <script>
@@ -286,7 +300,12 @@ class H(http.server.BaseHTTPRequestHandler):
         self.close_connection = True
 
     def js_get(self, u):
-        if u.path == "/js/echo":
+        if u.path == "/js/tone.mp3":
+            import os
+            here = os.path.dirname(os.path.abspath(__file__))
+            with open(os.path.join(here, "../crates/audio/tests/data/tone1k.mp3"), "rb") as f:
+                self.reply(200, f.read(), "audio/mpeg")
+        elif u.path == "/js/echo":
             self.websocket()
         elif u.path == "/js/events":
             self.events()

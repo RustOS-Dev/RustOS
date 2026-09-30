@@ -7,4 +7,4 @@ edition = "2024"
 rustos-rt.workspace = true
 fat-format = { path = "../../crates/fat-format" }
 unixcrypt = { path = "../../crates/unixcrypt" }
-audio = { path = "../../crates/audio" }
+audio = { path = "../../crates/audio", features = ["mp3"] }

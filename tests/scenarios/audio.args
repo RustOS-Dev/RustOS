@@ -9,3 +9,10 @@
 -audiodev none,id=a2
 -device ich9-intel-hda
 -device hda-micro,audiodev=a2
+# A USB Audio Class speaker on xHCI (isochronous OUT).
+-audiodev wav,id=a3,path=/tmp/rustos-audio-usb.wav
+-device qemu-xhci,id=xhci
+-device usb-audio,bus=xhci.0,audiodev=a3
+# Networking for the browser's <audio> page (tools/test-web-server.py).
+-netdev user,id=n0
+-device virtio-net-pci,netdev=n0

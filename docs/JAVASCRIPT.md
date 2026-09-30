@@ -77,6 +77,7 @@ The library is `userland/jsd/lib/*.js`, embedded in jsd at build time.
   - `FormData`;
   - constraint validation: `required`, `pattern`, `min`/`max`/`step`, `minlength`/`maxlength`, and `email`/`url`/`number` types, with `checkValidity`, `reportValidity`, `setCustomValidity` and `validity`.
 - `dialog`, `details`, `label` activation, `Image` and `Audio` constructors.
+- `<audio>` and `new Audio()` play WAV and MP3 on `/dev/dsp`. The browser fetches and decodes the clip and plays it from a child process. `play`/`pause`, seeking through `currentTime`, `volume`/`muted`, `loop`, `autoplay`, `<source>` and the media events are supported ([AUDIO.md](AUDIO.md)). `<video>` plays nothing.
 
 **Events**
 - `EventTarget` with capture and bubble, `once`, `passive` and `signal`.

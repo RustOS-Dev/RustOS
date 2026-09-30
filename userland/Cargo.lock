@@ -52,6 +52,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "audio"
 version = "0.1.0"
+dependencies = [
+ "nanomp3",
+]
 
 [[package]]
 name = "autocfg"
@@ -84,6 +87,7 @@ dependencies = [
 name = "browser"
 version = "0.1.0"
 dependencies = [
+ "audio",
  "css",
  "html",
  "jsproto",
@@ -515,6 +519,12 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
 ]
+
+[[package]]
+name = "nanomp3"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f69bdf7e634dc76798adc292ebd4f6e8e125cde6843a264fe398c52c3f7e8541"
 
 [[package]]
 name = "nettls"

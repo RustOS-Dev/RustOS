@@ -94,7 +94,11 @@ are in `/etc/passwd`, overridable by `/storage/etc/passwd`). `login [-f]
 | `chown` | `chown UID[:GID] FILE...` (numeric ids) |
 | `lspci`, `lsusb` | PCI and USB devices |
 | `hwcheck` | `hwcheck [-y] [-o DIR] [--ssid S --pass P] [--open S] [--http URL] [--https URL] [--dns NAME] [--big URL] [--rekey SECS] [SECTION...]` — hardware checklist with logged results ([HARDWARE.md](HARDWARE.md)) |
-| `evtest` | `evtest [-c N] [DEVICE]` — print input events from `/dev/input/event0` (or a `/dev/input/js*` device) |
+| `evtest` | `evtest [-c N] [-i] [DEVICE]` — print input events from `/dev/input/event0` (or a `/dev/input/js*` device); `-i` shows the device's name, ids and capabilities; `evtest -l` lists input devices |
+| `play` | `play [-d DEV] FILE...` — play WAV or MP3 files on `/dev/dsp` ([AUDIO.md](AUDIO.md)) |
+| `rec` | `rec [-d DEV] [-t SECONDS] [-r RATE] [-c CH] FILE.wav` — record 16-bit WAV |
+| `beep` | `beep [-f HZ] [-l MS] [-v PERCENT] [-d DEV]` — play a sine tone |
+| `mixer` | `mixer [-d DEV] [volume\|pcm [LEVEL]]` — show or set the volumes |
 | `bugreport` | `bugreport [-o FILE \| -]` — kernel log, `/proc`, `/sys/class/net` and tool output in one file |
 
 Types for `mount -t`: `vfat`, `ext2`, `ext3`, `ext4`, `tmpfs`,

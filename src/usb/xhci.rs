@@ -58,6 +58,7 @@ const TRB_NORMAL: u32 = 1;
 const TRB_SETUP: u32 = 2;
 const TRB_DATA: u32 = 3;
 const TRB_STATUS: u32 = 4;
+const TRB_ISOCH: u32 = 5;
 const TRB_LINK: u32 = 6;
 const TRB_ENABLE_SLOT: u32 = 9;
 const TRB_DISABLE_SLOT: u32 = 10;
@@ -82,6 +83,11 @@ const TRB_DIR_IN: u32 = 1 << 16;
 pub const CC_SUCCESS: u8 = 1;
 pub const CC_STALL: u8 = 6;
 pub const CC_SHORT: u8 = 13;
+/// Isochronous: the controller could not service a TD in its interval,
+/// or the ring ran empty / full. Not fatal for a stream.
+pub const CC_RING_UNDERRUN: u8 = 14;
+pub const CC_RING_OVERRUN: u8 = 15;
+pub const CC_MISSED_SERVICE: u8 = 23;
 
 const RING_TRBS: usize = 256;
 
@@ -199,6 +205,9 @@ pub struct Td {
     sid: u16,
     trbs: Vec<(u64, u32, u32)>,
     addrs: Vec<u64>,
+    /// Several TDs of this endpoint are in flight (isochronous): events
+    /// for the others are kept while waiting for this one.
+    shared: bool,
 }
 
 struct SlotData {
@@ -729,6 +738,7 @@ impl Xhci {
             sid,
             trbs,
             addrs,
+            shared: false,
         })
     }
 
@@ -764,8 +774,8 @@ impl Xhci {
                         continue;
                     }
                     let Some(i) = addrs.iter().position(|&a| a == trb) else {
-                        // Another stream's TD, or a stale event.
-                        if td.sid != 0 {
+                        // Another stream's (or isochronous) TD, or a stale event.
+                        if td.sid != 0 || td.shared {
                             keep.push_back((trb, code, residual));
                         }
                         continue;
@@ -812,6 +822,7 @@ impl Xhci {
         match code {
             0 => Err(ENODEV),
             CC_SUCCESS | CC_SHORT => Ok(n),
+            CC_RING_UNDERRUN | CC_RING_OVERRUN | CC_MISSED_SERVICE if td.shared => Ok(0),
             CC_STALL => {
                 self.recover(slot, dci, td.sid, true);
                 Err(EPIPE)
@@ -925,6 +936,24 @@ impl Xhci {
     /// without waiting; the caller serialises use of the endpoint.
     pub fn submit(&self, dev: &UsbDevice, dci: u8, sid: u16, phys: u64, len: usize) -> KResult<Td> {
         self.queue_td(dev, dci, sid, Self::normal_trbs(dci, phys, len), sid == 0)
+    }
+
+    /// Queue one isochronous packet (a TD per service interval, started
+    /// as soon as possible). Wait for it with [`Xhci::wait`]; several may
+    /// be in flight on the endpoint.
+    pub fn submit_isoch(
+        &self,
+        dev: &UsbDevice,
+        dci: u8,
+        phys: u64,
+        len: usize,
+        dir_in: bool,
+    ) -> KResult<Td> {
+        const SIA: u32 = 1 << 31;
+        let ctl = (TRB_ISOCH << 10) | TRB_IOC | SIA | if dir_in { TRB_ISP } else { 0 };
+        let mut td = self.queue_td(dev, dci, 0, alloc::vec![(phys, len as u32, ctl)], false)?;
+        td.shared = true;
+        Ok(td)
     }
 
     /// Wait for a TD from [`Xhci::submit`].

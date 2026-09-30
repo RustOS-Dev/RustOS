@@ -348,25 +348,32 @@ pub fn grep(args: &[String]) -> i32 {
         }
         v
     };
-    let matches = |line: &str| -> Option<(usize, usize)> {
-        if fixed {
-            for p in &patterns {
-                let found = if icase {
-                    line.to_lowercase().find(&p.to_lowercase())
-                } else {
-                    line.find(p.as_str())
-                };
-                if let Some(s) = found {
-                    return Some((s, s + p.len()));
-                }
-            }
-            None
+    // The leftmost (then longest) match of any pattern at or after `from`.
+    let match_at = |line: &str, from: usize| -> Option<(usize, usize)> {
+        let found: Vec<(usize, usize)> = if fixed {
+            patterns
+                .iter()
+                .filter_map(|p| {
+                    let hay = &line[from..];
+                    let s = if icase {
+                        hay.to_lowercase().find(&p.to_lowercase())
+                    } else {
+                        hay.find(p.as_str())
+                    }?;
+                    Some((from + s, from + s + p.len()))
+                })
+                .collect()
         } else {
             regexes
                 .iter()
-                .find_map(|r| r.find_at(line, 0).map(|(s, e, _)| (s, e)))
-        }
+                .filter_map(|r| r.find_at(line, from).map(|(s, e, _)| (s, e)))
+                .collect()
+        };
+        found
+            .into_iter()
+            .min_by_key(|&(s, e)| (s, core::cmp::Reverse(e)))
     };
+    let matches = |line: &str| match_at(line, 0);
     let mut files = inputs(&ops);
     if recursive {
         let mut expanded = Vec::new();
@@ -430,8 +437,25 @@ pub fn grep(args: &[String]) -> i32 {
                             String::new()
                         }
                     );
-                    if only && let Some((s, e)) = m {
-                        println!("{}{}", prefix, &line[s..e]);
+                    if only && let Some(mut cur) = m {
+                        // Every non-empty match on the line, like GNU grep.
+                        loop {
+                            let (s, e) = cur;
+                            if e > s {
+                                println!("{}{}", prefix, &line[s..e]);
+                            }
+                            let mut next = e.max(s + 1);
+                            while next < line.len() && !line.is_char_boundary(next) {
+                                next += 1;
+                            }
+                            if next > line.len() {
+                                break;
+                            }
+                            match match_at(line, next) {
+                                Some(c) => cur = c,
+                                None => break,
+                            }
+                        }
                     } else if io::isatty(1)
                         && let Some((s, e)) = m
                     {

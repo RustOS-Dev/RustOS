@@ -89,6 +89,7 @@ jobs:
           for c in crates/fat-format crates/usb-desc crates/wlan crates/weburl crates/http crates/nettls crates/netproto crates/html crates/css crates/layout crates/jsproto crates/paint crates/unixcrypt crates/ext4-core crates/audio; do
             (cd "$c" && cargo test)
           done
+          (cd crates/audio && cargo test --features mp3)
       - name: Firmware provisioning (write_to_drive.sh)
         run: tools/test-firmware-install.sh
 

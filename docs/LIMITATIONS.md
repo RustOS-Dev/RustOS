@@ -9,7 +9,7 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * Most drivers are verified only under QEMU. The Intel AX210 Wi-Fi,
   I219/I225/RTL8168 Ethernet and CDC NCM drivers are written against
   reference drivers and specifications but have not yet run on hardware.
-* No GPU acceleration, audio, Bluetooth, Thunderbolt management, or
+* No GPU acceleration, Bluetooth, Thunderbolt management, or
   suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
 * ATAPI optical drives are detected but not usable.
 
@@ -74,14 +74,23 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 ## USB
 
-* No isochronous transfers (webcams, audio), no USB serial adapters,
-  printers or USB Wi-Fi/Bluetooth.
-* UAS needs SuperSpeed bulk streams (otherwise Bulk-Only is used when the
-  device offers it) and keeps one command in flight.
+* Isochronous transfers are used only for audio playback: no webcams,
+  no USB audio capture. No USB serial adapters, printers or USB
+  Wi-Fi/Bluetooth.
+* UAS queues up to 8 commands with SuperSpeed bulk streams; on USB 2 it
+  runs one command at a time (READ/WRITE READY).
 * HID: report descriptors are parsed (keyboards incl. NKRO and media
   keys, mice, tablets/touch screens, game pads); multi-touch contacts are
-  not tracked separately, and `/dev/input/event0` merges all devices and
-  has no EVIOCG* ioctls; no output reports (keyboard LEDs).
+  not tracked separately. Keyboard LEDs are the only output reports.
+
+## Audio
+
+* HD Audio in legacy (non-DSP) mode only: laptops whose speakers or
+  microphones sit behind an Intel SOF DSP stay silent. No HDMI/DP audio;
+  the headphone jack is checked when playback starts.
+* USB audio: playback only, no asynchronous (feedback endpoint) devices.
+* Everything is mixed at 48 kHz 16-bit stereo; MP3 and WAV only (no
+  Ogg/Vorbis, AAC or FLAC). See [AUDIO.md](AUDIO.md).
 
 ## Userland
 

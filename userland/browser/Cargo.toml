@@ -16,3 +16,4 @@ layout = { path = "../../crates/layout" }
 css = { path = "../../crates/css" }
 jsproto = { path = "../../crates/jsproto" }
 paint = { path = "../../crates/paint" }
+audio = { path = "../../crates/audio", features = ["mp3"] }

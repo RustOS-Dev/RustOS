@@ -19,6 +19,7 @@ mod form;
 mod gfx;
 mod js;
 mod load;
+mod media;
 mod script;
 mod sockets;
 mod term;

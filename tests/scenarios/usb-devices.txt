@@ -1,8 +1,13 @@
 # HID report protocol (QEMU usb-tablet) and USB Attached SCSI.
 wait # $ 240
-send sleep 2; dmesg | grep "\[usb\]" | cat
+# (The two UAS devices enumerate in either order: one grep each.)
+send sleep 2; dmesg | grep "SCSI, .* streams" | cat
 wait USB Attached SCSI, [0-9]+ streams, [0-9]+ commands queued
+wait # $
+send dmesg | grep "SCSI (no streams" | cat
 wait USB Attached SCSI \(no streams
+wait # $
+send dmesg | grep "HID tablet" | cat
 wait HID tablet \(report protocol\)
 wait # $
 # Tablet buttons and absolute axes reach /dev/input/event0.

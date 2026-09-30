@@ -504,26 +504,206 @@
     G.setTimeout(() => { el._loadQueued = false; J.dispatchEvent(el, new G.Event("load")); }, 0);
   };
 
+  // Media: the browser fetches and decodes the clip (WAV or MP3) and
+  // plays it on /dev/dsp; the position is kept here from the clock.
+  const MEDIA_TYPES = /^audio\/(wav|wave|x-wav|vnd\.wave|mpeg|mp3|mpeg3|x-mpeg-3)\b/i;
+  const mediaEv = (el, type) => J.dispatchEvent(el, new G.Event(type));
   class HTMLMediaElement extends HTMLElement {
-    play() { this._paused = false; J.dispatchEvent(this, new G.Event("play")); return Promise.resolve(); }
-    pause() { this._paused = true; J.dispatchEvent(this, new G.Event("pause")); }
-    load() {}
-    canPlayType() { return ""; }
-    get paused() { return this._paused !== false; }
-    get currentTime() { return 0; }
-    set currentTime(v) {}
-    get duration() { return NaN; }
-    get readyState() { return 0; }
-    get volume() { return 1; }
-    set volume(v) {}
-    get muted() { return this.hasAttribute("muted"); }
-    set muted(v) { this.toggleAttribute("muted", !!v); }
+    _m() {
+      if (!this.__media) this.__media = { pos: 0, start: 0, playing: false, clip: null, loading: null, volume: 1, timer: 0, tick: 0, src: null, error: null };
+      return this.__media;
+    }
+    _source() {
+      const s = this.getAttribute("src");
+      if (s !== null) return s;
+      for (const c of this.children) {
+        if (c.localName === "source" && c.getAttribute("src") !== null) {
+          const t = c.getAttribute("type");
+          if (!t || this.canPlayType(t)) return c.getAttribute("src");
+        }
+      }
+      return null;
+    }
+    _load() {
+      const m = this._m();
+      const src = this._source();
+      if (m.src === src && m.loading) return m.loading;
+      m.src = src;
+      m.clip = null;
+      m.error = null;
+      if (src === null || src === "") {
+        m.loading = Promise.reject(new G.DOMException("no source", "NotSupportedError"));
+        m.loading.catch(() => {});
+        return m.loading;
+      }
+      mediaEv(this, "loadstart");
+      let url = src;
+      try { url = new G.URL(src, G.document.baseURI).href; } catch (e) {}
+      m.loading = J.rpcAsync("audioLoad", { url }).then((r) => {
+        if (m.src !== src) throw new G.DOMException("aborted", "AbortError");
+        if (!r || r.error) {
+          m.error = { code: 4, message: (r && r.error) || "error" };
+          mediaEv(this, "error");
+          throw new G.DOMException(m.error.message, "NotSupportedError");
+        }
+        m.clip = r;
+        mediaEv(this, "durationchange");
+        mediaEv(this, "loadedmetadata");
+        mediaEv(this, "loadeddata");
+        mediaEv(this, "canplay");
+        mediaEv(this, "canplaythrough");
+        return r;
+      });
+      m.loading.catch(() => {});
+      return m.loading;
+    }
+    _now() {
+      const m = this._m();
+      if (!m.playing) return m.pos;
+      const t = m.pos + (G.performance.now() - m.start) / 1000;
+      return m.clip ? Math.min(t, m.clip.duration) : t;
+    }
+    _halt() {
+      const m = this._m();
+      if (m.timer) G.clearTimeout(m.timer);
+      if (m.tick) G.clearInterval(m.tick);
+      m.timer = m.tick = 0;
+      J.rpc("audioStop", { key: this.__id });
+    }
+    _start() {
+      const m = this._m();
+      const vol = this.muted ? 0 : m.volume;
+      J.rpc("audioPlay", { key: this.__id, id: m.clip.id, from: m.pos, volume: vol });
+      m.start = G.performance.now();
+      const left = Math.max(0, m.clip.duration - m.pos) * 1000;
+      m.timer = G.setTimeout(() => this._ended(), left);
+      m.tick = G.setInterval(() => mediaEv(this, "timeupdate"), 250);
+    }
+    _ended() {
+      const m = this._m();
+      this._halt();
+      if (this.loop) {
+        m.pos = 0;
+        this._start();
+        mediaEv(this, "seeked");
+        return;
+      }
+      m.pos = m.clip.duration;
+      m.playing = false;
+      mediaEv(this, "timeupdate");
+      mediaEv(this, "pause");
+      mediaEv(this, "ended");
+    }
+    play() {
+      const m = this._m();
+      return this._load().then(() => {
+        if (m.playing) return;
+        if (m.pos >= m.clip.duration) m.pos = 0;
+        m.playing = true;
+        mediaEv(this, "play");
+        this._start();
+        mediaEv(this, "playing");
+      });
+    }
+    pause() {
+      const m = this._m();
+      if (!m.playing) return;
+      m.pos = this._now();
+      m.playing = false;
+      this._halt();
+      mediaEv(this, "timeupdate");
+      mediaEv(this, "pause");
+    }
+    load() {
+      const m = this._m();
+      if (m.playing) this.pause();
+      m.pos = 0;
+      m.src = undefined;
+      m.loading = null;
+      mediaEv(this, "emptied");
+      this._load();
+    }
+    fastSeek(t) { this.currentTime = t; }
+    canPlayType(t) { return MEDIA_TYPES.test(String(t)) ? "maybe" : ""; }
+    get paused() { return !this._m().playing; }
+    get ended() { const m = this._m(); return !m.playing && !!m.clip && m.pos >= m.clip.duration; }
+    get currentTime() { return this._now(); }
+    set currentTime(v) {
+      const m = this._m();
+      v = Math.max(0, Number(v) || 0);
+      if (m.clip) v = Math.min(v, m.clip.duration);
+      const was = m.playing;
+      if (was) this._halt();
+      m.pos = v;
+      mediaEv(this, "seeking");
+      if (was) this._start();
+      mediaEv(this, "timeupdate");
+      mediaEv(this, "seeked");
+    }
+    get duration() { const c = this._m().clip; return c ? c.duration : NaN; }
+    get readyState() { return this._m().clip ? 4 : 0; }
+    get networkState() { const m = this._m(); return m.clip ? 1 : m.loading ? 2 : 0; }
+    get error() { const e = this._m().error; return e ? Object.assign(Object.create(G.MediaError.prototype), e) : null; }
+    get currentSrc() { const s = this._m().src; return s ? new G.URL(s, G.document.baseURI).href : ""; }
+    get volume() { return this._m().volume; }
+    set volume(v) {
+      v = Number(v);
+      if (!(v >= 0 && v <= 1)) throw new G.DOMException("volume out of range", "IndexSizeError");
+      const m = this._m();
+      m.volume = v;
+      this._restartIfPlaying();
+      mediaEv(this, "volumechange");
+    }
+    get muted() { return this._m().muted === undefined ? this.hasAttribute("muted") : this._m().muted; }
+    set muted(v) { this._m().muted = !!v; this._restartIfPlaying(); mediaEv(this, "volumechange"); }
+    get defaultMuted() { return this.hasAttribute("muted"); }
+    set defaultMuted(v) { this.toggleAttribute("muted", !!v); }
+    _restartIfPlaying() {
+      const m = this._m();
+      if (!m.playing) return;
+      m.pos = this._now();
+      this._halt();
+      this._start();
+    }
+    get playbackRate() { return 1; }
+    set playbackRate(v) {}
+    get preservesPitch() { return true; }
+    get buffered() { return J.timeRanges(this._m().clip ? [[0, this.duration]] : []); }
+    get seekable() { return this.buffered; }
+    get played() { return J.timeRanges([]); }
   }
+  HTMLMediaElement.NETWORK_EMPTY = 0; HTMLMediaElement.NETWORK_IDLE = 1; HTMLMediaElement.NETWORK_LOADING = 2; HTMLMediaElement.NETWORK_NO_SOURCE = 3;
+  HTMLMediaElement.HAVE_NOTHING = 0; HTMLMediaElement.HAVE_METADATA = 1; HTMLMediaElement.HAVE_CURRENT_DATA = 2; HTMLMediaElement.HAVE_FUTURE_DATA = 3; HTMLMediaElement.HAVE_ENOUGH_DATA = 4;
+  J.timeRanges = function (r) {
+    return { length: r.length, start: (i) => r[i][0], end: (i) => r[i][1] };
+  };
+  class MediaError {
+    get MEDIA_ERR_ABORTED() { return 1; }
+    get MEDIA_ERR_NETWORK() { return 2; }
+    get MEDIA_ERR_DECODE() { return 3; }
+    get MEDIA_ERR_SRC_NOT_SUPPORTED() { return 4; }
+  }
+  G.MediaError = MediaError;
   refUrl(HTMLMediaElement.prototype, "src");
   for (const p of ["autoplay", "controls", "loop", "playsInline"]) refBool(HTMLMediaElement.prototype, p);
+  refStr(HTMLMediaElement.prototype, "preload");
+  refStr(HTMLMediaElement.prototype, "crossOrigin");
   def("HTMLMediaElement", [], HTMLMediaElement);
-  def("HTMLVideoElement", ["video"], class HTMLVideoElement extends HTMLMediaElement {});
-  def("HTMLAudioElement", ["audio"], class HTMLAudioElement extends HTMLMediaElement {});
+  def("HTMLVideoElement", ["video"], class HTMLVideoElement extends HTMLMediaElement {
+    get videoWidth() { return 0; }
+    get videoHeight() { return 0; }
+  });
+  class HTMLAudioElement extends HTMLMediaElement {}
+  def("HTMLAudioElement", ["audio"], HTMLAudioElement);
+  // new Audio(src): an <audio preload=auto> not in the document.
+  G.Audio = function Audio(src) {
+    if (!new.target) throw new TypeError("Audio constructor requires 'new'");
+    const a = G.document.createElement("audio");
+    a.setAttribute("preload", "auto");
+    if (src !== undefined) a.setAttribute("src", String(src));
+    return a;
+  };
+  G.Audio.prototype = HTMLAudioElement.prototype;
 
   class HTMLCanvasElement extends HTMLElement {
     getContext(kind) { return J.canvasContext ? J.canvasContext(this, kind) : null; }

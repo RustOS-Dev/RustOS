@@ -6,3 +6,10 @@ description = "no_std audio building blocks: sample formats, resampling, mixing,
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+nanomp3 = { version = "0.1.1", optional = true }
+
+[features]
+# MP3 decoding (userland players; the kernel does not need it).
+mp3 = ["dep:nanomp3"]

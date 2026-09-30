@@ -52,6 +52,8 @@ pub struct Script {
     pub scroll: Option<f32>,
     /// A message for the status line.
     pub notice: Option<String>,
+    /// Audio clips and players of the page's media elements.
+    pub media: crate::media::Media,
     seq: i64,
 }
 
@@ -149,6 +151,7 @@ pub fn start(e: &mut Entry, referrer: &str, cols: usize, rows: usize) -> bool {
         focus: None,
         scroll: None,
         notice: None,
+        media: crate::media::Media::default(),
         seq: 0,
     };
     s.js.send(&init);
@@ -490,6 +493,48 @@ fn rpc(
             }
         }
         "fetch" => Ok(fetch(e, loader, a)),
+        "audioLoad" => {
+            let err = |s: &str| Ok(Json::obj([("error", jstr(s))]));
+            let Ok(url) = e.loaded.url.join(a.str("url").unwrap_or("")) else {
+                return err("bad URL");
+            };
+            if e.loaded.url.is_secure() && url.scheme == "http" {
+                return err("blocked: mixed content");
+            }
+            let referrer = e.loaded.url.clone();
+            let Some((bytes, _)) = loader.fetch_bytes(&url, &referrer, crate::media::MAX_BYTES)
+            else {
+                return err("network error");
+            };
+            let Some(s) = e.script.as_mut() else {
+                return err("no script");
+            };
+            match s.media.add(&bytes) {
+                Ok((id, dur)) => Ok(Json::obj([
+                    ("id", Json::from(id as i64)),
+                    ("duration", Json::from(dur)),
+                ])),
+                Err(m) => err(m),
+            }
+        }
+        "audioPlay" => {
+            let s = e.script.as_mut().ok_or("no script")?;
+            s.media
+                .play(
+                    a.int("key").unwrap_or(0),
+                    a.int("id").unwrap_or(-1) as usize,
+                    a.num("from").unwrap_or(0.0),
+                    a.num("volume").unwrap_or(1.0),
+                )
+                .map(|_| Json::Null)
+                .map_err(String::from)
+        }
+        "audioStop" => {
+            if let Some(s) = e.script.as_mut() {
+                s.media.stop(a.int("key").unwrap_or(0));
+            }
+            Ok(Json::Null)
+        }
         "cookie" => {
             let now = time::now();
             let ctx = Context {

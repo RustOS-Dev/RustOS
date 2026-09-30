@@ -196,6 +196,7 @@
       } catch (e) { G.__onError(e); }
     }
     J.dispatchEvent(d, new G.Event("DOMContentLoaded", { bubbles: true }));
+    for (const a of d.querySelectorAll("audio[autoplay]")) a.play().catch(() => {});
     loadFired = false;
     maybeLoad();
   }

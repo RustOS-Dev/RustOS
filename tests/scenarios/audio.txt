@@ -1,9 +1,11 @@
 # Tones through each card's /dev/dsp reach the host as sound.
+hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/test-web-server.py" 18095 /tmp/rustos-webaudio.log
 wait # $ 240
 send dmesg | grep "sound] card" | cat
 wait card 0: HDA
 wait card 1: virtio-sound
 wait card 2: HDA
+wait card 3: QEMU USB Audio
 wait # $
 send mixer -d /dev/mixer0; mixer -d /dev/mixer0 volume 90
 wait volume\s+90% 90%
@@ -19,7 +21,31 @@ wait # $
 send play -d /dev/dsp2 /tmp/r.wav
 wait /tmp/r.wav: 48000 Hz, 2 ch, 192000 bytes
 wait # $
+# USB audio: 1 kHz frames per 1 ms isochronous packet.
+send dmesg | grep "audio:" | cat
+wait 48000 Hz, 2 ch, 16-bit, UAC1
+wait # $
+send beep -f 2000 -l 1500 -v 60 -d /dev/dsp3; echo usb-beeped
+wait usb-beeped\r\n 60
+wait # $
+# MP3: rbox play decodes it; the browser's new Audio() plays it on
+# /dev/dsp (card 0: the same 1 kHz as the beep there).
+send dhcp eth0 -t 20
+wait leased 10\.0\.2\.15/24 30
+wait # $
+send wget -q -O /tmp/t.mp3 http://10.0.2.2:18095/js/tone.mp3 && play -d /dev/dsp2 /tmp/t.mp3
+wait /tmp/t.mp3: 44100 Hz, 2 ch, [0-9]+ bytes
+wait # $
+# (Replies arrive in any order: the log words are sorted.)
+send browse -dump -width 100 http://10.0.2.2:18095/js/audio > /tmp/ad.txt; grep -o -e "can=[^ ]*" -e "missing=[^ ]*" -e "dur=[^ ]*" -e PLAYING -e "ENDED paused=[^ ]* t=[^ ]*" /tmp/ad.txt | sort | cat
+wait ENDED paused=true t=0\.5 30
+wait PLAYING
+wait can=maybe/no
+wait dur=0\.5
+wait missing=NotSupportedError/4
+wait # $
 monitor quit
 sleep 2
 hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-wav.py" /tmp/rustos-audio-hda.wav 1000
 hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-wav.py" /tmp/rustos-audio-vsnd.wav 1500
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-wav.py" /tmp/rustos-audio-usb.wav 2000

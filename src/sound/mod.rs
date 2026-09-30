@@ -86,12 +86,15 @@ pub struct SoundDev {
     wq: WaitQueue,
     running: AtomicBool,
     capturing: AtomicBool,
+    /// Unplugged: the mixer thread exits and opens fail.
+    gone: AtomicBool,
     /// OSS volumes: left | right << 8, 0..=100.
     volume: AtomicU32,
     pcm_volume: AtomicU32,
 }
 
 static CARDS: Mutex<Vec<Arc<SoundDev>>> = Mutex::new(Vec::new());
+static NEXT_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 /// Register a card: /dev/dspN, /dev/mixerN (and /dev/dsp, /dev/mixer for
 /// the first).
@@ -99,12 +102,13 @@ pub fn register(card: Arc<dyn Card>) -> Arc<SoundDev> {
     let dev = {
         let mut cards = CARDS.lock();
         let d = Arc::new(SoundDev {
-            index: cards.len(),
+            index: NEXT_INDEX.fetch_add(1, Ordering::Relaxed),
             card,
             clients: Mutex::new(Vec::new()),
             wq: WaitQueue::new(),
             running: AtomicBool::new(false),
             capturing: AtomicBool::new(false),
+            gone: AtomicBool::new(false),
             volume: AtomicU32::new(80 | 80 << 8),
             pcm_volume: AtomicU32::new(100 | 100 << 8),
         });
@@ -147,6 +151,22 @@ pub fn register(card: Arc<dyn Card>) -> Arc<SoundDev> {
     dev
 }
 
+/// Remove an unplugged card: its device nodes go away and the mixer
+/// thread exits; open files get ENODEV.
+pub fn unregister(dev: &Arc<SoundDev>) {
+    dev.gone.store(true, Ordering::SeqCst);
+    dev.wq.wake_all();
+    let i = dev.index;
+    crate::vfs::devfs::unregister(&alloc::format!("dsp{}", i));
+    crate::vfs::devfs::unregister(&alloc::format!("mixer{}", i));
+    if i == 0 {
+        crate::vfs::devfs::unregister("dsp");
+        crate::vfs::devfs::unregister("mixer");
+    }
+    CARDS.lock().retain(|d| !Arc::ptr_eq(d, dev));
+    crate::println!("[sound] card {}: removed", i);
+}
+
 /// /proc/asound-like summary.
 pub fn cards() -> Vec<Arc<SoundDev>> {
     CARDS.lock().clone()
@@ -166,6 +186,13 @@ impl SoundDev {
         let period = (rate * PERIOD_MS / 1000) as usize * ch;
         let mut idle_periods = 0;
         loop {
+            if self.gone.load(Ordering::Relaxed) {
+                if self.running.swap(false, Ordering::Relaxed) {
+                    self.card.stop_playback();
+                }
+                self.wq.wake_all();
+                return;
+            }
             let players: Vec<Arc<Client>> = self
                 .live_clients()
                 .into_iter()
@@ -344,7 +371,10 @@ impl DspFile {
     /// SNDCTL_DSP_SYNC: wait until everything queued has been played.
     fn drain(&self) {
         let deadline = crate::time::Deadline::after_ms(5000);
-        while !self.client.fifo.lock().is_empty() && !deadline.expired() {
+        while !self.client.fifo.lock().is_empty()
+            && !deadline.expired()
+            && !self.dev.gone.load(Ordering::Relaxed)
+        {
             self.dev
                 .wq
                 .wait_timeout(50, || self.client.fifo.lock().is_empty());
@@ -390,6 +420,9 @@ impl crate::vfs::FileLike for DspFile {
         while done < usable {
             let n = (usable - done).min(fsize * 512);
             loop {
+                if self.dev.gone.load(Ordering::Relaxed) {
+                    return Err(ENODEV);
+                }
                 if self.room() > 0 {
                     break;
                 }
@@ -422,6 +455,9 @@ impl crate::vfs::FileLike for DspFile {
             p.channels * p.format.bytes()
         };
         loop {
+            if self.dev.gone.load(Ordering::Relaxed) {
+                return Err(ENODEV);
+            }
             {
                 let mut q = self.client.rec.lock();
                 let n = (buf.len().min(q.len())) / fsize * fsize;

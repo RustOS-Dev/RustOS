@@ -5,6 +5,7 @@
 //! Class drivers (hub, HID, mass storage, and whatever registers through
 //! [`register_driver`], e.g. USB networking) bind per interface.
 
+pub mod audio;
 pub mod cdc_ether;
 pub mod hid;
 pub mod hub;
@@ -270,6 +271,21 @@ impl UsbDevice {
     }
 
     /// Wait for a transfer from [`UsbDevice::submit`].
+    /// Queue an isochronous packet of `len` bytes at `off` in `buf`.
+    pub fn submit_isoch(
+        &self,
+        ep: &Endpoint,
+        buf: &DmaBuffer,
+        off: usize,
+        len: usize,
+    ) -> KResult<xhci::Td> {
+        if off + len > buf.len() {
+            return Err(EINVAL);
+        }
+        self.hc
+            .submit_isoch(self, ep.dci(), buf.phys() + off as u64, len, ep.is_in())
+    }
+
     pub fn wait(&self, td: &xhci::Td, timeout_ms: Option<u64>) -> KResult<usize> {
         self.hc.wait(self, td, timeout_ms)
     }
@@ -352,12 +368,13 @@ fn bind(dev: &Arc<UsbDevice>) {
         .map(|c| c.default_interfaces().cloned().collect())
         .unwrap_or_default();
     for iface in &ifaces {
-        let builtin: [(&'static str, DriverProbe); 5] = [
+        let builtin: [(&'static str, DriverProbe); 6] = [
             ("hub", hub::probe),
             ("usbhid", hid::probe),
             ("uas", uas::probe),
             ("usb-storage", storage::probe),
             ("cdc_ether", cdc_ether::probe),
+            ("snd-usb-audio", audio::probe),
         ];
         let extra = DRIVERS.lock().clone();
         for (name, probe) in builtin.iter().chain(extra.iter()) {

@@ -61,9 +61,9 @@ EVIOCG* ioctls yet.
 - [x] **M20** Graphical browser `browse -g`: fonts, images, painting, mouse, canvas
 - [x] **M21** Wi-Fi remainder: 12 KiB receive buffers, BAID receive BA, power save, 6 GHz with SAE-H2E, 160 MHz, BT coexistence
 - [x] **M22** ext4 remainder: multi-transaction journal, data=journal, fast_commit replay, htree lookups, inline_data, bigalloc, meta_bg, quotas, casefold, large_dir, ea_inode
-- [ ] **M23** USB remainder: UAS queueing and USB 2 UAS, isochronous transfers, evdev ioctls
+- [x] **M23** USB remainder: UAS queueing and USB 2 UAS, isochronous transfers, evdev ioctls
 - [ ] **M24** `hwcheck`/`bugreport` coverage for round 3 features
-- [ ] **M25** Audio: sound core with OSS `/dev/dsp`, Intel HDA, USB Audio Class 1/2, virtio-sound
+- [x] **M25** Audio: sound core with OSS `/dev/dsp`, Intel HDA, USB Audio Class 1/2, virtio-sound
 - [ ] **M26** Bluetooth: USB/H4 HCI, AX210 firmware, L2CAP/SMP/GATT, HID over GATT and BR/EDR HID
 
 Round 3 deviations so far:
@@ -107,6 +107,16 @@ Round 3 deviations so far:
   - ea_inode is read-only for values: there is no setxattr.
   - encrypt and verity mount read-only.
   - Project quotas are accounted but not settable via ioctl: there is no FS_IOC_FSSETXATTR.
+- **M23**:
+  - Isochronous transfers are one TD per packet, scheduled with SIA and refilled by the driver's streaming thread, not from an IRQ callback. Only OUT (playback) streams are used.
+  - The evdev ioctls are tested with `evtest -i`/`-l` rather than a musl C program.
+- **M25**:
+  - Every card mixes at 48 kHz, 16-bit stereo.
+  - HDA:
+    - the headphone jack is checked at each playback start (unsolicited responses are ignored);
+    - there is no HDMI/ELD support and no quirk table beyond EAPD and GPIO 0.
+  - USB audio: playback only, with no explicit feedback. Its volume is applied in software, and the feature unit is set to 0 dB.
+  - The browser plays WAV and MP3 (`nanomp3`); there is no Ogg/Vorbis. The QEMU wav backend cannot feed capture, so recording is tested on a card with the `none` backend (silence).
 - **M19** — tests: a host end-to-end suite (`crates/jsproto/tests/jsd.rs`) plus the `browser-js` and `captive-portal-js` scenarios stand in for the WPT subset.
 
 ## Context

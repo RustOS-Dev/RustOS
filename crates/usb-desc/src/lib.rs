@@ -8,6 +8,7 @@ extern crate alloc;
 
 pub mod hid;
 pub mod ncm;
+pub mod uac;
 
 use alloc::vec::Vec;
 

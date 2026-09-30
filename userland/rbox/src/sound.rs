@@ -1,6 +1,7 @@
 //! play, rec, beep, mixer: the OSS sound devices (/dev/dsp, /dev/mixer).
 
 use crate::err;
+use audio::clip;
 use audio::pcm::{self, Format};
 use audio::wav;
 use rustos_rt::fs;
@@ -50,7 +51,7 @@ fn write_all(f: &fs::File, mut b: &[u8]) -> rustos_rt::Result<()> {
     Ok(())
 }
 
-/// play [-d DEVICE] FILE.wav...
+/// play [-d DEVICE] FILE...: WAV or MP3 files.
 pub fn play(args: &[String]) -> i32 {
     let mut dev = String::from("/dev/dsp");
     let mut files = Vec::new();
@@ -66,7 +67,7 @@ pub fn play(args: &[String]) -> i32 {
         i += 1;
     }
     if files.is_empty() {
-        eprintln!("usage: play [-d DEVICE] FILE.wav...");
+        eprintln!("usage: play [-d DEVICE] FILE.wav|FILE.mp3...");
         return 2;
     }
     for f in &files {
@@ -74,27 +75,37 @@ pub fn play(args: &[String]) -> i32 {
             Ok(d) => d,
             Err(e) => return err("play", f, e),
         };
-        let Some(w) = wav::parse(&data) else {
-            eprintln!("play: {}: not a PCM WAV file", f);
-            return 1;
-        };
-        let body = &data[w.data_off..w.data_off + w.data_len];
-        let unpacked;
-        let body = if w.format == Format::S24 {
-            unpacked = wav::unpack24(body);
-            &unpacked[..]
-        } else {
-            body
-        };
-        let out = match open_dsp(&dev, true, w.rate, w.channels, w.format) {
+        // PCM WAV plays as stored; anything else (MP3) is decoded first.
+        let (rate, ch, fmt, body, len): (u32, u16, Format, Vec<u8>, usize) =
+            match wav::parse(&data) {
+                Some(w) => {
+                    let body = &data[w.data_off..w.data_off + w.data_len];
+                    let b = if w.format == Format::S24 {
+                        wav::unpack24(body)
+                    } else {
+                        body.to_vec()
+                    };
+                    (w.rate, w.channels, w.format, b, w.data_len)
+                }
+                None => match clip::decode(&data) {
+                    Some(c) => {
+                        let mut b = Vec::with_capacity(c.samples.len() * 2);
+                        Format::S16.encode(&c.samples, &mut b);
+                        let n = b.len();
+                        (c.rate, c.channels as u16, Format::S16, b, n)
+                    }
+                    None => {
+                        eprintln!("play: {}: not a WAV or MP3 file", f);
+                        return 1;
+                    }
+                },
+            };
+        let out = match open_dsp(&dev, true, rate, ch, fmt) {
             Ok(o) => o,
             Err(e) => return err("play", &dev, e),
         };
-        println!(
-            "{}: {} Hz, {} ch, {} bytes",
-            f, w.rate, w.channels, w.data_len
-        );
-        if let Err(e) = write_all(&out, body) {
+        println!("{}: {} Hz, {} ch, {} bytes", f, rate, ch, len);
+        if let Err(e) = write_all(&out, &body) {
             return err("play", &dev, e);
         }
         let _ = ioctl_int(&out, SNDCTL_DSP_SYNC, 0);

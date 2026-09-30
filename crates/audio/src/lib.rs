@@ -7,6 +7,7 @@
 
 extern crate alloc;
 
+pub mod clip;
 pub mod hda;
 pub mod pcm;
 pub mod wav;

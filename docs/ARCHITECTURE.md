@@ -215,7 +215,10 @@ time (`settimeofday`/`ntpdate` adjust it).
   descriptors parsed by `usb_desc::hid`; keyboards to the console,
   pointers and game controllers to `drivers::input`), mass storage over
   Bulk-Only and UAS (`usb/uas.rs`, sharing the SCSI layer in
-  `usb/storage.rs`), CDC ECM/NCM/RNDIS Ethernet.
+  `usb/storage.rs`), CDC ECM/NCM/RNDIS Ethernet, USB Audio Class
+  playback over isochronous transfers (`usb/audio.rs`).
+* **Sound**: `sound/` (OSS `/dev/dsp`/`/dev/mixer`, a per-card mixer
+  thread), Intel HD Audio and virtio-sound; see [AUDIO.md](AUDIO.md).
 * **Network**: see [NETWORKING.md](NETWORKING.md); Wi-Fi: see
   [WIFI.md](WIFI.md).
 * **Power-off/reboot**: `drivers::shutdown` flushes filesystems and caches,

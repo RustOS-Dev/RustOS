@@ -1,0 +1,5 @@
+# ext4 feature matrix: one virtio-blk disk per mke2fs -O variant.
+-drive if=none,id=f0,format=raw,file=@EXT4F:64:inline_data@
+-device virtio-blk-pci,drive=f0
+-drive if=none,id=f1,format=raw,file=@EXT4F:64:meta_bg,^resize_inode@
+-device virtio-blk-pci,drive=f1

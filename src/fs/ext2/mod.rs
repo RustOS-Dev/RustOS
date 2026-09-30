@@ -17,6 +17,7 @@
 
 mod extent;
 mod htree;
+mod inline;
 mod journal;
 
 use crate::block::cache::CachedDevice;
@@ -47,6 +48,7 @@ const INCOMPAT_FLEX_BG: u32 = 0x200;
 const INCOMPAT_EA_INODE: u32 = 0x400;
 const INCOMPAT_CSUM_SEED: u32 = 0x2000;
 const INCOMPAT_LARGEDIR: u32 = 0x4000;
+const INCOMPAT_INLINE_DATA: u32 = 0x8000;
 /// Features we can read.
 const INCOMPAT_READ: u32 = INCOMPAT_FILETYPE
     | INCOMPAT_RECOVER
@@ -56,9 +58,10 @@ const INCOMPAT_READ: u32 = INCOMPAT_FILETYPE
     | INCOMPAT_FLEX_BG
     | INCOMPAT_EA_INODE
     | INCOMPAT_CSUM_SEED
-    | INCOMPAT_LARGEDIR;
+    | INCOMPAT_LARGEDIR
+    | INCOMPAT_INLINE_DATA;
 /// Features we can keep consistent while writing.
-const INCOMPAT_WRITE: u32 = INCOMPAT_READ & !INCOMPAT_META_BG;
+const INCOMPAT_WRITE: u32 = INCOMPAT_READ;
 const RO_COMPAT_SPARSE: u32 = 0x1;
 const RO_COMPAT_LARGE_FILE: u32 = 0x2;
 const RO_COMPAT_HUGE_FILE: u32 = 0x8;
@@ -137,11 +140,12 @@ pub struct Ext2Fs {
     inode_size: u64,
     first_data_block: u32,
     desc_size: u64,
-    desc_table: u64,
     first_ino: u32,
     /// Blocks after each superblock copy that hold group descriptors
-    /// (including reserved ones for resizing).
+    /// (including reserved ones for resizing; with meta_bg, only those
+    /// before `first_meta_bg`).
     gdt_blocks: u64,
+    layout: DescLayout,
     filetype: bool,
     read_only: bool,
     /// New files get extent trees.
@@ -392,6 +396,83 @@ pub fn probe(dev: &CachedDevice) -> Option<(&'static str, String)> {
     Some((kind, label))
 }
 
+/// Whether group `g` holds a superblock backup (and, without meta_bg, a
+/// copy of the descriptor table).
+fn has_super(sparse_super: bool, g: u64) -> bool {
+    if !sparse_super || g <= 1 {
+        return true;
+    }
+    [3u64, 5, 7].iter().any(|&p| {
+        let mut x = p;
+        while x < g {
+            x *= p;
+        }
+        x == g
+    })
+}
+
+/// Where the group descriptors live. Without meta_bg they follow the
+/// superblock in one table. With meta_bg, the blocks before
+/// `first_meta_bg` still do; after that, each meta-group (the groups whose
+/// descriptors share one block) keeps its descriptor block in its first
+/// group, with backups in the second and last.
+#[derive(Clone, Copy)]
+struct DescLayout {
+    block_size: u64,
+    desc_size: u64,
+    first_data_block: u64,
+    blocks_per_group: u64,
+    meta_bg: bool,
+    first_meta_bg: u64,
+    sparse_super: bool,
+}
+
+impl DescLayout {
+    fn per_block(&self) -> u64 {
+        self.block_size / self.desc_size
+    }
+
+    /// Block holding group `g`'s descriptor, and its byte offset there.
+    fn locate(&self, g: u64) -> (u64, usize) {
+        let dpb = self.per_block();
+        let i = g / dpb;
+        let off = ((g % dpb) * self.desc_size) as usize;
+        if !self.meta_bg || i < self.first_meta_bg {
+            return (self.first_data_block + 1 + i, off);
+        }
+        let first = i * dpb;
+        let sb = has_super(self.sparse_super, first) as u64;
+        (
+            self.first_data_block + first * self.blocks_per_group + sb,
+            off,
+        )
+    }
+
+    /// Descriptor blocks group `g` holds (meta_bg groups only; the first,
+    /// second and last group of each meta-group).
+    fn meta_desc_blocks(&self, g: u64) -> u64 {
+        let dpb = self.per_block();
+        let first = g / dpb * dpb;
+        (g == first || g == first + 1 || g == first + dpb - 1) as u64
+    }
+
+    /// Read all `ngroups` descriptors through `read(block, buf)`.
+    fn read(
+        &self,
+        ngroups: usize,
+        mut read: impl FnMut(u64, &mut [u8]) -> KResult<()>,
+    ) -> KResult<Vec<u8>> {
+        let bs = self.block_size as usize;
+        let dpb = self.per_block() as usize;
+        let mut raw = vec![0u8; ngroups.div_ceil(dpb) * bs];
+        for (i, chunk) in raw.chunks_mut(bs).enumerate() {
+            read(self.locate((i * dpb) as u64).0, chunk)?;
+        }
+        raw.truncate(ngroups * self.desc_size as usize);
+        Ok(raw)
+    }
+}
+
 /// Parse the group descriptor table.
 fn parse_groups(raw: &[u8], ngroups: usize, desc_size: usize, is64: bool) -> Vec<Group> {
     let mut groups = Vec::with_capacity(ngroups);
@@ -483,9 +564,24 @@ impl Ext2Fs {
         };
         let ngroups =
             (blocks_count - first_data_block as u64).div_ceil(blocks_per_group as u64) as usize;
-        let desc_table = (first_data_block as u64 + 1) * block_size;
-        let mut raw = vec![0u8; ngroups * desc_size as usize];
-        dev.read_bytes(desc_table, &mut raw)?;
+        let meta_bg = incompat & INCOMPAT_META_BG != 0;
+        let layout = DescLayout {
+            block_size,
+            desc_size,
+            first_data_block: first_data_block as u64,
+            blocks_per_group: blocks_per_group as u64,
+            meta_bg,
+            first_meta_bg: if meta_bg {
+                u32le(&sb, 0x104) as u64
+            } else {
+                u64::MAX
+            },
+            sparse_super: ro_compat & RO_COMPAT_SPARSE != 0,
+        };
+        let raw = layout.read(ngroups, |b, buf| {
+            dev.read_bytes(b * block_size, buf)?;
+            Ok(())
+        })?;
         let groups = parse_groups(&raw, ngroups, desc_size as usize, is64);
         let label: String = core::str::from_utf8(&sb[120..136])
             .unwrap_or("")
@@ -500,12 +596,11 @@ impl Ext2Fs {
         for (i, h) in hash_seed.iter_mut().enumerate() {
             *h = u32le(&sb, SB_HASH_SEED + i * 4);
         }
-        let gdt_blocks = (ngroups as u64 * desc_size).div_ceil(block_size)
-            + if incompat & INCOMPAT_META_BG == 0 {
-                u16le(&sb, 0xCE) as u64
-            } else {
-                0
-            };
+        let gdt_blocks = if meta_bg {
+            layout.first_meta_bg
+        } else {
+            (ngroups as u64 * desc_size).div_ceil(block_size)
+        } + u16le(&sb, 0xCE) as u64;
         let fs = Arc::new(Ext2Fs {
             dev: dev.clone(),
             block_size,
@@ -516,9 +611,9 @@ impl Ext2Fs {
             inode_size,
             first_data_block,
             desc_size,
-            desc_table,
             first_ino,
             gdt_blocks,
+            layout,
             filetype: incompat & INCOMPAT_FILETYPE != 0,
             read_only: true,
             extents: incompat & INCOMPAT_EXTENTS != 0,
@@ -577,7 +672,8 @@ impl Ext2Fs {
         // superblock and group descriptors, and the flags above are final.
         drop(fs);
         let mut sb2 = vec![0u8; 1024];
-        let mut raw2 = raw;
+        let raw2;
+        drop(raw);
         match &journal {
             Some(j) if replayed && !dev_writable => {
                 // Read through the overlay.
@@ -588,17 +684,19 @@ impl Ext2Fs {
                 }
                 let o = (1024 % block_size) as usize;
                 sb2.copy_from_slice(&blk[o..o + 1024]);
-                for (i, chunk) in raw2.chunks_mut(block_size as usize).enumerate() {
-                    let b = desc_table / block_size + i as u64;
-                    if !j.cached(b, &mut blk) {
-                        dev.read_bytes(b * block_size, &mut blk)?;
+                raw2 = layout.read(ngroups, |b, buf| {
+                    if !j.cached(b, buf) {
+                        dev.read_bytes(b * block_size, buf)?;
                     }
-                    chunk.copy_from_slice(&blk[..chunk.len()]);
-                }
+                    Ok(())
+                })?;
             }
             _ => {
                 dev.read_bytes(1024, &mut sb2)?;
-                dev.read_bytes(desc_table, &mut raw2)?;
+                raw2 = layout.read(ngroups, |b, buf| {
+                    dev.read_bytes(b * block_size, buf)?;
+                    Ok(())
+                })?;
             }
         }
         let groups = parse_groups(&raw2, ngroups, desc_size as usize, is64);
@@ -614,9 +712,9 @@ impl Ext2Fs {
             inode_size,
             first_data_block,
             desc_size,
-            desc_table,
             first_ino,
             gdt_blocks,
+            layout,
             filetype: incompat & INCOMPAT_FILETYPE != 0,
             read_only,
             extents: incompat & INCOMPAT_EXTENTS != 0,
@@ -869,8 +967,7 @@ impl Ext2Fs {
     /// Write group `g`'s descriptor (with its checksum) and the free
     /// counts in the superblock.
     fn flush_group(&self, meta: &Meta, g: usize) -> KResult<()> {
-        let off = self.desc_table + g as u64 * self.desc_size;
-        let (b, o) = (off / self.block_size, (off % self.block_size) as usize);
+        let (b, o) = self.layout.locate(g as u64);
         let ds = self.desc_size as usize;
         let gr = &meta.groups[g];
         let big = self.is64 && ds >= 64;
@@ -918,16 +1015,19 @@ impl Ext2Fs {
 
     /// Whether group `g` holds a superblock backup (and descriptor copy).
     fn group_has_super(&self, g: usize) -> bool {
-        if !self.sparse_super || g <= 1 {
-            return true;
+        has_super(self.sparse_super, g as u64)
+    }
+
+    /// Blocks at the start of group `g` used by the superblock copy and
+    /// group descriptors (as `ext4_num_base_meta_clusters`).
+    fn base_meta_blocks(&self, g: usize) -> u64 {
+        let l = &self.layout;
+        let sb = self.group_has_super(g) as u64;
+        if !l.meta_bg || (g as u64) < l.first_meta_bg * l.per_block() {
+            if sb == 1 { 1 + self.gdt_blocks } else { 0 }
+        } else {
+            sb + l.meta_desc_blocks(g as u64)
         }
-        [3u64, 5, 7].iter().any(|&p| {
-            let mut x = p;
-            while x < g as u64 {
-                x *= p;
-            }
-            x == g as u64
-        })
     }
 
     fn itable_blocks(&self) -> u64 {
@@ -949,9 +1049,7 @@ impl Ext2Fs {
                 bm[i / 8] |= 1 << (i % 8);
             }
         };
-        if self.group_has_super(g) {
-            set_range(base, 1 + self.gdt_blocks);
-        }
+        set_range(base, self.base_meta_blocks(g));
         let it = self.itable_blocks();
         for h in &meta.groups {
             set_range(h.block_bitmap, 1);
@@ -1471,7 +1569,11 @@ impl Ext2Inode {
             return self.ext_map(st, l, create);
         }
         if st.flags & FL_INLINE != 0 {
-            return if create { Err(EROFS) } else { Ok(None) };
+            if !create {
+                return Ok(None);
+            }
+            self.uninline(st)?;
+            return self.bmap(st, l, create);
         }
         let fs = &self.fs;
         let p = fs.ptrs_per_block();
@@ -1543,9 +1645,9 @@ impl Ext2Inode {
         }
         let len = (buf.len() as u64).min(st.size - off) as usize;
         if st.flags & FL_INLINE != 0 {
-            // Inline data lives in i_block (first 60 bytes).
-            let inline = st.block_bytes();
-            let end = (off as usize + len).min(60);
+            // Inline data: i_block, then the system.data attribute.
+            let inline = inline::inline_bytes(st);
+            let end = (off as usize + len).min(inline.len());
             let n = end.saturating_sub(off as usize);
             if n > 0 {
                 buf[..n].copy_from_slice(&inline[off as usize..end]);
@@ -1587,7 +1689,7 @@ impl Ext2Inode {
             return Err(EROFS);
         }
         if st.flags & FL_INLINE != 0 {
-            return Err(EROFS);
+            self.uninline(st)?;
         }
         let bs = self.fs.block_size;
         let mut done = 0;
@@ -1622,7 +1724,8 @@ impl Ext2Inode {
             return self.ext_truncate(st, keep);
         }
         if st.flags & FL_INLINE != 0 {
-            return Err(EROFS);
+            // The inline area is simply cut off by the new size.
+            return Ok(());
         }
         let fs = self.fs.clone();
         let p = fs.ptrs_per_block();
@@ -1722,7 +1825,7 @@ impl Ext2Inode {
             return Err(ENOTDIR);
         }
         if st.flags & FL_INLINE != 0 {
-            return Err(EIO);
+            return Ok(inline::inline_dir_entries(self.ino, &st));
         }
         let bs = self.fs.block_size as usize;
         let nblocks = st.size.div_ceil(bs as u64);
@@ -1777,6 +1880,7 @@ impl Ext2Inode {
         let bs = fs.block_size as usize;
         let end = self.dir_end();
         let mut st = self.st.lock();
+        self.uninline(&mut st)?;
         let tcode = if fs.filetype { ft_code(kind) } else { 0 };
         let t = now();
         st.mtime = t;
@@ -1836,6 +1940,10 @@ impl Ext2Inode {
     }
 
     fn set_entry_ino(&self, name: &str, ino: u32) -> KResult<()> {
+        {
+            let mut st = self.st.lock();
+            self.uninline(&mut st)?;
+        }
         let (_, _, l, off) = self.find_entry(name)?;
         let mut st = self.st.lock();
         let pb = self.bmap(&mut st, l, false)?.ok_or(EIO)?;
@@ -1972,7 +2080,9 @@ impl Ext2Inode {
         if self.fs.read_only {
             return Err(EROFS);
         }
-        Ok(())
+        let _h = self.fs.begin();
+        let mut st = self.st.lock();
+        self.uninline(&mut st)
     }
 
     fn fallocate_inner(&self, mode: u32, off: u64, len: u64) -> KResult<()> {
@@ -1991,7 +2101,7 @@ impl Ext2Inode {
             _ => return Err(ENODEV),
         }
         if st.flags & FL_INLINE != 0 {
-            return Err(EROFS);
+            self.uninline(&mut st)?;
         }
         let bs = self.fs.block_size;
         let end = off.checked_add(len).ok_or(EFBIG)?;
@@ -2251,7 +2361,7 @@ impl Inode for Ext2Inode {
             return Err(EISDIR);
         }
         if st.flags & FL_INLINE != 0 {
-            return Err(EROFS);
+            self.uninline(&mut st)?;
         }
         self.write_data(&mut st, off, buf)
     }
@@ -2266,7 +2376,7 @@ impl Inode for Ext2Inode {
             return Err(EISDIR);
         }
         if st.flags & FL_INLINE != 0 {
-            return Err(EROFS);
+            self.uninline(&mut st)?;
         }
         let bs = self.fs.block_size;
         if size < st.size {

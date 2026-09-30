@@ -1,0 +1,32 @@
+# ext4 features beyond the defaults, each on its own disk, written to,
+# remounted and checked with the host e2fsck.
+wait # $ 240
+send grep /mnt/vd /proc/mounts | cat
+wait /dev/vda /mnt/vda ext4 rw
+wait /dev/vdb /mnt/vdb ext4 rw
+wait # $
+# inline_data: files and a directory stored in their inodes are read in
+# place, then converted to extents by the first write.
+send cat /mnt/vda/small.txt; wc -c /mnt/vda/medium.txt; ls /mnt/vda/idir | tr '\n' ' '; echo; sha256sum /mnt/vda/big.bin | cut -c1-16
+wait inline hello
+wait 100 /mnt/vda/medium.txt
+wait a b c
+wait # $
+send echo more >> /mnt/vda/small.txt && echo new > /mnt/vda/idir/d && rm /mnt/vda/idir/a && mv /mnt/vda/idir/b /mnt/vda/idir/bee && cat /mnt/vda/small.txt && ls /mnt/vda/idir | tr '\n' ' '; echo
+wait more
+wait bee c d
+wait # $
+# meta_bg: descriptors stored per meta-group; allocate across groups.
+send dd if=/dev/zero of=/mnt/vdb/fill bs=65536 count=400 2>/dev/null; ls -l /mnt/vdb/fill; mkdir /mnt/vdb/d1 && echo x > /mnt/vdb/d1/x && cat /mnt/vdb/small.txt
+wait 26214400
+wait inline hello
+wait # $
+send sync && umount /mnt/vda && umount /mnt/vdb
+wait # $
+hostrun e2fsck -fn "$RUSTOS_DISK0"
+hostrun e2fsck -fn "$RUSTOS_DISK1"
+send mount /dev/vda /mnt/f0 && mount /dev/vdb /mnt/f1 && cat /mnt/f0/idir/d /mnt/f0/small.txt /mnt/f1/d1/x
+wait new
+wait more
+wait x\r\n
+wait # $

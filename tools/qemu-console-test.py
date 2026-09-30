@@ -16,7 +16,10 @@ img = tempfile.mktemp(suffix=".img")
 # not yet written back: /hello.txt reads OLD-CONTENT until the journal is
 # replayed, NEW-CONTENT after), @TREE:<MiB>:<dir>@ (ext4 holding the files of
 # <dir>, relative to the repository; tools/fetch-<name>.sh creates it when
-# missing), @BLANK:<MiB>@ (zeros). Their paths are
+# missing), @EXT4F:<MiB>:<feature,...>@ (ext4 made with mke2fs -O
+# <features> and seeded with small files, an inline-sized directory and a
+# larger file; "casefold" adds -E encoding=utf8, "bigalloc" a 16 KiB
+# cluster), @BLANK:<MiB>@ (zeros). Their paths are
 # exported to host commands as $RUSTOS_DISK0, $RUSTOS_DISK1, ...
 scratch = []
 def _quiet(cmd, **kw):
@@ -24,6 +27,26 @@ def _quiet(cmd, **kw):
 def _disk(m):
     kind, size = m.group(1), int(m.group(2))
     path = tempfile.mktemp(suffix=".disk")
+    if kind == "EXT4F":
+        feats = m.group(3)
+        os.environ[f"RUSTOS_DISK{len(scratch)}"] = path
+        scratch.append(path)
+        with open(path, "wb") as f:
+            f.truncate(size * 1024 * 1024)
+        src = tempfile.mkdtemp()
+        open(os.path.join(src, "small.txt"), "w").write("inline hello\n")
+        open(os.path.join(src, "medium.txt"), "w").write("m" * 99 + "\n")
+        os.mkdir(os.path.join(src, "idir"))
+        for n in ("a", "b", "c"):
+            open(os.path.join(src, "idir", n), "w").write(n + "\n")
+        open(os.path.join(src, "big.bin"), "wb").write(bytes(range(256)) * 80)
+        cmd = ["mke2fs", "-q", "-F", "-t", "ext4", "-L", "feat", "-O", feats, "-d", src]
+        if "casefold" in feats:
+            cmd += ["-E", "encoding=utf8"]
+        if "bigalloc" in feats:
+            cmd += ["-C", "16384"]
+        subprocess.run(cmd + [path], check=True, stdout=subprocess.DEVNULL)
+        return path
     if kind == "TREE":
         src = os.path.join(root, m.group(3))
         fetch = os.path.join(root, "tools", "fetch-" + os.path.basename(src) + ".sh")
@@ -60,7 +83,7 @@ def _disk(m):
                              text=True, check=True).stdout.strip()
         _quiet(["debugfs", "-w", "-f", "-", path], input=f"jo\njw -b {blk} {new}\njc\n".encode())
     return path
-extra = [re.sub(r"@(EXT2|EXT4J|EXT4|BLANK|TREE):(\d+)(?::([\w/.-]+))?@", _disk, a) for a in extra]
+extra = [re.sub(r"@(EXT2|EXT4J|EXT4F|EXT4|BLANK|TREE):(\d+)(?::([\w/.,^=-]+))?@", _disk, a) for a in extra]
 subprocess.run(["cargo", "run", "--quiet", "--", elf, img], cwd=f"{root}/crates/create-image", check=True,
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 ovmf = next((c for c in ["/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_CODE.fd",
@@ -134,7 +157,7 @@ for line in open(script):
     elif op == "monitor":
         # HMP command, e.g. 'monitor sendkey a' or 'monitor device_del u1'.
         import socket
-        arg = re.sub(r"@(EXT2|EXT4J|EXT4|BLANK|TREE):(\d+)(?::([\w/.-]+))?@", _disk, arg)
+        arg = re.sub(r"@(EXT2|EXT4J|EXT4F|EXT4|BLANK|TREE):(\d+)(?::([\w/.,^=-]+))?@", _disk, arg)
         m = socket.socket(socket.AF_UNIX)
         m.connect(mon_path)
         m.settimeout(2)

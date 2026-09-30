@@ -7,6 +7,7 @@ wait /dev/vdb /mnt/vdb ext4 rw
 wait /dev/vdc /mnt/vdc ext4 rw
 wait /dev/vdd /mnt/vdd ext4 rw
 wait /dev/vde /mnt/vde ext4 rw
+wait /dev/vdf /mnt/vdf ext4 rw
 wait # $
 # inline_data: files and a directory stored in their inodes are read in
 # place, then converted to extents by the first write.
@@ -48,13 +49,20 @@ wait user.note="hello"
 wait 4133
 wait removed
 wait # $
-send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd && umount /mnt/vde
+# bigalloc: 16 KiB clusters; files share nothing, a sparse file maps
+# single blocks of clusters, truncation frees whole clusters only.
+send sha256sum /mnt/vdf/big.bin | cut -c1-12; dd if=/dev/urandom of=/mnt/vdf/r bs=4096 count=50 2>/dev/null; sha256sum /mnt/vdf/r > /tmp/r.sum; for i in 3 9 10 40; do echo blk$i | dd of=/mnt/vdf/sparse bs=4096 seek=$i conv=notrunc 2>/dev/null; done; truncate -s 30000 /mnt/vdf/r; ls -l /mnt/vdf/r /mnt/vdf/sparse; mkdir /mnt/vdf/d && i=0; while [ $i -lt 120 ]; do echo $i > /mnt/vdf/d/file-$i; i=$((i+1)); done; rm /mnt/vdf/d/file-7 /mnt/vdf/small.txt; cat /tmp/r.sum | cut -c1-8
+wait 30000
+wait 163846
+wait # $
+send sync && umount /mnt/vda && umount /mnt/vdb && umount /mnt/vdc && umount /mnt/vdd && umount /mnt/vde && umount /mnt/vdf
 wait # $
 hostrun e2fsck -fn "$RUSTOS_DISK0"
 hostrun e2fsck -fn "$RUSTOS_DISK1"
 hostrun e2fsck -fn "$RUSTOS_DISK2"
 hostrun e2fsck -fn "$RUSTOS_DISK3"
 hostrun e2fsck -fn "$RUSTOS_DISK4"
+hostrun e2fsck -fn "$RUSTOS_DISK5"
 send mount /dev/vda /mnt/f0 && mount /dev/vdb /mnt/f1 && cat /mnt/f0/idir/d /mnt/f0/small.txt /mnt/f1/d1/x
 wait new
 wait more

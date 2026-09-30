@@ -349,7 +349,25 @@ impl Ext2Inode {
             Some((_, e)) => e.pblk + (l - e.lblk) as u64,
             None => self.goal(),
         };
-        let b = self.alloc_for(st, goal)?;
+        let b = match self.cluster_sibling(st, l)? {
+            // bigalloc: the logical cluster already has a physical one.
+            Some(p) => {
+                let bs = self.fs.block_size;
+                self.fs.dev.write_bytes(p * bs, &vec![0u8; bs as usize])?;
+                p
+            }
+            None => {
+                let c = self.alloc_for(st, goal)?;
+                let off = (l as u64) & ((1 << self.fs.cbits) - 1);
+                if off != 0 {
+                    let bs = self.fs.block_size;
+                    self.fs
+                        .dev
+                        .write_bytes((c + off) * bs, &vec![0u8; bs as usize])?;
+                }
+                c + off
+            }
+        };
         let max = if uninit { UNINIT_MAX } else { INIT_MAX };
         if let Some((i, e)) = prev
             && e.uninit == uninit
@@ -378,6 +396,27 @@ impl Ext2Inode {
             )?;
         }
         Ok(b)
+    }
+
+    /// bigalloc: the physical block for `l` if another block of its
+    /// logical cluster is mapped (all blocks of a logical cluster share one
+    /// physical cluster, at the same offsets).
+    fn cluster_sibling(&self, st: &RawInode, l: u32) -> KResult<Option<u64>> {
+        let cb = self.fs.cbits;
+        if cb == 0 {
+            return Ok(None);
+        }
+        let first = l >> cb << cb;
+        for c in first..first + (1 << cb) {
+            if c == l {
+                continue;
+            }
+            if let (_, Some((_, e))) = self.ext_find(st, c)? {
+                let p = e.pblk + (c - e.lblk) as u64;
+                return Ok(Some(p - (c - first) as u64 + (l - first) as u64));
+            }
+        }
+        Ok(None)
     }
 
     /// Make block `l` of uninitialized extent `e` (leaf entry `i`)
@@ -517,24 +556,47 @@ impl Ext2Inode {
             return Ok(());
         }
         let mut kept = Vec::with_capacity(exts.len());
-        let mut freed = 0i64;
+        let mut gone: Vec<(u64, u64)> = Vec::new();
         for e in exts {
             if e.lblk >= keep {
-                self.fs.free_blocks(e.pblk, e.len as u64)?;
-                freed += e.len as i64;
+                gone.push((e.pblk, e.len as u64));
             } else if e.lblk + e.len > keep {
                 let n = keep - e.lblk;
-                self.fs.free_blocks(e.pblk + n as u64, (e.len - n) as u64)?;
-                freed += (e.len - n) as i64;
+                gone.push((e.pblk + n as u64, (e.len - n) as u64));
                 kept.push(Extent { len: n, ..e });
             } else {
                 kept.push(e);
             }
         }
-        for &b in &nodes {
-            self.fs.free_blocks(b, 1)?;
+        let cb = self.fs.cbits;
+        let mut freed = 0i64;
+        if cb == 0 {
+            for &(p, n) in &gone {
+                self.fs.free_blocks(p, n)?;
+                freed += n as i64;
+            }
+            for &b in &nodes {
+                self.fs.free_blocks(b, 1)?;
+            }
+            freed += nodes.len() as i64;
+        } else {
+            // bigalloc: free the clusters no kept block still uses.
+            let mut clusters = alloc::collections::BTreeSet::new();
+            for &(p, n) in &gone {
+                clusters.extend((p >> cb)..=((p + n - 1) >> cb));
+            }
+            for e in &kept {
+                let (p, n) = (e.pblk, e.len as u64);
+                for c in (p >> cb)..=((p + n - 1) >> cb) {
+                    clusters.remove(&c);
+                }
+            }
+            clusters.extend(nodes.iter().map(|b| b >> cb));
+            for &c in &clusters {
+                self.fs.free_blocks(c << cb, 1)?;
+            }
+            freed = (clusters.len() as i64) << cb;
         }
-        freed += nodes.len() as i64;
         self.add_blocks(st, -freed);
         self.ext_build(st, &kept)
     }

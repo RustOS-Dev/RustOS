@@ -71,6 +71,7 @@ const RO_COMPAT_HUGE_FILE: u32 = 0x8;
 const RO_COMPAT_GDT_CSUM: u32 = 0x10;
 const RO_COMPAT_DIR_NLINK: u32 = 0x20;
 const RO_COMPAT_EXTRA_ISIZE: u32 = 0x40;
+const RO_COMPAT_BIGALLOC: u32 = 0x200;
 const RO_COMPAT_METADATA_CSUM: u32 = 0x400;
 const RO_COMPAT_WRITE: u32 = RO_COMPAT_SPARSE
     | RO_COMPAT_LARGE_FILE
@@ -78,7 +79,8 @@ const RO_COMPAT_WRITE: u32 = RO_COMPAT_SPARSE
     | RO_COMPAT_GDT_CSUM
     | RO_COMPAT_DIR_NLINK
     | RO_COMPAT_EXTRA_ISIZE
-    | RO_COMPAT_METADATA_CSUM;
+    | RO_COMPAT_METADATA_CSUM
+    | RO_COMPAT_BIGALLOC;
 
 // Superblock offsets.
 const SB_FREE_BLOCKS: usize = 0x0C;
@@ -140,6 +142,10 @@ pub struct Ext2Fs {
     blocks_count: u64,
     inodes_count: u32,
     blocks_per_group: u32,
+    /// bigalloc: log2 of blocks per cluster (0 without bigalloc). Block
+    /// bitmaps and group free counts are in clusters.
+    cbits: u32,
+    clusters_per_group: u32,
     inodes_per_group: u32,
     inode_size: u64,
     first_data_block: u32,
@@ -565,6 +571,23 @@ impl Ext2Fs {
         let inodes_count = u32le(&sb, 0);
         let first_data_block = u32le(&sb, 20);
         let blocks_per_group = u32le(&sb, 32);
+        let bigalloc = ro_compat & RO_COMPAT_BIGALLOC != 0;
+        let cbits = if bigalloc {
+            u32le(&sb, 0x1C).saturating_sub(log)
+        } else {
+            0
+        };
+        let clusters_per_group = if bigalloc {
+            u32le(&sb, 0x24)
+        } else {
+            blocks_per_group
+        };
+        if cbits > 16 || clusters_per_group << cbits != blocks_per_group {
+            return Err(EINVAL);
+        }
+        if bigalloc && incompat & INCOMPAT_EXTENTS == 0 {
+            return Err(EINVAL);
+        }
         let inodes_per_group = u32le(&sb, 40);
         if blocks_per_group == 0 || inodes_per_group == 0 || blocks_count <= first_data_block as u64
         {
@@ -620,6 +643,8 @@ impl Ext2Fs {
             blocks_count,
             inodes_count,
             blocks_per_group,
+            cbits,
+            clusters_per_group,
             inodes_per_group,
             inode_size,
             first_data_block,
@@ -724,6 +749,8 @@ impl Ext2Fs {
             blocks_count,
             inodes_count,
             blocks_per_group,
+            cbits,
+            clusters_per_group,
             inodes_per_group,
             inode_size,
             first_data_block,
@@ -899,6 +926,7 @@ impl Ext2Fs {
             (m.free_blocks, m.free_inodes)
         };
         let is64 = self.is64;
+        let fb = fb << self.cbits;
         self.sb_update(|sb| {
             put32(sb, SB_FREE_BLOCKS, fb as u32);
             if is64 {
@@ -1062,11 +1090,13 @@ impl Ext2Fs {
         bm.fill(0);
         let base = self.group_base(g);
         let nb = self.group_blocks(g, meta.groups.len()) as u64;
+        let cb = self.cbits;
+        let nc = self.group_clusters(g, meta.groups.len()) as u64;
         let mut set_range = |start: u64, len: u64| {
             let s = start.max(base);
             let e = (start + len).min(base + nb);
             for b in s..e.max(s) {
-                let i = (b - base) as usize;
+                let i = ((b - base) >> cb) as usize;
                 bm[i / 8] |= 1 << (i % 8);
             }
         };
@@ -1077,9 +1107,14 @@ impl Ext2Fs {
             set_range(h.inode_bitmap, 1);
             set_range(h.inode_table, it);
         }
-        for i in nb as usize..bm.len() * 8 {
+        for i in nc as usize..bm.len() * 8 {
             bm[i / 8] |= 1 << (i % 8);
         }
+    }
+
+    /// Clusters (bitmap bits) in group `g`.
+    fn group_clusters(&self, g: usize, ngroups: usize) -> u32 {
+        (self.group_blocks(g, ngroups) as u64).div_ceil(1 << self.cbits) as u32
     }
 
     /// Find and set a clear bit in group `g`'s block (`block`) or inode
@@ -1114,10 +1149,11 @@ impl Ext2Fs {
         let base = self.group_base(g);
         let jnl = self.jnl();
         let csum_len = if block {
-            self.blocks_per_group as usize / 8
+            self.clusters_per_group as usize / 8
         } else {
             self.inodes_per_group as usize / 8
         };
+        let cb = self.cbits;
         let mut bm = match init {
             Some(bm) => bm,
             None => {
@@ -1139,7 +1175,7 @@ impl Ext2Fs {
             if bm[byte] & (1 << bit) == 0 {
                 // Blocks freed in the running transaction stay reserved
                 // until it commits.
-                let held = block && jnl.is_some_and(|j| j.is_freed(base + i as u64));
+                let held = block && jnl.is_some_and(|j| j.is_freed(base + ((i as u64) << cb)));
                 if !held {
                     bm[byte] |= 1 << bit;
                     found = Some(i);
@@ -1193,7 +1229,7 @@ impl Ext2Fs {
             gr.inode_bitmap
         };
         let csum_len = if block {
-            self.blocks_per_group as usize / 8
+            self.clusters_per_group as usize / 8
         } else {
             self.inodes_per_group as usize / 8
         };
@@ -1241,10 +1277,10 @@ impl Ext2Fs {
             if meta.groups[g].free_blocks == 0 {
                 continue;
             }
-            let limit = self.group_blocks(g, n);
+            let limit = self.group_clusters(g, n);
             let start = if k == 0 {
-                (goal.saturating_sub(self.first_data_block as u64) % self.blocks_per_group as u64)
-                    as u32
+                ((goal.saturating_sub(self.first_data_block as u64) % self.blocks_per_group as u64)
+                    >> self.cbits) as u32
             } else {
                 0
             };
@@ -1259,7 +1295,7 @@ impl Ext2Fs {
                 meta.free_blocks = meta.free_blocks.saturating_sub(1);
                 self.flush_group(&meta, g)?;
                 drop(meta);
-                let b = self.group_base(g) + i as u64;
+                let b = self.group_base(g) + ((i as u64) << self.cbits);
                 self.dev
                     .write_bytes(b * self.block_size, &vec![0u8; self.block_size as usize])?;
                 return Ok(b);
@@ -1268,30 +1304,33 @@ impl Ext2Fs {
         Err(ENOSPC)
     }
 
-    /// Free `count` blocks starting at `first`.
+    /// Free `count` blocks starting at `first` (with bigalloc: the whole
+    /// clusters they lie in; callers only free clusters nothing else uses).
     fn free_blocks(&self, first: u64, count: u64) -> KResult<()> {
-        let mut b = first;
-        let end = first + count;
+        let cb = self.cbits;
+        let mask = (1u64 << cb) - 1;
+        let mut b = first & !mask;
+        let end = (first + count + mask) & !mask;
         let mut meta = self.meta.lock();
         while b < end {
             if b < self.first_data_block as u64 || b >= self.blocks_count {
-                b += 1;
+                b += 1 << cb;
                 continue;
             }
             let rel = b - self.first_data_block as u64;
             let g = (rel / self.blocks_per_group as u64) as usize;
-            let i = (rel % self.blocks_per_group as u64) as u32;
-            let n = (end - b).min((self.blocks_per_group - i) as u64) as u32;
+            let i = ((rel % self.blocks_per_group as u64) >> cb) as u32;
+            let n = ((end - b) >> cb).min((self.clusters_per_group - i) as u64) as u32;
             self.bitmap_clear(&mut meta, g, true, i, n)?;
             meta.groups[g].free_blocks += n;
             meta.free_blocks += n as u64;
             self.flush_group(&meta, g)?;
             if let Some(j) = self.jnl() {
-                for x in b..b + n as u64 {
+                for x in b..b + ((n as u64) << cb) {
                     j.freed(x);
                 }
             }
-            b += n as u64;
+            b += (n as u64) << cb;
         }
         Ok(())
     }
@@ -1467,7 +1506,7 @@ impl FileSystem for Ext2Fs {
             fs_type: 0xEF53,
             block_size: self.block_size,
             blocks: self.blocks_count,
-            blocks_free: m.free_blocks,
+            blocks_free: m.free_blocks << self.cbits,
             files: self.inodes_count as u64,
             files_free: m.free_inodes as u64,
             name_max: 255,
@@ -1584,7 +1623,7 @@ impl Ext2Inode {
     fn alloc_for(&self, st: &mut RawInode, goal: u64) -> KResult<u64> {
         let b = self.fs.alloc_block(goal)?;
         self.alloc_hint.store(b, Ordering::Relaxed);
-        self.add_blocks(st, 1);
+        self.add_blocks(st, 1 << self.fs.cbits);
         Ok(b)
     }
 
@@ -2031,7 +2070,7 @@ impl Ext2Inode {
         })?;
         if free {
             self.fs.free_blocks(xb, 1)?;
-            self.add_blocks(st, -1);
+            self.add_blocks(st, -(1 << self.fs.cbits));
         }
         st.set_xattr_block(0);
         self.put_ea_inodes(&refs)

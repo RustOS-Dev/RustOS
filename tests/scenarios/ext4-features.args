@@ -9,3 +9,5 @@
 -device virtio-blk-pci,drive=f3
 -drive if=none,id=f4,format=raw,file=@EXT4F:64:ea_inode@
 -device virtio-blk-pci,drive=f4
+-drive if=none,id=f5,format=raw,file=@EXT4F:64:bigalloc@
+-device virtio-blk-pci,drive=f5

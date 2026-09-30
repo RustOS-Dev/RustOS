@@ -36,6 +36,9 @@ pub(super) struct Transport {
     pub(super) iface: u8,
     pub(super) kind: Kind,
     pub(super) io: Mutex<Io>,
+    /// UAS with streams: more buffers (tags 2..) for commands in flight
+    /// together.
+    pub(super) pool: Mutex<alloc::vec::Vec<Io>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -72,6 +75,7 @@ impl Transport {
             Kind::Bot { ep_in, ep_out } => (ep_in, ep_out),
             Kind::Uas(p) => return super::uas::command(self, p, io, lun, cdb, dir, len),
         };
+        // (BOT: a new tag per command.)
         io.tag = io.tag.wrapping_add(1);
         let tag = io.tag;
         let c = &io.cbw;
@@ -159,7 +163,97 @@ pub struct UsbDisk {
     model: String,
 }
 
+/// READ(10/16) or WRITE(10/16) for `count` sectors at `lba`.
+fn rw_cdb(lba: u64, count: usize, dir: Dir) -> alloc::vec::Vec<u8> {
+    if lba + count as u64 > u32::MAX as u64 {
+        let mut c = alloc::vec![if dir == Dir::In { 0x88 } else { 0x8A }; 1];
+        c.push(0);
+        c.extend_from_slice(&lba.to_be_bytes());
+        c.extend_from_slice(&(count as u32).to_be_bytes());
+        c.extend_from_slice(&[0, 0]);
+        c
+    } else {
+        let mut c = alloc::vec![if dir == Dir::In { 0x28 } else { 0x2A }, 0];
+        c.extend_from_slice(&(lba as u32).to_be_bytes());
+        c.push(0);
+        c.extend_from_slice(&(count as u16).to_be_bytes());
+        c.push(0);
+        c
+    }
+}
+
 impl UsbDisk {
+    /// UAS with streams: move `total` sectors from `lba` as up to
+    /// QUEUE_DEPTH commands in flight together. Returns false if the
+    /// queued path is not available (the caller goes one by one).
+    fn rw_queued(
+        &self,
+        lba: u64,
+        dir: Dir,
+        mut buf_in: Option<&mut [u8]>,
+        buf_out: Option<&[u8]>,
+        total: usize,
+    ) -> Option<KResult<()>> {
+        let Kind::Uas(p) = &self.t.kind else {
+            return None;
+        };
+        let ss = self.sector_size;
+        let per = BUF / ss;
+        if p.streams == 0 || total <= per {
+            return None;
+        }
+        let mut slots = core::mem::take(&mut *self.t.pool.lock());
+        if slots.is_empty() {
+            return None;
+        }
+        let mut main = self.t.io.lock();
+        let mut done = 0;
+        let res = (|| {
+            while done < total {
+                // One wave: a command per slot (the main buffer included).
+                let mut wave = alloc::vec::Vec::new();
+                let mut off = done;
+                let n_slots = slots.len() + 1;
+                for i in 0..n_slots {
+                    if off >= total {
+                        break;
+                    }
+                    let n = per.min(total - off);
+                    let io: &mut Io = if i == 0 { &mut main } else { &mut slots[i - 1] };
+                    if let Some(src) = buf_out {
+                        io.data.as_mut_slice()[..n * ss]
+                            .copy_from_slice(&src[off * ss..(off + n) * ss]);
+                    }
+                    let cdb = rw_cdb(lba + off as u64, n, dir);
+                    let c = super::uas::issue(&self.t, p, io, self.lun, &cdb, dir, n * ss)?;
+                    wave.push((i, off, n, c));
+                    off += n;
+                }
+                for (i, off, n, c) in wave {
+                    let io: &mut Io = if i == 0 { &mut main } else { &mut slots[i - 1] };
+                    let moved = super::uas::finish(&self.t, p, io, c, self.lun)?;
+                    if moved != n * ss {
+                        return Err(EIO);
+                    }
+                    if let Some(dst) = buf_in.as_deref_mut() {
+                        dst[off * ss..(off + n) * ss]
+                            .copy_from_slice(&io.data.as_slice()[..n * ss]);
+                    }
+                }
+                done = off;
+            }
+            Ok(())
+        })();
+        *self.t.pool.lock() = slots;
+        drop(main);
+        match res {
+            Ok(()) => Some(Ok(())),
+            // Retry what is left one command at a time.
+            Err(ENODEV) => Some(Err(ENODEV)),
+            Err(_) => None,
+        }
+    }
+
     fn rw(
         &self,
         lba: u64,
@@ -173,21 +267,7 @@ impl UsbDisk {
         if let Some(src) = buf_out {
             io.data.as_mut_slice()[..len].copy_from_slice(&src[..len]);
         }
-        let cdb: alloc::vec::Vec<u8> = if lba + count as u64 > u32::MAX as u64 {
-            let mut c = alloc::vec![if dir == Dir::In { 0x88 } else { 0x8A }; 1];
-            c.push(0);
-            c.extend_from_slice(&lba.to_be_bytes());
-            c.extend_from_slice(&(count as u32).to_be_bytes());
-            c.extend_from_slice(&[0, 0]);
-            c
-        } else {
-            let mut c = alloc::vec![if dir == Dir::In { 0x28 } else { 0x2A }, 0];
-            c.extend_from_slice(&(lba as u32).to_be_bytes());
-            c.push(0);
-            c.extend_from_slice(&(count as u16).to_be_bytes());
-            c.push(0);
-            c
-        };
+        let cdb = rw_cdb(lba, count, dir);
         let mut last = Err(EIO);
         for _attempt in 0..3 {
             last = self.t.command(&mut io, self.lun, &cdb, dir, len);
@@ -218,6 +298,9 @@ impl BlockDevice for UsbDisk {
     fn read_sectors(&self, lba: u64, buf: &mut [u8]) -> KResult<()> {
         let per = BUF / self.sector_size;
         let total = buf.len() / self.sector_size;
+        if let Some(r) = self.rw_queued(lba, Dir::In, Some(&mut *buf), None, total) {
+            return r;
+        }
         let mut done = 0;
         while done < total {
             let n = per.min(total - done);
@@ -239,6 +322,9 @@ impl BlockDevice for UsbDisk {
         }
         let per = BUF / self.sector_size;
         let total = buf.len() / self.sector_size;
+        if let Some(r) = self.rw_queued(lba, Dir::Out, None, Some(buf), total) {
+            return r;
+        }
         let mut done = 0;
         while done < total {
             let n = per.min(total - done);
@@ -303,6 +389,22 @@ pub(super) fn start(dev: &Arc<UsbDevice>, iface: u8, kind: Kind) -> bool {
         return false;
     };
     let uas = matches!(kind, Kind::Uas(_));
+    let depth = match &kind {
+        Kind::Uas(p) if p.streams > 0 => p.depth(),
+        _ => 1,
+    };
+    let mut pool = alloc::vec::Vec::new();
+    for i in 0..depth.saturating_sub(1) {
+        let (Some(cbw), Some(data)) = (DmaBuffer::new(256), DmaBuffer::new(BUF)) else {
+            break;
+        };
+        pool.push(Io {
+            cbw,
+            data,
+            tag: 2 + i as u32,
+            last_sense: None,
+        });
+    }
     let t = Arc::new(Transport {
         dev: dev.clone(),
         iface,
@@ -310,9 +412,10 @@ pub(super) fn start(dev: &Arc<UsbDevice>, iface: u8, kind: Kind) -> bool {
         io: Mutex::new(Io {
             cbw,
             data,
-            tag: 0,
+            tag: 1,
             last_sense: None,
         }),
+        pool: Mutex::new(pool),
     });
     // Bring the LUNs up in a thread: spin-up can take seconds.
     let d = dev.clone();

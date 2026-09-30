@@ -5,3 +5,9 @@
 -drive if=none,id=ua0,format=raw,file=@EXT4:64:uasdisk@
 -device usb-uas,bus=xhci.0,id=uas0
 -device scsi-hd,bus=uas0.0,scsi-id=0,lun=0,drive=ua0
+# A second UAS disk on a controller without USB 3 ports: high speed, no
+# streams (READ/WRITE READY IUs).
+-device qemu-xhci,id=xhci2,p3=0
+-drive if=none,id=ua1,format=raw,file=@EXT2:32:uas2@
+-device usb-uas,bus=xhci2.0,id=uas1
+-device scsi-hd,bus=uas1.0,scsi-id=0,lun=0,drive=ua1

@@ -1,7 +1,8 @@
 # HID report protocol (QEMU usb-tablet) and USB Attached SCSI.
 wait # $ 240
 send sleep 2; dmesg | grep "\[usb\]" | cat
-wait USB Attached SCSI, [0-9]+ streams
+wait USB Attached SCSI, [0-9]+ streams, [0-9]+ commands queued
+wait USB Attached SCSI \(no streams
 wait HID tablet \(report protocol\)
 wait # $
 # Tablet buttons and absolute axes reach /dev/input/event0.
@@ -28,4 +29,10 @@ wait # $
 send umount /mnt/uas && echo unmounted
 wait unmounted
 wait # $
+# The USB 2 UAS disk (ext2): the same through READ/WRITE READY.
+send e=$(grep " ext2 " /proc/mounts | cut -d" " -f2); echo disk2=$e; dd if=/dev/urandom of=$e/r2.bin bs=65536 count=32 2>/dev/null; sha256sum $e/r2.bin | cut -c1-64 > /tmp/a2; sync; dev2=$(grep " ext2 " /proc/mounts | cut -d" " -f1); umount $e && mount $dev2 /mnt/u2 && sha256sum /mnt/u2/r2.bin | cut -c1-64 | cmp - /tmp/a2 && echo hs-same; umount /mnt/u2
+wait disk2=/mnt/sd
+wait hs-same
+wait # $
 hostrun e2fsck -fn "$RUSTOS_DISK0"
+hostrun e2fsck -fn "$RUSTOS_DISK1"

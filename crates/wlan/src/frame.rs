@@ -111,6 +111,9 @@ pub struct BssInfo {
     pub capability: u16,
     pub beacon_interval: u16,
     pub channel: Option<u8>,
+    /// Band the BSS was heard on (drivers override the guess from the
+    /// DS Parameter Set with what the receiver reports).
+    pub band: crate::chan::Band,
     pub ies: Vec<u8>,
 }
 
@@ -127,6 +130,9 @@ pub fn parse_beacon(f: &[u8]) -> Option<BssInfo> {
         capability: u16::from_le_bytes([body[10], body[11]]),
         beacon_interval: u16::from_le_bytes([body[8], body[9]]),
         channel: ie::find(ies, ie::DS_PARAMS).and_then(|d| d.first().copied()),
+        band: ie::find(ies, ie::DS_PARAMS)
+            .and_then(|d| d.first().copied())
+            .map_or(crate::chan::Band::B5G, crate::chan::Band::of_legacy),
         ies: ies.to_vec(),
     })
 }

@@ -24,12 +24,13 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Write;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use fw::Firmware;
 use mvm::*;
 use trans::{Packet, Trans, TxQueue};
 use wlan::ba::{self, Action, Reorder, Replay, Verdict};
 use wlan::caps::{self, Ac, Mode, Profile, Width};
+use wlan::chan::{self, Band};
 use wlan::frame::BssInfo;
 use wlan::ie::{self, Cipher, Security};
 use wlan::sta::{Output, State, Station};
@@ -41,6 +42,12 @@ pub const WIFI_SCAN: u64 = 0x89F9;
 pub const WIFI_CONNECT: u64 = 0x89FA;
 pub const WIFI_DISCONNECT: u64 = 0x89FB;
 pub const WIFI_RESULTS: u64 = 0x89FC;
+pub const WIFI_POWER: u64 = 0x89FD;
+
+/// Power-save policy (`wifi power on|off|auto`).
+const PS_AUTO: u8 = 0;
+const PS_ON: u8 = 1;
+const PS_OFF: u8 = 2;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -161,6 +168,8 @@ struct Requests {
     scan: bool,
     connect: Option<(Vec<u8>, Vec<u8>)>,
     disconnect: bool,
+    /// The power-save policy changed.
+    power: bool,
 }
 
 struct Status {
@@ -168,6 +177,7 @@ struct Status {
     ssid: Vec<u8>,
     bssid: [u8; 6],
     channel: u8,
+    band: Band,
     signal: i8,
     security: &'static str,
     message: String,
@@ -178,6 +188,8 @@ struct Status {
     rate: String,
     /// Regulatory domain from the firmware.
     country: String,
+    /// Power save as applied ("on", "off"), with the reason.
+    power: String,
 }
 
 pub struct Iwl {
@@ -193,6 +205,8 @@ pub struct Iwl {
     /// Wakes ioctl callers waiting for a scan.
     done_wq: WaitQueue,
     scan_epoch: AtomicU64,
+    /// PS_AUTO / PS_ON / PS_OFF.
+    power_mode: AtomicU8,
 }
 
 /// Check firmware command encodings against the Linux structure sizes.
@@ -270,6 +284,7 @@ pub fn probe(dev: &PciDevice) {
             ssid: Vec::new(),
             bssid: [0; 6],
             channel: 0,
+            band: Band::B2G,
             signal: 0,
             security: "",
             message: String::new(),
@@ -278,11 +293,17 @@ pub fn probe(dev: &PciDevice) {
             link_info: String::new(),
             rate: String::new(),
             country: String::new(),
+            power: String::new(),
         }),
         wq: WaitQueue::new(),
         irq: AtomicBool::new(false),
         done_wq: WaitQueue::new(),
         scan_epoch: AtomicU64::new(0),
+        power_mode: AtomicU8::new(match crate::params::get("iwlwifi.power").as_deref() {
+            Some("on" | "1") => PS_ON,
+            Some("off" | "0") => PS_OFF,
+            _ => PS_AUTO,
+        }),
     });
     let h = iwl.clone();
     let handler: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
@@ -322,8 +343,14 @@ pub fn probe(dev: &PciDevice) {
             replay: Replay::new(0),
             group_replay: Replay::new(0),
             channels: Vec::new(),
+            band: Band::B2G,
             he_ctxt_ver: 0,
             tlc_v2: false,
+            baid_ver: 0,
+            ps_applied: None,
+            on_battery: None,
+            battery_checked: 0,
+            bss_timing: (100, 1),
         }
         .run()
     });
@@ -360,13 +387,22 @@ impl Iwl {
                 out,
                 "{}\t{}\t{}\t{}\t{}",
                 mac_str(&e.bss.bssid),
-                e.bss.channel.unwrap_or(0),
+                chan_str(e.bss.band, e.bss.channel.unwrap_or(0)),
                 e.signal,
                 sec.name(),
                 ssid_str(&e.bss.ssid)
             );
         }
         out
+    }
+}
+
+/// Channel for display: "36", or "37/6G" on 6 GHz.
+fn chan_str(band: Band, ch: u8) -> String {
+    if band == Band::B6G {
+        format!("{}/6G", ch)
+    } else {
+        format!("{}", ch)
     }
 }
 
@@ -477,6 +513,18 @@ impl NetDevice for Iwl {
                 self.wq.wake_all();
                 Ok(0)
             }
+            WIFI_POWER => {
+                let mode = match user_bytes(r.buf, r.len, 8)?.as_slice() {
+                    b"on" => PS_ON,
+                    b"off" => PS_OFF,
+                    b"auto" => PS_AUTO,
+                    _ => return Err(EINVAL),
+                };
+                self.power_mode.store(mode, Ordering::SeqCst);
+                self.req.lock().power = true;
+                self.wq.wake_all();
+                Ok(0)
+            }
             _ => Err(ENOTTY),
         }
     }
@@ -490,7 +538,7 @@ impl NetDevice for Iwl {
                 " ssid=\"{}\" bssid={} channel={} signal={}dBm security={}",
                 ssid_str(&s.ssid),
                 mac_str(&s.bssid),
-                s.channel,
+                chan_str(s.band, s.channel),
                 s.signal,
                 s.security
             );
@@ -506,6 +554,9 @@ impl NetDevice for Iwl {
         }
         if !s.firmware.is_empty() {
             let _ = write!(out, " firmware={}", s.firmware);
+        }
+        if !s.power.is_empty() {
+            let _ = write!(out, " power=\"{}\"", s.power);
         }
         if !s.message.is_empty() {
             let _ = write!(out, " msg=\"{}\"", s.message);
@@ -548,11 +599,22 @@ struct Driver {
     replay: Replay,
     group_replay: Replay,
     /// Regulatory channel flags from MCC_UPDATE (empty: unknown).
-    channels: Vec<(u8, u32)>,
+    channels: Vec<(Band, u8, u32)>,
     /// STA_HE_CTXT_CMD version (0: HE unsupported by the driver).
     he_ctxt_ver: u8,
     /// TLC notifications use rate_n_flags v2.
     tlc_v2: bool,
+    /// RX_BAID_ALLOCATION_CONFIG version (0: RX block ack via ADD_STA).
+    baid_ver: u8,
+    /// Power save as last sent to the firmware (None: resend).
+    ps_applied: Option<(bool, bool)>,
+    /// ACPI power source, polled every 30 s in auto mode.
+    on_battery: Option<bool>,
+    battery_checked: u64,
+    /// Beacon interval and DTIM period of the current BSS.
+    bss_timing: (u16, u8),
+    /// Band of `channel`.
+    band: Band,
 }
 
 /// Block-ack session we originate (TX aggregation) on one TID.
@@ -625,7 +687,7 @@ impl Driver {
             d.wq.wait_timeout(timeout, || {
                 d.irq.load(Ordering::SeqCst) || {
                     let r = d.req.lock();
-                    r.scan || r.connect.is_some() || r.disconnect
+                    r.scan || r.connect.is_some() || r.disconnect || r.power
                 }
             });
             if self.service().is_err() {
@@ -700,6 +762,13 @@ impl Driver {
         self.tlc_v2 = fw
             .notif_version(DATA_PATH, TLC_MNG_UPDATE_NOTIF)
             .is_some_and(|v| v >= 3);
+        self.baid_ver = match crate::params::get("iwlwifi.baid").as_deref() {
+            Some("sta" | "0") => 0,
+            _ => fw
+                .cmd_version(DATA_PATH, RX_BAID_ALLOCATION_CONFIG)
+                .filter(|v| (1..=2).contains(v))
+                .unwrap_or(0),
+        };
         self.he_ctxt_ver = match fw.cmd_version(DATA_PATH, STA_HE_CTXT).unwrap_or(2) {
             v @ (2 | 3) => v,
             v => {
@@ -770,14 +839,15 @@ impl Driver {
         self.cmd(
             LEGACY,
             BT_CONFIG,
-            Cmd::new().u32(1).u32((1 << 2) | (1 << 4)).0.as_slice(),
+            &bt_coex(!crate::params::get("iwlwifi.btcoex").is_some_and(|v| v == "0" || v == "off")),
         )?;
         self.cmd(
             LEGACY,
             PHY_CONTEXT,
-            &phy_context(FW_CTXT_ACTION_ADD, 1, 0, 0, rx_ant),
+            &phy_context(FW_CTXT_ACTION_ADD, Band::B2G, 1, 0, 0, rx_ant),
         )?;
         self.channel = 1;
+        self.band = Band::B2G;
         let _ = self.cmd(LEGACY, POWER_TABLE, &[0, 0, 0, 0]);
         if fw.has_capa(1) {
             let mcc = Cmd::new()
@@ -790,9 +860,9 @@ impl Driver {
             match self.cmd(LEGACY, MCC_UPDATE, &mcc) {
                 Ok(r) => match parse_mcc_response(&r) {
                     Some((mcc, chans)) => {
-                        let valid: Vec<(u8, u32)> = chans
+                        let valid: Vec<(Band, u8, u32)> = chans
                             .into_iter()
-                            .filter(|(_, f)| f & NVM_CHANNEL_VALID != 0)
+                            .filter(|(_, _, f)| f & NVM_CHANNEL_VALID != 0)
                             .collect();
                         let country = String::from_utf8_lossy(&mcc).into_owned();
                         crate::println!(
@@ -801,9 +871,13 @@ impl Driver {
                             valid.len(),
                             valid
                                 .iter()
-                                .filter(|(_, f)| f & NVM_CHANNEL_ACTIVE == 0)
+                                .filter(|(_, _, f)| f & NVM_CHANNEL_ACTIVE == 0)
                                 .count()
                         );
+                        let n6 = valid.iter().filter(|c| c.0 == Band::B6G).count();
+                        if n6 > 0 {
+                            crate::println!("[iwlwifi] 6 GHz: {} channels allowed", n6);
+                        }
                         self.dev.status.lock().country = country;
                         if !valid.is_empty() {
                             self.channels = valid;
@@ -883,7 +957,7 @@ impl Driver {
             bssid,
             assoc,
             qos,
-            band_5g: self.channel > 14,
+            band_5g: self.band != Band::B2G,
             short_slot,
             short_preamble: short_pre,
             ht: link.filter(|l| l.mode >= Mode::Ht).map(|l| l.ht_protection),
@@ -898,6 +972,9 @@ impl Driver {
     /// firmware and by `iwlwifi.mode` / `iwlwifi.width` in kernel.conf.
     fn profile(&mut self) -> Profile {
         let mut p = Profile::AX210;
+        if trans::rb_size() < 12288 {
+            p.max_mpdu = 3895;
+        }
         p.nss = (self
             .fw
             .as_ref()
@@ -957,14 +1034,19 @@ impl Driver {
         self.trans.rx();
         self.drain()?;
 
-        let (scan, connect, disconnect) = {
+        let (scan, connect, disconnect, power) = {
             let mut r = self.dev.req.lock();
             (
                 core::mem::take(&mut r.scan),
                 r.connect.take(),
                 core::mem::take(&mut r.disconnect),
+                core::mem::take(&mut r.power),
             )
         };
+        if power {
+            self.battery_checked = 0;
+            self.power_tick(now());
+        }
         if disconnect {
             self.want = None;
             self.disconnect("disconnected by user");
@@ -982,6 +1064,7 @@ impl Driver {
         let t = now();
         if t - self.last_tick >= 100 {
             self.last_tick = t;
+            self.power_tick(t);
             if self.dev.status.lock().phase == Phase::Scanning
                 && t - self.scan_started > SCAN_TIMEOUT_MS
             {
@@ -1169,6 +1252,13 @@ impl Driver {
             .min()
             .map_or(-100, |e| -(e as i32));
         let channel = d[42];
+        // mac_phy_band: bits 6-7 are the PHY band (0 = 5, 1 = 2.4, 2 = 6 GHz).
+        let band = match d[43] >> 6 {
+            PHY_BAND_6 => Band::B6G,
+            PHY_BAND_5 => Band::B5G,
+            _ if channel <= 14 => Band::B2G,
+            _ => Band::B5G,
+        };
         let mut f = d[DESC..(DESC + mpdu_len).min(d.len())].to_vec();
         let mut len = f.len();
         let hdrlen = hdr_len(&f);
@@ -1203,7 +1293,7 @@ impl Driver {
         }
         let fc = u16::from_le_bytes([f[0], f[1]]);
         match (fc >> 2) & 3 {
-            0 => self.rx_mgmt(&f, channel, energy.clamp(-127, 0) as i8),
+            0 => self.rx_mgmt(&f, band, channel, energy.clamp(-127, 0) as i8),
             2 => {
                 // The hardware splits A-MSDUs: each subframe arrives as an
                 // MPDU of its own with the A-MSDU flag still set.
@@ -1274,7 +1364,7 @@ impl Driver {
         self.rx_data(&fr.f, fr.protected)
     }
 
-    fn rx_mgmt(&mut self, f: &[u8], channel: u8, signal: i8) -> KResult<()> {
+    fn rx_mgmt(&mut self, f: &[u8], band: Band, channel: u8, signal: i8) -> KResult<()> {
         let sub = (f[0] >> 4) & 0xF;
         if sub == wlan::frame::ST_ACTION && f.len() > 24 {
             let from_ap = self
@@ -1288,8 +1378,9 @@ impl Driver {
         if sub == 8 || sub == 5 {
             // Beacon / probe response.
             if let Some(mut bss) = wlan::frame::parse_beacon(f) {
-                if channel != 0 && channel <= 196 {
+                if channel != 0 && channel <= 233 {
                     bss.channel = Some(channel);
+                    bss.band = band;
                 }
                 let mut st = self.dev.status.lock();
                 if st.bssid == bss.bssid && st.phase == Phase::Connected {
@@ -1377,11 +1468,8 @@ impl Driver {
                     && self.link.as_ref().is_some_and(|l| l.mode >= Mode::Ht);
                 let mut status = ba::STATUS_DECLINED;
                 if usable {
-                    let r = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(true, tid, ssn, win))?;
-                    let st = r
-                        .get(0..4)
-                        .map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
-                    match add_sta_baid(st) {
+                    let (got, st) = self.alloc_rx_ba(tid, ssn, win)?;
+                    match got {
                         Some(baid) => {
                             self.rx_ba.push(RxBa {
                                 tid,
@@ -1396,7 +1484,7 @@ impl Driver {
                                 tid,
                                 st
                             );
-                            if st & 0xFF == 1 {
+                            if self.baid_ver == 0 && st & 0xFF == 1 {
                                 let _ = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(false, tid, 0, 0));
                             }
                         }
@@ -1483,9 +1571,47 @@ impl Driver {
             self.deliver(fr)?;
         }
         if self.sta_added {
-            let _ = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(false, tid, 0, 0));
+            if self.baid_ver > 0 {
+                let c = rx_baid_remove(self.baid_ver, b.baid, tid);
+                let _ = self.cmd(DATA_PATH, RX_BAID_ALLOCATION_CONFIG, &c);
+            } else {
+                let _ = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(false, tid, 0, 0));
+            }
         }
         Ok(())
+    }
+
+    /// Ask the firmware for a receive BA session: RX_BAID_ALLOCATION_CONFIG
+    /// when the firmware has it, ADD_STA otherwise (and as a fallback if
+    /// the new command is rejected). Returns the BAID and the raw status.
+    fn alloc_rx_ba(&mut self, tid: u8, ssn: u16, win: u16) -> KResult<(Option<u8>, u32)> {
+        if self.baid_ver > 0 {
+            match self.cmd(
+                DATA_PATH,
+                RX_BAID_ALLOCATION_CONFIG,
+                &rx_baid_alloc(tid, ssn, win),
+            ) {
+                Ok(r) => {
+                    if let Some(b) = rx_baid_resp(&r) {
+                        return Ok((Some(b), 0));
+                    }
+                    crate::println!("[iwlwifi] BAID allocation refused: {:02x?}", r);
+                    return Ok((None, 0));
+                }
+                Err(e) => {
+                    crate::println!(
+                        "[iwlwifi] RX_BAID_ALLOCATION_CONFIG failed ({:?}); using ADD_STA",
+                        e
+                    );
+                    self.baid_ver = 0;
+                }
+            }
+        }
+        let r = self.cmd(LEGACY, ADD_STA, &add_sta_rx_ba(true, tid, ssn, win))?;
+        let st = r
+            .get(0..4)
+            .map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
+        Ok((add_sta_baid(st), st))
     }
 
     /// Start TX block-ack sessions on busy TIDs; expire stale requests.
@@ -1549,21 +1675,70 @@ impl Driver {
             return Ok(());
         }
         let connected = self.dev.status.lock().phase == Phase::Connected;
-        let chans: Vec<u8> = if self.channels.is_empty() {
+        let mut chans: Vec<(Band, u8)> = if self.channels.is_empty() {
             SCAN_CHANNELS_24
                 .iter()
                 .chain(SCAN_CHANNELS_5)
-                .copied()
+                .map(|&c| (Band::of_legacy(c), c))
                 .collect()
         } else {
-            self.channels.iter().map(|&(c, _)| c).collect()
+            self.channels
+                .iter()
+                .filter(|c| c.0 != Band::B6G)
+                .map(|&(b, c, _)| (b, c))
+                .collect()
         };
+        // 6 GHz: the preferred scanning channels plus channels that
+        // 2.4/5 GHz APs reported in Reduced Neighbor Reports, probing for
+        // the reported BSSIDs and short SSIDs.
+        let p = self.profile();
+        let mut bssids6: Vec<(u8, [u8; 6])> = Vec::new();
+        let mut shorts6: Vec<(u8, u32)> = Vec::new();
+        let six_ok = p.max_mode >= Mode::He
+            && self.channels.iter().any(|c| c.0 == Band::B6G)
+            && !matches!(
+                crate::params::get("iwlwifi.6ghz").as_deref(),
+                Some("0" | "off")
+            );
+        if six_ok {
+            let reported: Vec<chan::Neighbor> = {
+                let st = self.dev.status.lock();
+                st.results
+                    .iter()
+                    .flat_map(|e| chan::neighbors(&e.bss.ies))
+                    .collect()
+            };
+            let allowed = |c: u8| {
+                self.channels
+                    .iter()
+                    .any(|&(b, ch, _)| b == Band::B6G && ch == c)
+            };
+            for n in reported.iter().filter(|n| n.band == Band::B6G) {
+                if let Some(b) = n.bssid
+                    && bssids6.len() < 16
+                    && !bssids6.iter().any(|x| x.1 == b)
+                {
+                    bssids6.push((n.channel, b));
+                }
+                if let Some(s) = n.short_ssid
+                    && shorts6.len() < 8
+                    && !shorts6.contains(&(n.channel, s))
+                {
+                    shorts6.push((n.channel, s));
+                }
+            }
+            for c in chan::scan_list_6g(&reported) {
+                if allowed(c) && chans.len() < 67 {
+                    chans.push((Band::B6G, c));
+                }
+            }
+        }
         let ssid = if for_connect {
             self.want.as_ref().map(|w| w.0.clone()).unwrap_or_default()
         } else {
             Vec::new()
         };
-        let p = self.profile();
+        let caps6 = caps::probe_elements_6g(&p);
         let req = scan_request(
             self.dev.mac,
             &chans,
@@ -1571,6 +1746,11 @@ impl Driver {
             connected,
             &caps::probe_elements(&p, true),
             &caps::probe_elements(&p, false),
+            &Scan6g {
+                bssids: &bssids6,
+                short_ssids: &shorts6,
+                caps: if six_ok { &caps6 } else { &[] },
+            },
         );
         self.cmd(LEGACY, SCAN_REQ_UMAC, &req)?;
         self.scan_started = now();
@@ -1620,13 +1800,14 @@ impl Driver {
             let st = self.dev.status.lock();
             st.results
                 .iter()
-                .filter(|e| e.bss.ssid == ssid && e.bss.channel.is_some_and(|c| c <= 165))
+                .filter(|e| e.bss.ssid == ssid && e.bss.channel.is_some())
                 .max_by_key(|e| {
+                    // Prefer the wider, less crowded bands a little.
                     e.signal as i32
-                        + if e.bss.channel.unwrap_or(0) > 14 {
-                            8
-                        } else {
-                            0
+                        + match e.bss.band {
+                            Band::B2G => 0,
+                            Band::B5G => 8,
+                            Band::B6G => 12,
                         }
                 })
                 .cloned()
@@ -1640,12 +1821,18 @@ impl Driver {
         };
         let bss = best.bss.clone();
         let channel = bss.channel.unwrap_or(1);
-        if !self.channels.is_empty() && !self.channels.iter().any(|&(c, _)| c == channel) {
+        let band = bss.band;
+        if !self.channels.is_empty()
+            && !self
+                .channels
+                .iter()
+                .any(|&(b, c, _)| b == band && c == channel)
+        {
             self.dev.set_phase(
                 Phase::Failed,
                 &format!(
                     "channel {} is not allowed in this regulatory domain",
-                    channel
+                    chan_str(band, channel)
                 ),
             );
             return Ok(());
@@ -1662,7 +1849,7 @@ impl Driver {
             "[iwlwifi] joining \"{}\" {} channel {} ({}, {} dBm)",
             ssid_str(&ssid),
             mac_str(&bss.bssid),
-            channel,
+            chan_str(band, channel),
             security.name(),
             best.signal
         );
@@ -1672,6 +1859,7 @@ impl Driver {
             st.ssid = ssid.clone();
             st.bssid = bss.bssid;
             st.channel = channel;
+            st.band = band;
             st.signal = best.signal;
             st.security = security.name();
             st.message.clear();
@@ -1687,17 +1875,19 @@ impl Driver {
         let mut sta = sta;
         self.pmf = sta.pmf();
         sta.profile = self.profile();
-        let link = caps::negotiate(&sta.profile, &bss.ies, channel);
+        let link = caps::negotiate_band(&sta.profile, &bss.ies, band, channel);
 
         // Tune to the channel (at the AP's width), bind the MAC to it, add
         // the AP station.
         self.channel = channel;
+        self.band = band;
         let rx_ant = self.rx_ant();
         self.cmd(
             LEGACY,
             PHY_CONTEXT,
             &phy_context(
                 FW_CTXT_ACTION_MODIFY,
+                band,
                 channel,
                 link.width.code(),
                 caps::ctrl_pos(&link),
@@ -1720,7 +1910,7 @@ impl Driver {
         {
             let mut l = self.dev.link.lock();
             l.bssid = bssid;
-            l.band_5g = channel > 14;
+            l.band_5g = band != Band::B2G;
             l.ptk = false;
             l.qos = false;
             l.seq = [0; 9];
@@ -1880,7 +2070,8 @@ impl Driver {
                     self.dev.link.lock().connected = true;
                     self.dev.set_phase(Phase::Connected, "");
                     if let Some(l) = &self.link {
-                        self.dev.status.lock().link_info = caps::describe(l, self.channel <= 14);
+                        self.dev.status.lock().link_info =
+                            caps::describe(l, self.band == Band::B2G);
                     }
                     let st = self.dev.status.lock();
                     crate::println!(
@@ -1913,16 +2104,17 @@ impl Driver {
         let dtim = ie::find(&beacon_ies, 5)
             .and_then(|t| t.get(1).copied())
             .unwrap_or(1);
+        self.bss_timing = (bi, dtim);
         // The association response carries the AP's capabilities for us;
         // the beacon fills in what it leaves out (e.g. WMM parameters).
         let mut ies = resp_ies.to_vec();
         ies.extend_from_slice(&beacon_ies);
-        let link = caps::negotiate(&self.profile, &ies, self.channel);
+        let link = caps::negotiate_band(&self.profile, &ies, self.band, self.channel);
         let qos = qos || link.qos;
         crate::println!(
             "[iwlwifi] associated (aid {}): {}{}",
             aid,
-            caps::describe(&link, self.channel <= 14),
+            caps::describe(&link, self.band == Band::B2G),
             if link.mode >= Mode::Ht {
                 format!(", A-MPDU up to {} KiB", 8u32 << link.ampdu_exp)
             } else {
@@ -1940,6 +2132,7 @@ impl Driver {
                 PHY_CONTEXT,
                 &phy_context(
                     FW_CTXT_ACTION_MODIFY,
+                    self.band,
                     self.channel,
                     link.width.code(),
                     caps::ctrl_pos(&link),
@@ -1972,7 +2165,7 @@ impl Driver {
         self.cmd(
             DATA_PATH,
             TLC_MNG_CONFIG,
-            &tlc_config(&link, self.channel > 14, chains),
+            &tlc_config(&link, self.band != Band::B2G, chains),
         )?;
         self.dev.link.lock().qos = qos;
         Ok(())
@@ -2013,7 +2206,55 @@ impl Driver {
     }
 
     /// Remove the AP station, its queues and the binding.
+    /// Apply the power-save policy: device power save follows the policy;
+    /// MAC power save and beacon filtering only while associated. The
+    /// firmware leaves power save by itself on traffic (100 ms timeouts).
+    fn power_tick(&mut self, t: u64) {
+        if self.fw.is_none() {
+            return;
+        }
+        let mode = self.dev.power_mode.load(Ordering::Relaxed);
+        if mode == PS_AUTO && (self.battery_checked == 0 || t - self.battery_checked > 30_000) {
+            self.battery_checked = t.max(1);
+            self.on_battery = crate::acpi::on_battery();
+        }
+        let want = match mode {
+            PS_ON => true,
+            PS_OFF => false,
+            _ => self.on_battery == Some(true),
+        };
+        let assoc = self.dev.link.lock().connected;
+        if self.ps_applied == Some((want, assoc)) {
+            return;
+        }
+        let _ = self.cmd(LEGACY, POWER_TABLE, &device_power(want));
+        if assoc {
+            let (bi, dtim) = self.bss_timing;
+            if let Err(e) = self.cmd(LEGACY, MAC_PM_POWER_TABLE, &mac_power(want, bi, dtim)) {
+                crate::println!("[iwlwifi] MAC power table failed: {}", e);
+            }
+            let ver = self
+                .fw
+                .as_ref()
+                .and_then(|f| f.cmd_version(LEGACY, BEACON_FILTER_CONFIG))
+                .unwrap_or(3);
+            let _ = self.cmd(LEGACY, BEACON_FILTER_CONFIG, &beacon_filter(ver, want));
+        }
+        self.ps_applied = Some((want, assoc));
+        let why = match mode {
+            PS_ON => "set by user",
+            PS_OFF => "set by user",
+            _ => match self.on_battery {
+                Some(true) => "auto: on battery",
+                Some(false) => "auto: on AC power",
+                None => "auto: no battery",
+            },
+        };
+        self.dev.status.lock().power = format!("{} ({})", if want { "on" } else { "off" }, why);
+    }
+
     fn teardown(&mut self) {
+        self.ps_applied = None;
         self.sta = None;
         self.reset_link_state();
         {

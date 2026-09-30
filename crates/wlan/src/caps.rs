@@ -4,6 +4,7 @@
 //! (channel width and centre, streams, MCS maps, guard interval, coding,
 //! A-MPDU limits, protection, EDCA).
 
+use crate::chan::Band;
 use crate::ie;
 use alloc::vec::Vec;
 
@@ -16,6 +17,7 @@ pub const ERP: u8 = 42;
 pub const EXT_HE_CAPS: u8 = 35;
 pub const EXT_HE_OP: u8 = 36;
 pub const EXT_MU_EDCA: u8 = 38;
+pub const EXT_HE_6GHZ_CAPS: u8 = 59;
 
 /// Operating mode, in increasing order of capability.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,6 +92,9 @@ pub struct Profile {
     /// Widest channel to use.
     pub max_width: Width,
     pub ldpc: bool,
+    /// Largest MPDU (and A-MSDU in HT) we receive: 3895, 7991 or 11454
+    /// (limited by the receive buffer size).
+    pub max_mpdu: u16,
 }
 
 impl Profile {
@@ -99,12 +104,14 @@ impl Profile {
         max_mode: Mode::He,
         max_width: Width::W160,
         ldpc: true,
+        max_mpdu: 11454,
     };
     pub const LEGACY: Profile = Profile {
         nss: 1,
         max_mode: Mode::Legacy,
         max_width: Width::W20,
         ldpc: false,
+        max_mpdu: 3895,
     };
 
     fn nss_mcs_map(&self, supported: u16) -> u16 {
@@ -156,16 +163,26 @@ const HE_PHY9_NOMINAL_PAD_SHIFT: u8 = 6;
 const HE_MAC1_TF_PAD_16US: u8 = 2 << 2;
 pub const HE_MAC3_AMPDU_EXP_EXT_MASK: u8 = 3 << 3;
 
-/// Maximum A-MSDU / MPDU length we accept. Kept at the smallest value so a
-/// received MPDU always fits one 4 KiB receive buffer even when the
-/// hardware does not split A-MSDUs.
-const OUR_MAX_MPDU_VHT: u32 = 0; // 3895
 const OUR_AMPDU_DENSITY: u8 = 5; // 4 us
+
+impl Profile {
+    /// The VHT "Maximum MPDU Length" field for `max_mpdu`.
+    pub fn vht_max_mpdu_field(&self) -> u32 {
+        match self.max_mpdu {
+            11454.. => 2,
+            7991.. => 1,
+            _ => 0,
+        }
+    }
+}
 
 /// HT Capabilities element body (26 bytes).
 pub fn ht_caps(p: &Profile) -> [u8; 26] {
     let mut info =
         HT_CAP_40MHZ | (3 << 2) | HT_CAP_SGI20 | HT_CAP_SGI40 | (1 << 8) | HT_CAP_DSSS_CCK40;
+    if p.max_mpdu >= 7935 {
+        info |= HT_CAP_MAX_AMSDU_7935;
+    }
     if p.ldpc {
         info |= HT_CAP_LDPC;
     }
@@ -187,7 +204,8 @@ pub fn ht_caps(p: &Profile) -> [u8; 26] {
 
 /// VHT Capabilities element body (12 bytes).
 pub fn vht_caps(p: &Profile) -> [u8; 12] {
-    let mut info = OUR_MAX_MPDU_VHT | VHT_CAP_SGI80 | (1 << 8) | (7 << VHT_CAP_AMPDU_EXP_SHIFT);
+    let mut info =
+        p.vht_max_mpdu_field() | VHT_CAP_SGI80 | (1 << 8) | (7 << VHT_CAP_AMPDU_EXP_SHIFT);
     if p.max_width >= Width::W160 {
         info |= VHT_CAP_WIDTH_160 | VHT_CAP_SGI160;
     }
@@ -274,6 +292,42 @@ pub fn assoc_elements(p: &Profile, ap_ies: &[u8], band_2g: bool) -> Vec<u8> {
     }
     if p.max_mode >= Mode::He && ap_ht && find_ext(ap_ies, EXT_HE_CAPS).is_some() {
         push_ext(&mut out, EXT_HE_CAPS, &he_caps(p, band_2g));
+    }
+    out
+}
+
+/// HE 6 GHz Band Capabilities element body (2 bytes): the HT/VHT
+/// capability fields that 6 GHz has no HT/VHT elements for. SM power
+/// save is disabled and antenna patterns are consistent.
+pub fn he_6ghz_caps(p: &Profile) -> [u8; 2] {
+    let v: u16 = OUR_AMPDU_DENSITY as u16
+        | (7 << 3) // maximum A-MPDU length exponent (1 MiB with HE)
+        | ((p.vht_max_mpdu_field() as u16) << 6)
+        | (3 << 9) // SM power save disabled
+        | (1 << 12)
+        | (1 << 13);
+    v.to_le_bytes()
+}
+
+/// Capability elements for an association request on `band`.
+pub fn assoc_elements_band(p: &Profile, ap_ies: &[u8], band: Band) -> Vec<u8> {
+    if band != Band::B6G {
+        return assoc_elements(p, ap_ies, band == Band::B2G);
+    }
+    let mut out = Vec::new();
+    if p.max_mode >= Mode::He && find_ext(ap_ies, EXT_HE_CAPS).is_some() {
+        push_ext(&mut out, EXT_HE_CAPS, &he_caps(p, false));
+        push_ext(&mut out, EXT_HE_6GHZ_CAPS, &he_6ghz_caps(p));
+    }
+    out
+}
+
+/// Capability elements for 6 GHz probe requests (HE only).
+pub fn probe_elements_6g(p: &Profile) -> Vec<u8> {
+    let mut out = Vec::new();
+    if p.max_mode >= Mode::He {
+        push_ext(&mut out, EXT_HE_CAPS, &he_caps(p, false));
+        push_ext(&mut out, EXT_HE_6GHZ_CAPS, &he_6ghz_caps(p));
     }
     out
 }
@@ -454,6 +508,17 @@ pub struct HeOp {
     pub bss_color: u8,
     pub color_disabled: bool,
     pub vht_op: Option<VhtOp>,
+    pub six: Option<SixGhzOp>,
+}
+
+/// 6 GHz Operation Information of the HE Operation element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SixGhzOp {
+    pub primary: u8,
+    /// 0-3 = 20/40/80/160 (or 80+80) MHz.
+    pub width: u8,
+    pub ccfs0: u8,
+    pub ccfs1: u8,
 }
 
 impl HeOp {
@@ -463,8 +528,24 @@ impl HeOp {
         }
         let params = u32::from_le_bytes([b[0], b[1], b[2], 0]);
         let color = b[3];
+        let mut o = 6;
         let vht_op = if params & (1 << 14) != 0 {
+            o += 3;
             VhtOp::parse(b.get(6..9)?)
+        } else {
+            None
+        };
+        if params & (1 << 15) != 0 {
+            o += 1; // co-hosted BSS indicator
+        }
+        let six = if params & (1 << 17) != 0 {
+            let s = b.get(o..o + 5)?;
+            Some(SixGhzOp {
+                primary: s[0],
+                width: s[1] & 3,
+                ccfs0: s[2],
+                ccfs1: s[3],
+            })
         } else {
             None
         };
@@ -473,6 +554,7 @@ impl HeOp {
             bss_color: color & 0x3F,
             color_disabled: color & 0x80 != 0,
             vht_op,
+            six,
         })
     }
     /// TXOP duration RTS threshold (units of 32 us; 1023 = disabled).
@@ -956,6 +1038,113 @@ pub fn negotiate(p: &Profile, ies: &[u8], channel: u8) -> Link {
     l
 }
 
+/// Centre channel of the `width` channel containing 6 GHz channel
+/// `primary` (20 MHz channels 1, 5, 9, ...; 40 MHz centres 3, 11, ...;
+/// 80 MHz 7, 23, ...; 160 MHz 15, 47, ...).
+pub fn center_6g(width: Width, primary: u8) -> u8 {
+    let i = primary.saturating_sub(1);
+    match width {
+        Width::W20 => primary,
+        Width::W40 => i / 8 * 8 + 3,
+        Width::W80 => i / 16 * 16 + 7,
+        Width::W160 => i / 32 * 32 + 15,
+    }
+}
+
+/// Negotiate the link on any band: 2.4/5 GHz as [`negotiate`]; 6 GHz is
+/// HE only, with widths from the 6 GHz Operation Information and the
+/// aggregation limits from the HE 6 GHz Band Capabilities.
+pub fn negotiate_band(p: &Profile, ies: &[u8], band: Band, channel: u8) -> Link {
+    if band != Band::B6G {
+        return negotiate(p, ies, channel);
+    }
+    let he_caps = find_ext(ies, EXT_HE_CAPS).and_then(HeCaps::parse);
+    let he_op = find_ext(ies, EXT_HE_OP).and_then(HeOp::parse);
+    let band_caps = find_ext(ies, EXT_HE_6GHZ_CAPS)
+        .filter(|b| b.len() >= 2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let wmm = wmm_params(ies);
+    let mut l = Link {
+        mode: Mode::Legacy,
+        width: Width::W20,
+        primary: channel,
+        center: channel,
+        nss: 1,
+        mcs: [[0; 2]; 2],
+        sgi: 0,
+        ldpc: false,
+        stbc: false,
+        ampdu_exp: 0,
+        ampdu_density: 0,
+        max_mpdu: 0,
+        smps: 3,
+        ht_protection: 0,
+        erp_protection: false,
+        edca: wmm.unwrap_or(DEFAULT_EDCA),
+        qos: true,
+        he: None,
+    };
+    let (Some(h), Some(o)) = (he_caps, he_op) else {
+        return l;
+    };
+    if p.max_mode < Mode::He {
+        return l;
+    }
+    l.mode = Mode::He;
+    // Width: what the AP operates, limited by us and its capabilities.
+    if let Some(s) = o.six {
+        let ap = match s.width {
+            3 if s.ccfs1 != 0 && s.ccfs1.abs_diff(s.ccfs0) == 8 => Width::W160,
+            3 | 2 => Width::W80,
+            1 => Width::W40,
+            _ => Width::W20,
+        };
+        let mut w = ap.min(p.max_width);
+        if w == Width::W160 && h.phy[0] & HE_PHY0_160_IN_5G == 0 {
+            w = Width::W80;
+        }
+        if w >= Width::W40 && h.phy[0] & HE_PHY0_40_80_IN_5G == 0 {
+            w = Width::W20;
+        }
+        l.width = w;
+        l.center = center_6g(w, channel);
+    }
+    let ap_nss = (0..8)
+        .take_while(|i| (h.rx_mcs_80 >> (2 * i)) & 3 != 3)
+        .count() as u8;
+    l.nss = ap_nss.min(p.nss.max(1)).clamp(1, 2);
+    for s in 0..l.nss as usize {
+        l.mcs[s][0] = he_mcs_mask(min_mcs((h.rx_mcs_80 >> (2 * s)) & 3, 2));
+        if l.width == Width::W160 {
+            l.mcs[s][1] = he_mcs_mask(min_mcs((h.rx_mcs_160 >> (2 * s)) & 3, 2));
+        }
+    }
+    l.ldpc = p.ldpc && h.phy[1] & HE_PHY1_LDPC != 0;
+    l.stbc = p.nss > 1 && h.phy[2] & HE_PHY2_STBC_RX_80 != 0;
+    let bc = band_caps.unwrap_or(0);
+    l.ampdu_density = (bc & 7) as u8;
+    l.ampdu_exp = (((bc >> 3) & 7) as u8 + ((h.mac[3] & HE_MAC3_AMPDU_EXP_EXT_MASK) >> 3)).min(9);
+    l.max_mpdu = match (bc >> 6) & 3 {
+        2 => 11454,
+        1 => 7991,
+        _ => 3895,
+    };
+    l.smps = ((bc >> 9) & 3) as u8;
+    if l.smps == 0 {
+        l.nss = 1;
+    }
+    l.he = Some(HeLink {
+        bss_color: o.bss_color,
+        color_disabled: o.color_disabled,
+        rts_threshold: o.rts_threshold(),
+        default_pe: o.default_pe(),
+        pkt_ext: pkt_ext(&h),
+        mu_edca: mu_edca(ies),
+        mac: h.mac,
+    });
+    l
+}
+
 /// Human-readable summary ("802.11ax 80 MHz 2x2").
 pub fn describe(l: &Link, band_2g: bool) -> alloc::string::String {
     alloc::format!(
@@ -1058,7 +1247,7 @@ mod tests {
         assert_eq!(ctrl_pos(&l), 4);
         assert_eq!(l.mcs[0][0], 0x3FF);
         assert_eq!(l.ampdu_exp, 7);
-        assert_eq!(l.max_mpdu, 3895);
+        assert_eq!(l.max_mpdu, 11454);
         // 160 MHz: CCFS0 = primary 80 centre, CCFS1 = 160 centre.
         let mut ies = ht_elements(36, 1);
         ie::push(&mut ies, VHT_CAPS, &vht_caps(&Profile::AX210));
@@ -1125,5 +1314,57 @@ mod tests {
         assert_eq!(pe[1][4], [PKT_EXT_NONE, PKT_EXT_BPSK]);
         h.phy[9] = 0;
         assert_eq!(pkt_ext(&h), None);
+    }
+
+    #[test]
+    fn six_ghz() {
+        let p = Profile::AX210;
+        let bc = u16::from_le_bytes(he_6ghz_caps(&p));
+        assert_eq!(bc & 7, 5);
+        assert_eq!((bc >> 6) & 3, 2); // 11454
+        assert_eq!((bc >> 9) & 3, 3);
+        // An AP on channel 37, 160 MHz (CCFS0 39 = primary 80, CCFS1 47).
+        let mut ies = Vec::new();
+        push_ext(&mut ies, EXT_HE_CAPS, &he_caps(&p, false));
+        let params: u32 = (1 << 17) | (1023 << 4);
+        let mut op = params.to_le_bytes()[..3].to_vec();
+        op.extend_from_slice(&[0x05, 0xFC, 0xFF]);
+        op.extend_from_slice(&[37, 3, 39, 47, 0x60]);
+        push_ext(&mut ies, EXT_HE_OP, &op);
+        push_ext(
+            &mut ies,
+            EXT_HE_6GHZ_CAPS,
+            &((5 | (6 << 3) | (1 << 6) | (3 << 9)) as u16).to_le_bytes(),
+        );
+        let o = HeOp::parse(find_ext(&ies, EXT_HE_OP).unwrap()).unwrap();
+        assert_eq!(
+            o.six,
+            Some(SixGhzOp {
+                primary: 37,
+                width: 3,
+                ccfs0: 39,
+                ccfs1: 47
+            })
+        );
+        let l = negotiate_band(&p, &ies, Band::B6G, 37);
+        assert_eq!((l.mode, l.width, l.center), (Mode::He, Width::W160, 47));
+        assert_eq!(ctrl_pos(&l), 2); // primary 50 MHz below the centre
+        assert_eq!((l.ampdu_exp, l.ampdu_density, l.max_mpdu), (6, 5, 7991));
+        assert_eq!(l.mcs[1][1], 0xFFF);
+        // Limited to 80 MHz.
+        let p80 = Profile {
+            max_width: Width::W80,
+            ..p
+        };
+        let l = negotiate_band(&p80, &ies, Band::B6G, 37);
+        assert_eq!((l.width, l.center), (Width::W80, 39));
+        assert_eq!(center_6g(Width::W40, 37), 35);
+        assert_eq!(center_6g(Width::W20, 37), 37);
+        // 6 GHz association elements: HE + 6 GHz band caps, no HT/VHT.
+        let e = assoc_elements_band(&p, &ies, Band::B6G);
+        assert!(ie::find(&e, HT_CAPS).is_none());
+        assert!(find_ext(&e, EXT_HE_6GHZ_CAPS).is_some());
+        // Without HE the link is unusable (legacy).
+        assert_eq!(negotiate_band(&p, &[], Band::B6G, 37).mode, Mode::Legacy);
     }
 }

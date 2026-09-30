@@ -62,6 +62,8 @@ wifi connect CafeOpen       # open network
 wifi disconnect
 wifi forget "My Network"
 wifi auto                   # join the first reachable saved network
+wifi power                  # power-save state and why
+wifi power on|off|auto      # auto: on while running on battery
 ```
 
 Once associated, `wlan0` gets an address from the kernel's DHCP client
@@ -88,6 +90,11 @@ If a network misbehaves with the fast modes, limit them in
 iwlwifi.mode=vht     # legacy | ht | vht | he (default: he)
 iwlwifi.width=40     # 20 | 40 | 80 | 160 MHz (default: 160)
 iwlwifi.agg=0        # no A-MPDU aggregation
+iwlwifi.rxbuf=4k     # 4 KiB receive buffers (advertise 3895-byte MPDUs)
+iwlwifi.baid=sta     # set up receive block ack via ADD_STA
+iwlwifi.power=off    # on | off | auto (default: auto)
+iwlwifi.6ghz=0       # do not scan 6 GHz
+iwlwifi.btcoex=0     # WiFi owns the shared antenna (no BT coexistence)
 ```
 
 ## How a connection works
@@ -103,7 +110,11 @@ iwlwifi.agg=0        # no A-MPDU aggregation
 2. **Scan**: a UMAC scan (v15) over 2.4 GHz channels 1–13 and the 5 GHz
    UNII bands (the firmware keeps DFS/restricted channels passive);
    beacons and probe responses fill the BSS table with signal strength.
-3. **Join**: the strongest BSS for the SSID (5 GHz slightly preferred) is
+   When the regulatory domain allows 6 GHz (AX210/AX211), the scan adds
+   the 15 preferred scanning channels (5, 21, ... 229), listening only,
+   plus every 6 GHz channel that a 2.4/5 GHz AP announced in a Reduced
+   Neighbor Report, probing for the reported BSSIDs and short SSIDs.
+3. **Join**: the strongest BSS for the SSID (5 and 6 GHz slightly preferred) is
    chosen; the PHY context is moved to its channel, the MAC is bound to it,
    the AP station is added with management and data TX queues, and
    session protection keeps the radio on channel.
@@ -141,10 +152,23 @@ log (`dmesg`) prints each boot step and firmware error details.
   (`mode "802.11ax 80 MHz 2x2"`, `rate "HE-MCS 11 2SS 80MHz"`).
 * A-MPDU aggregation both ways (block-ack sessions with a reorder
   buffer driven by the firmware's release notifications); A-MSDUs are
-  received (split by the hardware, or in software) but not sent. The
-  receive limits advertised are the smallest (3839/3895-byte MPDUs) so
-  every frame fits one 4 KiB receive buffer.
+  received (split by the hardware, or in software) but not sent.
+  Receive buffers are 12 KiB, so the driver advertises 11454-byte MPDUs
+  (VHT, HE 6 GHz) and 7935-byte A-MSDUs (HT). Receive block-ack sessions
+  use `RX_BAID_ALLOCATION_CONFIG` on firmware that has it, and `ADD_STA`
+  otherwise.
+* 6 GHz (HE only): 20–160 MHz from the AP's 6 GHz Operation
+  Information, the HE 6 GHz Band Capabilities element, and WPA3-SAE with
+  hash-to-element only (WPA3 on 6 GHz requires H2E). `wifi scan` shows
+  6 GHz channels as `37/6G`.
+* Power save: while associated, the firmware sleeps between beacons
+  (`MAC_PM_POWER_TABLE`, balanced scheme, low-power RX) and filters
+  unchanged beacons. It wakes on traffic by itself, staying awake for
+  100 ms after the last frame. In `auto` mode power save is on while an
+  ACPI AC adapter (`_PSR`) reports that the machine runs on battery.
+  uAPSD is not used.
+* Bluetooth coexistence uses the firmware's shared-antenna arbitration
+  (`BT_CONFIG` mode NW), so the card's Bluetooth core can run alongside.
 * The channel list follows the regulatory domain the firmware reports.
-* No 6 GHz, no power save (the radio stays awake).
 * WPA-Enterprise (802.1X/EAP), WEP and TKIP-only networks are refused.
 * No AP, monitor or P2P modes.

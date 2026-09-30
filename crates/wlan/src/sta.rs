@@ -90,7 +90,7 @@ pub struct Station {
 }
 
 fn band_2g(bss: &BssInfo) -> bool {
-    bss.channel.is_none_or(|c| c <= 14)
+    bss.band == crate::chan::Band::B2G
 }
 
 impl Station {
@@ -111,8 +111,10 @@ impl Station {
                 e
             })
             .unwrap_or_default();
+        // 6 GHz allows only hash-to-element.
         let h2e = ie::find(&bss.ies, ie::RSNX)
-            .is_some_and(|x| x.first().is_some_and(|b| b & RSNX_SAE_H2E != 0));
+            .is_some_and(|x| x.first().is_some_and(|b| b & RSNX_SAE_H2E != 0))
+            || bss.band == crate::chan::Band::B6G;
         let (akm, pairwise, group, pmf, pmf_required) = match (security, &rsn) {
             (Security::Open, _) => (
                 Akm::Unknown(0),
@@ -271,10 +273,10 @@ impl Station {
                 &[0x00, 0x50, 0xF2, 0x02, 0x00, 0x01, 0x00],
             );
         }
-        extra.extend_from_slice(&caps::assoc_elements(
+        extra.extend_from_slice(&caps::assoc_elements_band(
             &self.profile,
             &self.bss.ies,
-            band_2g(&self.bss),
+            self.bss.band,
         ));
         let f = frame::assoc_request(
             self.own,
@@ -533,6 +535,7 @@ mod tests {
             },
             beacon_interval: 100,
             channel: Some(6),
+            band: crate::chan::Band::B2G,
             ies,
         }
     }

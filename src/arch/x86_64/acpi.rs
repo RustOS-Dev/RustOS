@@ -465,3 +465,32 @@ pub fn pci_irq_route(device: u8, function: u8, pin: u8) -> Option<u32> {
     })
     .flatten()
 }
+
+/// True if the machine runs on battery: some AC adapter's `_PSR`
+/// reports offline. `None` when there is no AC adapter (a desktop) or
+/// the AML interpreter is unavailable.
+pub fn on_battery() -> Option<bool> {
+    use acpi::aml::namespace::NameSeg;
+    let psr = NameSeg::from_bytes(*b"_PSR").ok()?;
+    with_interpreter(|i| {
+        let mut paths = Vec::new();
+        let _ = i.namespace.lock().traverse(|name, level| {
+            if level.values.contains_key(&psr)
+                && let Ok(p) = AmlName::from_name_seg(psr).resolve(name)
+            {
+                paths.push(p);
+            }
+            Ok(true)
+        });
+        let mut online = None;
+        for p in paths {
+            if let Ok(obj) = i.evaluate(p, Vec::new())
+                && let Object::Integer(v) = *obj
+            {
+                online = Some(online.unwrap_or(false) || v != 0);
+            }
+        }
+        online.map(|o| !o)
+    })
+    .flatten()
+}

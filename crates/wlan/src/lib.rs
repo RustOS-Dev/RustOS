@@ -12,6 +12,7 @@ extern crate alloc;
 
 pub mod ba;
 pub mod caps;
+pub mod chan;
 pub mod crypto;
 pub mod eapol;
 pub mod frame;

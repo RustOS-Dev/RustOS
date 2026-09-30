@@ -83,8 +83,25 @@ const UMAG_SB_CPU_2_STATUS: u32 = 0xA0_38C4;
 
 /// RX ring size (free and used rings) and the number of buffers posted.
 pub const RX_RING: usize = 512;
-const RX_BUFS: usize = RX_RING - 8;
-const RB_SIZE: usize = 4096;
+/// Receive buffer size: 12 KiB by default so a whole 11454-byte MPDU (or
+/// an unsplit A-MSDU) fits one buffer; `iwlwifi.rxbuf=4k` goes back to
+/// 4 KiB buffers and the smallest advertised MPDU length.
+const RB_SIZE_4K: usize = 4096;
+const RB_SIZE_12K: usize = 12288;
+
+/// The receive buffer size chosen by kernel.conf.
+pub fn rb_size() -> usize {
+    match crate::params::get("iwlwifi.rxbuf").as_deref() {
+        Some("4k" | "4K" | "4096") => RB_SIZE_4K,
+        _ => RB_SIZE_12K,
+    }
+}
+
+/// Number of receive buffers for `rb` byte buffers: 504 × 4 KiB or
+/// 256 × 12 KiB (always fewer than the ring holds).
+fn rx_bufs_for(rb: usize) -> usize {
+    if rb > RB_SIZE_4K { 256 } else { RX_RING - 8 }
+}
 const CMD_QUEUE: usize = 32;
 const CMD_SLOT: usize = 4096;
 const FIRST_TB: usize = 20;
@@ -100,6 +117,8 @@ const CTXT_INFO_SIZE: usize = 0x68;
 const PRPH_SCRATCH_DRAM: usize = 0x54 + 40;
 const PRPH_SCRATCH_SIZE: usize = PRPH_SCRATCH_DRAM + 3 * MAX_DRAM_ENTRY * 8;
 const PRPH_SCRATCH_RB_SIZE_4K: u32 = 1 << 16;
+/// Extended RB size field (bits 20..24); 12K keeps the 4K bit set too.
+const PRPH_SCRATCH_RB_SIZE_EXT_12K: u32 = 9 << 20;
 const PRPH_SCRATCH_MTR_MODE: u32 = 1 << 17;
 const PRPH_MTR_FORMAT_256B: u32 = 0xC0000;
 
@@ -256,6 +275,8 @@ pub struct Trans {
     rx_used: DmaBuffer,
     rb_stts: DmaBuffer,
     rx_bufs: DmaBuffer,
+    rb_size: usize,
+    nr_rx_bufs: usize,
     rx_read: usize,
     rx_write: usize,
     rx_stocked: bool,
@@ -279,6 +300,8 @@ fn w32(a: u64, v: u32) {
 
 impl Trans {
     pub fn new(mmio: u64, integrated: bool) -> Option<Trans> {
+        let rb_size = rb_size();
+        let nr_rx_bufs = rx_bufs_for(rb_size);
         Some(Trans {
             mmio,
             hw_rev: r32(mmio + CSR_HW_REV),
@@ -287,7 +310,9 @@ impl Trans {
             rx_free: DmaBuffer::new(RX_RING * 16)?,
             rx_used: DmaBuffer::new(RX_RING * 32)?,
             rb_stts: DmaBuffer::new(4096)?,
-            rx_bufs: DmaBuffer::new(RX_BUFS * RB_SIZE)?,
+            rx_bufs: DmaBuffer::new(nr_rx_bufs * rb_size)?,
+            rb_size,
+            nr_rx_bufs,
             rx_read: 0,
             rx_write: 0,
             rx_stocked: false,
@@ -497,7 +522,10 @@ impl Trans {
         scratch.write::<u16>(0, self.hw_rev as u16); // mac_id
         scratch.write::<u16>(2, 0); // version
         scratch.write::<u16>(4, (PRPH_SCRATCH_SIZE / 4) as u16);
-        let control = PRPH_SCRATCH_RB_SIZE_4K | PRPH_SCRATCH_MTR_MODE | PRPH_MTR_FORMAT_256B;
+        let mut control = PRPH_SCRATCH_RB_SIZE_4K | PRPH_SCRATCH_MTR_MODE | PRPH_MTR_FORMAT_256B;
+        if self.rb_size == RB_SIZE_12K {
+            control |= PRPH_SCRATCH_RB_SIZE_EXT_12K;
+        }
         scratch.write::<u32>(8, control);
         // pnvm_cfg at 0x10 (filled by load_pnvm), hwm_cfg at 0x20,
         // rbd_cfg at 0x30.
@@ -600,7 +628,7 @@ impl Trans {
     }
 
     fn restock_all(&mut self) {
-        for i in 0..RX_BUFS {
+        for i in 0..self.nr_rx_bufs {
             self.post_rb(i as u16 + 1);
         }
         self.rx_stocked = true;
@@ -613,7 +641,7 @@ impl Trans {
         put64(
             &self.rx_free,
             d + 8,
-            self.rx_bufs.phys() + (vid as u64 - 1) * RB_SIZE as u64,
+            self.rx_bufs.phys() + (vid as u64 - 1) * self.rb_size as u64,
         );
         self.rx_write = (self.rx_write + 1) % RX_RING;
     }
@@ -649,14 +677,15 @@ impl Trans {
         while self.rx_read != closed {
             let cd = self.rx_read * 32;
             let vid = self.rx_used.read::<u16>(cd + 4);
-            if vid == 0 || vid as usize > RX_BUFS {
+            if vid == 0 || vid as usize > self.nr_rx_bufs {
                 crate::println!("[iwlwifi] bad RX buffer id {}", vid);
             } else {
-                let base = (vid as usize - 1) * RB_SIZE;
-                let buf = &self.rx_bufs.as_slice()[base..base + RB_SIZE];
+                let rb = self.rb_size;
+                let base = (vid as usize - 1) * rb;
+                let buf = &self.rx_bufs.as_slice()[base..base + rb];
                 let len_n_flags = u32::from_le_bytes(buf[0..4].try_into().unwrap());
                 let len = (len_n_flags & 0x3FFF) as usize;
-                if len_n_flags != 0x5555_0000 && len >= 4 && len + 4 <= RB_SIZE {
+                if len_n_flags != 0x5555_0000 && len >= 4 && len + 4 <= rb {
                     self.pending.push_back(Packet {
                         cmd: buf[4],
                         group: buf[5],

@@ -2,6 +2,7 @@
 //! by AX210 firmware (non-MLD station API).
 
 use alloc::vec::Vec;
+use wlan::chan::Band;
 
 // Command groups.
 pub const LEGACY: u8 = 0x0;
@@ -28,6 +29,8 @@ pub const MGMT_MCAST_KEY: u8 = 0x1F;
 pub const MAC_CONTEXT: u8 = 0x28;
 pub const BINDING: u8 = 0x2B;
 pub const POWER_TABLE: u8 = 0x77;
+pub const MAC_PM_POWER_TABLE: u8 = 0xA9;
+pub const BEACON_FILTER_CONFIG: u8 = 0xD2;
 pub const TX_ANT_CONFIG: u8 = 0x98;
 pub const BT_CONFIG: u8 = 0x9B;
 pub const MISSED_BEACONS: u8 = 0xA2;
@@ -45,6 +48,7 @@ pub const SESSION_PROTECTION_NOTIF: u8 = 0xFB;
 // Data path group.
 pub const STA_HE_CTXT: u8 = 0x07;
 pub const TLC_MNG_CONFIG: u8 = 0x0F;
+pub const RX_BAID_ALLOCATION_CONFIG: u8 = 0x16;
 pub const TLC_MNG_UPDATE_NOTIF: u8 = 0xF7;
 // Regulatory/NVM group.
 pub const NVM_ACCESS_COMPLETE: u8 = 0x00;
@@ -106,24 +110,34 @@ fn id_color(id: u32) -> u32 {
     id // color 0
 }
 
-pub fn band_of(channel: u8) -> u8 {
-    if channel <= 14 {
-        PHY_BAND_24
-    } else {
-        PHY_BAND_5
+pub const PHY_BAND_6: u8 = 2;
+
+/// Firmware band code.
+pub fn phy_band(b: Band) -> u8 {
+    match b {
+        Band::B2G => PHY_BAND_24,
+        Band::B5G => PHY_BAND_5,
+        Band::B6G => PHY_BAND_6,
     }
 }
 
 /// PHY_CONTEXT_CMD v3/v4 (UHB channel info). `channel` is the primary
 /// channel; `width` 0-3 = 20/40/80/160 MHz; `ctrl_pos` the position of
 /// the primary channel in the bandwidth (PHY_VHT_CTRL_POS_*).
-pub fn phy_context(action: u32, channel: u8, width: u8, ctrl_pos: u8, rx_ant: u32) -> Vec<u8> {
+pub fn phy_context(
+    action: u32,
+    band: Band,
+    channel: u8,
+    width: u8,
+    ctrl_pos: u8,
+    rx_ant: u32,
+) -> Vec<u8> {
     let rxchain = (rx_ant << 1) | (2 << 10) | (2 << 12);
     Cmd::new()
         .u32(id_color(PHY_ID))
         .u32(action)
         .u32(channel as u32)
-        .u8(band_of(channel))
+        .u8(phy_band(band))
         .u8(width)
         .u8(ctrl_pos)
         .u8(0)
@@ -350,6 +364,128 @@ pub fn add_sta_baid(status: u32) -> Option<u8> {
     (status & 0xFF == 1 && status & 0x8000 != 0).then_some(((status >> 8) & 0x7F) as u8)
 }
 
+const BAID_ACTION_ALLOC: u32 = 0;
+const BAID_ACTION_REMOVE: u32 = 2;
+
+/// RX_BAID_ALLOCATION_CONFIG_CMD alloc (`iwl_rx_baid_cfg_cmd`, 16 bytes):
+/// action, sta_id_mask, tid, 3 reserved, ssn, win_size. The response is
+/// the BAID as a u32.
+pub fn rx_baid_alloc(tid: u8, ssn: u16, win: u16) -> Vec<u8> {
+    Cmd::new()
+        .u32(BAID_ACTION_ALLOC)
+        .u32(1 << AP_STA_ID)
+        .u8(tid)
+        .zeros(3)
+        .u16(ssn)
+        .u16(win)
+        .done()
+}
+
+/// RX_BAID_ALLOCATION_CONFIG_CMD remove: v1 names the BAID, v2 the
+/// station mask and TID. Padded to the 16-byte command size.
+pub fn rx_baid_remove(ver: u8, baid: u8, tid: u8) -> Vec<u8> {
+    let mut c = Cmd::new();
+    c.u32(BAID_ACTION_REMOVE);
+    if ver >= 2 {
+        c.u32(1 << AP_STA_ID).u32(tid as u32);
+    } else {
+        c.u32(baid as u32).zeros(4);
+    }
+    c.zeros(4).done()
+}
+
+/// BAID from an RX_BAID_ALLOCATION_CONFIG response.
+pub fn rx_baid_resp(r: &[u8]) -> Option<u8> {
+    let b = u32::from_le_bytes(r.get(0..4)?.try_into().ok()?);
+    (b < INVALID_BAID as u32).then_some(b as u8)
+}
+
+/// BT_CONFIG (`iwl_bt_coex_cmd`): with coexistence the firmware shares
+/// the antenna with the Bluetooth core of the same card (mode NW, the
+/// Linux default modules: MPLUT, sync to SCO, high-band retention);
+/// without, WiFi owns the antenna (mode WIFI).
+pub fn bt_coex(enabled: bool) -> Vec<u8> {
+    const MODE_NW: u32 = 1;
+    const MODE_WIFI: u32 = 3;
+    const MPLUT: u32 = 1 << 0;
+    const SYNC2SCO: u32 = 1 << 2;
+    const HIGH_BAND_RET: u32 = 1 << 4;
+    if enabled {
+        Cmd::new()
+            .u32(MODE_NW)
+            .u32(MPLUT | SYNC2SCO | HIGH_BAND_RET)
+            .done()
+    } else {
+        Cmd::new().u32(MODE_WIFI).u32(0).done()
+    }
+}
+
+/// POWER_TABLE_CMD (`iwl_device_power_cmd`): device-wide power save.
+pub fn device_power(ps: bool) -> Vec<u8> {
+    Cmd::new().u16(ps as u16).u16(0).done()
+}
+
+/// MAC_PM_POWER_TABLE (`iwl_mac_power_cmd`, 40 bytes) for the station
+/// MAC, as `iwl_mvm_power_build_cmd` fills it in the "balanced" scheme:
+/// power management always on, power save while associated, low-power RX,
+/// and 100 ms of traffic keeping the radio awake. uAPSD stays off.
+pub fn mac_power(ps: bool, beacon_int: u16, dtim: u8) -> Vec<u8> {
+    const PM_ENA: u16 = 1 << 1;
+    const PS_ENA: u16 = 1 << 0;
+    const LPRX_ENA: u16 = 1 << 11;
+    const ADVANCE_PM: u16 = 1 << 9;
+    let mut flags = PM_ENA;
+    if ps {
+        flags |= PS_ENA | LPRX_ENA | ADVANCE_PM;
+    }
+    // Keep-alive: at least three DTIM periods, and at least 25 s.
+    let dtim_ms = beacon_int as u32 * 1024 / 1000 * dtim.max(1) as u32;
+    let keep_alive = (3 * dtim_ms).div_ceil(1000).max(25) as u16;
+    let timeout_us = if ps { 100_000 } else { 0 };
+    Cmd::new()
+        .u32(id_color(MAC_ID))
+        .u16(flags)
+        .u16(keep_alive)
+        .u32(timeout_us) // rx_data_timeout
+        .u32(timeout_us) // tx_data_timeout
+        .u32(0) // rx_data_timeout_uapsd
+        .u32(0) // tx_data_timeout_uapsd
+        .u8(if ps { 75 } else { 0 }) // lprx_rssi_threshold
+        .u8(0) // skip_dtim_periods
+        .u16(0) // snooze_interval
+        .u16(0) // snooze_window
+        .u8(0) // snooze_step
+        .u8(0) // qndp_tid
+        .u8(0) // uapsd_ac_flags
+        .u8(0) // uapsd_max_sp
+        .zeros(4) // heavy tx/rx thresholds
+        .u8(0) // limited_ps_threshold
+        .u8(0)
+        .done()
+}
+
+/// BEACON_FILTER_CONFIG_CMD (`iwl_beacon_filter_cmd`) with the Linux
+/// defaults: v3 is 11 words, v4 adds the absolute RSSI thresholds.
+/// Beacons that change nothing we track are dropped by the firmware.
+pub fn beacon_filter(ver: u8, enable: bool) -> Vec<u8> {
+    let mut c = Cmd::new();
+    c.u32(5) // bf_energy_delta
+        .u32(1) // bf_roaming_energy_delta
+        .u32(72) // bf_roaming_state
+        .u32(112) // bf_temp_threshold
+        .u32(1) // bf_temp_fast_filter
+        .u32(5) // bf_temp_slow_filter
+        .u32(enable as u32) // bf_enable_beacon_filter
+        .u32(0) // bf_debug_flag
+        .u32(50) // bf_escape_timer
+        .u32(6) // ba_escape_timer
+        .u32(enable as u32); // ba_enable_beacon_abort
+    if ver >= 4 {
+        c.zeros(16);
+    }
+    c.done()
+}
+
 pub fn remove_sta(sta_id: u8) -> Vec<u8> {
     Cmd::new().u8(sta_id).zeros(3).done()
 }
@@ -552,6 +688,10 @@ pub fn scan_config(tx_ant: u32, rx_ant: u32) -> Vec<u8> {
         .done()
 }
 
+/// UHB channel flags for 6 GHz channel entries: listen only (no probe
+/// requests) unless an RNR told us which BSSIDs / short SSIDs to probe.
+const UHB_CHAN_FORCE_PASSIVE: u32 = 1 << 26;
+
 pub const SCAN_CHANNELS_24: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 pub const SCAN_CHANNELS_5: &[u8] = &[
     36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
@@ -562,13 +702,24 @@ pub const SCAN_CHANNELS_5: &[u8] = &[
 /// active scan of `channels`, optionally directed at `ssid`. `caps24` and
 /// `caps5` are extra probe request elements (HT/VHT/HE capabilities) for
 /// each band.
+/// 6 GHz discovery data for a scan: BSSIDs and short SSIDs learned from
+/// Reduced Neighbor Reports (up to 16 and 8), and the 6 GHz probe
+/// request elements.
+#[derive(Default)]
+pub struct Scan6g<'a> {
+    pub bssids: &'a [(u8, [u8; 6])],
+    pub short_ssids: &'a [(u8, u32)],
+    pub caps: &'a [u8],
+}
+
 pub fn scan_request(
     own: [u8; 6],
-    channels: &[u8],
+    channels: &[(Band, u8)],
     ssid: &[u8],
     associated: bool,
     caps24: &[u8],
     caps5: &[u8],
+    six: &Scan6g,
 ) -> Vec<u8> {
     const GEN_FLAGS_PASS_ALL: u16 = 1 << 1;
     const GEN_FLAGS_ADAPTIVE_DWELL: u16 = 1 << 7;
@@ -602,11 +753,33 @@ pub fn scan_request(
         .u8(channels.len().min(67) as u8)
         .u8(10)
         .u8(2);
+    let bssids = &six.bssids[..six.bssids.len().min(16)];
+    let short_ssids = &six.short_ssids[..six.short_ssids.len().min(8)];
     for i in 0..67 {
         match channels.get(i) {
-            Some(&ch) => {
+            Some(&(Band::B6G, ch)) => {
+                // Probe for the BSSIDs / short SSIDs reported on this
+                // channel (bitmaps into the arrays below); listen only
+                // when nothing was reported.
+                let mut flags = 0u32;
+                for (j, (c6, _)) in bssids.iter().enumerate() {
+                    if *c6 == ch {
+                        flags |= 1 << j;
+                    }
+                }
+                for (j, (c6, _)) in short_ssids.iter().enumerate() {
+                    if *c6 == ch {
+                        flags |= 1 << (16 + j);
+                    }
+                }
+                if flags == 0 {
+                    flags = UHB_CHAN_FORCE_PASSIVE;
+                }
+                c.u32(flags).u8(ch).u8(PHY_BAND_6).u8(1).u8(0);
+            }
+            Some(&(band, ch)) => {
                 // Probe with direct_scan[0] (the SSID, or wildcard).
-                c.u32(1).u8(ch).u8(band_of(ch)).u8(1).u8(0);
+                c.u32(1).u8(ch).u8(phy_band(band)).u8(1).u8(0);
             }
             None => {
                 c.zeros(8);
@@ -634,16 +807,22 @@ pub fn scan_request(
     buf.extend_from_slice(&[1, 8, 0x8C, 0x12, 0x98, 0x24, 0xB0, 0x48, 0x60, 0x6C]);
     buf.extend_from_slice(caps5);
     let b5_len = buf.len() - b5;
+    let b6 = buf.len();
+    if !six.caps.is_empty() {
+        buf.extend_from_slice(&[1, 8, 0x8C, 0x12, 0x98, 0x24, 0xB0, 0x48, 0x60, 0x6C]);
+        buf.extend_from_slice(six.caps);
+    }
+    let b6_len = buf.len() - b6;
     let common = buf.len();
     c.u16(0).u16(mac_len as u16);
     c.u16(b24 as u16).u16(b24_len as u16);
     c.u16(b5 as u16).u16(b5_len as u16);
-    c.u16(common as u16).u16(0); // 6 GHz: none
+    c.u16(b6 as u16).u16(b6_len as u16);
     c.u16(common as u16).u16(0); // common data
     buf.resize(512, 0);
     c.bytes(&buf[..512]);
     // short_ssid_num, bssid_num, reserved
-    c.u8(0).u8(0).u16(0);
+    c.u8(short_ssids.len() as u8).u8(bssids.len() as u8).u16(0);
     // direct_scan[20] (id, len, ssid[32])
     for i in 0..20 {
         if i == 0 {
@@ -655,8 +834,12 @@ pub fn scan_request(
             c.zeros(34);
         }
     }
-    c.zeros(8 * 4); // short SSIDs
-    c.zeros(16 * 6); // BSSIDs
+    for i in 0..8 {
+        c.u32(short_ssids.get(i).map_or(0, |s| s.1));
+    }
+    for i in 0..16 {
+        c.bytes(&bssids.get(i).map_or([0; 6], |b| b.1));
+    }
     c.done()
 }
 
@@ -716,20 +899,31 @@ pub fn describe_rate(r: u32, v2: bool) -> alloc::string::String {
 }
 
 /// Channels in the order of the firmware's NVM channel list (UHB devices:
-/// 2.4 GHz, 5 GHz, then 6 GHz).
+/// 2.4 GHz, 5 GHz, then the 59 6 GHz channels 1, 5, ... 233).
 pub const NVM_CHANNELS: &[u8] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80,
     84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161,
     165, 169, 173, 177, 181,
 ];
+
+/// Band and number of NVM channel list entry `i`.
+pub fn nvm_channel(i: usize) -> Option<(Band, u8)> {
+    match NVM_CHANNELS.get(i) {
+        Some(&c) => Some((Band::of_legacy(c), c)),
+        None => {
+            let j = i - NVM_CHANNELS.len();
+            (j < 59).then(|| (Band::B6G, 1 + 4 * j as u8))
+        }
+    }
+}
 pub const NVM_CHANNEL_VALID: u32 = 1 << 0;
 pub const NVM_CHANNEL_ACTIVE: u32 = 1 << 3;
 
 /// Parse an MCC_UPDATE response (v3, v4 or v8 layout, told apart by the
 /// channel count matching the length): (country code, per-channel flags
 /// for the 2.4/5 GHz channels in `NVM_CHANNELS`).
-/// Channel number and its NVM flags.
-pub type ChannelFlags = Vec<(u8, u32)>;
+/// Band, channel number and its NVM flags.
+pub type ChannelFlags = Vec<(Band, u8, u32)>;
 
 pub fn parse_mcc_response(d: &[u8]) -> Option<([u8; 2], ChannelFlags)> {
     let le32 = |o: usize| {
@@ -743,8 +937,11 @@ pub fn parse_mcc_response(d: &[u8]) -> Option<([u8; 2], ChannelFlags)> {
             continue;
         }
         let mcc = [d[5], d[4]];
-        let chans = (0..n.min(NVM_CHANNELS.len()))
-            .map(|i| (NVM_CHANNELS[i], le32(off + 4 + 4 * i).unwrap_or(0)))
+        let chans = (0..n)
+            .filter_map(|i| {
+                let (b, c) = nvm_channel(i)?;
+                Some((b, c, le32(off + 4 + 4 * i).unwrap_or(0)))
+            })
             .collect();
         return Some((mcc, chans));
     }
@@ -854,12 +1051,24 @@ pub fn layout_checks() {
         mac: [0; 6],
     };
     // iwl_phy_context_cmd: 32 bytes.
-    assert_eq!(phy_context(1, 36, 2, 4, 3).len(), 32);
+    assert_eq!(phy_context(1, Band::B5G, 36, 2, 4, 3).len(), 32);
+    assert_eq!(nvm_channel(51), Some((Band::B6G, 1)));
+    assert_eq!(nvm_channel(109), Some((Band::B6G, 233)));
+    assert_eq!(nvm_channel(110), None);
     // iwl_mvm_add_sta_cmd (ADD_STA_CMD_API_S_VER_12): 48 bytes.
     assert_eq!(
         add_sta(false, [0; 6], 0, sta_flags(&link, 2), 0xFFFF, false).len(),
         48
     );
+    // iwl_rx_baid_cfg_cmd: action + 12-byte union.
+    assert_eq!(rx_baid_alloc(3, 100, 64).len(), 16);
+    assert_eq!(rx_baid_remove(1, 5, 3).len(), 16);
+    assert_eq!(rx_baid_remove(2, 5, 3).len(), 16);
+    // iwl_device_power_cmd 4, iwl_mac_power_cmd 40, beacon filter 44/60.
+    assert_eq!(device_power(true).len(), 4);
+    assert_eq!(mac_power(true, 100, 3).len(), 40);
+    assert_eq!(beacon_filter(3, true).len(), 44);
+    assert_eq!(beacon_filter(4, true).len(), 60);
     let ba = add_sta_rx_ba(true, 3, 100, 64);
     assert_eq!((ba[17], ba[28], ba[30], ba[44]), (1 << 3, 3, 100, 64));
     // iwl_tlc_config_cmd_v4: 12 header + 12 rates + 4 = 28 bytes.

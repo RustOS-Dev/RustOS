@@ -6,6 +6,7 @@
 //!   wifi disconnect [-i IFACE]
 //!   wifi auto [-q]            join the first reachable network in wifi.conf
 //!   wifi forget SSID
+//!   wifi power [on|off|auto]  power save (auto: on while on battery)
 //!
 //! Saved networks live in /storage/etc/wifi.conf (persistent) or
 //! /etc/wifi.conf, as `ssid=...` / `psk=...` pairs, one network per block.
@@ -17,6 +18,7 @@ const WIFI_STATUS: u64 = 0x89F8;
 const WIFI_SCAN: u64 = 0x89F9;
 const WIFI_CONNECT: u64 = 0x89FA;
 const WIFI_DISCONNECT: u64 = 0x89FB;
+const WIFI_POWER: u64 = 0x89FD;
 
 const CONF_PERSISTENT: &str = "/storage/etc/wifi.conf";
 const CONF: &str = "/etc/wifi.conf";
@@ -74,7 +76,7 @@ fn print_status(iface: &str) {
     println!("{}: {}", iface, state);
     for k in [
         "ssid", "bssid", "channel", "signal", "security", "mode", "rate", "country", "firmware",
-        "msg",
+        "power", "msg",
     ] {
         if let Some(v) = field(&s, k) {
             println!("  {:<9}{}", k, v);
@@ -300,6 +302,27 @@ pub fn wifi(args: &[String]) -> i32 {
             }
             rc
         }
+        "power" => match rest.get(1).copied() {
+            None | Some("status") => {
+                let s = status(&iface);
+                println!("{}", field(&s, "power").unwrap_or("unknown"));
+                0
+            }
+            Some(m @ ("on" | "off" | "auto")) => {
+                let mut b = m.as_bytes().to_vec();
+                match request(&iface, WIFI_POWER, &mut b, &[]) {
+                    Ok(_) => 0,
+                    Err(e) => {
+                        eprintln!("wifi: {}", e);
+                        1
+                    }
+                }
+            }
+            _ => {
+                eprintln!("usage: wifi power [on|off|auto|status]");
+                2
+            }
+        },
         "disconnect" => match request(&iface, WIFI_DISCONNECT, &mut [], &[]) {
             Ok(_) => 0,
             Err(e) => {
@@ -336,7 +359,7 @@ pub fn wifi(args: &[String]) -> i32 {
         }
         _ => {
             eprintln!(
-                "usage: wifi [status|scan|connect SSID [PASS] [--save]|disconnect|auto|forget SSID] [-i IFACE]"
+                "usage: wifi [status|scan|connect SSID [PASS] [--save]|disconnect|auto|forget SSID|power [on|off|auto]] [-i IFACE]"
             );
             2
         }

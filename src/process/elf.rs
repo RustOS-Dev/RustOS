@@ -92,9 +92,15 @@ impl ElfFile {
     /// Up to `len` bytes at `off` (fewer at the end of the file).
     fn read(&self, off: u64, len: usize) -> KResult<Vec<u8>> {
         let len = len.min(self.size.saturating_sub(off) as usize);
-        let mut buf = Vec::new();
+        let mut buf: Vec<u8> = Vec::new();
         buf.try_reserve_exact(len).map_err(|_| ENOMEM)?;
-        buf.resize(len, 0);
+        // memset rather than `resize`, which fills byte by byte in debug
+        // builds (half a second per exec of a 500 KB program under QEMU).
+        // SAFETY: the capacity is at least `len` and every byte is written.
+        unsafe {
+            core::ptr::write_bytes(buf.as_mut_ptr(), 0, len);
+            buf.set_len(len);
+        }
         let mut done = 0;
         while done < len {
             let n = self.inode.read_at(off + done as u64, &mut buf[done..])?;

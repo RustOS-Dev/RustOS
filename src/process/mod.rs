@@ -30,6 +30,10 @@ pub struct Process {
     pub cmdline: Mutex<Vec<String>>,
     pub exe: Mutex<String>,
     pub vm: Mutex<Option<vm::Vm>>,
+    /// The address space after exit, until the last thread is gone: other
+    /// threads may still run on it (in user mode or in a syscall) when one
+    /// thread ends the process.
+    retired_vm: Mutex<Option<vm::Vm>>,
     pub files: Mutex<fd::FdTable>,
     pub cwd: Mutex<String>,
     pub umask: AtomicU32,
@@ -86,6 +90,7 @@ impl Process {
             cmdline: Mutex::new(Vec::new()),
             exe: Mutex::new(String::new()),
             vm: Mutex::new(None),
+            retired_vm: Mutex::new(None),
             files: Mutex::new(fd::FdTable::new()),
             cwd: Mutex::new(cwd),
             umask: AtomicU32::new(umask),
@@ -125,6 +130,15 @@ impl Process {
 
     pub fn main_thread(&self) -> Option<Arc<Thread>> {
         self.threads.lock().iter().find_map(|w| w.upgrade())
+    }
+
+    /// Free the address space of an exited process once all its threads
+    /// are gone (called by the scheduler's worker as each thread is
+    /// dropped).
+    pub fn release_retired_vm(&self) {
+        if self.threads.lock().iter().all(|w| w.strong_count() == 0) {
+            drop(self.retired_vm.lock().take());
+        }
     }
 
     pub fn live_threads(&self) -> Vec<Arc<Thread>> {
@@ -472,7 +486,10 @@ fn do_exit(p: &Arc<Process>, status: i32) {
     }
     me.is_user.store(false, Ordering::SeqCst);
     me.fold_cpu_times(p);
-    *p.vm.lock() = None;
+    // Gone for everyone looking the process up; freed once no thread of it
+    // runs any more (`release_retired_vm`).
+    let vm = p.vm.lock().take();
+    *p.retired_vm.lock() = vm;
     *p.exit_status.lock() = Some(status);
 
     // Re-parent children to init.

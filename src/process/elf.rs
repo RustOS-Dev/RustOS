@@ -7,13 +7,17 @@
 //! and started with AT_BASE / AT_ENTRY / AT_PHDR describing the program; it
 //! maps the shared libraries and performs the program's relocations.
 //! PT_LOAD segments are copied into anonymous memory with their requested
-//! permissions. The initial stack follows the System V ABI: argc, argv,
+//! permissions, straight from the file in small chunks: the loader never
+//! holds a whole program in the kernel heap (programs can be larger than
+//! it). The initial stack follows the System V ABI: argc, argv,
 //! envp, auxv.
 
 use super::vm::{self, AddressSpace, Area, Backing, PROT_EXEC, PROT_READ, PROT_WRITE};
 use crate::errno::*;
 use crate::mm::FRAME_SIZE;
+use crate::vfs::{FileType, Inode};
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 const PT_LOAD: u32 = 1;
@@ -59,6 +63,74 @@ fn u64_at(b: &[u8], o: usize) -> u64 {
     u64::from_le_bytes(b[o..o + 8].try_into().unwrap())
 }
 
+/// Bytes copied per step when filling segments and reading relocations.
+const CHUNK: usize = 64 * 1024;
+/// Largest program header table accepted (Linux's limit as well).
+const MAX_PHDRS_SIZE: usize = 64 * 1024;
+/// How much of a script's first line is looked at (Linux's BINPRM_BUF_SIZE).
+const SHEBANG_MAX: usize = 256;
+
+/// An executable, read on demand.
+struct ElfFile {
+    inode: Arc<dyn Inode>,
+    size: u64,
+}
+
+impl ElfFile {
+    fn open(path: &str) -> KResult<Self> {
+        let inode = crate::vfs::lookup(path)?;
+        let meta = inode.metadata()?;
+        if meta.kind == FileType::Directory {
+            return Err(EACCES);
+        }
+        Ok(Self {
+            inode,
+            size: meta.size,
+        })
+    }
+
+    /// Up to `len` bytes at `off` (fewer at the end of the file).
+    fn read(&self, off: u64, len: usize) -> KResult<Vec<u8>> {
+        let len = len.min(self.size.saturating_sub(off) as usize);
+        let mut buf = Vec::new();
+        buf.try_reserve_exact(len).map_err(|_| ENOMEM)?;
+        buf.resize(len, 0);
+        let mut done = 0;
+        while done < len {
+            let n = self.inode.read_at(off + done as u64, &mut buf[done..])?;
+            if n == 0 {
+                break;
+            }
+            done += n;
+        }
+        buf.truncate(done);
+        Ok(buf)
+    }
+
+    /// Exactly `len` bytes at `off`, or ENOEXEC.
+    fn read_exact(&self, off: u64, len: usize) -> KResult<Vec<u8>> {
+        let b = self.read(off, len)?;
+        if b.len() != len {
+            return Err(ENOEXEC);
+        }
+        Ok(b)
+    }
+
+    /// Copy `len` bytes at file offset `off` to `addr` in `space`.
+    fn copy_to(&self, space: &mut AddressSpace, addr: u64, off: u64, len: u64) -> KResult<()> {
+        with_writable(space, addr, len, |space| {
+            let mut done = 0u64;
+            while done < len {
+                let n = (len - done).min(CHUNK as u64) as usize;
+                let chunk = self.read_exact(off + done, n)?;
+                space.write_bytes(addr + done, &chunk)?;
+                done += n as u64;
+            }
+            Ok(())
+        })
+    }
+}
+
 struct Phdr {
     kind: u32,
     flags: u32,
@@ -69,7 +141,8 @@ struct Phdr {
 }
 
 pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
-    let data = crate::vfs::read_all(path)?;
+    let file = ElfFile::open(path)?;
+    let data = file.read(0, SHEBANG_MAX)?;
     // "#!" scripts: run the interpreter with the script as an argument.
     if data.starts_with(b"#!") {
         let line_end = data.iter().position(|&b| b == b'\n').unwrap_or(data.len());
@@ -86,36 +159,37 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
         new_argv.extend(argv.iter().skip(1).cloned());
         return load(interp, &new_argv, envp);
     }
-    let (etype, entry0, phoff, phnum, phdrs) = parse_elf(&data)?;
+    let (etype, entry0, phoff, phnum, phdrs) = parse_elf(&file)?;
     let bias = if etype == ET_DYN { PIE_BIAS } else { 0 };
     let entry = entry0 + bias;
-    let interp = phdrs.iter().find(|p| p.kind == PT_INTERP).map(|p| {
-        let raw = data
-            .get(p.offset as usize..(p.offset + p.filesz) as usize)
-            .unwrap_or(&[]);
-        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-        String::from_utf8_lossy(&raw[..end]).into_owned()
-    });
+    let interp = match phdrs.iter().find(|p| p.kind == PT_INTERP) {
+        Some(p) => {
+            let raw = file.read(p.offset, (p.filesz as usize).min(4096))?;
+            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+            Some(String::from_utf8_lossy(&raw[..end]).into_owned())
+        }
+        None => None,
+    };
 
     let mut space = AddressSpace::new()?;
-    let (max_end, mut phdr_addr) = map_segments(&mut space, &data, &phdrs, bias, phoff)?;
+    let (max_end, mut phdr_addr) = map_segments(&mut space, &file, &phdrs, bias, phoff)?;
     if interp.is_some() && phdr_addr == 0 {
         return Err(ENOEXEC); // ld.so needs the program headers
     }
     let (run_entry, at_base) = match &interp {
         // Dynamically linked: ld.so relocates the program.
         Some(ipath) => {
-            let idata = crate::vfs::read_all(ipath).map_err(|_| ENOENT)?;
-            let (itype, ientry, iphoff, _, iphdrs) = parse_elf(&idata)?;
+            let ifile = ElfFile::open(ipath).map_err(|_| ENOENT)?;
+            let (itype, ientry, iphoff, _, iphdrs) = parse_elf(&ifile)?;
             if iphdrs.iter().any(|p| p.kind == PT_INTERP) {
                 return Err(ELIBBAD);
             }
             let ibias = if itype == ET_DYN { INTERP_BIAS } else { 0 };
-            map_segments(&mut space, &idata, &iphdrs, ibias, iphoff)?;
+            map_segments(&mut space, &ifile, &iphdrs, ibias, iphoff)?;
             if ibias != 0
                 && let Some(dynph) = iphdrs.iter().find(|p| p.kind == PT_DYNAMIC)
             {
-                apply_relocations(&mut space, &idata, dynph, ibias)?;
+                apply_relocations(&mut space, &ifile, &iphdrs, dynph, ibias)?;
             }
             (ientry + ibias, ibias)
         }
@@ -124,7 +198,7 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
             if bias != 0
                 && let Some(dynph) = phdrs.iter().find(|p| p.kind == PT_DYNAMIC)
             {
-                apply_relocations(&mut space, &data, dynph, bias)?;
+                apply_relocations(&mut space, &file, &phdrs, dynph, bias)?;
             }
             (entry, 0)
         }
@@ -178,31 +252,33 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
 type ElfInfo = (u16, u64, usize, usize, Vec<Phdr>);
 
 /// Check the ELF header; returns (type, entry, phoff, phnum, program headers).
-fn parse_elf(data: &[u8]) -> KResult<ElfInfo> {
+fn parse_elf(file: &ElfFile) -> KResult<ElfInfo> {
+    let data = file.read(0, 64)?;
     if data.len() < 64 || &data[..4] != b"\x7fELF" || data[4] != 2 || data[5] != 1 {
         return Err(ENOEXEC);
     }
-    let etype = u16_at(data, 16);
-    if u16_at(data, 18) != EM_X86_64 || (etype != ET_EXEC && etype != ET_DYN) {
+    let etype = u16_at(&data, 16);
+    if u16_at(&data, 18) != EM_X86_64 || (etype != ET_EXEC && etype != ET_DYN) {
         return Err(ENOEXEC);
     }
-    let entry = u64_at(data, 24);
-    let phoff = u64_at(data, 32) as usize;
-    let phentsize = u16_at(data, 54) as usize;
-    let phnum = u16_at(data, 56) as usize;
-    if phentsize < 56 || phoff + phentsize * phnum > data.len() {
+    let entry = u64_at(&data, 24);
+    let phoff = u64_at(&data, 32) as usize;
+    let phentsize = u16_at(&data, 54) as usize;
+    let phnum = u16_at(&data, 56) as usize;
+    if phentsize < 56 || phentsize * phnum > MAX_PHDRS_SIZE {
         return Err(ENOEXEC);
     }
+    let table = file.read_exact(phoff as u64, phentsize * phnum)?;
     let phdrs: Vec<Phdr> = (0..phnum)
         .map(|i| {
-            let o = phoff + i * phentsize;
+            let o = i * phentsize;
             Phdr {
-                kind: u32_at(data, o),
-                flags: u32_at(data, o + 4),
-                offset: u64_at(data, o + 8),
-                vaddr: u64_at(data, o + 16),
-                filesz: u64_at(data, o + 32),
-                memsz: u64_at(data, o + 40),
+                kind: u32_at(&table, o),
+                flags: u32_at(&table, o + 4),
+                offset: u64_at(&table, o + 8),
+                vaddr: u64_at(&table, o + 16),
+                filesz: u64_at(&table, o + 32),
+                memsz: u64_at(&table, o + 40),
             }
         })
         .collect();
@@ -213,7 +289,7 @@ fn parse_elf(data: &[u8]) -> KResult<ElfInfo> {
 /// highest segment and the run-time address of the program headers.
 fn map_segments(
     space: &mut AddressSpace,
-    data: &[u8],
+    file: &ElfFile,
     phdrs: &[Phdr],
     bias: u64,
     phoff: usize,
@@ -227,7 +303,12 @@ fn map_segments(
         if ph.kind != PT_LOAD || ph.memsz == 0 {
             continue;
         }
-        if ph.offset + ph.filesz > data.len() as u64 || ph.filesz > ph.memsz {
+        if ph
+            .offset
+            .checked_add(ph.filesz)
+            .is_none_or(|e| e > file.size)
+            || ph.filesz > ph.memsz
+        {
             return Err(ENOEXEC);
         }
         let vaddr = ph.vaddr + bias;
@@ -275,8 +356,7 @@ fn map_segments(
             s = next;
         }
         // Temporarily writable while copying.
-        let file = &data[ph.offset as usize..(ph.offset + ph.filesz) as usize];
-        write_forced(space, vaddr, file)?;
+        file.copy_to(space, vaddr, ph.offset, ph.filesz)?;
         if phdr_addr == 0 && ph.offset == 0 {
             phdr_addr = vaddr + phoff as u64;
         }
@@ -290,11 +370,24 @@ fn map_segments(
 
 /// Write into possibly read-only areas during loading.
 fn write_forced(space: &mut AddressSpace, addr: u64, data: &[u8]) -> KResult<()> {
-    if data.is_empty() {
+    with_writable(space, addr, data.len() as u64, |space| {
+        space.write_bytes(addr, data)
+    })
+}
+
+/// Run `f` with the areas covering `addr..addr + len` made writable, then
+/// restore their permissions.
+fn with_writable(
+    space: &mut AddressSpace,
+    addr: u64,
+    len: u64,
+    f: impl FnOnce(&mut AddressSpace) -> KResult<()>,
+) -> KResult<()> {
+    if len == 0 {
         return Ok(());
     }
     let start = addr & !(FRAME_SIZE - 1);
-    let end = (addr + data.len() as u64).next_multiple_of(FRAME_SIZE);
+    let end = (addr + len).next_multiple_of(FRAME_SIZE);
     let saved: Vec<(u64, u64, u32)> = space
         .areas
         .values()
@@ -304,7 +397,7 @@ fn write_forced(space: &mut AddressSpace, addr: u64, data: &[u8]) -> KResult<()>
     for &(s, e, p) in &saved {
         space.protect(s, e, p | PROT_WRITE)?;
     }
-    let r = space.write_bytes(addr, data);
+    let r = f(space);
     for &(s, e, p) in &saved {
         space.protect(s, e, p)?;
     }
@@ -313,7 +406,8 @@ fn write_forced(space: &mut AddressSpace, addr: u64, data: &[u8]) -> KResult<()>
 
 fn apply_relocations(
     space: &mut AddressSpace,
-    data: &[u8],
+    file: &ElfFile,
+    phdrs: &[Phdr],
     dynph: &Phdr,
     bias: u64,
 ) -> KResult<()> {
@@ -321,10 +415,10 @@ fn apply_relocations(
     const DT_RELA: u64 = 7;
     const DT_RELASZ: u64 = 8;
     const DT_RELAENT: u64 = 9;
-    const R_X86_64_RELATIVE: u32 = 8;
-    let dyn_data = data
-        .get(dynph.offset as usize..(dynph.offset + dynph.filesz) as usize)
-        .ok_or(ENOEXEC)?;
+    if dynph.filesz > CHUNK as u64 {
+        return Err(ENOEXEC);
+    }
+    let dyn_data = file.read_exact(dynph.offset, dynph.filesz as usize)?;
     let (mut rela, mut relasz, mut relaent) = (0u64, 0u64, 24u64);
     for e in dyn_data.chunks_exact(16) {
         let tag = u64_at(e, 0);
@@ -340,12 +434,31 @@ fn apply_relocations(
     if rela == 0 || relasz == 0 {
         return Ok(());
     }
+    if relaent < 24 || relaent as usize > CHUNK {
+        return Err(ENOEXEC);
+    }
     // DT_RELA is a virtual address; find its file offset through PT_LOADs.
-    let file_off = vaddr_to_offset(data, rela).ok_or(ENOEXEC)?;
-    let table = data
-        .get(file_off as usize..(file_off + relasz) as usize)
-        .ok_or(ENOEXEC)?;
-    for r in table.chunks_exact(relaent as usize) {
+    let file_off = vaddr_to_offset(phdrs, rela).ok_or(ENOEXEC)?;
+    let per_chunk = (CHUNK as u64 / relaent) * relaent;
+    let mut done = 0u64;
+    while done < relasz {
+        let n = (relasz - done).min(per_chunk);
+        let table = file.read_exact(file_off + done, n as usize)?;
+        done += n;
+        apply_relative(space, &table, relaent as usize, bias)?;
+    }
+    Ok(())
+}
+
+/// Apply the R_X86_64_RELATIVE entries of a slice of a RELA table.
+fn apply_relative(
+    space: &mut AddressSpace,
+    table: &[u8],
+    relaent: usize,
+    bias: u64,
+) -> KResult<()> {
+    const R_X86_64_RELATIVE: u32 = 8;
+    for r in table.chunks_exact(relaent) {
         let offset = u64_at(r, 0);
         let info = u64_at(r, 8);
         let addend = u64_at(r, 16);
@@ -360,23 +473,12 @@ fn apply_relocations(
     Ok(())
 }
 
-fn vaddr_to_offset(data: &[u8], vaddr: u64) -> Option<u64> {
-    let phoff = u64_at(data, 32) as usize;
-    let phentsize = u16_at(data, 54) as usize;
-    let phnum = u16_at(data, 56) as usize;
-    for i in 0..phnum {
-        let o = phoff + i * phentsize;
-        if u32_at(data, o) != PT_LOAD {
-            continue;
-        }
-        let off = u64_at(data, o + 8);
-        let va = u64_at(data, o + 16);
-        let filesz = u64_at(data, o + 32);
-        if vaddr >= va && vaddr < va + filesz {
-            return Some(off + (vaddr - va));
-        }
-    }
-    None
+fn vaddr_to_offset(phdrs: &[Phdr], vaddr: u64) -> Option<u64> {
+    phdrs
+        .iter()
+        .filter(|p| p.kind == PT_LOAD)
+        .find(|p| vaddr >= p.vaddr && vaddr - p.vaddr < p.filesz)
+        .map(|p| p.offset + (vaddr - p.vaddr))
 }
 
 /// Program description passed to the new process in the aux vector.

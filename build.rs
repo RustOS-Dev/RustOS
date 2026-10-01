@@ -143,9 +143,10 @@ fn build_ports(root: &Path, list: &str) -> Vec<(String, PathBuf)> {
 }
 
 /// Install the ports of ports/desktop.list: `bin`, `lib`, `libexec` and
-/// `share` of each staged tree under /usr, and `etc` under /etc. Programs
-/// in bin/ and libexec/ (and shared libraries) are executable. A file that
-/// is already in the image is kept.
+/// `share` of each staged tree under /usr, and `etc` under /etc, without
+/// static libraries and symlinks. Programs in bin/ and libexec/ (and
+/// shared libraries) are executable. A file that is already in the image
+/// is kept.
 fn add_desktop_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
     for (name, staged) in build_ports(root, "ports/desktop.list") {
         for (sub, dest, exec) in [
@@ -171,6 +172,12 @@ fn add_desktop_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
                 }
             }
             for (n, mut e) in tree {
+                // Static libraries and development symlinks (libfoo.so ->
+                // libfoo.so.1) are for building other ports, not the image.
+                let src = dir.join(&n[dest.len() + 1..]);
+                if n.ends_with(".a") || src.is_symlink() {
+                    continue;
+                }
                 if files.iter().any(|(m, _)| *m == n) {
                     if let Entry::File(..) = e {
                         println!("cargo:warning=port {name}: /{n} is already in the image");

@@ -1,5 +1,7 @@
 //! The embedded initial RAM filesystem (a cpio "newc" archive built from
-//! `userland/` by build.rs), unpacked into the root tmpfs at boot.
+//! `userland/` by build.rs), unpacked into the root tmpfs at boot. File
+//! contents are not copied: the tmpfs files read them from the archive in
+//! the kernel image until they are first written.
 
 use crate::vfs;
 
@@ -9,12 +11,29 @@ fn hex(b: &[u8]) -> Option<u32> {
     u32::from_str_radix(core::str::from_utf8(b).ok()?, 16).ok()
 }
 
+/// Create `path` with `body` as its contents: in place on tmpfs, else copied.
+fn add_file(
+    path: &str,
+    body: &'static [u8],
+) -> crate::errno::KResult<alloc::sync::Arc<dyn vfs::Inode>> {
+    drop(vfs::open(
+        path,
+        vfs::O_WRONLY | vfs::O_CREAT | vfs::O_TRUNC,
+        0o644,
+    )?);
+    let inode = vfs::lookup(path)?;
+    if !vfs::tmpfs::set_static_contents(inode.clone(), body) {
+        vfs::write_all(path, body)?;
+    }
+    Ok(inode)
+}
+
 /// Unpack the archive into the VFS root. Returns the number of entries.
 pub fn unpack() -> usize {
     unpack_archive(ARCHIVE)
 }
 
-pub fn unpack_archive(data: &[u8]) -> usize {
+pub fn unpack_archive(data: &'static [u8]) -> usize {
     let mut off = 0usize;
     let mut count = 0;
     while off + 110 <= data.len() {
@@ -58,10 +77,13 @@ pub fn unpack_archive(data: &[u8]) -> usize {
                 {
                     let _ = vfs::mkdir_p(parent);
                 }
-                if vfs::write_all(&path, body).is_ok()
-                    && let Ok(i) = vfs::lookup(&path)
-                {
-                    let _ = i.chmod(mode & 0o7777);
+                match add_file(&path, body) {
+                    Ok(i) => {
+                        let _ = i.chmod(mode & 0o7777);
+                    }
+                    Err(e) => {
+                        crate::serial_println!("initramfs: {}: error {:?}", path, e);
+                    }
                 }
             }
             _ => {}

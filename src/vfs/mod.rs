@@ -825,13 +825,17 @@ pub fn read_all(path: &str) -> KResult<Vec<u8>> {
         return Err(EISDIR);
     }
     // Sizes of generated files (e.g. /proc) are unknown: read until EOF.
-    let mut out = Vec::with_capacity(meta.size as usize);
+    // A file larger than the kernel heap can hold is ENOMEM, not a panic.
+    let mut out = Vec::new();
+    out.try_reserve_exact(meta.size as usize)
+        .map_err(|_| ENOMEM)?;
     let mut chunk = alloc::vec![0u8; 64 * 1024];
     loop {
         let n = inode.read_at(out.len() as u64, &mut chunk)?;
         if n == 0 {
             break;
         }
+        out.try_reserve(n).map_err(|_| ENOMEM)?;
         out.extend_from_slice(&chunk[..n]);
     }
     Ok(out)

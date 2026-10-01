@@ -974,7 +974,10 @@ impl Drop for Thread {
         // Atomics only: safe wherever the drop happens.
         self.fold_cpu_times(&p);
         if WORKER_STARTED.load(Ordering::SeqCst) {
-            defer(move || drop(p));
+            defer(move || {
+                p.release_retired_vm();
+                drop(p);
+            });
         }
     }
 }

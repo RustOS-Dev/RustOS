@@ -134,9 +134,10 @@ root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 | [docs/BROWSER.md](docs/BROWSER.md) | the `browse` text web browser and captive-portal login |
 | [docs/CSS.md](docs/CSS.md) | the CSS engine and layout (supported CSS, character cells) |
 | [docs/JAVASCRIPT.md](docs/JAVASCRIPT.md) | JavaScript in the browser: the `jsd` helper, supported APIs, security model |
-| [docs/PORTING.md](docs/PORTING.md) | musl sysroot, `rustos-cc`, ports (BusyBox, curl, QuickJS) |
+| [docs/PORTING.md](docs/PORTING.md) | musl sysroot, `rustos-cc`, ports (BusyBox, curl, QuickJS, the desktop ports) |
 | [docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md) | shell and command reference |
 | [docs/SERVICES.md](docs/SERVICES.md) | init's service manager: service files, restart policies, `svc` and its JSON |
+| [docs/DESKTOP.md](docs/DESKTOP.md) | the eDEX-DE desktop: what it needs, building it into the image, the `edex` service |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | contributing, debugging |
 
 ## Project structure

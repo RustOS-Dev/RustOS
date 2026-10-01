@@ -15,7 +15,18 @@ if [ ! -x "$SRC/configure" ]; then
 fi
 REV="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
 STAMP="$SYSROOT/.musl-$REV"
+# The GCC specs file for tools/rustos-cc (cheap, so always rewritten).
+# musl's generator leaves out --eh-frame-hdr, without which unwinders
+# (LLVM libunwind, so Rust panics and C++ exceptions) cannot find the
+# unwind tables of dynamically linked programs and libraries.
+write_specs() {
+    sh "$SRC/tools/musl-gcc.specs.sh" "$SYSROOT/usr/include" "$SYSROOT/usr/lib" \
+        /lib/ld-musl-x86_64.so.1 |
+        sed 's/^-dynamic-linker /%{!static:--eh-frame-hdr} -dynamic-linker /' \
+        > "$SYSROOT/usr/lib/rustos-gcc.specs"
+}
 if [ -f "$STAMP" ]; then
+    write_specs
     exit 0
 fi
 rm -rf "$BUILD" "$SYSROOT"
@@ -38,7 +49,6 @@ for a in /usr/include/x86_64-linux-gnu/asm /usr/include/asm; do
     fi
 done
 # Programs look for the dynamic linker at /lib/ld-musl-x86_64.so.1.
-sh "$SRC/tools/musl-gcc.specs.sh" "$SYSROOT/usr/include" "$SYSROOT/usr/lib" \
-    /lib/ld-musl-x86_64.so.1 > "$SYSROOT/usr/lib/rustos-gcc.specs"
+write_specs
 touch "$STAMP"
 echo "build-musl: musl $(cat "$SRC/VERSION") installed in $SYSROOT"

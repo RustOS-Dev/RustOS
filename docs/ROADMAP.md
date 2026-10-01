@@ -150,12 +150,14 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 - [ ] **M40** Intel GPUs (i915, xe)
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
-
-eDEX-DE desktop shell prerequisites (its system monitor reads `/proc`
-through the Rust `sysinfo` crate; its Services panel drives `svc`):
-
-- [x] CPU-time accounting: per-CPU user/nice/system/idle/irq/softirq ticks, per-thread and per-process utime/stime with reaped children, Linux-format `/proc/stat`, `/proc/[pid]/stat` times, `/proc/uptime` idle, `/proc/loadavg` (5 s fixed-point EWMA), real `getrusage`/`times`/`wait4` rusage and CPU-time clocks (`kapitest cputime`)
-- [x] `svc` service manager: init supervises `/etc/svc/NAME.conf` services (exec, tty, user, restart policy with 1-30 s back-off and give-up, `after=` ordering, env), enabled list on `/storage`, `svc list/status/start/stop/restart/enable/disable` with the `--json` contract, control over a FIFO in `/run/svc` (`svc` scenario, `crates/svcconf` host tests)
+- [ ] **M43** eDEX desktop: [eDEX-DE](https://github.com/RustOS-Dev/eDEX-DE-RS) (its own Smithay compositor `edex-comp`, shell, greeter, `edex-auth`) as the RustOS desktop; needs M36, M37, M41 and M42's seatd, D-Bus, PipeWire, UPower, login1 subset and `rustos-nmd` ([DESKTOP.md](DESKTOP.md))
+  - [x] CPU-time accounting: per-CPU user/nice/system/idle/irq/softirq ticks, per-thread and per-process utime/stime with reaped children, Linux-format `/proc/stat`, `/proc/[pid]/stat` times, `/proc/uptime` idle, `/proc/loadavg` (5 s fixed-point EWMA), real `getrusage`/`times`/`wait4` rusage and CPU-time clocks (`kapitest cputime`)
+  - [x] `svc` service manager: init supervises `/etc/svc/NAME.conf` services (exec, tty, user, restart policy with 1-30 s back-off and give-up, `after=` ordering, env), enabled list on `/storage`, `svc list/status/start/stop/restart/enable/disable` with the `--json` contract, control over a FIFO in `/run/svc` (`svc` scenario, `crates/svcconf` host tests)
+  - [x] ports in `ports/desktop.list` (`RUSTOS_DESKTOP=1`): `libunwind` (as `libgcc_s.so.1`, for dynamically linked Rust programs), `jetbrains-mono-nerd`, `tor`, `tor-pt` (lyrebird, snowflake-client), `wireguard-tools` (`wg`), `edex-de`; `rustos-cc` links with `--eh-frame-hdr` so unwinding works
+  - [x] `edex` service (eDEX greeter on tty1, disabled until the desktop is installed)
+  - [ ] `edex-de` port built and booted: waits for M37's `tools/cross/pkg-config` and desktop libraries in the sysroot, then a `desktop-edex` scenario (DESKTOP.md)
+  - [ ] LinuxKPI `wireguard` group (`drivers/net/wireguard`, `lib/crypto` curve25519/chacha20poly1305/blake2s, `udp_tunnel`) behind `linux-wireguard`, on M28's netdev and genetlink glue
+  - [ ] privilege broker for the desktop's system actions (`svc`, Tor helpers, backlight) once sessions run as ordinary users
 
 ## Context
 

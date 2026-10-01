@@ -64,6 +64,14 @@ fn main() {
         add_jsd(&manifest_dir, &mut files);
         add_fonts(&mut files);
     }
+    // The desktop (ports/desktop.list: eDEX-DE and the ports it uses), only
+    // with RUSTOS_DESKTOP=1: eDEX-DE needs the graphics and desktop ports
+    // of milestones M37-M42 in the sysroot. Installed as whole trees under
+    // /usr (bin, lib, libexec, share) and /etc.
+    println!("cargo:rerun-if-env-changed=RUSTOS_DESKTOP");
+    if !skip && std::env::var("RUSTOS_DESKTOP").as_deref() == Ok("1") {
+        add_desktop_ports(&manifest_dir, &mut files);
+    }
     // Trust store for `wget https://`: the build host's CA bundle, or the
     // file named by RUSTOS_CA_BUNDLE (empty to leave it out).
     println!("cargo:rerun-if-env-changed=RUSTOS_CA_BUNDLE");
@@ -84,9 +92,30 @@ fn main() {
 /// that cannot be built (no network for its sources, no C compiler) is
 /// left out with a warning.
 fn add_default_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
-    let Ok(list) = std::fs::read_to_string(root.join("ports/default.list")) else {
-        return;
+    for (_, staged) in build_ports(root, "ports/default.list") {
+        for dir in ["usr", "usr/bin"] {
+            if !files.iter().any(|(n, _)| n == dir) {
+                files.push((dir.into(), Entry::Dir));
+            }
+        }
+        let before = files.len();
+        add_tree(&staged.join("bin"), "usr/bin/", files);
+        for (_, e) in files[before..].iter_mut() {
+            if let Entry::File(_, mode) = e {
+                *mode = 0o755;
+            }
+        }
+    }
+}
+
+/// Build (if its recipe changed since the last build) every port named in
+/// the list file; returns the ones that are staged. A port that cannot be
+/// built is left out with a warning.
+fn build_ports(root: &Path, list: &str) -> Vec<(String, PathBuf)> {
+    let Ok(list) = std::fs::read_to_string(root.join(list)) else {
+        return Vec::new();
     };
+    let mut staged_ports = Vec::new();
     for name in list
         .lines()
         .map(str::trim)
@@ -108,16 +137,52 @@ fn add_default_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
             }
             let _ = std::fs::write(&stamp, &recipe);
         }
-        for dir in ["usr", "usr/bin"] {
-            if !files.iter().any(|(n, _)| n == dir) {
-                files.push((dir.into(), Entry::Dir));
+        staged_ports.push((name.to_string(), staged));
+    }
+    staged_ports
+}
+
+/// Install the ports of ports/desktop.list: `bin`, `lib`, `libexec` and
+/// `share` of each staged tree under /usr, and `etc` under /etc. Programs
+/// in bin/ and libexec/ (and shared libraries) are executable. A file that
+/// is already in the image is kept.
+fn add_desktop_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
+    for (name, staged) in build_ports(root, "ports/desktop.list") {
+        for (sub, dest, exec) in [
+            ("bin", "usr/bin", true),
+            ("lib", "usr/lib", true),
+            ("libexec", "usr/libexec", true),
+            ("share", "usr/share", false),
+            ("etc", "etc", false),
+        ] {
+            let dir = staged.join(sub);
+            if !dir.is_dir() {
+                continue;
             }
-        }
-        let before = files.len();
-        add_tree(&staged.join("bin"), "usr/bin/", files);
-        for (_, e) in files[before..].iter_mut() {
-            if let Entry::File(_, mode) = e {
-                *mode = 0o755;
+            let mut tree = Vec::new();
+            add_tree(&dir, &format!("{dest}/"), &mut tree);
+            let mut parents = vec![dest.to_string()];
+            if let Some((p, _)) = dest.rsplit_once('/') {
+                parents.insert(0, p.to_string());
+            }
+            for d in parents {
+                if !files.iter().any(|(n, _)| *n == d) {
+                    files.push((d, Entry::Dir));
+                }
+            }
+            for (n, mut e) in tree {
+                if files.iter().any(|(m, _)| *m == n) {
+                    if let Entry::File(..) = e {
+                        println!("cargo:warning=port {name}: /{n} is already in the image");
+                    }
+                    continue;
+                }
+                if let Entry::File(_, mode) = &mut e
+                    && exec
+                {
+                    *mode = 0o755;
+                }
+                files.push((n, e));
             }
         }
     }

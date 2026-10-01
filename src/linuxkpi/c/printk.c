@@ -476,6 +476,17 @@ void __warn_printk(const char *fmt, ...)
 	va_end(ap);
 }
 
+void panic(const char *fmt, ...)
+{
+	static char buf[256];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vscnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	rustos_kpi_panic(buf);
+}
+
 /* ------------------------------------------------------- device messages */
 
 const char *dev_driver_string(const struct device *dev)

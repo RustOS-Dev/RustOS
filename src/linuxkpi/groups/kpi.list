@@ -6,6 +6,10 @@ kpi:time.c
 kpi:softirq.c
 kpi:percpu.c
 kpi:selftest.c
+kpi:pci.c
+kpi:net.c
+kpi:misc.c
+kpi:initcalls.c
 # Linux library code used as-is.
 lib/errname.c
 lib/hexdump.c
@@ -13,7 +17,9 @@ lib/find_bit.c
 lib/dynamic_queue_limits.c
 lib/string.c
 lib/ctype.c
-
+lib/bitmap.c
+lib/hweight.c
+lib/iomap.c
 kernel/locking/spinlock.c
 kernel/locking/qspinlock.c
 kernel/locking/qrwlock.c

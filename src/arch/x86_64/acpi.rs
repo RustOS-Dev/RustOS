@@ -320,6 +320,12 @@ fn with_interpreter<R>(f: impl FnOnce(&Interpreter<KernelAcpi>) -> R) -> Option<
         match Interpreter::new_from_platform(platform) {
             Ok(i) => {
                 i.initialize_namespace();
+                // Tell the firmware interrupts go through the IOAPIC, as
+                // Linux does: `_PRT` methods then return APIC routing
+                // (GSIs) instead of the legacy-PIC link routing.
+                if let Ok(pic) = AmlName::from_str("\\_PIC") {
+                    let _ = i.evaluate_if_present(pic, alloc::vec![Object::Integer(1).wrap()]);
+                }
                 *guard = Some(i);
             }
             Err(e) => {

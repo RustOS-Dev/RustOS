@@ -46,10 +46,38 @@ u64 rustos_kpi_timer_start(u64 deadline_ns, void (*fn)(void *, u64), void *arg);
 int rustos_kpi_timer_cancel(u64 handle);	/* 1 if it had not fired */
 void rustos_kpi_softirq_raise(void);
 
-/* Interrupts and PCI (src/linuxkpi/pci.rs). */
-int rustos_kpi_irq_attach(u32 irq, void (*fn)(void *), void *arg);
-void rustos_kpi_irq_detach(u32 irq);
-u32 rustos_kpi_pci_read(u64 handle, u32 off, u32 size);
-void rustos_kpi_pci_write(u64 handle, u32 off, u32 size, u32 val);
+/* PCI and interrupts (src/linuxkpi/pci.rs). Devices are indexes into the
+ * RustOS PCI list. */
+struct kpi_pci_bar {
+	u64 start;
+	u64 size;
+	u32 flags;			/* 1 mem, 2 I/O, 4 prefetchable, 8 64-bit */
+};
+struct kpi_pci_info {
+	u16 segment;
+	u8 bus, dev, func, revision, irq_pin;
+	u16 vendor, device, subvendor, subdevice;
+	u32 class;			/* class << 16 | subclass << 8 | prog-if */
+	struct kpi_pci_bar bars[6];
+};
+u32 rustos_kpi_pci_count(void);
+int rustos_kpi_pci_get(u32 idx, struct kpi_pci_info *out);
+u32 rustos_kpi_pci_read(u32 idx, u32 off, u32 size);
+void rustos_kpi_pci_write(u32 idx, u32 off, u32 size, u32 val);
+/* Route the device's interrupt (INTx, or MSI if msi) to fn(arg) in
+ * interrupt context. Returns the vector or -1. */
+int rustos_kpi_pci_irq(u32 idx, int msi, void (*fn)(void *), void *arg);
+int rustos_kpi_pci_has_msi(u32 idx);
+u64 rustos_kpi_random_u64(void);
+
+/* Network devices (src/linuxkpi/net.rs). */
+u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless,
+			       const char *driver, char *name, u32 name_len);
+void rustos_kpi_netdev_rx(u64 handle, const void *data, u32 len);
+void rustos_kpi_netdev_carrier(u64 handle, int on);
+void rustos_kpi_netdev_mtu(u64 handle, u32 mtu);
+
+/* Shared between the C glue files. */
+void kpi_netdev_open_pending(void);
 
 #endif

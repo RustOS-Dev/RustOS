@@ -37,6 +37,7 @@ arch/x86/include/asm/fpu/types.h	GPL-2.0	22f70100c5ff6092b27e4c70b7b0a60f88e4d50
 arch/x86/include/asm/fsgsbase.h	GPL-2.0	0417c8b9bd4b4dbd11a437518b3d667e3881e320e30d7194a410a5db8c2defb8
 arch/x86/include/asm/ftrace.h	GPL-2.0	8308486c55a2c0b4d26cad52b2acf4029b649e506ee390941e3211eba27fbfed
 arch/x86/include/asm/hardirq.h	GPL-2.0	ad2628a1eb63cfbffb16d16e6030b10885c59fdcb766c85a34e19553302821ba
+arch/x86/include/asm/hw_irq.h	GPL-2.0	48a421ebbf72236487b4c71420cde81cc754d85a0a43a25b81d50cf0ef6776bf
 arch/x86/include/asm/ia32.h	GPL-2.0	0137e2c7127d41f9533865085a997b707dbbb44c2e6875804505518c07047dea
 arch/x86/include/asm/ibt.h	GPL-2.0	1189725666b45376b1e0bfafb402ef365472ab69076ec09648d1ebe6f0bfa2e0
 arch/x86/include/asm/invpcid.h	GPL-2.0	76117e3f959a7cb9a13e300465d72f938278cd4584ec30edc7cbd5b2a4b8356b
@@ -172,6 +173,7 @@ include/asm-generic/int-ll64.h	GPL-2.0	6adf196af7b0af7c4175e8c749f2acfcda2ffb59b
 include/asm-generic/io.h	GPL-2.0-or-later	59a7e83c58acc80691f1a30c0ce1cf115d921fdbff848a0be2286654bf82d58d
 include/asm-generic/ioctl.h	GPL-2.0	f5c298423cf337ec430e1a26272bada9fa2f1bd4681847e407ebcad1550977e9
 include/asm-generic/iomap.h	GPL-2.0	0486f7b160dbda5771f198d0bc02ed88ce7221a07781702f2d5bf08c3824562f
+include/asm-generic/irq_regs.h	GPL-2.0-or-later	9eb0bbf4cdcfe676ef9f6b267bda18032d08cb38256b7f7f5cc6ddfda7a1d124
 include/asm-generic/kmap_size.h	GPL-2.0	a598fac6d8e12108d3aac7a028fa35e2d546e67e0df381ef0893910f749587f1
 include/asm-generic/kprobes.h	GPL-2.0	489d8f9e5dc1279ee64c5ba099f055260a780b2ce435157649b4f3ada5050f33
 include/asm-generic/local64.h	GPL-2.0	46cbdfa06cac054803640d4d121cde7ab6131c9bd79d6f27adc17a67f35e0737
@@ -338,8 +340,11 @@ include/linux/ioprio.h	GPL-2.0	6c2e7b2a57af782db5d7a0a089df894e4fd4ba62e3d515a17
 include/linux/ip.h	GPL-2.0-or-later	7d344b3f2d6582f4323e00ef95d43e32e7bd0f24df941869f792c73f5485f93a
 include/linux/ipc.h	GPL-2.0	7f64fc4bd85e8b666cb6a3050460104ee6786fbad803363b5f91ef0cf77a739f
 include/linux/ipv6.h	GPL-2.0	abdadd9616248198ebc0f3bf3023b1b5c98d7bf0074e758c65e39523dab950f4
+include/linux/irq.h	GPL-2.0	891bcb4b0f13e9ae3efc1042ccb0fc57a0a532f11308fe90367dc2e5386167e6
+include/linux/irqdesc.h	GPL-2.0	75b6267007c0df87c0c8646271b784d794aef7f568e6090c57664b2920f3240c
 include/linux/irqflags.h	GPL-2.0	a75ca718d7055b83e41215e619c410b8cd646a6aa07ea7bf2eb272b07288efd2
 include/linux/irqflags_types.h	GPL-2.0	b3b246519f20d5440a72ae7fddfbf14b387fd41a2692ed6df5b73b8b8efccfac
+include/linux/irqhandler.h	GPL-2.0	955d4b4b45f48fb3bddf83ab249dcdf84ec96d27287696c7e40974205e317894
 include/linux/irqnr.h	GPL-2.0	c33a1f71f35d3df836e394380cbf3e7d1b9b51d27520cb202a9ab15baa28c752
 include/linux/irqreturn.h	GPL-2.0	c16fe17d5894d2ecd20f20f3c0828a6ce854dd5245b21399a93663d28523381f
 include/linux/jhash.h	GPL-2.0-only (untagged, per Linux COPYING)	573b1cf1b1035fffbb978a4733ef862928f18db483504f52ac04d2f29dd95a47
@@ -476,6 +481,7 @@ include/linux/posix-timers_types.h	GPL-2.0	ac76f15816fa0fe641f580e833f15a4b62ae8
 include/linux/preempt.h	GPL-2.0	9cc25405f07889e8e221b98b4944e6038a791fb1ab4238bca272df75c2defb26
 include/linux/prefetch.h	GPL-2.0	8594533565554a8d6286d61ccdf60b45a3d704c60aafa0638cbcc781038ae5fb
 include/linux/printk.h	GPL-2.0	1370eb800844965cec14e8545cc4c11fe443bc1d3bb08b39cce7e47642ce9aec
+include/linux/profile.h	GPL-2.0	e2cb9f17d1b0bd654dd932e7f289f383e9b9a7c5e28e4591973f5307f95c358c
 include/linux/projid.h	GPL-2.0	a24b5f538550a6f89baee80500bab66c9e10fff8b18af6f6a597883b39381783
 include/linux/psi_types.h	GPL-2.0	483269b27c82b438450632555aba2ba8a9c47b608243f78a029c4300b3618ccc
 include/linux/ptrace.h	GPL-2.0	1150f9a6c9e4dea3247183c16995f8ef4420cdfdb91bf3e4281cfc52e5f9c04c
@@ -840,12 +846,15 @@ kernel/locking/qspinlock.c	GPL-2.0-or-later	aa6e2ada2e72561517122e8bef9e6c3ca02c
 kernel/locking/qspinlock.h	GPL-2.0-or-later	f5f8150ac21a56e5957b77f53b3b7c913422c29ba8b97beb93b1ecfafe4bd631
 kernel/locking/qspinlock_stat.h	GPL-2.0-or-later	3645587cbe86f11da9ad03d1a800c6aabfb4f957f0f060de06c67131c70965b5
 kernel/locking/spinlock.c	GPL-2.0	09941766a9ec02e07e3bc07b0b10b92154288a6dfe5a0c11cab2a45993dbea69
+lib/bitmap.c	GPL-2.0-only	c616e82207126892621e6285f1d29690b1da0c8f167cab3b9ec898b559942806
 lib/bsearch.c	GPL-2.0-only	9805ada1512a0d89f486899229b493ed80388a18ee4fe4ccf347a47f1245eb0e
 lib/ctype.c	GPL-2.0	1675d7654e76e66979b031d05570f73438f1f3808fca8c6f1d51274181ad2d59
 lib/dynamic_queue_limits.c	GPL-2.0	2bb535c97068e2e210a5d17451b06a3ff0681f30b967a0a982adce589a6b669a
 lib/errname.c	GPL-2.0	14f855c60e73b31a11fca27cfe151ba56d1ccf1743ebdc8af230a42231fefe15
 lib/find_bit.c	GPL-2.0-or-later	5d9a03505728d024e52462662252c127545b0629ff2f7006e4d494372d30459d
 lib/hexdump.c	GPL-2.0-only	140a2d3793e01a5a80f6b8e23b24256a5072ab4edf0e69796944d61cb65baa87
+lib/hweight.c	GPL-2.0	c4da85f3aab22244a6029b5745e3d74efdc310a5227951ef82df4219af4f9931
+lib/iomap.c	GPL-2.0	ac5059b34321b5c5f8ba89ad18db18652f798a5c1d5543ffdd1ffe92c2b05731
 lib/list_debug.c	GPL-2.0-only (untagged, per Linux COPYING)	b2414258f6f0459f8d3559c24699d9ccf0eedae57a8ad893f6797e7ed8699986
 lib/sort.c	GPL-2.0	170c3d659431e12106045d72228e0998006a7b5f7e1be6737ef2658554f870b6
 lib/string.c	GPL-2.0	031f6380fe1f5677acfb335e32984d151caaca99612584023c96be2c45ce38e8

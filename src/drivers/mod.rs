@@ -55,5 +55,8 @@ pub fn probe_all() {
         crate::sound::probe(&dev);
     }
     crate::usb::init();
+    // Linux drivers built in through LinuxKPI (module_init()).
+    #[cfg(feature = "linuxkpi")]
+    crate::linuxkpi::run_initcalls();
     crate::block::automount();
 }

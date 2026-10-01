@@ -1,0 +1,130 @@
+# LinuxKPI: Linux drivers in RustOS
+
+RustOS runs unmodified Linux device drivers by compiling them, along with the
+Linux library code they need, into the kernel. They run on top of **LinuxKPI**, a
+layer that implements the Linux kernel APIs those drivers call using RustOS
+services. FreeBSD uses the same approach. The plan is in
+[ROADMAP-ROUND4.md](ROADMAP-ROUND4.md) (M27 onwards).
+
+Status: M27 proof. Linux 6.18.54's `e1000` driver runs in QEMU behind
+`--features linux-e1000`. It gets a DHCP lease, pings, and moves 4 MiB over
+HTTP both ways (`tests/scenarios/linux/eth-linux-e1000.txt`).
+
+## Building
+
+```sh
+cargo build --features linuxkpi      # the LinuxKPI core and its boot self-test
+cargo build --features linux-e1000   # plus Linux's e1000 driver
+```
+
+You need clang 15 or newer (`RUSTOS_CLANG` overrides the binary). `llvm-ar` and
+`llvm-objcopy` come from the toolchain's `llvm-tools` component or from `PATH`
+(`RUSTOS_LLVM_AR` overrides `llvm-ar`). A build without `linux-*` features
+compiles no C and is unchanged.
+
+In a `linux-e1000` kernel the Linux driver claims the 8254x IDs it supports. The
+native e1000 driver still handles the e1000e/I219 families.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `third_party/linux/` | Linux v6.18.54 files, imported unmodified; `VERSION`, `MANIFEST` (path, SPDX licence, sha256), generated headers (`generated/`) |
+| `tools/linux-import.py` | `config` (Kconfig → autoconf.h and generated asm headers), `import GROUP...` (copies sources plus their `#include` closure), `check` (licences, hashes), `undefined ARCHIVE...` (unresolved symbols) |
+| `src/linuxkpi/configs/rustos.config` | Kconfig fragment: SMP, `NR_CPUS=64`, `PREEMPT`, `HZ_250`, PCI/MSI, NET, … |
+| `src/linuxkpi/groups/*.list` | source files per group: Linux paths, or `kpi:` for the C glue |
+| `src/linuxkpi/cflags.txt` | clang flags (PIE, small code model, no SSE/x87, the kernel header search path) |
+| `src/linuxkpi/include/` | headers that override Linux's: `asm/percpu.h`, `preempt.h`, `current.h`, `bug.h`, `rustos-prelude.h` |
+| `src/linuxkpi/c/` | C glue written against the real Linux headers (below) |
+| `src/linuxkpi/*.rs` | the RustOS services the glue calls (`rustos_kpi_*`, declared in `c/kpi.h`) |
+| `build/linuxkpi.rs` | the build step behind `build.rs`: parallel, incremental clang builds, one whole-archive static library per group |
+
+Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
+- `linuxkpi` builds `proof` and `kpi`;
+- `linux-e1000` adds `e1000`.
+
+## How the pieces fit
+
+- **Compiling Linux code.** Linux code is compiled as the RustOS kernel is: a
+  position-independent executable with the small code model, loaded at
+  `0xffff8000…`. Floating point and SIMD are off.
+- **Struct layouts.** Struct layouts always come from the Linux headers. Only
+  the C glue touches Linux structs. Rust sees opaque pointers and small
+  `#[repr(C)]` records shared through `kpi.h`.
+- **Per-CPU data.** `%gs` points at RustOS's per-CPU block, so the Linux per-CPU
+  code is the generic variant. Each CPU's offset sits at `%gs:72`, and all
+  per-CPU variables live in one section, `kpipcpu`.
+- **Preemption.** `preempt_count` is the RustOS per-CPU counter. Linux spinlocks
+  therefore disable RustOS preemption, and `in_atomic()` and `in_softirq()`
+  work.
+- **Tasks.** A `task_struct` shadow is attached lazily to each RustOS thread
+  (`Thread.linux_task`). Linux's "set state, check condition, `schedule()`"
+  maps onto RustOS's `prepare_block`/`schedule` and `wakeup_pending`, so no
+  wakeup is lost. Threads blocked in Linux code are kept alive by the LinuxKPI
+  thread registry.
+- **Timers and softirqs.** Timers are RustOS one-shot timers. Their callbacks,
+  tasklets and NAPI polls run in the `linux-softirq` thread, so Linux timer
+  callbacks run with interrupts on, as in Linux. `jiffies` advances at 250 Hz.
+- **Workqueues.** Workqueues are pools of kernel threads (`events`,
+  `events_highpri`, `events_long`, `events_unbound`, plus driver queues).
+- **Memory.**
+  - `kmalloc` is size-classed on direct-map frames; larger requests use whole
+    pages.
+  - `struct page` comes from a `vmemmap` at `0xffff_f000_0000_0000`.
+  - `vmalloc` uses `0xffff_f800_0000_0000–0xffff_fe00_0000_0000`.
+  - There is no IOMMU, so DMA addresses are physical addresses.
+- **PCI.** `pci_register_driver` matches ID tables against the PCI devices that
+  native RustOS drivers have not claimed, and probes the matches directly.
+  - `request_irq` routes INTx (through ACPI `_PRT`) or MSI to a trampoline that
+    runs the handler in hard-IRQ context. Threaded handlers get a kernel
+    thread.
+- **Networking.** A registered `net_device` becomes a RustOS `NetDevice`
+  (`src/linuxkpi/net.rs`).
+  - **Transmit:** smoltcp's transmit builds an `sk_buff` and calls
+    `ndo_start_xmit`.
+  - **Receive:** `napi_gro_receive`/`netif_receive_skb` copy frames into the
+    device's receive queue.
+  - **Carrier:** carrier changes reach the RustOS link state, which restarts
+    DHCP.
+  - **Opening:** interfaces are opened once the probe that registered them
+    returns.
+- **Initcalls.** Linux `module_init`/`*_initcall` entries are renamed into
+  `kpi_initcall_<level>` sections. They run in level order after the native
+  drivers have probed (`src/drivers/mod.rs`).
+- **Boot self-test.** Before any Linux driver runs, `kpi_selftest()` checks
+  memory, per-CPU data, locks, printf, kthreads, spinlock contention, timers and
+  workqueues. LinuxKPI stays off if the test fails.
+
+## Debugging
+
+- **Log output.** Linux messages appear in the kernel log as `[linux] …`.
+  `linux.debug` in `kernel.conf` also shows `KERN_DEBUG` messages, including the
+  self-test stages.
+- **`WARN_ON` and `BUG`.** `WARN_ON` prints a backtrace and continues. `BUG`
+  and `panic()` stop the kernel with the message.
+- **Undefined symbols.** `tools/linux-import.py undefined <archive>` lists what
+  a group still needs from the glue. It reads the group archives in
+  `target/x86_64-rustos/*/build/rustos-*/out/linuxkpi/`.
+
+## Adding a driver
+
+1. Import it.
+   - `tools/linux-import.py --linux <checkout at v6.18.54> import <group>`
+     copies the sources and their headers.
+   - Add the group's `.list` and a Cargo feature (in `Cargo.toml` and in
+     `FEATURES` in `build/linuxkpi.rs`).
+   - Enable its Kconfig symbols in `configs/rustos.config` and rerun
+     `tools/linux-import.py config`.
+2. Build, then implement what the link step reports as undefined. Prefer
+   importing Linux's own implementation, from `lib/` or a subsystem, over
+   rewriting it.
+3. Add a scenario under `tests/scenarios/linux/` and a CI step.
+
+## Licensing
+
+RustOS is GPL-2.0-or-later.
+- **Linux files:** keep their SPDX tags. `MANIFEST` records each file's licence,
+  and `tools/linux-import.py check` (run in CI) rejects untagged or modified
+  files. Untagged Linux files count as GPL-2.0-only. A kernel built with
+  `linux-*` features is therefore distributable under GPL-2.0.
+- **Firmware:** never committed.

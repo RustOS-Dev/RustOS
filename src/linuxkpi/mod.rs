@@ -5,6 +5,8 @@
 //! docs/ROADMAP-ROUND4.md §4.
 
 pub mod mm;
+pub mod net;
+pub mod pci;
 pub mod sched;
 
 use core::ffi::{CStr, c_char, c_int, c_void};
@@ -29,6 +31,7 @@ unsafe extern "C" {
     fn kpi_workqueues_init() -> c_int;
     fn kpi_selftest() -> c_int;
     fn kpi_jiffies_update();
+    fn kpi_net_init() -> c_int;
 }
 
 unsafe extern "C" fn cmp_u32(a: *const c_void, b: *const c_void) -> c_int {
@@ -59,14 +62,61 @@ pub fn init() {
         crate::println!("[linuxkpi] workqueue setup failed; LinuxKPI disabled");
         return;
     }
+    pci::init();
+    unsafe { kpi_net_init() };
     READY.store(true, Ordering::SeqCst);
     let failed = unsafe { kpi_selftest() };
     crate::println!(
         "[linuxkpi] Linux {} APIs ready ({} CPUs); self-test {}",
         LINUX_VERSION,
         crate::arch::x86_64::cpu::cpu_count(),
-        if failed == 0 { "passed" } else { "FAILED" }
+        if failed == 0 {
+            "passed"
+        } else {
+            "FAILED; Linux drivers disabled"
+        }
     );
+    if failed != 0 {
+        READY.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Run the Linux drivers' module_init()/*_initcall() functions in level
+/// order (after the native RustOS drivers probed).
+pub fn run_initcalls() {
+    if !ready() {
+        return;
+    }
+    unsafe extern "C" {
+        fn kpi_initcall_bounds(
+            level: c_int,
+            start: *mut *const i32,
+            stop: *mut *const i32,
+        ) -> c_int;
+        /// src/linuxkpi/c/net.c: open interfaces registered meanwhile.
+        fn kpi_netdev_open_pending();
+    }
+    for level in 0.. {
+        let (mut start, mut stop) = (core::ptr::null(), core::ptr::null());
+        if unsafe { kpi_initcall_bounds(level, &mut start, &mut stop) } != 0 {
+            break;
+        }
+        let mut p = start;
+        while p < stop {
+            // Each entry is the function's address relative to the entry.
+            let off = unsafe { p.read_unaligned() };
+            if off != 0 {
+                let f: extern "C" fn() -> c_int =
+                    unsafe { core::mem::transmute((p as isize + off as isize) as *const ()) };
+                let r = f();
+                if r != 0 {
+                    crate::println!("[linuxkpi] initcall at {:#x} returned {}", f as usize, r);
+                }
+            }
+            p = unsafe { p.add(1) };
+        }
+    }
+    unsafe { kpi_netdev_open_pending() };
 }
 
 /// Whether LinuxKPI initialized (Linux drivers may probe).

@@ -67,6 +67,8 @@ pub fn build(root: &Path, out: &Path) {
         println!("cargo:rustc-link-lib=static:+whole-archive=linuxkpi_{g}");
     }
     println!("cargo:rustc-link-search=native={}", libdir.display());
+    // Keep sections referenced only through __start_/__stop_ (initcalls).
+    println!("cargo:rustc-link-arg=-znostart-stop-gc");
 }
 
 fn list_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -111,6 +113,18 @@ fn llvm_ar() -> PathBuf {
     if let Ok(p) = std::env::var("RUSTOS_LLVM_AR") {
         return p.into();
     }
+    llvm_tool("llvm-ar")
+}
+
+/// Linux initcall section names, renamed to C identifiers so the linker
+/// defines __start_/__stop_ symbols for them (src/linuxkpi/c/initcalls.c).
+const INITCALL_LEVELS: &[&str] = &[
+    "early", "0", "0s", "1", "1s", "2", "2s", "3", "3s", "4", "4s", "5", "5s", "rootfs", "6", "6s",
+    "7", "7s",
+];
+
+/// An LLVM tool from the toolchain's llvm-tools component, else from PATH.
+fn llvm_tool(name: &str) -> PathBuf {
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
     let host = std::env::var("HOST").unwrap_or_else(|_| "x86_64-unknown-linux-gnu".into());
     if let Ok(o) = Command::new(rustc).args(["--print", "sysroot"]).output() {
@@ -118,12 +132,13 @@ fn llvm_ar() -> PathBuf {
         let p = Path::new(&sysroot)
             .join("lib/rustlib")
             .join(host)
-            .join("bin/llvm-ar");
+            .join("bin")
+            .join(name);
         if p.exists() {
             return p;
         }
     }
-    "llvm-ar".into()
+    name.into()
 }
 
 fn cflags(root: &Path) -> Vec<String> {
@@ -203,6 +218,7 @@ fn compile_group(
             )
         })
         .collect();
+    let objcopy = llvm_tool("llvm-objcopy");
     let queue = Mutex::new(jobs.clone());
     let errors = Mutex::new(Vec::<String>::new());
     let n = std::env::var("NUM_JOBS")
@@ -236,6 +252,19 @@ fn compile_group(
                         .output();
                     match out {
                         Ok(o) if o.status.success() => {
+                            let mut oc = Command::new(&objcopy);
+                            for l in INITCALL_LEVELS {
+                                oc.arg(format!(
+                                    "--rename-section=.initcall{l}.init=kpi_initcall_{l}"
+                                ));
+                            }
+                            if !matches!(oc.arg(&obj).status(), Ok(s) if s.success()) {
+                                errors
+                                    .lock()
+                                    .unwrap()
+                                    .push(format!("llvm-objcopy failed on {}", obj.display()));
+                                continue;
+                            }
                             std::fs::write(obj.with_extension("stamp"), stamp).unwrap();
                         }
                         Ok(o) => {

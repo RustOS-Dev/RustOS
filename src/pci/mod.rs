@@ -30,6 +30,27 @@ struct EcamMap {
 static ECAM: Once<Vec<EcamMap>> = Once::new();
 static LEGACY_LOCK: Mutex<()> = Mutex::new(());
 
+/// Handlers per INTx GSI. PCI interrupt lines are shared (on QEMU q35,
+/// every device lands on GSIs 16-23): each GSI gets one vector that runs
+/// all handlers registered on it, so no device's level-triggered interrupt
+/// goes unacknowledged.
+static INTX: Mutex<alloc::collections::BTreeMap<u32, IntxLine>> =
+    Mutex::new(alloc::collections::BTreeMap::new());
+
+struct IntxLine {
+    vector: u8,
+    handlers: Vec<alloc::boxed::Box<dyn Fn() + Send + Sync>>,
+}
+
+fn intx_dispatch(gsi: u32) {
+    if let Some(line) = INTX.lock().get(&gsi) {
+        for h in &line.handlers {
+            h();
+        }
+    }
+    apic::eoi();
+}
+
 /// Map the ECAM windows described by MCFG. Safe to call more than once.
 pub fn init_ecam() {
     ECAM.call_once(|| {
@@ -447,12 +468,24 @@ impl PciDevice {
         let gsi = acpi::pci_irq_route(self.dev, self.func, self.irq_pin).or_else(|| {
             (self.irq_line != 0xFF && self.irq_line != 0).then_some(self.irq_line as u32)
         })?;
-        let v = idt::alloc_vector(move |_f| {
-            handler();
-            apic::eoi();
+        let v = x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut lines = INTX.lock();
+            if let Some(line) = lines.get_mut(&gsi) {
+                line.handlers.push(handler);
+                return Some(line.vector);
+            }
+            let v = idt::alloc_vector(move |_f| intx_dispatch(gsi))?;
+            lines.insert(
+                gsi,
+                IntxLine {
+                    vector: v,
+                    handlers: alloc::vec![handler],
+                },
+            );
+            // PCI INTx is level-triggered, active-low.
+            apic::route_gsi(gsi, v, apic::id(), true, true);
+            Some(v)
         })?;
-        // PCI INTx is level-triggered, active-low.
-        apic::route_gsi(gsi, v, apic::id(), true, true);
         self.set_command(self.command() & !CMD_INTX_DISABLE);
         Some(v)
     }

@@ -284,6 +284,26 @@ means RustOS lacks it today and M27 adds it.
 - host unit tests for RCU grace periods, workqueue flush ordering, timer cancel races, `ww_mutex`, skb ops;
 - a test-image-only C module exercising wait queues, completions, kthreads and hrtimers in the kernel.
 
+**Progress** (details in [LINUXKPI.md](LINUXKPI.md)):
+- [x] Step 1: import tooling, `third_party/linux` (v6.18.54), clang build, `linuxkpi`/`linux-e1000` features, initcall sections.
+- [x] Step 4: Linux `e1000` passes `tests/scenarios/linux/eth-linux-e1000` (DHCP, ping, 4 MiB HTTP both ways), run in CI on 2 and 4 CPUs.
+- [ ] Step 3: shim core. Done so far:
+  - memory, per-CPU data, preemption, tasks/kthreads, mutexes, completions and wait queues;
+  - timers, softirq/tasklets, workqueues;
+  - printk/`%p` extensions;
+  - PCI/MSI/INTx, DMA;
+  - netdev/skb/NAPI.
+  - Still to do: RCU, `ww_mutex`, firmware, cdev/anon fds, the `drivers/base` device core, sysfs.
+- [ ] Step 2: RustOS gaps (the list above). None done yet; the `_PIC` fix below came up during step 4.
+- [ ] Tests: the kernel self-test (`src/linuxkpi/c/selftest.c`) stands in for the test-image C module; host unit tests to do.
+
+**Deviations so far:**
+- **No `cc`/`bindgen`.** `build/linuxkpi.rs` drives clang directly, with parallel, incremental builds that track the `.d` dependency files. The Rust side never touches Linux structs: the C glue in `src/linuxkpi/c/`, compiled against the real headers, owns every Linux layout. It passes small `#[repr(C)]` records declared in `kpi.h` to Rust.
+- **`CONFIG_PREEMPT=y`, not `PREEMPT_NONE`,** so that Linux spinlocks raise the shared `preempt_count` and `in_atomic()` is accurate.
+- **Interrupt routing fix.** RustOS now calls `\_PIC(1)` when the AML interpreter starts, as Linux does. Without it, firmware `_PRT` methods (QEMU q35 among them) return legacy-PIC link routing. On q35 that made the e1000 resolve to GSI 1.
+  - With correct routing, PCI devices share GSIs (on q35, 16–23). `PciDevice::enable_intx` therefore keeps one vector per GSI and runs every handler registered on it; before this, a second device on a GSI took over the first one's interrupt.
+- **Timer cancel.** Timers are cancelled in the LinuxKPI layer (a handle table plus the softirq thread), not in `sched::add_timer`.
+
 ## 6. Wi-Fi
 
 ### M28 — 802.11 stack

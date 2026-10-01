@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Boot the kernel in QEMU for every scenario in tests/scenarios/ and drive
 # the serial console. Usage: tools/run-scenarios.sh [kernel-elf] [scenario...]
+# A scenario's QEMU arguments come from the .args file next to it.
+# tests/scenarios/linux/ holds scenarios for kernels built with linux-*
+# features; they run only when named.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KERNEL="${1:-$ROOT/target/x86_64-rustos/debug/rustos}"
@@ -12,7 +15,7 @@ fi
 fail=0
 for s in "${SCENARIOS[@]}"; do
     name="$(basename "$s" .txt)"
-    args_file="$ROOT/tests/scenarios/$name.args"
+    args_file="$(dirname "$s")/$name.args"
     extra=()
     if [ -f "$args_file" ]; then
         # shellcheck disable=SC2207

@@ -19,6 +19,7 @@
 #include <linux/kthread.h>
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
+#include <linux/ww_mutex.h>
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/signal.h>
@@ -419,6 +420,94 @@ void *kthread_data(struct task_struct *task)
 	struct kpi_kthread *k = (task->flags & PF_KTHREAD) ? task->worker_private : NULL;
 
 	return k ? k->data : NULL;
+}
+
+/* ------------------------------------------------- wound/wait mutexes */
+
+/*
+ * ww_mutex with the wait-die rule for every class: a transaction that
+ * already holds locks and meets a lock held by an older transaction (a
+ * smaller stamp) backs off with -EDEADLK; otherwise it waits. Wound-wait
+ * classes (DRM's reservation_ww_class) get the same guarantee, since
+ * their callers handle -EDEADLK the same way.
+ */
+static bool kpi_ww_must_die(struct ww_mutex *lock, struct ww_acquire_ctx *ctx)
+{
+	struct ww_acquire_ctx *hold = READ_ONCE(lock->ctx);
+
+	return hold && ctx->acquired > 0 && (long)(ctx->stamp - hold->stamp) > 0;
+}
+
+static int kpi_ww_lock(struct ww_mutex *lock, struct ww_acquire_ctx *ctx, unsigned int state)
+{
+	struct mutex *m = &lock->base;
+	struct kpi_mutex_waiter w;
+
+	if (!ctx)
+		return kpi_mutex_lock(m, state);
+	if (READ_ONCE(lock->ctx) == ctx)
+		return -EALREADY;
+	might_sleep();
+	for (;;) {
+		if (kpi_mutex_try(m))
+			goto locked;
+		if (kpi_ww_must_die(lock, ctx))
+			return -EDEADLK;
+		raw_spin_lock(&m->wait_lock);
+		w.task = current;
+		list_add_tail(&w.list, &m->wait_list);
+		set_current_state(state);
+		if (kpi_mutex_try(m)) {
+			list_del(&w.list);
+			__set_current_state(TASK_RUNNING);
+			raw_spin_unlock(&m->wait_lock);
+			goto locked;
+		}
+		raw_spin_unlock(&m->wait_lock);
+		schedule();
+		raw_spin_lock(&m->wait_lock);
+		list_del(&w.list);
+		raw_spin_unlock(&m->wait_lock);
+		if (state != TASK_UNINTERRUPTIBLE && signal_pending(current))
+			return -EINTR;
+	}
+locked:
+	WRITE_ONCE(lock->ctx, ctx);
+	ctx->acquired++;
+	return 0;
+}
+
+int ww_mutex_lock(struct ww_mutex *lock, struct ww_acquire_ctx *ctx)
+{
+	return kpi_ww_lock(lock, ctx, TASK_UNINTERRUPTIBLE);
+}
+
+int ww_mutex_lock_interruptible(struct ww_mutex *lock, struct ww_acquire_ctx *ctx)
+{
+	return kpi_ww_lock(lock, ctx, TASK_INTERRUPTIBLE);
+}
+
+int ww_mutex_trylock(struct ww_mutex *lock, struct ww_acquire_ctx *ctx)
+{
+	if (!kpi_mutex_try(&lock->base))
+		return 0;
+	if (ctx) {
+		WRITE_ONCE(lock->ctx, ctx);
+		ctx->acquired++;
+	}
+	return 1;
+}
+
+void ww_mutex_unlock(struct ww_mutex *lock)
+{
+	struct ww_acquire_ctx *ctx = READ_ONCE(lock->ctx);
+
+	if (ctx) {
+		if (ctx->acquired > 0)
+			ctx->acquired--;
+		WRITE_ONCE(lock->ctx, NULL);
+	}
+	mutex_unlock(&lock->base);
 }
 
 /* --------------------------------------------------------------- rwsems */

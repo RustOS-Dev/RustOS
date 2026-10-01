@@ -21,6 +21,7 @@
 #include <linux/spinlock.h>
 #include <linux/srcu.h>
 #include <linux/wait.h>
+#include <linux/workqueue.h>
 #include "kpi.h"
 
 void __rcu_read_lock(void)
@@ -147,7 +148,8 @@ void rcu_barrier(void)
  * readers bump this CPU's lock count for the current index and later the
  * unlock count for the same index; a grace period flips the index and
  * waits until the old index's unlocks catch up with its locks, summed over
- * all CPUs. There is no callback machinery (call_srcu) yet.
+ * all CPUs. call_srcu() callbacks run in order on an ordered workqueue,
+ * each after its own grace period.
  */
 #define KPI_SRCU_READY 1	/* in srcu_usage::srcu_size_state */
 
@@ -256,8 +258,50 @@ void cleanup_srcu_struct(struct srcu_struct *ssp)
 	ssp->srcu_sup = NULL;
 }
 
+struct kpi_srcu_cb {
+	struct work_struct work;
+	struct srcu_struct *ssp;
+	struct rcu_head *head;
+	rcu_callback_t func;
+};
+
+static struct workqueue_struct *kpi_srcu_wq;
+
+static void kpi_srcu_cb_fn(struct work_struct *work)
+{
+	struct kpi_srcu_cb *cb = container_of(work, struct kpi_srcu_cb, work);
+
+	synchronize_srcu(cb->ssp);
+	local_bh_disable();
+	cb->func(cb->head);
+	local_bh_enable();
+	kfree(cb);
+}
+
+void call_srcu(struct srcu_struct *ssp, struct rcu_head *head, rcu_callback_t func)
+{
+	struct kpi_srcu_cb *cb = kmalloc(sizeof(*cb), GFP_ATOMIC);
+
+	if (WARN_ON(!cb))
+		return;
+	cb->ssp = ssp;
+	cb->head = head;
+	cb->func = func;
+	INIT_WORK(&cb->work, kpi_srcu_cb_fn);
+	queue_work(kpi_srcu_wq, &cb->work);
+}
+
+/* Callbacks run in queue order: flushing the queue waits for all of them. */
+void srcu_barrier(struct srcu_struct *ssp)
+{
+	flush_workqueue(kpi_srcu_wq);
+}
+
 int kpi_rcu_init(void)
 {
+	kpi_srcu_wq = alloc_ordered_workqueue("srcu", 0);
+	if (!kpi_srcu_wq)
+		return -ENOMEM;
 	kpi_rcu_thread = kthread_run(kpi_rcu_thread_fn, NULL, "rcu");
 	return IS_ERR(kpi_rcu_thread) ? PTR_ERR(kpi_rcu_thread) : 0;
 }

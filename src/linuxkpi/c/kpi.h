@@ -98,7 +98,16 @@ void rustos_kpi_rcu_synchronize(void);
 int rustos_kpi_firmware_load(const char *name, void *(*alloc)(size_t), void **data,
 			     size_t *size);
 
+/* ACPI (src/linuxkpi/acpi.rs); values in the tagged encoding. */
+int rustos_kpi_acpi_eval(const char *path, const void *args, size_t args_len,
+			 void *(*alloc)(size_t), void **out, size_t *out_len);
+int rustos_kpi_acpi_exists(const char *path);
+int rustos_kpi_acpi_pci_path(u8 bus, u8 dev, u8 func, char *buf, size_t len);
+int rustos_kpi_acpi_table(const u8 *sig, u32 instance, u64 *phys, u64 *len);
+
 /* Shared between the C glue files. */
 void kpi_netdev_open_pending(void);
+struct pci_dev;
+void kpi_acpi_pci_companion(struct pci_dev *pdev);
 
 #endif

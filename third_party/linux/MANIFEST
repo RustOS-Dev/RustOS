@@ -613,6 +613,7 @@ include/linux/resource_ext.h	GPL-2.0-only	ceb825f3b32b03399f07478fc8d317998bacf7
 include/linux/restart_block.h	GPL-2.0	85f426110ecc3a198a6c3542fdd996b2f6ef9c9218af7f798d5da49fddff26cb
 include/linux/rethook.h	GPL-2.0	3b705968074b6b29a48c3590ce49bdaef6523b22256d6a808a2792f1e0f3e989
 include/linux/rhashtable-types.h	GPL-2.0	32fa14be4ab3724a84ba0676de91f25f395d6cb107c4b2cf5d58d54cc1169f05
+include/linux/rtmutex.h	GPL-2.0	a2ea576274cd60e5c5c0abc5824c300289ac5c195ef3187fb3a2521f0409db1d
 include/linux/rtnetlink.h	GPL-2.0	92028447ef7a1bb0e9bce82d733bd855d1b48c5cf992ca43522fce9edcd6fd7a
 include/linux/rv.h	GPL-2.0	adc95c17a7e66cc58ad34cbcfca7bdb90848be320f7cfdabcd453231fc4d8f12
 include/linux/rw_hint.h	GPL-2.0	c12e3e2c54ad298d76417511ae55487d9d8d4fd1cbdb8d04d1a3567362c4a992
@@ -739,6 +740,7 @@ include/linux/wordpart.h	GPL-2.0	1622fd72851be5e59a98553f5220dd6082bdf3cfecfca45
 include/linux/workqueue.h	GPL-2.0	69d623babcc1d9a482d32c6a86dab97a43913914b2d4705620747bb35b1bb030
 include/linux/workqueue_types.h	GPL-2.0	1355c26bc1c4b351c8bffb42eeb3fca1c6a90e8a2b37b58883da81f2903ea465
 include/linux/writeback.h	GPL-2.0	836b788c46c987037e58ab22eee624a5355ae39bad56da8b22038badbf503358
+include/linux/ww_mutex.h	GPL-2.0	a4216cd4c28faab0ca2e8dd1a421565b98241ad4a639020190812d299107dbb1
 include/linux/xarray.h	GPL-2.0+	be3707d0f78bbf6ddf64ac16885f0ed4c6ccd083cc3d8197e92f3a9ad2c03dd4
 include/linux/zswap.h	GPL-2.0	fbf32ca20363162641949cdbec87b5258d30b219687b4d6ba4ae703e94da2b9a
 include/net/arp.h	GPL-2.0	3c785371581921cbbf00affcd302028b3c7b9376eb53cf7894c9af88b3edc286

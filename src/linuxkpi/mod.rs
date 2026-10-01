@@ -4,6 +4,7 @@
 //! API on top of the services in this module. Design:
 //! docs/ROADMAP-ROUND4.md §4.
 
+pub mod acpi;
 pub mod firmware;
 pub mod mm;
 pub mod net;

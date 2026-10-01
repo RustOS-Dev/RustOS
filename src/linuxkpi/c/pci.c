@@ -14,6 +14,7 @@
  * There is no IOMMU: DMA addresses are physical addresses, and x86 keeps
  * caches coherent, so the sync calls are barriers.
  */
+#include <linux/acpi.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -474,7 +475,7 @@ const struct bus_type pci_bus_type = {
 /* Register the PCI bus and add every PCI device to the device core. */
 int kpi_pci_bus_init(void)
 {
-	u32 n = rustos_kpi_pci_count();
+	u32 n = rustos_kpi_pci_count(), companions = 0;
 	int err = bus_register(&pci_bus_type);
 
 	if (err)
@@ -486,9 +487,14 @@ int kpi_pci_bus_init(void)
 		struct kpi_pci_dev *k = kpi_pci_create(kpi_pci_n);
 
 		kpi_pci[kpi_pci_n] = k;
+		if (k)
+			kpi_acpi_pci_companion(&k->pdev);
 		if (k && device_add(&k->pdev.dev))
 			dev_warn(&k->pdev.dev, "cannot add to the device core\n");
+		if (k && ACPI_HANDLE(&k->pdev.dev))
+			companions++;
 	}
+	pr_info("linuxkpi: %u PCI devices, %u with ACPI companions\n", kpi_pci_n, companions);
 	return 0;
 }
 

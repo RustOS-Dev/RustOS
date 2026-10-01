@@ -10,6 +10,7 @@ use acpi::platform::AcpiPlatform;
 use acpi::platform::interrupt::{InterruptModel, Polarity, TriggerMode};
 use acpi::sdt::{fadt::Fadt, mcfg::Mcfg};
 use acpi::{AcpiTables, Handle, Handler, HpetInfo, PciAddress, PhysicalMapping};
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::str::FromStr;
@@ -499,4 +500,161 @@ pub fn on_battery() -> Option<bool> {
         online.map(|o| !o)
     })
     .flatten()
+}
+
+// ---------------------------------------------------------------------------
+// General AML evaluation (for LinuxKPI's ACPI API)
+// ---------------------------------------------------------------------------
+
+/// A value passed to or returned from AML.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Value {
+    Integer(u64),
+    String(String),
+    Buffer(Vec<u8>),
+    Package(Vec<Value>),
+    /// A reference or other object with no plain-data form.
+    Other,
+}
+
+fn to_value(obj: &Object) -> Value {
+    match obj {
+        Object::Integer(v) => Value::Integer(*v),
+        Object::String(s) => Value::String(s.clone()),
+        Object::Buffer(b) => Value::Buffer(b.clone()),
+        Object::Package(elems) => Value::Package(elems.iter().map(|e| to_value(e)).collect()),
+        _ => Value::Other,
+    }
+}
+
+fn from_value(v: &Value) -> acpi::aml::object::WrappedObject {
+    match v {
+        Value::Integer(i) => Object::Integer(*i).wrap(),
+        Value::String(s) => Object::String(s.clone()).wrap(),
+        Value::Buffer(b) => Object::Buffer(b.clone()).wrap(),
+        Value::Package(p) => Object::Package(p.iter().map(from_value).collect()).wrap(),
+        Value::Other => Object::Uninitialized.wrap(),
+    }
+}
+
+/// Why an evaluation failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvalError {
+    /// No AML interpreter (no ACPI, or the tables failed to load).
+    NoInterpreter,
+    /// The path does not name an object.
+    NotFound,
+    /// The method ran and failed.
+    Failed,
+}
+
+/// Evaluate `path` (an absolute AML path such as `\_SB.PCI0._PRT`) with
+/// `args`: run it if it is a method, otherwise return its value.
+pub fn eval(path: &str, args: &[Value]) -> Result<Value, EvalError> {
+    let name = AmlName::from_str(path).map_err(|_| EvalError::NotFound)?;
+    with_interpreter(
+        |i| match i.evaluate(name, args.iter().map(from_value).collect()) {
+            Ok(obj) => Ok(to_value(&obj)),
+            Err(acpi::aml::AmlError::ObjectDoesNotExist(_)) => Err(EvalError::NotFound),
+            Err(e) => {
+                crate::println!("[acpi] {path}: {e:?}");
+                Err(EvalError::Failed)
+            }
+        },
+    )
+    .unwrap_or(Err(EvalError::NoInterpreter))
+}
+
+/// Whether `path` names an object.
+pub fn exists(path: &str) -> bool {
+    let Ok(name) = AmlName::from_str(path) else {
+        return false;
+    };
+    with_interpreter(|i| {
+        let mut ns = i.namespace.lock();
+        // Objects, or scopes and devices (namespace levels).
+        ns.level_exists(&name) || ns.get(name).is_ok()
+    })
+    .unwrap_or(false)
+}
+
+/// A device in the ACPI namespace.
+#[derive(Clone, Debug)]
+pub struct Device {
+    pub path: String,
+    /// `_ADR`, evaluated (PCI: device << 16 | function).
+    pub adr: Option<u64>,
+    /// `_HID` as a string (EISA ids decoded, e.g. `PNP0C50`).
+    pub hid: Option<String>,
+}
+
+fn eisa_id(v: u64) -> String {
+    let v = (v as u32).swap_bytes();
+    let c = |s: u32| (b'@' + ((v >> s) & 0x1f) as u8) as char;
+    alloc::format!("{}{}{}{:04X}", c(26), c(21), c(16), v & 0xffff)
+}
+
+/// Every device in the namespace, with `_ADR` and `_HID` evaluated.
+pub fn devices() -> Vec<Device> {
+    use acpi::aml::namespace::NamespaceLevelKind;
+    let paths: Vec<String> = with_interpreter(|i| {
+        let mut out = Vec::new();
+        let _ = i.namespace.lock().traverse(|name, level| {
+            if matches!(level.kind, NamespaceLevelKind::Device) {
+                out.push(name.as_string());
+            }
+            Ok(true)
+        });
+        out
+    })
+    .unwrap_or_default();
+    paths
+        .into_iter()
+        .map(|path| {
+            let adr = match eval(&alloc::format!("{path}._ADR"), &[]) {
+                Ok(Value::Integer(a)) => Some(a),
+                _ => None,
+            };
+            let hid = match eval(&alloc::format!("{path}._HID"), &[]) {
+                Ok(Value::Integer(v)) => Some(eisa_id(v)),
+                Ok(Value::String(s)) => Some(s),
+                _ => None,
+            };
+            Device { path, adr, hid }
+        })
+        .collect()
+}
+
+/// The ACPI device for PCI device `dev.func` on the root bus: the device
+/// under the PCI root bridge (`PNP0A03`/`PNP0A08`) whose `_ADR` matches.
+pub fn pci_device_path(dev: u8, func: u8) -> Option<String> {
+    let all = devices();
+    let roots: Vec<&Device> = all
+        .iter()
+        .filter(|d| matches!(d.hid.as_deref(), Some("PNP0A03" | "PNP0A08")))
+        .collect();
+    let want = ((dev as u64) << 16) | func as u64;
+    all.iter()
+        .find(|d| {
+            d.adr == Some(want)
+                && roots.iter().any(|r| {
+                    d.path
+                        .strip_prefix(r.path.as_str())
+                        .is_some_and(|rest| rest.starts_with('.') && !rest[1..].contains('.'))
+                })
+        })
+        .map(|d| d.path.clone())
+}
+
+/// The physical address and length of the first ACPI table with
+/// signature `sig` (e.g. `*b"MCFG"`), `instance` counting from 1.
+pub fn table(sig: &[u8; 4], instance: usize) -> Option<(u64, usize)> {
+    let acpi = ACPI.lock();
+    let platform = acpi.as_ref()?;
+    platform
+        .tables
+        .table_headers()
+        .filter(|(_, h)| h.signature.as_str().as_bytes() == sig)
+        .nth(instance.saturating_sub(1))
+        .map(|(phys, h)| (phys as u64, h.length as usize))
 }

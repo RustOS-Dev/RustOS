@@ -76,12 +76,7 @@ int add_uevent_var(struct kobj_uevent_env *env, const char *format, ...)
 	return 0;
 }
 
-/* ------------------------------------------- ACPI device hooks (no fwnodes yet) */
-
-bool is_acpi_device_node(const struct fwnode_handle *fwnode)
-{
-	return false;
-}
+/* ----------------------------------------------- ACPI device-core hooks */
 
 void acpi_device_notify(struct device *dev)
 {

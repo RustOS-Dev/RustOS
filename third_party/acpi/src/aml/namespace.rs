@@ -278,6 +278,17 @@ impl Namespace {
         }
     }
 
+    /// Whether `path` (absolute) names a namespace level: a scope, device, processor, etc.
+    pub fn level_exists(&self, path: &AmlName) -> bool {
+        if *path == AmlName::root() {
+            return true;
+        }
+        match self.get_level_for_path(path) {
+            Ok((level, last_seg)) => level.children.contains_key(&last_seg),
+            Err(_) => false,
+        }
+    }
+
     /// Split an absolute path into a bunch of level segments (used to traverse the level data structure), and a
     /// last segment to index into that level. This must not be called on `\\`.
     fn get_level_for_path(&self, path: &AmlName) -> Result<(&NamespaceLevel, NameSeg), AmlError> {

@@ -4,6 +4,7 @@
  * src/linuxkpi/mod.rs before any Linux driver probes. Each failure is
  * logged; the return value is the number of failures.
  */
+#include <linux/acpi.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
@@ -12,6 +13,8 @@
 #include <linux/mutex.h>
 #include <linux/percpu.h>
 #include <linux/rcupdate.h>
+#include <linux/srcu.h>
+#include <linux/ww_mutex.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
@@ -266,6 +269,91 @@ static void test_rcu(void)
 	rcu_barrier();
 }
 
+static DEFINE_WW_CLASS(kpi_test_ww_class);
+
+static void test_ww_mutex(void)
+{
+	struct ww_mutex a, b;
+	struct ww_acquire_ctx old, young;
+
+	ww_mutex_init(&a, &kpi_test_ww_class);
+	ww_mutex_init(&b, &kpi_test_ww_class);
+	ww_acquire_init(&old, &kpi_test_ww_class);
+	ww_acquire_init(&young, &kpi_test_ww_class);
+	CHECK(!ww_mutex_lock(&a, &old), "ww_mutex_lock (old)");
+	CHECK(!ww_mutex_lock(&b, &young), "ww_mutex_lock (young)");
+	CHECK(ww_mutex_lock(&a, &young) == -EDEADLK, "wait-die: younger backs off");
+	CHECK(ww_mutex_lock(&a, &old) == -EALREADY, "ww_mutex_lock -EALREADY");
+	ww_mutex_unlock(&b);
+	CHECK(young.acquired == 0, "ww acquired count");
+	CHECK(!ww_mutex_lock(&b, &old) && old.acquired == 2, "older takes released lock");
+	ww_mutex_unlock(&a);
+	ww_mutex_unlock(&b);
+	ww_acquire_fini(&old);
+	ww_acquire_fini(&young);
+}
+
+DEFINE_STATIC_SRCU(kpi_test_srcu);
+static atomic_t srcu_reader_state;
+static DECLARE_COMPLETION(srcu_reader_done);
+static DECLARE_COMPLETION(srcu_cb_done);
+
+static int srcu_reader_fn(void *data)
+{
+	int idx = srcu_read_lock(&kpi_test_srcu);
+
+	atomic_set(&srcu_reader_state, 1);
+	msleep(30);	/* SRCU readers may sleep. */
+	atomic_set(&srcu_reader_state, 2);
+	srcu_read_unlock(&kpi_test_srcu, idx);
+	complete(&srcu_reader_done);
+	return 0;
+}
+
+static void srcu_test_cb(struct rcu_head *head)
+{
+	complete(&srcu_cb_done);
+}
+
+static void test_srcu(void)
+{
+	static struct rcu_head head;
+	struct task_struct *t = kthread_run(srcu_reader_fn, NULL, "kpi-srcu-reader");
+
+	CHECK(!IS_ERR(t), "SRCU reader thread");
+	if (IS_ERR(t))
+		return;
+	while (atomic_read(&srcu_reader_state) == 0)
+		msleep(1);
+	synchronize_srcu(&kpi_test_srcu);
+	CHECK(atomic_read(&srcu_reader_state) == 2, "synchronize_srcu waits for readers");
+	wait_for_completion(&srcu_reader_done);
+	call_srcu(&kpi_test_srcu, &head, srcu_test_cb);
+	srcu_barrier(&kpi_test_srcu);
+	CHECK(completion_done(&srcu_cb_done), "call_srcu + srcu_barrier");
+}
+
+static void test_acpi(void)
+{
+	struct acpi_buffer buf = { ACPI_ALLOCATE_BUFFER, NULL };
+	unsigned long long sta;
+	acpi_handle sb;
+	union acpi_object *o;
+
+	CHECK(ACPI_SUCCESS(acpi_get_handle(NULL, "\\_SB", &sb)) && sb, "acpi_get_handle");
+	CHECK(acpi_get_handle(NULL, "\\_SB.NOPE", &sb) == AE_NOT_FOUND, "acpi_get_handle missing");
+	/* Every x86 machine's DSDT has a PCI root bridge with a _PRT package. */
+	if (ACPI_SUCCESS(acpi_evaluate_object(NULL, "\\_SB.PCI0._PRT", NULL, &buf))) {
+		o = buf.pointer;
+		CHECK(o->type == ACPI_TYPE_PACKAGE && o->package.count > 0 &&
+		      o->package.elements[0].type == ACPI_TYPE_PACKAGE, "_PRT package");
+		kfree(o);
+	}
+	if (acpi_has_method(NULL, "\\_SB.PCI0._STA"))
+		CHECK(ACPI_SUCCESS(acpi_evaluate_integer(NULL, "\\_SB.PCI0._STA", NULL, &sta)),
+		      "acpi_evaluate_integer");
+}
+
 static void test_printf(void)
 {
 	static const u8 mac[6] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
@@ -289,6 +377,9 @@ int kpi_selftest(void)
 		{ "timers", test_timers },
 		{ "workqueues", test_workqueues },
 		{ "RCU", test_rcu },
+		{ "ww_mutex", test_ww_mutex },
+		{ "SRCU", test_srcu },
+		{ "ACPI", test_acpi },
 	};
 
 	failures = 0;

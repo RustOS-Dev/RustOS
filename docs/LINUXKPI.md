@@ -88,6 +88,14 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
     DHCP.
   - **Opening:** interfaces are opened once the probe that registered them
     returns.
+- **RCU.**
+  - `rcu_read_lock()` disables preemption, which is legal because RCU readers may not sleep.
+  - A CPU is quiescent when it context-switches, or when a timer tick finds it with preemption enabled (`PerCpu::rcu_qs`).
+  - `synchronize_rcu()` waits for every other CPU's count to move. `call_rcu`/`kfree_rcu` callbacks run in the `rcu` kthread, one grace period per batch.
+- **Firmware.**
+  - `request_firmware()` and its variants read from RustOS's firmware search path (`src/firmware.rs`).
+  - Until a minute after boot, a lookup that misses waits for the boot drive to be mounted, because USB sticks enumerate late.
+  - `request_firmware_nowait()` runs on `system_long_wq`.
 - **Initcalls.** Linux `module_init`/`*_initcall` entries are renamed into
   `kpi_initcall_<level>` sections. They run in level order after the native
   drivers have probed (`src/drivers/mod.rs`).

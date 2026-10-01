@@ -298,6 +298,7 @@ include/linux/fcntl.h	GPL-2.0	3596923a526ffc73d9445e1b7488593a3f3c29c35a05cfe85c
 include/linux/file.h	GPL-2.0	33a3333977ffcffb0cb22290b9718c4359cf3939e77ea9876341fc5d664d2637
 include/linux/file_ref.h	GPL-2.0-only	6f8d93585a850bfc6205f82a670c266e41fb4c67be943a3bd1a4f88eda8504ae
 include/linux/find.h	GPL-2.0	b8b91218c4f7b48ff780e3b1df65f2adc3193775798febea29a2b7c6d73fd000
+include/linux/firmware.h	GPL-2.0	987b248daad80ac79231d4f3aefc607e3c345440b04531a895ef05ac0cb35fa8
 include/linux/flex_proportions.h	GPL-2.0	4731cdffa5ad2b8eda8ffad4320973fcb6187a6a9dc0b6ac7dbc6c5df0244bbc
 include/linux/fs.h	GPL-2.0	cf57d38c28f993d971cda95419507bbc171baeeb51556bc08887e6cb41600cc0
 include/linux/fs_types.h	GPL-2.0	5671cc8c73ab31cc42da2f9f7cbdb4467f3e5432bf278f5b1da1c77028164b32

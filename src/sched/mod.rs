@@ -688,6 +688,11 @@ pub fn timer_tick() {
     }
     run_timers(crate::time::nanos());
     let pc = cpu::this();
+    // RCU readers run with preemption disabled: a tick that interrupted
+    // preemptible code is a quiescent state for this CPU.
+    if pc.preempt_count.load(Ordering::Relaxed) == 0 {
+        pc.rcu_qs.fetch_add(1, Ordering::Relaxed);
+    }
     #[cfg(feature = "linuxkpi")]
     if pc.cpu_id == 0 {
         crate::linuxkpi::tick();
@@ -848,6 +853,8 @@ pub fn schedule() {
         }
     }
 
+    // A context switch is a quiescent state (RCU readers cannot sleep).
+    pc.rcu_qs.fetch_add(1, Ordering::Relaxed);
     let next = unsafe { &*next_ptr };
     next.set_state(State::Running);
     next.quantum.store(next.slice(), Ordering::Relaxed);

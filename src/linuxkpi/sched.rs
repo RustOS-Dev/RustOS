@@ -245,3 +245,39 @@ fn softirq_thread() {
 pub fn start_softirq() {
     sched::spawn("linux-softirq", softirq_thread);
 }
+
+// ------------------------------------------------------------------ RCU
+
+/// Wait for an RCU grace period: until every other CPU has passed a
+/// quiescent state (`PerCpu::rcu_qs`: a context switch, or a timer tick
+/// that found preemption enabled). LinuxKPI's readers disable preemption
+/// (src/linuxkpi/c/rcu.c), so a reader that started before this call has
+/// finished once its CPU's counter moves. The calling CPU is quiescent
+/// already: the caller may sleep, so it is not inside a reader.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_rcu_synchronize() {
+    use crate::arch::x86_64::cpu;
+    let me = cpu::this().cpu_id;
+    let n = cpu::cpu_count();
+    let mut seen = [None::<u64>; cpu::MAX_CPUS];
+    for id in 0..n {
+        if id != me {
+            seen[id as usize] = cpu::cpu(id).map(|c| c.rcu_qs.load(Ordering::SeqCst));
+        }
+    }
+    loop {
+        let pending = (0..n).any(|id| {
+            seen[id as usize]
+                .is_some_and(|s| cpu::cpu(id).is_some_and(|c| c.rcu_qs.load(Ordering::SeqCst) == s))
+        });
+        if !pending {
+            return;
+        }
+        if sched::is_running() {
+            // One tick (4 ms at 250 Hz) moves every busy CPU's counter.
+            sched::sleep_until(crate::time::nanos() + 1_000_000);
+        } else {
+            core::hint::spin_loop();
+        }
+    }
+}

@@ -349,3 +349,53 @@ void iounmap(volatile void __iomem *addr)
 {
 	rustos_kpi_iounmap((void *)addr);
 }
+
+/* ------------------------------------------------------- string copies */
+
+/*
+ * The mm/util.c helpers. kstrdup_const() always copies here (and
+ * kvasprintf_const() in printk.c always allocates), so kfree_const() is
+ * kfree().
+ */
+void *kmemdup_noprof(const void *src, size_t len, gfp_t gfp)
+{
+	void *p = kmalloc(len, gfp);
+
+	if (p)
+		memcpy(p, src, len);
+	return p;
+}
+
+char *kmemdup_nul(const char *s, size_t len, gfp_t gfp)
+{
+	char *p;
+
+	if (!s)
+		return NULL;
+	p = kmalloc(len + 1, gfp);
+	if (p) {
+		memcpy(p, s, len);
+		p[len] = '\0';
+	}
+	return p;
+}
+
+char *kstrdup(const char *s, gfp_t gfp)
+{
+	return s ? kmemdup_nul(s, strlen(s), gfp) : NULL;
+}
+
+char *kstrndup(const char *s, size_t max, gfp_t gfp)
+{
+	return s ? kmemdup_nul(s, strnlen(s, max), gfp) : NULL;
+}
+
+const char *kstrdup_const(const char *s, gfp_t gfp)
+{
+	return kstrdup(s, gfp);
+}
+
+void kfree_const(const void *x)
+{
+	kfree(x);
+}

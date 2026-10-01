@@ -37,6 +37,10 @@ pub struct PerCpu {
     /// LinuxKPI: this CPU's offset to its copy of Linux per-CPU variables
     /// (read by C code as `%gs:72`, see src/linuxkpi/include/rustos/percpu-layout.h).
     pub linux_percpu_offset: core::sync::atomic::AtomicU64,
+    /// Quiescent states seen on this CPU: context switches, and timer ticks
+    /// that interrupted code with preemption enabled (which therefore was
+    /// not inside an RCU read-side section). Read by LinuxKPI's RCU.
+    pub rcu_qs: core::sync::atomic::AtomicU64,
 }
 
 // Offsets C code reads through GS (src/linuxkpi/include/rustos/percpu-layout.h).
@@ -69,6 +73,7 @@ pub fn init(cpu_id: u32, lapic_id: u32, tss: &'static mut TaskStateSegment) -> &
         need_resched: AtomicU32::new(0),
         ticks: core::sync::atomic::AtomicU64::new(0),
         linux_percpu_offset: core::sync::atomic::AtomicU64::new(0),
+        rcu_qs: core::sync::atomic::AtomicU64::new(0),
     }));
     pc.self_ptr = pc as *mut PerCpu as u64;
     GsBase::write(VirtAddr::new(pc.self_ptr));

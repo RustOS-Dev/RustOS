@@ -293,8 +293,10 @@ means RustOS lacks it today and M27 adds it.
   - printk/`%p` extensions;
   - PCI/MSI/INTx, DMA;
   - netdev/skb/NAPI.
-  - Still to do: RCU, `ww_mutex`, firmware, cdev/anon fds, the `drivers/base` device core, sysfs.
-- [ ] Step 2: RustOS gaps (the list above). None done yet; the `_PIC` fix below came up during step 4.
+  - RCU: readers disable preemption, and grace periods come from per-CPU quiescent-state counts (`PerCpu::rcu_qs`, bumped on context switch and on preemptible timer ticks). Also `call_rcu`, `kfree_rcu` and `rcu_barrier`.
+  - Firmware: `request_firmware` and its variants on `src/firmware.rs`. A lookup waits up to 60 s after boot for the boot drive to be mounted.
+  - Still to do: SRCU, `ww_mutex`, cdev/anon fds, the `drivers/base` device core, sysfs.
+- [ ] Step 2: RustOS gaps (the list above). Done: the RCU quiescent hook (tick and `schedule()`) and the firmware storage wait. Native drives are now mounted before Linux initcalls run. The `_PIC` fix below came up during step 4.
 - [ ] Tests: the kernel self-test (`src/linuxkpi/c/selftest.c`) stands in for the test-image C module; host unit tests to do.
 
 **Deviations so far:**

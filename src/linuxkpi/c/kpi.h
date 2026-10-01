@@ -77,6 +77,13 @@ void rustos_kpi_netdev_rx(u64 handle, const void *data, u32 len);
 void rustos_kpi_netdev_carrier(u64 handle, int on);
 void rustos_kpi_netdev_mtu(u64 handle, u32 mtu);
 
+/* RCU (src/linuxkpi/sched.rs): wait for a grace period. */
+void rustos_kpi_rcu_synchronize(void);
+
+/* Firmware (src/linuxkpi/firmware.rs): load name into alloc()'d memory. */
+int rustos_kpi_firmware_load(const char *name, void *(*alloc)(size_t), void **data,
+			     size_t *size);
+
 /* Shared between the C glue files. */
 void kpi_netdev_open_pending(void);
 

@@ -55,8 +55,9 @@ pub fn probe_all() {
         crate::sound::probe(&dev);
     }
     crate::usb::init();
+    // Before the Linux drivers, which load firmware from these drives.
+    crate::block::automount();
     // Linux drivers built in through LinuxKPI (module_init()).
     #[cfg(feature = "linuxkpi")]
     crate::linuxkpi::run_initcalls();
-    crate::block::automount();
 }

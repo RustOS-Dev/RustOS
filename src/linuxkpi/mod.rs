@@ -4,6 +4,7 @@
 //! API on top of the services in this module. Design:
 //! docs/ROADMAP-ROUND4.md §4.
 
+pub mod firmware;
 pub mod mm;
 pub mod net;
 pub mod pci;
@@ -29,6 +30,7 @@ unsafe extern "C" {
     fn kpi_mm_init() -> c_int;
     fn kpi_percpu_init() -> c_int;
     fn kpi_workqueues_init() -> c_int;
+    fn kpi_rcu_init() -> c_int;
     fn kpi_selftest() -> c_int;
     fn kpi_jiffies_update();
     fn kpi_net_init() -> c_int;
@@ -60,6 +62,10 @@ pub fn init() {
     sched::start_softirq();
     if unsafe { kpi_workqueues_init() } != 0 {
         crate::println!("[linuxkpi] workqueue setup failed; LinuxKPI disabled");
+        return;
+    }
+    if unsafe { kpi_rcu_init() } != 0 {
+        crate::println!("[linuxkpi] RCU setup failed; LinuxKPI disabled");
         return;
     }
     pci::init();

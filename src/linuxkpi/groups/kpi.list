@@ -10,6 +10,8 @@ kpi:pci.c
 kpi:net.c
 kpi:misc.c
 kpi:initcalls.c
+kpi:rcu.c
+kpi:firmware.c
 # Linux library code used as-is.
 lib/errname.c
 lib/hexdump.c

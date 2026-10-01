@@ -11,6 +11,7 @@
 #include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/percpu.h>
+#include <linux/rcupdate.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
@@ -214,6 +215,57 @@ static void test_workqueues(void)
 	CHECK(work_runs == 2, "cancelled delayed work did not run");
 }
 
+static atomic_t rcu_reader_state;
+static DECLARE_COMPLETION(rcu_reader_done);
+static DECLARE_COMPLETION(rcu_cb_done);
+
+static int rcu_reader_fn(void *data)
+{
+	rcu_read_lock();
+	atomic_set(&rcu_reader_state, 1);
+	mdelay(50);
+	atomic_set(&rcu_reader_state, 2);
+	rcu_read_unlock();
+	complete(&rcu_reader_done);
+	return 0;
+}
+
+struct rcu_test_obj {
+	int value;
+	struct rcu_head rcu;
+};
+
+static void rcu_test_cb(struct rcu_head *head)
+{
+	struct rcu_test_obj *o = container_of(head, struct rcu_test_obj, rcu);
+
+	o->value = 42;
+	complete(&rcu_cb_done);
+}
+
+static void test_rcu(void)
+{
+	static struct rcu_test_obj obj;
+	struct rcu_test_obj *freed = kmalloc(sizeof(*freed), GFP_KERNEL);
+	struct task_struct *t = kthread_run(rcu_reader_fn, NULL, "kpi-rcu-reader");
+
+	CHECK(!IS_ERR(t), "RCU reader thread");
+	if (IS_ERR(t))
+		return;
+	while (atomic_read(&rcu_reader_state) == 0)
+		msleep(1);
+	synchronize_rcu();
+	CHECK(atomic_read(&rcu_reader_state) == 2, "synchronize_rcu waits for readers");
+	wait_for_completion(&rcu_reader_done);
+
+	call_rcu(&obj.rcu, rcu_test_cb);
+	CHECK(wait_for_completion_timeout(&rcu_cb_done, msecs_to_jiffies(2000)) &&
+	      obj.value == 42, "call_rcu callback");
+	if (freed)
+		kfree_rcu(freed, rcu);
+	rcu_barrier();
+}
+
 static void test_printf(void)
 {
 	static const u8 mac[6] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
@@ -236,6 +288,7 @@ int kpi_selftest(void)
 		{ "kthread", test_kthread }, { "spinlock contention", test_contention },
 		{ "timers", test_timers },
 		{ "workqueues", test_workqueues },
+		{ "RCU", test_rcu },
 	};
 
 	failures = 0;

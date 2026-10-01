@@ -1,0 +1,19 @@
+# LinuxKPI C glue (src/linuxkpi/c), always built with the linuxkpi feature.
+kpi:mm.c
+kpi:printk.c
+kpi:sched.c
+kpi:time.c
+kpi:softirq.c
+kpi:percpu.c
+kpi:selftest.c
+# Linux library code used as-is.
+lib/errname.c
+lib/hexdump.c
+lib/find_bit.c
+lib/dynamic_queue_limits.c
+lib/string.c
+lib/ctype.c
+
+kernel/locking/spinlock.c
+kernel/locking/qspinlock.c
+kernel/locking/qrwlock.c

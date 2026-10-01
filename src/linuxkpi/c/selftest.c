@@ -1,0 +1,247 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Boot-time self-test of the LinuxKPI primitives, run by
+ * src/linuxkpi/mod.rs before any Linux driver probes. Each failure is
+ * logged; the return value is the number of failures.
+ */
+#include <linux/completion.h>
+#include <linux/delay.h>
+#include <linux/jiffies.h>
+#include <linux/kthread.h>
+#include <linux/mm.h>
+#include <linux/mutex.h>
+#include <linux/percpu.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/string.h>
+#include <linux/timer.h>
+#include <linux/vmalloc.h>
+#include <linux/wait.h>
+#include <linux/workqueue.h>
+#include "kpi.h"
+
+static int failures;
+
+#define CHECK(cond, what) do {						\
+	if (!(cond)) {							\
+		pr_err("linuxkpi self-test: %s failed (%s:%d)\n",	\
+		       what, __FILE__, __LINE__);			\
+		failures++;						\
+	}								\
+} while (0)
+
+static DEFINE_PER_CPU(int, kpi_test_counter);
+
+static void test_memory(void)
+{
+	void *small[32];
+	void *big = kmalloc(9000, GFP_KERNEL | __GFP_ZERO);
+	struct page *pages = alloc_pages(GFP_KERNEL, 2);
+	char *v = vmalloc(3 * PAGE_SIZE + 5);
+
+	for (int i = 0; i < 32; i++) {
+		size_t sz = 8 << (i % 9);
+
+		small[i] = kmalloc(sz, GFP_KERNEL);
+		CHECK(small[i] && ((unsigned long)small[i] & (min_t(size_t, sz, 16) - 1)) == 0,
+		      "kmalloc alignment");
+		if (small[i])
+			memset(small[i], i, sz);
+	}
+	for (int i = 0; i < 32; i++) {
+		size_t sz = 8 << (i % 9);
+
+		CHECK(!small[i] || memchr_inv(small[i], i, sz) == NULL, "kmalloc contents");
+		kfree(small[i]);
+	}
+	CHECK(big && !memchr_inv(big, 0, 9000), "kzalloc large");
+	CHECK(big && virt_to_page(big) == pfn_to_page(__pa(big) >> PAGE_SHIFT), "virt_to_page");
+	CHECK(big && __va(__pa(big)) == big, "__va(__pa())");
+	kfree(big);
+	CHECK(pages && page_address(pages) && page_ref_count(pages) == 1, "alloc_pages");
+	if (pages) {
+		memset(page_address(pages), 0xa5, 4 * PAGE_SIZE);
+		__free_pages(pages, 2);
+	}
+	CHECK(v && is_vmalloc_addr(v), "vmalloc");
+	if (v) {
+		v[3 * PAGE_SIZE + 4] = 1;
+		vfree(v);
+	}
+	CHECK(ksize(kmalloc(100, GFP_KERNEL)) >= 100, "ksize");
+}
+
+static void test_percpu(void)
+{
+	this_cpu_inc(kpi_test_counter);
+	this_cpu_add(kpi_test_counter, 2);
+	CHECK(this_cpu_read(kpi_test_counter) == 3, "this_cpu ops");
+	CHECK(per_cpu(kpi_test_counter, raw_smp_processor_id()) == 3, "per_cpu()");
+	CHECK(raw_smp_processor_id() == rustos_kpi_cpu_id(), "smp_processor_id");
+}
+
+static DEFINE_SPINLOCK(test_lock);
+static DEFINE_MUTEX(test_mutex);
+
+static void test_locks(void)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&test_lock, flags);
+	CHECK(in_atomic() && irqs_disabled(), "spin_lock_irqsave state");
+	spin_unlock_irqrestore(&test_lock, flags);
+	CHECK(!in_atomic(), "preempt count after unlock");
+	spin_lock_bh(&test_lock);
+	CHECK(in_softirq(), "spin_lock_bh state");
+	spin_unlock_bh(&test_lock);
+	mutex_lock(&test_mutex);
+	CHECK(mutex_is_locked(&test_mutex) && !mutex_trylock(&test_mutex), "mutex held");
+	mutex_unlock(&test_mutex);
+	CHECK(!mutex_is_locked(&test_mutex), "mutex released");
+}
+
+static unsigned long contended;
+static DECLARE_COMPLETION(contend_done);
+
+static int contend_fn(void *data)
+{
+	for (int i = 0; i < 200000; i++) {
+		spin_lock(&test_lock);
+		contended++;
+		spin_unlock(&test_lock);
+	}
+	complete(&contend_done);
+	return 0;
+}
+
+static void test_contention(void)
+{
+	struct task_struct *a = kthread_run(contend_fn, NULL, "kpi-spin-a");
+	struct task_struct *b = kthread_run(contend_fn, NULL, "kpi-spin-b");
+
+	CHECK(!IS_ERR(a) && !IS_ERR(b), "contention threads");
+	wait_for_completion(&contend_done);
+	wait_for_completion(&contend_done);
+	CHECK(contended == 400000, "spinlock mutual exclusion");
+	if (contended != 400000)
+		pr_err("linuxkpi self-test: counter %lu, expected 400000\n", contended);
+}
+
+static DECLARE_COMPLETION(kthread_done);
+
+static int test_thread_fn(void *data)
+{
+	mutex_lock(&test_mutex);
+	*(int *)data = 42;
+	mutex_unlock(&test_mutex);
+	complete(&kthread_done);
+	while (!kthread_should_stop())
+		msleep(1);
+	return 7;
+}
+
+static void test_kthread(void)
+{
+	static int value;
+	struct task_struct *t = kthread_run(test_thread_fn, &value, "kpi-test");
+
+	CHECK(!IS_ERR(t), "kthread_run");
+	if (IS_ERR(t))
+		return;
+	CHECK(wait_for_completion_timeout(&kthread_done, msecs_to_jiffies(2000)), "completion");
+	CHECK(value == 42, "kthread ran");
+	CHECK(kthread_stop(t) == 7, "kthread_stop result");
+}
+
+static struct timer_list test_timer;
+static DECLARE_COMPLETION(timer_done);
+static DECLARE_WAIT_QUEUE_HEAD(test_wq);
+static int timer_hits;
+
+static void test_timer_fn(struct timer_list *t)
+{
+	timer_hits++;
+	complete(&timer_done);
+	wake_up(&test_wq);
+}
+
+static void test_timers(void)
+{
+	unsigned long start = jiffies;
+	u64 t0 = rustos_kpi_nanos();
+
+	msleep(20);
+	CHECK(rustos_kpi_nanos() - t0 >= 20 * NSEC_PER_MSEC, "msleep duration");
+	CHECK(time_after(jiffies, start), "jiffies advance");
+
+	timer_setup(&test_timer, test_timer_fn, 0);
+	mod_timer(&test_timer, jiffies + msecs_to_jiffies(10));
+	CHECK(timer_pending(&test_timer), "timer_pending");
+	CHECK(wait_for_completion_timeout(&timer_done, msecs_to_jiffies(2000)), "timer fired");
+	CHECK(!timer_pending(&test_timer), "timer not pending after firing");
+
+	/* A deleted timer must not fire. */
+	mod_timer(&test_timer, jiffies + msecs_to_jiffies(20));
+	CHECK(timer_delete_sync(&test_timer) == 1, "timer_delete_sync of pending timer");
+	msleep(40);
+	CHECK(timer_hits == 1, "deleted timer did not fire");
+
+	mod_timer(&test_timer, jiffies + msecs_to_jiffies(10));
+	CHECK(wait_event_timeout(test_wq, timer_hits == 2, msecs_to_jiffies(2000)) > 0,
+	      "wait_event_timeout woken by timer");
+}
+
+static int work_runs;
+static void test_work_fn(struct work_struct *w)
+{
+	work_runs++;
+}
+static DECLARE_WORK(test_work, test_work_fn);
+static DECLARE_DELAYED_WORK(test_dwork, test_work_fn);
+
+static void test_workqueues(void)
+{
+	queue_work(system_wq, &test_work);
+	flush_work(&test_work);
+	CHECK(work_runs == 1, "queue_work + flush_work");
+	schedule_delayed_work(&test_dwork, msecs_to_jiffies(10));
+	CHECK(delayed_work_pending(&test_dwork), "delayed work pending");
+	msleep(100);
+	CHECK(work_runs == 2, "delayed work ran");
+	schedule_delayed_work(&test_dwork, msecs_to_jiffies(50));
+	CHECK(cancel_delayed_work_sync(&test_dwork), "cancel_delayed_work_sync");
+	msleep(80);
+	CHECK(work_runs == 2, "cancelled delayed work did not run");
+}
+
+static void test_printf(void)
+{
+	static const u8 mac[6] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
+	static const u8 ip[4] = { 10, 0, 2, 15 };
+	char buf[96];
+
+	snprintf(buf, sizeof(buf), "%pM %pI4 %5d|%-3s|%#x %pe %*phC", mac, ip, -42, "ab", 255,
+		 ERR_PTR(-ENOMEM), 3, mac);
+	CHECK(!strcmp(buf, "52:54:00:12:34:56 10.0.2.15   -42|ab |0xff -ENOMEM 52:54:00"),
+	      "vsnprintf formats");
+	if (strcmp(buf, "52:54:00:12:34:56 10.0.2.15   -42|ab |0xff -ENOMEM 52:54:00"))
+		pr_err("linuxkpi self-test: got \"%s\"\n", buf);
+}
+
+int kpi_selftest(void)
+{
+	static const struct { const char *name; void (*fn)(void); } tests[] = {
+		{ "memory", test_memory }, { "per-CPU", test_percpu },
+		{ "locks", test_locks }, { "printf", test_printf },
+		{ "kthread", test_kthread }, { "spinlock contention", test_contention },
+		{ "timers", test_timers },
+		{ "workqueues", test_workqueues },
+	};
+
+	failures = 0;
+	for (int i = 0; i < ARRAY_SIZE(tests); i++) {
+		printk(KERN_DEBUG "linuxkpi self-test: %s\n", tests[i].name);
+		tests[i].fn();
+	}
+	return failures;
+}

@@ -202,9 +202,11 @@ def licence_ok(expr):
 def deps(linux, cfile):
     flags = cflags(linux, extra_gen=os.path.join(DEST, "generated"))
     mod = os.path.splitext(os.path.basename(cfile))[0]
+    path = (os.path.join(KPI, "c", cfile[4:]) if cfile.startswith("kpi:")
+            else os.path.join(linux, cfile))
     out = subprocess.run(
         ["clang"] + flags + ["-DKBUILD_MODNAME=\"%s\"" % mod, "-DKBUILD_BASENAME=\"%s\"" % mod,
-                             "-M", os.path.join(linux, cfile)],
+                             "-M", path],
         capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit("dependency scan failed for %s:\n%s" % (cfile, out.stderr[-4000:]))
@@ -252,7 +254,8 @@ def cmd_import(args):
     needed = set()
     for g in args.groups:
         for c in group_files(g):
-            needed.add(c)
+            if not c.startswith("kpi:"):
+                needed.add(c)
             needed.update(deps(linux, c))
     bad = []
     for rel in sorted(needed):

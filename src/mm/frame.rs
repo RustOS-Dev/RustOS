@@ -191,4 +191,9 @@ impl FrameAllocator {
     pub fn total_frames(&self) -> usize {
         self.total_usable
     }
+
+    /// One past the highest frame number the allocator manages.
+    pub fn frame_limit(&self) -> usize {
+        self.frames
+    }
 }

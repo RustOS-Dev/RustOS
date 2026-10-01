@@ -122,6 +122,7 @@ arch/x86/include/asm/vdso.h	GPL-2.0	de233d5a04e388f7bf938e5c3f7ac493e7ef6fa90243
 arch/x86/include/asm/vdso/processor.h	GPL-2.0-only	684e2abe6d6dc027cccca3bd9503015865500ce54216c85a05f99d9d53c686d1
 arch/x86/include/asm/vmalloc.h	GPL-2.0-only (untagged, per Linux COPYING)	ded5d5eee94255a94a6e2bc9bcea720b29c668572704ee153c760297828a0173
 arch/x86/include/asm/vmxfeatures.h	GPL-2.0	313eae24276800b3086f193435fc0680907a87458adc66a409b94847358a1e2f
+arch/x86/include/asm/word-at-a-time.h	GPL-2.0	37903b93b4c5ee33f529c2e7e6037d68bbf30e210836c1b8c2600b91afb3046c
 arch/x86/include/asm/x86_init.h	GPL-2.0	efa82303f6428b802e19e98ff327d04dbd8a486c254288a7503b3b5db83f47f3
 arch/x86/include/uapi/asm/auxvec.h	GPL-2.0 WITH Linux-syscall-note	da5d1b557176a2b5df3c76749608c68f76cbb19f823265258f90d12f4cdf5446
 arch/x86/include/uapi/asm/bitsperlong.h	GPL-2.0 WITH Linux-syscall-note	8ef5efeb3f25ae47ce03ba892f5caf77631b1257715fc12de72c21e61db17e43
@@ -174,6 +175,7 @@ include/asm-generic/iomap.h	GPL-2.0	0486f7b160dbda5771f198d0bc02ed88ce7221a07781
 include/asm-generic/kmap_size.h	GPL-2.0	a598fac6d8e12108d3aac7a028fa35e2d546e67e0df381ef0893910f749587f1
 include/asm-generic/kprobes.h	GPL-2.0	489d8f9e5dc1279ee64c5ba099f055260a780b2ce435157649b4f3ada5050f33
 include/asm-generic/local64.h	GPL-2.0	46cbdfa06cac054803640d4d121cde7ab6131c9bd79d6f27adc17a67f35e0737
+include/asm-generic/mcs_spinlock.h	GPL-2.0-only (untagged, per Linux COPYING)	bfafb7e03a1021bcee9ddca405db3fc7fb204ee462145f802ccb75a3eb170600
 include/asm-generic/memory_model.h	GPL-2.0	950e6130b0aae12a508f3be25ff1d2b2dc9649b9dc2b45f6ecb92c8bc523c613
 include/asm-generic/mmiowb.h	GPL-2.0	a3c29901be50ed7aef6c26ce8505e0a881189728913a4b02c8829b8f78aa793b
 include/asm-generic/module.h	GPL-2.0	faf3c7acfed4e2d2ef20ed2dd6a9cb265020000717be1f5d2d80e39936bb954a
@@ -281,6 +283,7 @@ include/linux/dynamic_queue_limits.h	GPL-2.0	411f7ee98f224fb23186dcfed7f8d20a72a
 include/linux/elf.h	GPL-2.0	ca735899fd2c19c7d387f6a361d54878b3feff287ab025295f215f606e9f5e3e
 include/linux/energy_model.h	GPL-2.0	48eeab266493e24a077e5dca9717ef7eaa2d53162d360ee6925cd99f204c0cb4
 include/linux/err.h	GPL-2.0	39cb4711c8d97ad37d3bfdacc99e758140eb90cc8f73eca69a3c1bd0d584c10b
+include/linux/errname.h	GPL-2.0	2e427a1cc938fcb369157a781e4986249d9244fb288b83178aba47bc6862a919
 include/linux/errno.h	GPL-2.0	e49469284a3014e6cbca27f852a75e4e540818d38b33edff7eb2c4fe8dd268c6
 include/linux/error-injection.h	GPL-2.0	ac8e661b257ba4d90fc66c49deb89396101711563449685a4722437172a0308d
 include/linux/errseq.h	GPL-2.0	c22d636d1eb4f5812ab7150751869979b34f073475e5a78a42dbee3e75e99a17
@@ -516,6 +519,7 @@ include/linux/scatterlist.h	GPL-2.0	a99c1e67fc4765ed6deb1d86bc0ac323d807ad96ff21
 include/linux/sched.h	GPL-2.0	b6990cb89f8a3cf9bad5e4ee5430abee0dedd05cc6d13f3ee263bf088a33a2b6
 include/linux/sched/coredump.h	GPL-2.0	208c7673ba59a6675ae353a4e59e61ec2cda731d61effa682b11ca7d52e6b224
 include/linux/sched/cpufreq.h	GPL-2.0	4bcfad3bb863714c8b7cddc56fd8adcfb45b7d5660f52dd150ba87de4b831bc5
+include/linux/sched/debug.h	GPL-2.0	ac1e7bb49dd2c4eb1d17f0d3a78e9827a814cb46ea69575d35984cdab6497498
 include/linux/sched/ext.h	GPL-2.0	dece24c6f704c8d068ad3b3e683edaac81f9a3ad22d1a533b528064690d843a7
 include/linux/sched/idle.h	GPL-2.0	f323fb3c2c157012d8be3aa24b65a53650deeb8e7e7e55310f2fd1c90f928bcd
 include/linux/sched/jobctl.h	GPL-2.0	a75580ee0688850fdccdb862f4996e4b355b406d77a63803a34a036d0bea41c6
@@ -596,6 +600,7 @@ include/linux/trace_clock.h	GPL-2.0	061587b1de8a3e681b6d6d4c983cd0e5e00859413c97
 include/linux/trace_printk.h	GPL-2.0	889c4238f2cd0e9283447d0b2757baf3854c052c961d2c55783e20b2dff0d439
 include/linux/trace_recursion.h	GPL-2.0	dadb1ef4d5809bc4dbf7983a720b5d7831c07335fb81f37ee027508e036df0ff
 include/linux/tracepoint-defs.h	GPL-2.0	95c648ae6bf9155abf96d39632ae1d27624fe2d72e09f257749edf30dd0cbb0b
+include/linux/tracepoint.h	GPL-2.0-only	1b84fc141650c8c00104b9a6b1ef6259f71f2272576deaa35e8eeb032923a284
 include/linux/typecheck.h	GPL-2.0	a456610ba55e62234f7c830d6017d3bd17b3c97397b9e5eb009b758da13aa878
 include/linux/types.h	GPL-2.0	a03b3d471b24744121f708d536649d93beede2e7990864e7d2c452b3583ec9e2
 include/linux/u64_stats_sync.h	GPL-2.0	9c2d9a1e3b25b648e5c6a5e0f65d0fa0212e02c0da5e5186ba2d8d4926245b05
@@ -694,6 +699,9 @@ include/net/snmp.h	GPL-2.0-or-later	6969cde1e8c458d8b799a488e9c0069eb2d5aa68f55e
 include/net/sock.h	GPL-2.0-or-later	9a64c84487d0d369ac98918dc039e3991b561aa54f37f36584d14b29c1cda8a0
 include/net/tcp_states.h	GPL-2.0-or-later	8a41dab66aa79bd0b185da5bbb9b4c72ad7f3efb11bf75d894a80f4273f9766c
 include/net/timewait_sock.h	GPL-2.0-or-later	1af0f59306a678196f2a713aa3d3e4a02d4c6b6a96639ee80bcd78be43226919
+include/trace/define_trace.h	GPL-2.0	40e1178cf2e1e53952358928814e5960207c5fe6346107ea701a0e1e48630990
+include/trace/events/lock.h	GPL-2.0	444f5f07cb09ef562f721c917d3d2ed80377db3894c2d08c71caea87ea63d969
+include/trace/events/napi.h	GPL-2.0	f592dcc3862e58e2d0bc5519dfef9649f1b8722e7401316b0ea94f5c470f9082
 include/uapi/asm-generic/bitsperlong.h	GPL-2.0 WITH Linux-syscall-note	fa25db88dc972820b72f8baf9cea6f39ca7f5bd0cf39182089409f6676fa90b6
 include/uapi/asm-generic/errno-base.h	GPL-2.0 WITH Linux-syscall-note	2c148e92b8318deeb767fabd60822113e575ee664ff09a1873aed8f7a495793c
 include/uapi/asm-generic/errno.h	GPL-2.0 WITH Linux-syscall-note	fb7b5a504015f3a9074c641e7371b250d867d751d90e4a22a8ac17fced3d50af
@@ -824,5 +832,20 @@ include/vdso/time.h	GPL-2.0	d40b62cfecc09799273dc366662d994698eb00e0917057977794
 include/vdso/time32.h	GPL-2.0	3ba3cd73b09102bae2888f1434057163b2bba8ae7cef49ec7aed840edaae7e23
 include/vdso/time64.h	GPL-2.0	7bea2fb74771207f25d0d7659867388c65b74479e0aa7903c4ad0c7e8fac5834
 include/vdso/unaligned.h	GPL-2.0	05fc4b17cc6db5aae3ab23bed11bd47cae124b2d61eb0cdebf860c976015ae34
+kernel/locking/lock_events.h	GPL-2.0	4f68d513943d11f36d106a98247ea9ddec21c836ed843ddca11fc867b85525e1
+kernel/locking/lock_events_list.h	GPL-2.0	2c9e3795b6f28cabdc0ef6d1de7ee057ca3d2748220bbe9fffbcd3ce79814834
+kernel/locking/mcs_spinlock.h	GPL-2.0	23304f8d07dadb8202598f7b2eeab6b55a986a4335a5233491fc21d6bbe71d0a
+kernel/locking/qrwlock.c	GPL-2.0-or-later	7aa2cc6bd888b691aeaa536389d3e4ad6a686c540779327ec228d276477d2cc0
+kernel/locking/qspinlock.c	GPL-2.0-or-later	aa6e2ada2e72561517122e8bef9e6c3ca02cdbe1e45552d1faa122d8a6f41dd1
+kernel/locking/qspinlock.h	GPL-2.0-or-later	f5f8150ac21a56e5957b77f53b3b7c913422c29ba8b97beb93b1ecfafe4bd631
+kernel/locking/qspinlock_stat.h	GPL-2.0-or-later	3645587cbe86f11da9ad03d1a800c6aabfb4f957f0f060de06c67131c70965b5
+kernel/locking/spinlock.c	GPL-2.0	09941766a9ec02e07e3bc07b0b10b92154288a6dfe5a0c11cab2a45993dbea69
 lib/bsearch.c	GPL-2.0-only	9805ada1512a0d89f486899229b493ed80388a18ee4fe4ccf347a47f1245eb0e
+lib/ctype.c	GPL-2.0	1675d7654e76e66979b031d05570f73438f1f3808fca8c6f1d51274181ad2d59
+lib/dynamic_queue_limits.c	GPL-2.0	2bb535c97068e2e210a5d17451b06a3ff0681f30b967a0a982adce589a6b669a
+lib/errname.c	GPL-2.0	14f855c60e73b31a11fca27cfe151ba56d1ccf1743ebdc8af230a42231fefe15
+lib/find_bit.c	GPL-2.0-or-later	5d9a03505728d024e52462662252c127545b0629ff2f7006e4d494372d30459d
+lib/hexdump.c	GPL-2.0-only	140a2d3793e01a5a80f6b8e23b24256a5072ab4edf0e69796944d61cb65baa87
+lib/list_debug.c	GPL-2.0-only (untagged, per Linux COPYING)	b2414258f6f0459f8d3559c24699d9ccf0eedae57a8ad893f6797e7ed8699986
 lib/sort.c	GPL-2.0	170c3d659431e12106045d72228e0998006a7b5f7e1be6737ef2658554f870b6
+lib/string.c	GPL-2.0	031f6380fe1f5677acfb335e32984d151caaca99612584023c96be2c45ce38e8

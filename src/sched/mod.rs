@@ -95,6 +95,9 @@ pub struct Thread {
     pub syscall_arg: AtomicU64,
     /// Wait queue the thread last blocked on (state dumps).
     pub wchan: AtomicU64,
+    /// LinuxKPI: this thread's Linux `task_struct` shadow (null until Linux
+    /// code first asks for `current`).
+    pub linux_task: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
 }
 
 unsafe impl Send for Thread {}
@@ -365,6 +368,7 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         syscall: AtomicU64::new(u64::MAX),
         syscall_arg: AtomicU64::new(0),
         wchan: AtomicU64::new(0),
+        linux_task: core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t
@@ -684,6 +688,10 @@ pub fn timer_tick() {
     }
     run_timers(crate::time::nanos());
     let pc = cpu::this();
+    #[cfg(feature = "linuxkpi")]
+    if pc.cpu_id == 0 {
+        crate::linuxkpi::tick();
+    }
     let cur = pc.current.load(Ordering::SeqCst) as *const Thread;
     if cur.is_null() {
         return;

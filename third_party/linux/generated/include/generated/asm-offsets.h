@@ -32,7 +32,7 @@
 #define CPUINFO_x86_capability 48 /* offsetof(struct cpuinfo_x86, x86_capability) */
 #define CPUINFO_x86_vendor_id 144 /* offsetof(struct cpuinfo_x86, x86_vendor_id) */
 
-#define TASK_threadsp 2176 /* offsetof(struct task_struct, thread.sp) */
+#define TASK_threadsp 2208 /* offsetof(struct task_struct, thread.sp) */
 
 #define pbe_address 0 /* offsetof(struct pbe, address) */
 #define pbe_orig_address 8 /* offsetof(struct pbe, orig_address) */

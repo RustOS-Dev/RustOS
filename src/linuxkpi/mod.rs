@@ -1,11 +1,19 @@
 //! LinuxKPI: Linux kernel APIs for drivers compiled from Linux sources
 //! (`third_party/linux`, pinned in `third_party/linux/VERSION`). The C side
-//! is built by `build/linuxkpi.rs`; see docs/ROADMAP-ROUND4.md for the
-//! design.
+//! (`src/linuxkpi/c`, built by `build/linuxkpi.rs`) implements the Linux
+//! API on top of the services in this module. Design:
+//! docs/ROADMAP-ROUND4.md §4.
 
+pub mod mm;
 pub mod sched;
 
-use core::ffi::{c_int, c_void};
+use core::ffi::{CStr, c_char, c_int, c_void};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Linux version the imported sources come from.
+pub const LINUX_VERSION: &str = "6.18.54";
+
+static READY: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "C" {
     /// lib/sort.c
@@ -16,14 +24,11 @@ unsafe extern "C" {
         cmp: Option<unsafe extern "C" fn(*const c_void, *const c_void) -> c_int>,
         swap: Option<unsafe extern "C" fn(*mut c_void, *mut c_void, c_int)>,
     );
-    /// lib/bsearch.c
-    fn bsearch(
-        key: *const c_void,
-        base: *const c_void,
-        num: usize,
-        size: usize,
-        cmp: Option<unsafe extern "C" fn(*const c_void, *const c_void) -> c_int>,
-    ) -> *mut c_void;
+    fn kpi_mm_init() -> c_int;
+    fn kpi_percpu_init() -> c_int;
+    fn kpi_workqueues_init() -> c_int;
+    fn kpi_selftest() -> c_int;
+    fn kpi_jiffies_update();
 }
 
 unsafe extern "C" fn cmp_u32(a: *const c_void, b: *const c_void) -> c_int {
@@ -31,31 +36,100 @@ unsafe extern "C" fn cmp_u32(a: *const c_void, b: *const c_void) -> c_int {
     a.cmp(&b) as c_int
 }
 
-/// Linux version the imported sources come from.
-pub const LINUX_VERSION: &str = "6.18.54";
-
-/// Boot-time check that code compiled from Linux is linked and callable.
+/// Set up LinuxKPI before Linux drivers probe: memory, per-CPU areas, the
+/// softirq thread and workqueues, then a self-test of the primitives.
 pub fn init() {
     let mut v: [u32; 8] = [42, 7, 19, 3, 88, 1, 56, 23];
-    unsafe {
-        sort(v.as_mut_ptr().cast(), v.len(), 4, Some(cmp_u32), None);
+    unsafe { sort(v.as_mut_ptr().cast(), v.len(), 4, Some(cmp_u32), None) };
+    if !v.windows(2).all(|w| w[0] <= w[1]) {
+        crate::println!("[linuxkpi] Linux sort() gave a wrong result; LinuxKPI disabled");
+        return;
     }
-    let sorted = v.windows(2).all(|w| w[0] <= w[1]);
-    let key = 56u32;
-    let hit = unsafe {
-        bsearch(
-            (&key as *const u32).cast(),
-            v.as_ptr().cast(),
-            v.len(),
-            4,
-            Some(cmp_u32),
-        )
-    };
-    let found = !hit.is_null() && unsafe { *(hit as *const u32) } == key;
+    let steps: [(&str, unsafe extern "C" fn() -> c_int); 2] =
+        [("memory", kpi_mm_init), ("per-CPU areas", kpi_percpu_init)];
+    for (what, f) in steps {
+        let r = unsafe { f() };
+        if r != 0 {
+            crate::println!("[linuxkpi] {what} setup failed ({r}); LinuxKPI disabled");
+            return;
+        }
+    }
+    sched::start_softirq();
+    if unsafe { kpi_workqueues_init() } != 0 {
+        crate::println!("[linuxkpi] workqueue setup failed; LinuxKPI disabled");
+        return;
+    }
+    READY.store(true, Ordering::SeqCst);
+    let failed = unsafe { kpi_selftest() };
     crate::println!(
-        "[linuxkpi] Linux {} code linked: sort {}, bsearch {}",
+        "[linuxkpi] Linux {} APIs ready ({} CPUs); self-test {}",
         LINUX_VERSION,
-        if sorted { "ok" } else { "FAILED" },
-        if found { "ok" } else { "FAILED" }
+        crate::arch::x86_64::cpu::cpu_count(),
+        if failed == 0 { "passed" } else { "FAILED" }
     );
+}
+
+/// Whether LinuxKPI initialized (Linux drivers may probe).
+pub fn ready() -> bool {
+    READY.load(Ordering::SeqCst)
+}
+
+/// Timer tick on CPU 0: advance jiffies.
+pub fn tick() {
+    if READY.load(Ordering::Relaxed) {
+        unsafe { kpi_jiffies_update() };
+    }
+}
+
+// --------------------------------------------------------------- logging
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_log(level: c_int, msg: *const u8, len: u64) {
+    let bytes = unsafe { core::slice::from_raw_parts(msg, len as usize) };
+    let text = core::str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
+    // KERN_DEBUG (7) only with linux.debug set in kernel.conf.
+    if level >= 7 && !crate::params::flag("linux.debug") {
+        return;
+    }
+    crate::println!("[linux] {}", text);
+}
+
+fn cstr(p: *const c_char) -> &'static str {
+    if p.is_null() {
+        return "?";
+    }
+    unsafe { CStr::from_ptr(p) }.to_str().unwrap_or("?")
+}
+
+/// Print the return addresses of the caller's stack frames (the kernel is
+/// built with frame pointers).
+#[unsafe(no_mangle)]
+pub extern "C" fn rustos_kpi_backtrace() {
+    let mut rbp: u64;
+    unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp) };
+    crate::println!("[linux] backtrace:");
+    for _ in 0..16 {
+        if rbp < 0xffff_8000_0000_0000 || rbp & 7 != 0 {
+            break;
+        }
+        let ret = unsafe { *((rbp + 8) as *const u64) };
+        crate::println!("[linux]   {:#x}", ret);
+        rbp = unsafe { *(rbp as *const u64) };
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_warn(file: *const c_char, line: c_int) {
+    crate::println!("[linux] WARNING at {}:{}", cstr(file), line);
+    rustos_kpi_backtrace();
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_bug(file: *const c_char, line: c_int) -> ! {
+    panic!("Linux BUG at {}:{}", cstr(file), line);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_panic(msg: *const c_char) -> ! {
+    panic!("{}", cstr(msg));
 }

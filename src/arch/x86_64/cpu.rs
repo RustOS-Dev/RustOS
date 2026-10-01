@@ -34,7 +34,18 @@ pub struct PerCpu {
     pub need_resched: AtomicU32,
     /// Timer ticks handled on this CPU.
     pub ticks: core::sync::atomic::AtomicU64,
+    /// LinuxKPI: this CPU's offset to its copy of Linux per-CPU variables
+    /// (read by C code as `%gs:72`, see src/linuxkpi/include/rustos/percpu-layout.h).
+    pub linux_percpu_offset: core::sync::atomic::AtomicU64,
 }
+
+// Offsets C code reads through GS (src/linuxkpi/include/rustos/percpu-layout.h).
+const _: () = {
+    assert!(core::mem::offset_of!(PerCpu, cpu_id) == 24);
+    assert!(core::mem::offset_of!(PerCpu, preempt_count) == 56);
+    assert!(core::mem::offset_of!(PerCpu, need_resched) == 60);
+    assert!(core::mem::offset_of!(PerCpu, linux_percpu_offset) == 72);
+};
 
 pub const PERCPU_KERNEL_RSP: usize = 8;
 pub const PERCPU_USER_RSP: usize = 16;
@@ -57,6 +68,7 @@ pub fn init(cpu_id: u32, lapic_id: u32, tss: &'static mut TaskStateSegment) -> &
         preempt_count: AtomicU32::new(0),
         need_resched: AtomicU32::new(0),
         ticks: core::sync::atomic::AtomicU64::new(0),
+        linux_percpu_offset: core::sync::atomic::AtomicU64::new(0),
     }));
     pc.self_ptr = pc as *mut PerCpu as u64;
     GsBase::write(VirtAddr::new(pc.self_ptr));

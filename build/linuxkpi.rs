@@ -11,7 +11,8 @@ use std::process::Command;
 use std::sync::Mutex;
 
 /// Cargo feature → groups it compiles.
-const FEATURES: &[(&str, &[&str])] = &[("LINUXKPI", &["proof"]), ("LINUX_E1000", &["e1000"])];
+const FEATURES: &[(&str, &[&str])] =
+    &[("LINUXKPI", &["proof", "kpi"]), ("LINUX_E1000", &["e1000"])];
 
 pub fn build(root: &Path, out: &Path) {
     let mut groups: Vec<&str> = Vec::new();
@@ -43,9 +44,16 @@ pub fn build(root: &Path, out: &Path) {
     let libdir = out.join("linuxkpi");
     std::fs::create_dir_all(&libdir).unwrap();
     let flags = cflags(root);
+    // Objects depend on the flags and on which override headers exist: a
+    // new header in src/linuxkpi/include shadows a Linux one that the old
+    // dependency files still name.
     let stamp = {
         let mut h = DefaultHasher::new();
         flags.hash(&mut h);
+        let mut overrides = Vec::new();
+        list_files(&root.join("src/linuxkpi/include"), &mut overrides);
+        overrides.sort();
+        overrides.hash(&mut h);
         format!("{:016x}", h.finish())
     };
     for g in groups {
@@ -59,6 +67,20 @@ pub fn build(root: &Path, out: &Path) {
         println!("cargo:rustc-link-lib=static:+whole-archive=linuxkpi_{g}");
     }
     println!("cargo:rustc-link-search=native={}", libdir.display());
+}
+
+fn list_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            list_files(&p, out);
+        } else {
+            out.push(p);
+        }
+    }
 }
 
 fn check_clang(clang: &str) {

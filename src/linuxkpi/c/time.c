@@ -1,0 +1,493 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * LinuxKPI time: jiffies, timer_list and workqueues.
+ *
+ * Timers are RustOS one-shot timers whose callbacks run in the LinuxKPI
+ * softirq thread. A timer_list stores its RustOS handle in entry.next and
+ * is pending while entry.pprev is non-NULL (what timer_pending() tests).
+ * A firing whose handle no longer matches (cancelled or re-armed after it
+ * was queued) is ignored; timer_delete_sync() waits while the callback of
+ * that timer is running.
+ *
+ * Workqueues have their own worker threads. One lock covers every queue,
+ * and running work items are tracked so cancel_work_sync()/flush_work()
+ * can wait for them.
+ */
+#include <linux/jiffies.h>
+#include <linux/sched.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/timer.h>
+#include <linux/workqueue.h>
+#include "kpi.h"
+
+/* x86_64 Linux makes jiffies an alias of jiffies_64 in its linker script. */
+u64 jiffies_64 __cacheline_aligned_in_smp = INITIAL_JIFFIES;
+extern unsigned long volatile jiffies __attribute__((alias("jiffies_64")));
+
+/* Called from the RustOS timer tick on CPU 0. */
+void kpi_jiffies_update(void)
+{
+	WRITE_ONCE(jiffies_64, INITIAL_JIFFIES + rustos_kpi_nanos() / (NSEC_PER_SEC / HZ));
+}
+
+/* ---------------------------------------------------------------- timers */
+
+static DEFINE_RAW_SPINLOCK(kpi_timer_lock);
+static struct timer_list *kpi_running_timer;
+
+static void kpi_timer_fire(void *arg, u64 handle);
+
+void timer_init_key(struct timer_list *timer, void (*func)(struct timer_list *),
+		    unsigned int flags, const char *name, struct lock_class_key *key)
+{
+	timer->entry.pprev = NULL;
+	timer->entry.next = NULL;
+	timer->function = func;
+	timer->flags = flags;
+}
+
+/* Lock held. Returns 1 if the timer was pending. */
+static int kpi_timer_detach(struct timer_list *timer)
+{
+	if (!timer->entry.pprev)
+		return 0;
+	rustos_kpi_timer_cancel((u64)timer->entry.next);
+	timer->entry.pprev = NULL;
+	timer->entry.next = NULL;
+	return 1;
+}
+
+static int kpi_mod_timer(struct timer_list *timer, unsigned long expires, bool pending_only)
+{
+	unsigned long flags;
+	long delta;
+	u64 handle;
+	int was;
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	if (pending_only && !timer->entry.pprev) {
+		raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+		return 0;
+	}
+	was = kpi_timer_detach(timer);
+	timer->expires = expires;
+	delta = (long)(expires - jiffies);
+	if (delta < 0)
+		delta = 0;
+	handle = rustos_kpi_timer_start(rustos_kpi_nanos() + jiffies_to_nsecs(delta),
+					kpi_timer_fire, timer);
+	timer->entry.next = (struct hlist_node *)handle;
+	timer->entry.pprev = &timer->entry.next;
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+	return was;
+}
+
+static void kpi_timer_fire(void *arg, u64 handle)
+{
+	struct timer_list *timer = arg;
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	if (!timer->entry.pprev || (u64)timer->entry.next != handle) {
+		raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+		return;
+	}
+	timer->entry.pprev = NULL;
+	timer->entry.next = NULL;
+	kpi_running_timer = timer;
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+
+	timer->function(timer);
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	kpi_running_timer = NULL;
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+}
+
+int mod_timer(struct timer_list *timer, unsigned long expires)
+{
+	return kpi_mod_timer(timer, expires, false);
+}
+
+int mod_timer_pending(struct timer_list *timer, unsigned long expires)
+{
+	return kpi_mod_timer(timer, expires, true);
+}
+
+int timer_reduce(struct timer_list *timer, unsigned long expires)
+{
+	if (timer_pending(timer) && time_before_eq(timer->expires, expires))
+		return 1;
+	return kpi_mod_timer(timer, expires, false);
+}
+
+void add_timer(struct timer_list *timer)
+{
+	kpi_mod_timer(timer, timer->expires, false);
+}
+
+void add_timer_on(struct timer_list *timer, int cpu)
+{
+	add_timer(timer);
+}
+
+void add_timer_local(struct timer_list *timer)
+{
+	add_timer(timer);
+}
+
+void add_timer_global(struct timer_list *timer)
+{
+	add_timer(timer);
+}
+
+int timer_delete(struct timer_list *timer)
+{
+	unsigned long flags;
+	int was;
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	was = kpi_timer_detach(timer);
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+	return was;
+}
+
+int timer_delete_sync_try(struct timer_list *timer)
+{
+	unsigned long flags;
+	int was;
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	if (kpi_running_timer == timer) {
+		raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+		return -1;
+	}
+	was = kpi_timer_detach(timer);
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+	return was;
+}
+
+int timer_delete_sync(struct timer_list *timer)
+{
+	int was = timer_delete(timer);
+
+	while (READ_ONCE(kpi_running_timer) == timer)
+		rustos_kpi_yield();
+	return was;
+}
+
+int timer_shutdown_sync(struct timer_list *timer)
+{
+	int was = timer_delete_sync(timer);
+
+	timer->function = NULL;
+	return was;
+}
+
+int timer_shutdown(struct timer_list *timer)
+{
+	int was = timer_delete(timer);
+
+	timer->function = NULL;
+	return was;
+}
+
+/* ------------------------------------------------------------ workqueues */
+
+#define KPI_WQ_MAX_WORKERS	4
+#define KPI_MAX_RUNNING		64
+
+struct workqueue_struct {
+	char name[32];
+	unsigned int flags;
+	int nr_workers;
+	struct list_head pending;
+	wait_queue_head_t more;		/* work arrived */
+	wait_queue_head_t idle;		/* a work item finished */
+	int running;
+};
+
+static DEFINE_RAW_SPINLOCK(kpi_wq_lock);
+static struct work_struct *kpi_running_work[KPI_MAX_RUNNING];
+
+struct workqueue_struct *system_wq, *system_percpu_wq, *system_highpri_wq, *system_long_wq,
+	*system_unbound_wq, *system_dfl_wq, *system_freezable_wq, *system_power_efficient_wq,
+	*system_freezable_power_efficient_wq, *system_bh_wq, *system_bh_highpri_wq;
+
+static bool kpi_work_running(struct work_struct *work)
+{
+	for (int i = 0; i < KPI_MAX_RUNNING; i++)
+		if (READ_ONCE(kpi_running_work[i]) == work)
+			return true;
+	return false;
+}
+
+static void kpi_worker(void *arg)
+{
+	struct workqueue_struct *wq = arg;
+	unsigned long flags;
+
+	for (;;) {
+		struct work_struct *work = NULL;
+		int slot;
+
+		wait_event(wq->more, !list_empty(&wq->pending));
+		raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+		if (list_empty(&wq->pending)) {
+			raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+			continue;
+		}
+		work = list_first_entry(&wq->pending, struct work_struct, entry);
+		list_del_init(&work->entry);
+		for (slot = 0; slot < KPI_MAX_RUNNING && kpi_running_work[slot]; slot++)
+			;
+		if (slot < KPI_MAX_RUNNING)
+			kpi_running_work[slot] = work;
+		clear_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work));
+		wq->running++;
+		raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+
+		work->func(work);
+
+		raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+		if (slot < KPI_MAX_RUNNING)
+			kpi_running_work[slot] = NULL;
+		wq->running--;
+		raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+		wake_up_all(&wq->idle);
+	}
+}
+
+struct workqueue_struct *alloc_workqueue_noprof(const char *fmt, unsigned int flags,
+						 int max_active, ...)
+{
+	struct workqueue_struct *wq = kzalloc(sizeof(*wq), GFP_KERNEL);
+	va_list ap;
+
+	if (!wq)
+		return NULL;
+	va_start(ap, max_active);
+	vsnprintf(wq->name, sizeof(wq->name), fmt, ap);
+	va_end(ap);
+	wq->flags = flags;
+	INIT_LIST_HEAD(&wq->pending);
+	init_waitqueue_head(&wq->more);
+	init_waitqueue_head(&wq->idle);
+	wq->nr_workers = (flags & __WQ_ORDERED) || max_active == 1 ? 1 : KPI_WQ_MAX_WORKERS;
+	for (int i = 0; i < wq->nr_workers; i++)
+		rustos_kpi_spawn(kpi_worker, wq, wq->name);
+	return wq;
+}
+
+void destroy_workqueue(struct workqueue_struct *wq)
+{
+	__flush_workqueue(wq);
+	/* The workers stay parked on the empty queue; the struct leaks. */
+}
+
+static void kpi_queue(struct workqueue_struct *wq, struct work_struct *work)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+	list_add_tail(&work->entry, &wq->pending);
+	raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+	wake_up(&wq->more);
+}
+
+bool queue_work_on(int cpu, struct workqueue_struct *wq, struct work_struct *work)
+{
+	if (test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))
+		return false;
+	kpi_queue(wq, work);
+	return true;
+}
+
+bool queue_work_node(int node, struct workqueue_struct *wq, struct work_struct *work)
+{
+	return queue_work_on(WORK_CPU_UNBOUND, wq, work);
+}
+
+void delayed_work_timer_fn(struct timer_list *t)
+{
+	struct delayed_work *dwork = timer_container_of(dwork, t, timer);
+
+	kpi_queue(dwork->wq, &dwork->work);
+}
+
+bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq, struct delayed_work *dwork,
+			   unsigned long delay)
+{
+	if (test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&dwork->work)))
+		return false;
+	dwork->wq = wq;
+	dwork->cpu = cpu;
+	if (!delay) {
+		kpi_queue(wq, &dwork->work);
+		return true;
+	}
+	mod_timer(&dwork->timer, jiffies + delay);
+	return true;
+}
+
+/* Remove a queued work item. Returns true if it was pending. */
+static bool kpi_cancel(struct work_struct *work)
+{
+	unsigned long flags;
+	bool was;
+
+	raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+	if (!list_empty(&work->entry))
+		list_del_init(&work->entry);
+	was = test_and_clear_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work));
+	raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+	return was;
+}
+
+bool mod_delayed_work_on(int cpu, struct workqueue_struct *wq, struct delayed_work *dwork,
+			 unsigned long delay)
+{
+	bool was;
+
+	timer_delete(&dwork->timer);
+	was = kpi_cancel(&dwork->work);
+	queue_delayed_work_on(cpu, wq, dwork, delay);
+	return was;
+}
+
+bool cancel_work(struct work_struct *work)
+{
+	return kpi_cancel(work);
+}
+
+bool cancel_work_sync(struct work_struct *work)
+{
+	bool was = kpi_cancel(work);
+
+	while (kpi_work_running(work))
+		rustos_kpi_yield();
+	return was;
+}
+
+bool cancel_delayed_work(struct delayed_work *dwork)
+{
+	bool t = timer_delete(&dwork->timer);
+
+	return kpi_cancel(&dwork->work) || t;
+}
+
+bool cancel_delayed_work_sync(struct delayed_work *dwork)
+{
+	bool t = timer_delete_sync(&dwork->timer);
+
+	return cancel_work_sync(&dwork->work) || t;
+}
+
+bool flush_work(struct work_struct *work)
+{
+	bool waited = false;
+
+	while (test_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)) || kpi_work_running(work)) {
+		waited = true;
+		rustos_kpi_yield();
+	}
+	return waited;
+}
+
+bool flush_delayed_work(struct delayed_work *dwork)
+{
+	if (timer_delete_sync(&dwork->timer))
+		kpi_queue(dwork->wq, &dwork->work);
+	return flush_work(&dwork->work);
+}
+
+void __flush_workqueue(struct workqueue_struct *wq)
+{
+	wait_event(wq->idle, list_empty(&wq->pending) && READ_ONCE(wq->running) == 0);
+}
+
+void drain_workqueue(struct workqueue_struct *wq)
+{
+	__flush_workqueue(wq);
+}
+
+struct work_struct *current_work(void)
+{
+	return NULL;
+}
+
+int kpi_workqueues_init(void)
+{
+	system_percpu_wq = alloc_workqueue("events", 0, 0);
+	system_wq = system_percpu_wq;
+	system_highpri_wq = alloc_workqueue("events_highpri", WQ_HIGHPRI, 0);
+	system_long_wq = alloc_workqueue("events_long", 0, 0);
+	system_unbound_wq = alloc_workqueue("events_unbound", WQ_UNBOUND, 0);
+	system_dfl_wq = system_unbound_wq;
+	system_freezable_wq = system_percpu_wq;
+	system_power_efficient_wq = system_percpu_wq;
+	system_freezable_power_efficient_wq = system_percpu_wq;
+	system_bh_wq = system_highpri_wq;
+	system_bh_highpri_wq = system_highpri_wq;
+	return system_percpu_wq && system_highpri_wq && system_long_wq && system_unbound_wq ?
+	       0 : -ENOMEM;
+}
+
+/* -------------------------------------------- jiffies conversions (time.c) */
+
+unsigned int jiffies_to_msecs(const unsigned long j)
+{
+	return (MSEC_PER_SEC / HZ) * j;
+}
+
+unsigned int jiffies_to_usecs(const unsigned long j)
+{
+	return (USEC_PER_SEC / HZ) * j;
+}
+
+u64 jiffies64_to_nsecs(u64 j)
+{
+	return j * (NSEC_PER_SEC / HZ);
+}
+
+u64 jiffies64_to_msecs(const u64 j)
+{
+	return j * (MSEC_PER_SEC / HZ);
+}
+
+unsigned long __msecs_to_jiffies(const unsigned int m)
+{
+	if ((int)m < 0)
+		return MAX_JIFFY_OFFSET;
+	return DIV_ROUND_UP(m, MSEC_PER_SEC / HZ);
+}
+
+unsigned long __usecs_to_jiffies(const unsigned int u)
+{
+	if (u > jiffies_to_usecs(MAX_JIFFY_OFFSET))
+		return MAX_JIFFY_OFFSET;
+	return DIV_ROUND_UP(u, USEC_PER_SEC / HZ);
+}
+
+u64 nsecs_to_jiffies64(u64 n)
+{
+	return div_u64(n, NSEC_PER_SEC / HZ);
+}
+
+unsigned long nsecs_to_jiffies(u64 n)
+{
+	return (unsigned long)nsecs_to_jiffies64(n);
+}
+
+clock_t jiffies_to_clock_t(unsigned long x)
+{
+	return x / (HZ / USER_HZ);
+}
+
+void jiffies_to_timespec64(const unsigned long jiffies, struct timespec64 *value)
+{
+	u64 ns = jiffies64_to_nsecs(jiffies);
+
+	value->tv_sec = div_u64_rem(ns, NSEC_PER_SEC, (u32 *)&value->tv_nsec);
+}

@@ -618,6 +618,30 @@ Native Rust work; each item is small.
   - Starts Weston, waits for its ready message, launches `weston-terminal`, types `echo ok` with `sendkey`, and checks a `screendump` region against a reference.
   - Mouse moves via QEMU `mouse_move`.
 
+### 9.3a Target machines for the GPU milestones
+
+The user's desktop (`AriPC`) has two GPUs, and both are supported by Linux 6.18. They set the order of M38 and M39.
+
+| GPU | PCI ID | Linux driver | Identity in 6.18 | Firmware |
+|---|---|---|---|---|
+| AMD Raphael (Ryzen 7000 integrated graphics, RDNA2, 2 CUs) | `1002:164e` | amdgpu | GC 10.3.6, DCN 3.1.5, PSP 13.0.5, SDMA 5.2.6, VCN 3.1.2 | `amdgpu/gc_10_3_6_{ce,pfp,me,mec,mec2,rlc}.bin`, `psp_13_0_5_{toc,ta}.bin`, `sdma_5_2_6.bin`, `dcn_3_1_5_dmcub.bin`, `vcn_3_1_2.bin` |
+| NVIDIA GeForce RTX 5070 (Blackwell) | `10de:2f04` | nouveau | chipset `0x1b5` = `GB205` (`nv1b5_chipset`: `gb202_disp`, `gb202_gsp`, `gb202_fsp`) | GSP-RM **570.144**: `nvidia/gb205/gsp/fmc-570.144.bin`, `bootloader-570.144.bin`, `gsp-570.144.bin` |
+
+**Order:**
+1. **The Raphael iGPU (M38) first.** amdgpu is the most mature open driver, display support for DCN 3.1.5 is complete, and the firmware set is small. A monitor must be connected to the motherboard's video output, and the iGPU enabled in the BIOS.
+2. **The RTX 5070 (M39) after.** Blackwell support in nouveau is recent (GSP-RM 570, a new FSP/FMC boot sequence through `gb202_fsp`, and the reorganised NVD5.0 display engine), so it is likely to need more debugging.
+   - Only GSP-based operation exists for Blackwell, so power management is handled by NVIDIA's firmware.
+   - Whether Mesa's NVK supports GB20x for Vulkan has to be checked against the Mesa release at M41 time.
+
+**Development loop on this machine, with two GPUs:**
+- **nouveau via VFIO:** the host Linux runs its desktop on the Raphael iGPU and passes the RTX 5070 to QEMU running RustOS. This is the classic, well-supported VFIO setup.
+  - Host setup: IOMMU on in the BIOS; `amd_iommu=on iommu=pt`; bind `10de:2f04` and its HDMI audio function to `vfio-pci`.
+  - Run: `qemu-system-x86_64 -machine q35 -device vfio-pci,host=01:00.0,multifunction=on -device vfio-pci,host=01:00.1 ...`.
+  - A nouveau change is tested in about a minute with no reboot of the host.
+- **amdgpu on bare metal**, from the USB stick: passing an AMD *integrated* GPU through to a VM needs its VBIOS extracted from the `VFCT` ACPI table and is fragile.
+  - Optionally the reverse, with the host on the NVIDIA card, if iGPU passthrough works on this board.
+- **Before M38/M39, M35's `efidrm` is the display:** whichever GPU the BIOS chose as primary provides the GOP framebuffer, so RustOS's software desktop (M37) runs on either output.
+
 ### 9.4 M38 — AMD GPUs (amdgpu)
 
 - **Imported:**
@@ -639,7 +663,7 @@ Native Rust work; each item is small.
   - `kernel_fpu_*`, `pci_map_rom`;
   - ACPI `ATIF`/`ATCS`/`ATPX` (`acpi_evaluate_object`), `i2c_adapter` for DDC/AUX, `hwmon` (stub);
   - `mmu_notifier` (needed for userptr: stubbed until needed), `dma_fence` chains.
-- **Targets:** Ryzen APUs (Vega/RDNA2/RDNA3/RDNA3.5 graphics) and Radeon RX 400 → RX 9000 (Polaris/Vega/RDNA1–4).
+- **Targets:** first the user's Raphael iGPU (§9.3a), then Ryzen APUs in general (Vega/RDNA2/RDNA3/RDNA3.5 graphics) and Radeon RX 400 → RX 9000 (Polaris/Vega/RDNA1–4).
   - Southern Islands and Sea Islands (HD 7000/R9 200) need `radeon` or amdgpu's SI/CIK support and are out of scope.
 - **Testing:**
   - The user's AMD machine.

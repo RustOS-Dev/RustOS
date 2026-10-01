@@ -31,6 +31,8 @@ pub fn shutdown() {
 
 /// Probe every bus for devices with drivers (storage, USB, network, ...).
 pub fn probe_all() {
+    #[cfg(feature = "linuxkpi")]
+    crate::linuxkpi::init();
     // Firmware command layouts (cheap; catches encoding regressions in
     // QEMU runs where no Wi-Fi card exists).
     #[cfg(debug_assertions)]

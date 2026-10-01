@@ -38,6 +38,15 @@ jobs:
           RUSTOS_PORTS: "0" # busybox/curl/QuickJS are built by the test job
         run: cargo check
 
+      - name: cargo build --features linuxkpi (Linux C through LinuxKPI)
+        env:
+          RUSTOS_PORTS: "0"
+          RUSTOS_SKIP_USERLAND: "1"
+        run: |
+          clang --version
+          cargo build --features linuxkpi
+          tools/linux-import.py check
+
   fmt:
     name: Formatting
     runs-on: ubuntu-latest

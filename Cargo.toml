@@ -13,6 +13,12 @@ harness = false
 name = "stack_overflow"
 harness = false
 
+[features]
+# LinuxKPI: compile Linux drivers into the kernel (needs clang 15+).
+# See docs/ROADMAP-ROUND4.md.
+linuxkpi = []
+linux-e1000 = ["linuxkpi"]
+
 [dependencies]
 bootloader_api = "0.11"
 spin = "0.9"

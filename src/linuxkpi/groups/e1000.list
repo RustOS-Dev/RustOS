@@ -1,0 +1,5 @@
+# Intel PRO/1000 (8254x), QEMU's -device e1000: the M27 proof driver.
+drivers/net/ethernet/intel/e1000/e1000_main.c
+drivers/net/ethernet/intel/e1000/e1000_hw.c
+drivers/net/ethernet/intel/e1000/e1000_ethtool.c
+drivers/net/ethernet/intel/e1000/e1000_param.c

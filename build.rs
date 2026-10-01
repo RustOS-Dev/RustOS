@@ -4,6 +4,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "build/linuxkpi.rs"]
+mod linuxkpi;
+
 fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -25,6 +28,8 @@ fn main() {
         println!("cargo:rerun-if-changed=crates/{c}/src");
     }
     println!("cargo:rerun-if-env-changed=RUSTOS_SKIP_USERLAND");
+    println!("cargo:rerun-if-changed=build");
+    linuxkpi::build(&manifest_dir, &out_dir);
 
     let cpio = out_dir.join("initramfs.cpio");
     let skip = std::env::var_os("RUSTOS_SKIP_USERLAND").is_some()

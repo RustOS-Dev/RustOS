@@ -1,0 +1,3 @@
+# Pipeline check: self-contained Linux library code called from Rust at boot.
+lib/sort.c
+lib/bsearch.c

@@ -19,6 +19,8 @@ pub mod firmware;
 pub mod fs;
 pub mod initramfs;
 pub mod klog;
+#[cfg(feature = "linuxkpi")]
+pub mod linuxkpi;
 pub mod mm;
 pub mod net;
 pub mod params;

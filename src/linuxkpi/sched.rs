@@ -281,3 +281,9 @@ extern "C" fn rustos_kpi_rcu_synchronize() {
         }
     }
 }
+
+/// Wall-clock time in nanoseconds since the Unix epoch.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_realtime_ns() -> u64 {
+    crate::time::realtime_nanos()
+}

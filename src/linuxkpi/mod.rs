@@ -9,6 +9,7 @@ pub mod mm;
 pub mod net;
 pub mod pci;
 pub mod sched;
+pub mod sysfs;
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +32,9 @@ unsafe extern "C" {
     fn kpi_percpu_init() -> c_int;
     fn kpi_workqueues_init() -> c_int;
     fn kpi_rcu_init() -> c_int;
+    fn kpi_devcore_init() -> c_int;
+    fn kpi_pci_bus_init() -> c_int;
+    fn device_shutdown();
     fn kpi_selftest() -> c_int;
     fn kpi_jiffies_update();
     fn kpi_net_init() -> c_int;
@@ -68,7 +72,15 @@ pub fn init() {
         crate::println!("[linuxkpi] RCU setup failed; LinuxKPI disabled");
         return;
     }
+    if unsafe { kpi_devcore_init() } != 0 {
+        crate::println!("[linuxkpi] device core setup failed; LinuxKPI disabled");
+        return;
+    }
     pci::init();
+    if unsafe { kpi_pci_bus_init() } != 0 {
+        crate::println!("[linuxkpi] PCI bus setup failed; LinuxKPI disabled");
+        return;
+    }
     unsafe { kpi_net_init() };
     READY.store(true, Ordering::SeqCst);
     let failed = unsafe { kpi_selftest() };
@@ -123,6 +135,14 @@ pub fn run_initcalls() {
         }
     }
     unsafe { kpi_netdev_open_pending() };
+}
+
+/// Shut down Linux devices (reboot and power-off): each bus's shutdown
+/// method, in reverse probe order.
+pub fn shutdown() {
+    if ready() {
+        unsafe { device_shutdown() };
+    }
 }
 
 /// Whether LinuxKPI initialized (Linux drivers may probe).

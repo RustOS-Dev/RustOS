@@ -399,3 +399,128 @@ void kfree_const(const void *x)
 {
 	kfree(x);
 }
+
+void *kmemdup_array(const void *src, size_t count, size_t element_size, gfp_t gfp)
+{
+	return kmemdup_noprof(src, size_mul(count, element_size), gfp);
+}
+
+void *__kmalloc_node_track_caller_noprof(DECL_BUCKET_PARAMS(size, b), gfp_t flags, int node,
+					 unsigned long caller)
+{
+	return kpi_kmalloc(size, flags);
+}
+
+/* --------------------------------------------------------- slab caches */
+
+/*
+ * kmem_cache objects come from kmalloc: its size classes are powers of
+ * two aligned to their size, so rounding the object size up to the
+ * requested alignment gives aligned objects.
+ */
+struct kmem_cache {
+	const char *name;
+	unsigned int size;
+	slab_flags_t flags;
+	void (*ctor)(void *);
+};
+
+struct kmem_cache *__kmem_cache_create_args(const char *name, unsigned int object_size,
+					    struct kmem_cache_args *args, slab_flags_t flags)
+{
+	struct kmem_cache *s = kzalloc(sizeof(*s), GFP_KERNEL);
+	unsigned int align = args ? args->align : 0;
+
+	if (!s)
+		return NULL;
+	if (flags & SLAB_HWCACHE_ALIGN)
+		align = max_t(unsigned int, align, L1_CACHE_BYTES);
+	s->name = name;
+	s->size = align ? ALIGN(object_size, align) : object_size;
+	s->flags = flags;
+	s->ctor = args ? args->ctor : NULL;
+	return s;
+}
+
+void kmem_cache_destroy(struct kmem_cache *s)
+{
+	kfree(s);
+}
+
+int kmem_cache_shrink(struct kmem_cache *s)
+{
+	return 0;
+}
+
+void *kmem_cache_alloc_noprof(struct kmem_cache *s, gfp_t flags)
+{
+	void *p = kpi_kmalloc(s->size, s->ctor ? flags & ~__GFP_ZERO : flags);
+
+	if (p && s->ctor)
+		s->ctor(p);
+	return p;
+}
+
+void *kmem_cache_alloc_lru_noprof(struct kmem_cache *s, struct list_lru *lru, gfp_t flags)
+{
+	return kmem_cache_alloc_noprof(s, flags);
+}
+
+void *kmem_cache_alloc_node_noprof(struct kmem_cache *s, gfp_t flags, int node)
+{
+	return kmem_cache_alloc_noprof(s, flags);
+}
+
+void kmem_cache_free(struct kmem_cache *s, void *objp)
+{
+	kfree(objp);
+}
+
+void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
+{
+	for (size_t i = 0; i < size; i++)
+		kfree(p[i]);
+}
+
+/* --------------------------------------------------------- user memory */
+
+unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n)
+{
+	unsigned long left = rustos_kpi_copy_from_user(to, (const void __force *)from, n);
+
+	if (left)
+		memset(to + (n - left), 0, left);
+	return left;
+}
+
+unsigned long _copy_to_user(void __user *to, const void *from, unsigned long n)
+{
+	return rustos_kpi_copy_to_user((void __force *)to, from, n);
+}
+
+void *memdup_user_nul(const void __user *src, size_t len)
+{
+	char *p = kmalloc(len + 1, GFP_KERNEL);
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_user(p, src, len)) {
+		kfree(p);
+		return ERR_PTR(-EFAULT);
+	}
+	p[len] = '\0';
+	return p;
+}
+
+void *memdup_user(const void __user *src, size_t len)
+{
+	void *p = kmalloc(len, GFP_KERNEL);
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_user(p, src, len)) {
+		kfree(p);
+		return ERR_PTR(-EFAULT);
+	}
+	return p;
+}

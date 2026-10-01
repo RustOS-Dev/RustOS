@@ -77,6 +77,20 @@ void rustos_kpi_netdev_rx(u64 handle, const void *data, u32 len);
 void rustos_kpi_netdev_carrier(u64 handle, int on);
 void rustos_kpi_netdev_mtu(u64 handle, u32 mtu);
 
+/* Wall-clock time (src/linuxkpi/sched.rs). */
+u64 rustos_kpi_realtime_ns(void);
+
+/* sysfs (src/linuxkpi/sysfs.rs); paths are relative to /sys. */
+int rustos_kpi_sysfs_mkdir(const char *path);
+int rustos_kpi_sysfs_add_file(const char *path, u32 mode, void *cookie);
+int rustos_kpi_sysfs_add_link(const char *path, const char *target);
+void rustos_kpi_sysfs_remove(const char *path);
+int rustos_kpi_sysfs_rename(const char *old_path, const char *new_path);
+
+/* User memory (src/linuxkpi/mm.rs): return the bytes not copied. */
+unsigned long rustos_kpi_copy_from_user(void *to, const void *from, unsigned long n);
+unsigned long rustos_kpi_copy_to_user(void *to, const void *from, unsigned long n);
+
 /* RCU (src/linuxkpi/sched.rs): wait for a grace period. */
 void rustos_kpi_rcu_synchronize(void);
 

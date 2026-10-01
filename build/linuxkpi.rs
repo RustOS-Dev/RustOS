@@ -11,8 +11,10 @@ use std::process::Command;
 use std::sync::Mutex;
 
 /// Cargo feature → groups it compiles.
-const FEATURES: &[(&str, &[&str])] =
-    &[("LINUXKPI", &["proof", "kpi"]), ("LINUX_E1000", &["e1000"])];
+const FEATURES: &[(&str, &[&str])] = &[
+    ("LINUXKPI", &["proof", "kpi", "base"]),
+    ("LINUX_E1000", &["e1000"]),
+];
 
 pub fn build(root: &Path, out: &Path) {
     let mut groups: Vec<&str> = Vec::new();

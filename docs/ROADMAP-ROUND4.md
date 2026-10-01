@@ -295,8 +295,12 @@ means RustOS lacks it today and M27 adds it.
   - netdev/skb/NAPI.
   - RCU: readers disable preemption, and grace periods come from per-CPU quiescent-state counts (`PerCpu::rcu_qs`, bumped on context switch and on preemptible timer ticks). Also `call_rcu`, `kfree_rcu` and `rcu_barrier`.
   - Firmware: `request_firmware` and its variants on `src/firmware.rs`. A lookup waits up to 60 s after boot for the boot drive to be mounted.
-  - Still to do: SRCU, `ww_mutex`, cdev/anon fds, the `drivers/base` device core, sysfs.
-- [ ] Step 2: RustOS gaps (the list above). Done: the RCU quiescent hook (tick and `schedule()`) and the firmware storage wait. Native drives are now mounted before Linux initcalls run. The `_PIC` fix below came up during step 4.
+  - Device core: `drivers/base` (core, bus, driver, dd, class, devres, platform, component, property, swnode, firmware, faux) with `lib/kobject.c`, `klist`, `idr`/`xarray`, `kstrtox`, `string_helpers`, notifiers and `async`, all imported unmodified.
+  - sysfs: `src/linuxkpi/c/sysfs.c` publishes kobject directories, attributes, groups and links into RustOS's `/sys` registry, which is a new part of `src/vfs/sysfs.rs`. Reads and writes go through Linux `show()`/`store()`.
+  - PCI devices are `device_add`ed under `pci0000:00` and drivers bind through `pci_bus_type` (`/sys/bus/pci/...`). `device_shutdown()` now runs on reboot and power-off.
+  - Also SRCU (Linux's per-CPU lock/unlock counting), rwsems, `kmem_cache`, dynamic per-CPU allocation, and user copies.
+  - Still to do: `call_srcu`, `ww_mutex`, cdev/anon fds, uevents (M36).
+- [ ] Step 2: RustOS gaps (the list above). Done: the RCU quiescent hook (tick and `schedule()`), the firmware storage wait, and the sysfs registration tree. Native drives are now mounted before Linux initcalls run. The `_PIC` fix below came up during step 4.
 - [ ] Tests: the kernel self-test (`src/linuxkpi/c/selftest.c`) stands in for the test-image C module; host unit tests to do.
 
 **Deviations so far:**

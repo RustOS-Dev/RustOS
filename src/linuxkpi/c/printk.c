@@ -8,6 +8,7 @@
  * handles the conversions drivers use, including the %p extensions
  * %pM %pm %pI4 %pi4 %pI6 %pI6c %pa %pad %pe %*ph[CDN] %pV %pS/%ps/%pB.
  */
+#include <linux/ctype.h>
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/netdevice.h>
@@ -489,56 +490,7 @@ void panic(const char *fmt, ...)
 
 /* ------------------------------------------------------- device messages */
 
-const char *dev_driver_string(const struct device *dev)
-{
-	struct device_driver *drv = READ_ONCE(dev->driver);
-
-	if (drv)
-		return drv->name;
-	if (dev->bus)
-		return dev->bus->name;
-	if (dev->class)
-		return dev->class->name;
-	return "";
-}
-
-static void kpi_dev_emit(int level, const struct device *dev, const char *fmt, va_list ap)
-{
-	char prefix[96];
-
-	if (dev)
-		scnprintf(prefix, sizeof(prefix), "%s %s: ", dev_driver_string(dev),
-			  dev_name(dev) ?: "");
-	else
-		scnprintf(prefix, sizeof(prefix), "(NULL device *): ");
-	kpi_emit(level, prefix, fmt, ap);
-}
-
-#define KPI_DEV_LEVEL(name, level)						\
-void name(const struct device *dev, const char *fmt, ...)			\
-{										\
-	va_list ap;								\
-	va_start(ap, fmt);							\
-	kpi_dev_emit(level, dev, fmt, ap);					\
-	va_end(ap);								\
-}
-KPI_DEV_LEVEL(_dev_emerg, LOGLEVEL_EMERG)
-KPI_DEV_LEVEL(_dev_alert, LOGLEVEL_ALERT)
-KPI_DEV_LEVEL(_dev_crit, LOGLEVEL_CRIT)
-KPI_DEV_LEVEL(_dev_err, LOGLEVEL_ERR)
-KPI_DEV_LEVEL(_dev_warn, LOGLEVEL_WARNING)
-KPI_DEV_LEVEL(_dev_notice, LOGLEVEL_NOTICE)
-KPI_DEV_LEVEL(_dev_info, LOGLEVEL_INFO)
-
-void _dev_printk(const char *level, const struct device *dev, const char *fmt, ...)
-{
-	va_list ap;
-	int lvl = kpi_level(&level, LOGLEVEL_DEFAULT);
-
-	va_start(ap, fmt);
-	kpi_dev_emit(lvl, dev, fmt, ap);
-	va_end(ap);
-}
+/* dev_printk() and friends come from drivers/base/core.c. */
 
 static void kpi_netdev_emit(int level, const struct net_device *dev, const char *fmt,
 			    va_list ap)
@@ -580,4 +532,45 @@ void netdev_printk(const char *level, const struct net_device *dev, const char *
 	va_start(ap, fmt);
 	kpi_netdev_emit(lvl, dev, fmt, ap);
 	va_end(ap);
+}
+
+/* --------------------------------------------- simple_strto* (vsprintf.c) */
+
+unsigned long long simple_strtoull(const char *cp, char **endp, unsigned int base)
+{
+	unsigned long long result = 0;
+
+	if (!base)
+		base = (cp[0] == '0' && (cp[1] | 0x20) == 'x' && isxdigit(cp[2])) ? 16 :
+		       cp[0] == '0' ? 8 : 10;
+	if (base == 16 && cp[0] == '0' && (cp[1] | 0x20) == 'x')
+		cp += 2;
+	for (;; cp++) {
+		unsigned int v = isdigit(*cp) ? *cp - '0' :
+				 isxdigit(*cp) ? (*cp | 0x20) - 'a' + 10 : base;
+
+		if (v >= base)
+			break;
+		result = result * base + v;
+	}
+	if (endp)
+		*endp = (char *)cp;
+	return result;
+}
+
+unsigned long simple_strtoul(const char *cp, char **endp, unsigned int base)
+{
+	return simple_strtoull(cp, endp, base);
+}
+
+long long simple_strtoll(const char *cp, char **endp, unsigned int base)
+{
+	if (*cp == '-')
+		return -simple_strtoull(cp + 1, endp, base);
+	return simple_strtoull(cp, endp, base);
+}
+
+long simple_strtol(const char *cp, char **endp, unsigned int base)
+{
+	return simple_strtoll(cp, endp, base);
 }

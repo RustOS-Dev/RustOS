@@ -1,0 +1,33 @@
+# Linux device core (drivers/base): devices, buses, drivers, classes,
+# managed resources (devres), platform devices, components, firmware
+# node properties; with kobjects and klists. Built with the linuxkpi
+# feature: every Linux driver sits on it.
+drivers/base/core.c
+drivers/base/bus.c
+drivers/base/driver.c
+drivers/base/dd.c
+drivers/base/class.c
+drivers/base/devres.c
+drivers/base/platform.c
+drivers/base/component.c
+drivers/base/property.c
+drivers/base/swnode.c
+drivers/base/init.c
+drivers/base/firmware.c
+drivers/base/faux.c
+lib/kobject.c
+lib/klist.c
+# Library code the device core uses.
+lib/devres.c
+lib/string_helpers.c
+lib/cmdline.c
+lib/kstrtox.c
+lib/idr.c
+lib/xarray.c
+lib/radix-tree.c
+kernel/notifier.c
+kernel/async.c
+# LinuxKPI glue for the device core: sysfs into RustOS's /sys, uevents,
+# ACPI/IRQ hooks, resources, init.
+kpi:sysfs.c
+kpi:devcore.c

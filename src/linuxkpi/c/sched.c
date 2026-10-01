@@ -18,6 +18,7 @@
 #include <linux/jiffies.h>
 #include <linux/kthread.h>
 #include <linux/mutex.h>
+#include <linux/rwsem.h>
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/signal.h>
@@ -411,6 +412,144 @@ void __sched mutex_unlock(struct mutex *lock)
 	if (w)
 		wake_up_process(w->task);
 	raw_spin_unlock(&lock->wait_lock);
+}
+
+void *kthread_data(struct task_struct *task)
+{
+	struct kpi_kthread *k = (task->flags & PF_KTHREAD) ? task->worker_private : NULL;
+
+	return k ? k->data : NULL;
+}
+
+/* --------------------------------------------------------------- rwsems */
+
+/* count: the number of readers, or -1 while a writer holds the lock. */
+struct kpi_rwsem_waiter {
+	struct list_head list;
+	struct task_struct *task;
+};
+
+void __init_rwsem(struct rw_semaphore *sem, const char *name, struct lock_class_key *key)
+{
+	atomic_long_set(&sem->count, 0);
+	atomic_long_set(&sem->owner, 0);
+	raw_spin_lock_init(&sem->wait_lock);
+	INIT_LIST_HEAD(&sem->wait_list);
+}
+
+static bool kpi_rwsem_try_read(struct rw_semaphore *sem)
+{
+	long c = atomic_long_read(&sem->count);
+
+	while (c >= 0)
+		if (atomic_long_try_cmpxchg_acquire(&sem->count, &c, c + 1))
+			return true;
+	return false;
+}
+
+static bool kpi_rwsem_try_write(struct rw_semaphore *sem)
+{
+	long zero = 0;
+
+	if (!atomic_long_try_cmpxchg_acquire(&sem->count, &zero, -1))
+		return false;
+	atomic_long_set(&sem->owner, (long)current);
+	return true;
+}
+
+static int kpi_rwsem_lock(struct rw_semaphore *sem, bool (*try)(struct rw_semaphore *),
+			  unsigned int state)
+{
+	struct kpi_rwsem_waiter w;
+
+	might_sleep();
+	for (;;) {
+		if (try(sem))
+			return 0;
+		raw_spin_lock(&sem->wait_lock);
+		w.task = current;
+		list_add_tail(&w.list, &sem->wait_list);
+		set_current_state(state);
+		if (try(sem)) {
+			list_del(&w.list);
+			__set_current_state(TASK_RUNNING);
+			raw_spin_unlock(&sem->wait_lock);
+			return 0;
+		}
+		raw_spin_unlock(&sem->wait_lock);
+		schedule();
+		raw_spin_lock(&sem->wait_lock);
+		list_del(&w.list);
+		raw_spin_unlock(&sem->wait_lock);
+		if (state != TASK_UNINTERRUPTIBLE && signal_pending(current))
+			return -EINTR;
+	}
+}
+
+/* Waiters retry; wake them all when the lock may have become available. */
+static void kpi_rwsem_wake(struct rw_semaphore *sem)
+{
+	struct kpi_rwsem_waiter *w;
+
+	raw_spin_lock(&sem->wait_lock);
+	list_for_each_entry(w, &sem->wait_list, list)
+		wake_up_process(w->task);
+	raw_spin_unlock(&sem->wait_lock);
+}
+
+void __sched down_read(struct rw_semaphore *sem)
+{
+	kpi_rwsem_lock(sem, kpi_rwsem_try_read, TASK_UNINTERRUPTIBLE);
+}
+
+int __sched down_read_interruptible(struct rw_semaphore *sem)
+{
+	return kpi_rwsem_lock(sem, kpi_rwsem_try_read, TASK_INTERRUPTIBLE);
+}
+
+int __sched down_read_killable(struct rw_semaphore *sem)
+{
+	return kpi_rwsem_lock(sem, kpi_rwsem_try_read, TASK_KILLABLE);
+}
+
+int down_read_trylock(struct rw_semaphore *sem)
+{
+	return kpi_rwsem_try_read(sem);
+}
+
+void __sched down_write(struct rw_semaphore *sem)
+{
+	kpi_rwsem_lock(sem, kpi_rwsem_try_write, TASK_UNINTERRUPTIBLE);
+}
+
+int __sched down_write_killable(struct rw_semaphore *sem)
+{
+	return kpi_rwsem_lock(sem, kpi_rwsem_try_write, TASK_KILLABLE);
+}
+
+int down_write_trylock(struct rw_semaphore *sem)
+{
+	return kpi_rwsem_try_write(sem);
+}
+
+void up_read(struct rw_semaphore *sem)
+{
+	if (atomic_long_dec_return_release(&sem->count) == 0)
+		kpi_rwsem_wake(sem);
+}
+
+void up_write(struct rw_semaphore *sem)
+{
+	atomic_long_set(&sem->owner, 0);
+	atomic_long_set_release(&sem->count, 0);
+	kpi_rwsem_wake(sem);
+}
+
+void downgrade_write(struct rw_semaphore *sem)
+{
+	atomic_long_set(&sem->owner, 0);
+	atomic_long_set_release(&sem->count, 1);
+	kpi_rwsem_wake(sem);
 }
 
 /* ---------------------------------------------------------- completions */

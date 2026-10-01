@@ -3,8 +3,9 @@
  * LinuxKPI PCI, interrupts and DMA.
  *
  * A struct pci_dev is created for every device in the RustOS PCI list
- * (src/linuxkpi/pci.rs). __pci_register_driver() matches the driver's ID
- * table against devices nobody has bound yet and calls probe() directly.
+ * (src/linuxkpi/pci.rs) and added to the device core under pci0000:00, so
+ * it appears in /sys/bus/pci; pci_register_driver() registers a driver
+ * with the bus, which matches ID tables and probes.
  *
  * Linux IRQ numbers for PCI devices are KPI_IRQ_BASE + device index;
  * request_irq() routes the device's INTx (through ACPI _PRT) or MSI to a
@@ -28,14 +29,12 @@
 struct kpi_pci_dev {
 	struct pci_dev pdev;
 	u32 idx;
-	bool bound;
 };
 
 static struct kpi_pci_dev *kpi_pci[KPI_MAX_PCI];
 static u32 kpi_pci_n;
 static DEFINE_MUTEX(kpi_pci_lock);
 
-const struct bus_type pci_bus_type = { .name = "pci" };
 
 static u32 kpi_idx(const struct pci_dev *dev)
 {
@@ -318,6 +317,13 @@ static const struct pci_device_id *kpi_pci_match(const struct pci_device_id *ids
 	return NULL;
 }
 
+static struct device *kpi_pci_root;
+
+/* PCI devices are never hot-removed: nothing to free. */
+static void kpi_pci_release(struct device *dev)
+{
+}
+
 static struct kpi_pci_dev *kpi_pci_create(u32 idx)
 {
 	struct kpi_pci_info info;
@@ -350,9 +356,11 @@ static struct kpi_pci_dev *kpi_pci_create(u32 idx)
 	dev->dma_mask = DMA_BIT_MASK(32);
 	dev->dev.dma_mask = &dev->dma_mask;
 	dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
+	device_initialize(&dev->dev);
 	dev->dev.bus = &pci_bus_type;
-	dev->dev.init_name = kasprintf(GFP_KERNEL, "%04x:%02x:%02x.%d", info.segment,
-				       info.bus, info.dev, info.func);
+	dev->dev.parent = kpi_pci_root;
+	dev->dev.release = kpi_pci_release;
+	dev_set_name(&dev->dev, "%04x:%02x:%02x.%d", info.segment, info.bus, info.dev, info.func);
 	for (int i = 0; i < PCI_STD_NUM_BARS; i++) {
 		struct resource *r = &dev->resource[i];
 
@@ -381,73 +389,138 @@ static struct kpi_pci_dev *kpi_pci_create(u32 idx)
 	return k;
 }
 
-static void kpi_pci_scan(void)
+/* ------------------------------------------------------------- the bus */
+
+static int kpi_pci_bus_match(struct device *dev, const struct device_driver *drv)
+{
+	return kpi_pci_match(to_pci_driver(drv)->id_table, to_pci_dev(dev)) != NULL;
+}
+
+static int kpi_pci_bus_probe(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct pci_driver *drv = to_pci_driver(dev->driver);
+	const struct pci_device_id *id = kpi_pci_match(drv->id_table, pdev);
+	int err;
+
+	if (!id)
+		return -ENODEV;
+	pdev->driver = drv;
+	err = drv->probe(pdev, id);
+	if (err)
+		pdev->driver = NULL;
+	return err;
+}
+
+static void kpi_pci_bus_remove(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+
+	if (pdev->driver && pdev->driver->remove)
+		pdev->driver->remove(pdev);
+	pdev->driver = NULL;
+}
+
+static void kpi_pci_bus_shutdown(struct device *dev)
+{
+	struct pci_dev *pdev = to_pci_dev(dev);
+
+	if (pdev->driver && pdev->driver->shutdown)
+		pdev->driver->shutdown(pdev);
+}
+
+static int kpi_pci_bus_uevent(const struct device *dev, struct kobj_uevent_env *env)
+{
+	const struct pci_dev *pdev = to_pci_dev(dev);
+
+	if (add_uevent_var(env, "PCI_CLASS=%04X", pdev->class) ||
+	    add_uevent_var(env, "PCI_ID=%04X:%04X", pdev->vendor, pdev->device) ||
+	    add_uevent_var(env, "PCI_SUBSYS_ID=%04X:%04X", pdev->subsystem_vendor,
+			   pdev->subsystem_device) ||
+	    add_uevent_var(env, "PCI_SLOT_NAME=%s", pci_name(pdev)))
+		return -ENOMEM;
+	return add_uevent_var(env, "MODALIAS=pci:v%08Xd%08Xsv%08Xsd%08Xbc%02Xsc%02Xi%02X",
+			      pdev->vendor, pdev->device, pdev->subsystem_vendor,
+			      pdev->subsystem_device, (u8)(pdev->class >> 16),
+			      (u8)(pdev->class >> 8), (u8)pdev->class);
+}
+
+#define KPI_PCI_ATTR(field, fmt)						static ssize_t field##_show(struct device *dev, struct device_attribute *attr,				    char *buf)						{											return sysfs_emit(buf, fmt, to_pci_dev(dev)->field);			}										static DEVICE_ATTR_RO(field)
+KPI_PCI_ATTR(vendor, "0x%04x\n");
+KPI_PCI_ATTR(device, "0x%04x\n");
+KPI_PCI_ATTR(subsystem_vendor, "0x%04x\n");
+KPI_PCI_ATTR(subsystem_device, "0x%04x\n");
+KPI_PCI_ATTR(revision, "0x%02x\n");
+KPI_PCI_ATTR(class, "0x%06x\n");
+KPI_PCI_ATTR(irq, "%u\n");
+
+static struct attribute *kpi_pci_dev_attrs[] = {
+	&dev_attr_vendor.attr, &dev_attr_device.attr, &dev_attr_subsystem_vendor.attr,
+	&dev_attr_subsystem_device.attr, &dev_attr_revision.attr, &dev_attr_class.attr,
+	&dev_attr_irq.attr, NULL,
+};
+ATTRIBUTE_GROUPS(kpi_pci_dev);
+
+const struct bus_type pci_bus_type = {
+	.name = "pci",
+	.match = kpi_pci_bus_match,
+	.probe = kpi_pci_bus_probe,
+	.remove = kpi_pci_bus_remove,
+	.shutdown = kpi_pci_bus_shutdown,
+	.uevent = kpi_pci_bus_uevent,
+	.dev_groups = kpi_pci_dev_groups,
+};
+
+/* Register the PCI bus and add every PCI device to the device core. */
+int kpi_pci_bus_init(void)
 {
 	u32 n = rustos_kpi_pci_count();
+	int err = bus_register(&pci_bus_type);
 
-	for (; kpi_pci_n < n && kpi_pci_n < KPI_MAX_PCI; kpi_pci_n++)
-		kpi_pci[kpi_pci_n] = kpi_pci_create(kpi_pci_n);
+	if (err)
+		return err;
+	kpi_pci_root = root_device_register("pci0000:00");
+	if (IS_ERR(kpi_pci_root))
+		return PTR_ERR(kpi_pci_root);
+	for (; kpi_pci_n < n && kpi_pci_n < KPI_MAX_PCI; kpi_pci_n++) {
+		struct kpi_pci_dev *k = kpi_pci_create(kpi_pci_n);
+
+		kpi_pci[kpi_pci_n] = k;
+		if (k && device_add(&k->pdev.dev))
+			dev_warn(&k->pdev.dev, "cannot add to the device core\n");
+	}
+	return 0;
 }
 
 int __pci_register_driver(struct pci_driver *drv, struct module *owner, const char *mod_name)
 {
+	int err;
+
 	drv->driver.name = drv->name;
+	drv->driver.bus = &pci_bus_type;
 	drv->driver.owner = owner;
 	drv->driver.mod_name = mod_name;
-	mutex_lock(&kpi_pci_lock);
-	kpi_pci_scan();
-	for (u32 i = 0; i < kpi_pci_n; i++) {
-		struct kpi_pci_dev *k = kpi_pci[i];
-		const struct pci_device_id *id;
-		int err;
-
-		if (!k || k->bound)
-			continue;
-		id = kpi_pci_match(drv->id_table, &k->pdev);
-		if (!id)
-			continue;
-		k->pdev.dev.driver = &drv->driver;
-		k->pdev.driver = drv;
-		err = drv->probe(&k->pdev, id);
-		if (err) {
-			dev_warn(&k->pdev.dev, "probe failed: %d\n", err);
-			k->pdev.dev.driver = NULL;
-			k->pdev.driver = NULL;
-		} else {
-			k->bound = true;
-		}
-	}
-	mutex_unlock(&kpi_pci_lock);
+	err = driver_register(&drv->driver);
 	kpi_netdev_open_pending();
-	return 0;
+	return err;
 }
 
 void pci_unregister_driver(struct pci_driver *drv)
 {
-	mutex_lock(&kpi_pci_lock);
-	for (u32 i = 0; i < kpi_pci_n; i++) {
-		struct kpi_pci_dev *k = kpi_pci[i];
-
-		if (k && k->bound && k->pdev.driver == drv) {
-			if (drv->remove)
-				drv->remove(&k->pdev);
-			k->bound = false;
-			k->pdev.driver = NULL;
-			k->pdev.dev.driver = NULL;
-		}
-	}
-	mutex_unlock(&kpi_pci_lock);
+	driver_unregister(&drv->driver);
 }
 
-/* Shut down every bound device (RustOS reboot/power-off path). */
-void kpi_pci_shutdown_all(void)
+struct pci_dev *pci_dev_get(struct pci_dev *dev)
 {
-	for (u32 i = 0; i < kpi_pci_n; i++) {
-		struct kpi_pci_dev *k = kpi_pci[i];
+	if (dev)
+		get_device(&dev->dev);
+	return dev;
+}
 
-		if (k && k->bound && k->pdev.driver && k->pdev.driver->shutdown)
-			k->pdev.driver->shutdown(&k->pdev);
-	}
+void pci_dev_put(struct pci_dev *dev)
+{
+	if (dev)
+		put_device(&dev->dev);
 }
 
 /* ------------------------------------------------------------------- MSI */

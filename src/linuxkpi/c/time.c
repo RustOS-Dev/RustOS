@@ -14,6 +14,8 @@
  * can wait for them.
  */
 #include <linux/jiffies.h>
+#include <linux/ktime.h>
+#include <linux/timekeeping.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
@@ -490,4 +492,72 @@ void jiffies_to_timespec64(const unsigned long jiffies, struct timespec64 *value
 	u64 ns = jiffies64_to_nsecs(jiffies);
 
 	value->tv_sec = div_u64_rem(ns, NSEC_PER_SEC, (u32 *)&value->tv_nsec);
+}
+
+/* ----------------------------------------------------------- timekeeping */
+
+ktime_t ktime_get(void)
+{
+	return rustos_kpi_nanos();
+}
+
+ktime_t ktime_get_raw(void)
+{
+	return rustos_kpi_nanos();
+}
+
+ktime_t ktime_get_with_offset(enum tk_offsets offs)
+{
+	/* Boot time and TAI are taken as monotonic (no suspend, no leap seconds). */
+	return offs == TK_OFFS_REAL ? rustos_kpi_realtime_ns() : rustos_kpi_nanos();
+}
+
+ktime_t ktime_get_coarse_with_offset(enum tk_offsets offs)
+{
+	return ktime_get_with_offset(offs);
+}
+
+u64 ktime_get_mono_fast_ns(void)
+{
+	return rustos_kpi_nanos();
+}
+
+u64 ktime_get_raw_fast_ns(void)
+{
+	return rustos_kpi_nanos();
+}
+
+u64 ktime_get_boot_fast_ns(void)
+{
+	return rustos_kpi_nanos();
+}
+
+u64 ktime_get_real_fast_ns(void)
+{
+	return rustos_kpi_realtime_ns();
+}
+
+void ktime_get_ts64(struct timespec64 *ts)
+{
+	*ts = ns_to_timespec64(rustos_kpi_nanos());
+}
+
+void ktime_get_real_ts64(struct timespec64 *ts)
+{
+	*ts = ns_to_timespec64(rustos_kpi_realtime_ns());
+}
+
+time64_t ktime_get_seconds(void)
+{
+	return rustos_kpi_nanos() / NSEC_PER_SEC;
+}
+
+time64_t ktime_get_real_seconds(void)
+{
+	return rustos_kpi_realtime_ns() / NSEC_PER_SEC;
+}
+
+/* Every workqueue runs its items on its own threads; nothing to tune. */
+void workqueue_set_min_active(struct workqueue_struct *wq, int min_active)
+{
 }

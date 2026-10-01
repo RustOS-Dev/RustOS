@@ -1,4 +1,6 @@
-//! /sys: a read-only view of devices, generated on lookup.
+//! /sys: a view of devices. Most nodes are generated on lookup; drivers
+//! can also register directories, attribute files and symlinks (LinuxKPI
+//! publishes the Linux device model here), which appear alongside.
 //!
 //! * `class/net/<iface>/` — address, operstate, carrier, mtu, speed, type,
 //!   ifindex, driver, wireless status and `statistics/*` counters.
@@ -28,7 +30,9 @@ impl FileSystem for SysFs {
         "sysfs"
     }
     fn read_only(&self) -> bool {
-        true
+        // Registered attribute files may be writable; everything else
+        // refuses writes itself.
+        false
     }
 }
 
@@ -36,6 +40,145 @@ impl FileSystem for SysFs {
 enum Node {
     Dir(Vec<(String, FileType)>),
     File(String),
+    Attr(Arc<dyn Attr>),
+    Link(String),
+}
+
+// ------------------------------------------------------------ registry
+
+/// A registered attribute file: read with `show`, written with `store`.
+pub trait Attr: Send + Sync {
+    fn show(&self) -> KResult<Vec<u8>>;
+    fn store(&self, _data: &[u8]) -> KResult<usize> {
+        Err(EACCES)
+    }
+    /// Permission bits.
+    fn mode(&self) -> u32 {
+        0o444
+    }
+    /// Called once the file is unregistered: returns when no show/store
+    /// call is running any more and none will start.
+    fn drain(&self) {}
+}
+
+enum Reg {
+    Dir,
+    File(Arc<dyn Attr>),
+    Link(String),
+}
+
+/// Registered nodes by path relative to /sys ("devices/platform").
+static REG: crate::sync::RwLock<alloc::collections::BTreeMap<String, Reg>> =
+    crate::sync::RwLock::new(alloc::collections::BTreeMap::new());
+
+fn reg_key(path: &str) -> String {
+    path.trim_matches('/').into()
+}
+
+fn reg_insert(path: &str, r: Reg) -> KResult<()> {
+    let key = reg_key(path);
+    let mut reg = REG.write();
+    if key.is_empty() || reg.contains_key(&key) {
+        return Err(EEXIST);
+    }
+    reg.insert(key, r);
+    Ok(())
+}
+
+/// Register a directory.
+pub fn add_dir(path: &str) -> KResult<()> {
+    reg_insert(path, Reg::Dir)
+}
+
+/// Register an attribute file.
+pub fn add_file(path: &str, attr: Arc<dyn Attr>) -> KResult<()> {
+    reg_insert(path, Reg::File(attr))
+}
+
+/// Register a symlink to `target` (an absolute path).
+pub fn add_link(path: &str, target: &str) -> KResult<()> {
+    reg_insert(path, Reg::Link(target.into()))
+}
+
+/// Unregister `path` and everything below it. Attribute files are drained
+/// before this returns.
+pub fn remove(path: &str) {
+    let key = reg_key(path);
+    let prefix = format!("{key}/");
+    let removed: Vec<Reg> = {
+        let mut reg = REG.write();
+        let below: Vec<String> = reg
+            .range(prefix.clone()..)
+            .take_while(|(k, _)| k.starts_with(&prefix))
+            .map(|(k, _)| k.clone())
+            .collect();
+        below
+            .iter()
+            .chain(core::iter::once(&key))
+            .filter_map(|k| reg.remove(k))
+            .collect()
+    };
+    for r in removed {
+        if let Reg::File(a) = r {
+            a.drain();
+        }
+    }
+}
+
+/// Move `old` and everything below it to `new`.
+pub fn rename(old: &str, new: &str) -> KResult<()> {
+    let (old, new) = (reg_key(old), reg_key(new));
+    let prefix = format!("{old}/");
+    let mut reg = REG.write();
+    if !reg.contains_key(&old) {
+        return Err(ENOENT);
+    }
+    if reg.contains_key(&new) {
+        return Err(EEXIST);
+    }
+    let keys: Vec<String> = core::iter::once(old.clone())
+        .chain(
+            reg.range(prefix.clone()..)
+                .take_while(|(k, _)| k.starts_with(&prefix))
+                .map(|(k, _)| k.clone()),
+        )
+        .collect();
+    for k in keys {
+        if let Some(v) = reg.remove(&k) {
+            reg.insert(format!("{new}{}", &k[old.len()..]), v);
+        }
+    }
+    Ok(())
+}
+
+/// Registered entries directly below `key`.
+fn reg_children(key: &str) -> Vec<(String, FileType)> {
+    let prefix = if key.is_empty() {
+        String::new()
+    } else {
+        format!("{key}/")
+    };
+    REG.read()
+        .range(prefix.clone()..)
+        .take_while(|(k, _)| k.starts_with(&prefix))
+        .filter(|(k, _)| !k[prefix.len()..].contains('/'))
+        .map(|(k, r)| {
+            let kind = match r {
+                Reg::Dir => FileType::Directory,
+                Reg::File(_) => FileType::Regular,
+                Reg::Link(_) => FileType::Symlink,
+            };
+            (k[prefix.len()..].into(), kind)
+        })
+        .collect()
+}
+
+fn reg_node(key: &str) -> Option<Node> {
+    match REG.read().get(key)? {
+        Reg::Dir => Some(Node::Dir(Vec::new())),
+        Reg::File(a) => Some(Node::Attr(a.clone())),
+        Reg::Link(t) => Some(Node::Link(t.clone())),
+    }
 }
 
 fn dir(names: &[&str]) -> Node {
@@ -222,7 +365,7 @@ fn block_node(rest: &[&str]) -> Option<Node> {
     }
 }
 
-fn resolve(path: &str) -> Option<Node> {
+fn generated(path: &str) -> Option<Node> {
     let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
     match parts.as_slice() {
         [] => Some(dir(&["block", "class", "devices"])),
@@ -245,6 +388,25 @@ fn resolve(path: &str) -> Option<Node> {
     }
 }
 
+fn resolve(path: &str) -> Option<Node> {
+    let key = reg_key(path);
+    let node = match generated(&key) {
+        Some(n) => n,
+        None => reg_node(&key)?,
+    };
+    Some(match node {
+        Node::Dir(mut entries) => {
+            for (name, kind) in reg_children(&key) {
+                if !entries.iter().any(|(n, _)| *n == name) {
+                    entries.push((name, kind));
+                }
+            }
+            Node::Dir(entries)
+        }
+        n => n,
+    })
+}
+
 struct SysNode(String);
 
 impl Inode for SysNode {
@@ -252,6 +414,9 @@ impl Inode for SysNode {
         let (kind, mode, size) = match resolve(&self.0).ok_or(ENOENT)? {
             Node::Dir(_) => (FileType::Directory, 0o555, 0),
             Node::File(s) => (FileType::Regular, 0o444, s.len() as u64),
+            // Linux reports a page for attribute files.
+            Node::Attr(a) => (FileType::Regular, a.mode() & 0o777, 4096),
+            Node::Link(t) => (FileType::Symlink, 0o777, t.len() as u64),
         };
         let mut m = Metadata::new(kind, mode);
         m.size = size;
@@ -281,10 +446,13 @@ impl Inode for SysNode {
     }
 
     fn read_at(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
-        let Node::File(s) = resolve(&self.0).ok_or(ENOENT)? else {
-            return Err(EISDIR);
+        let data = match resolve(&self.0).ok_or(ENOENT)? {
+            Node::File(s) => s.into_bytes(),
+            Node::Attr(a) => a.show()?,
+            Node::Link(_) => return Err(EINVAL),
+            Node::Dir(_) => return Err(EISDIR),
         };
-        let b = s.as_bytes();
+        let b = &data[..];
         let off = off as usize;
         if off >= b.len() {
             return Ok(0);
@@ -292,6 +460,30 @@ impl Inode for SysNode {
         let n = buf.len().min(b.len() - off);
         buf[..n].copy_from_slice(&b[off..off + n]);
         Ok(n)
+    }
+
+    fn write_at(&self, off: u64, buf: &[u8]) -> KResult<usize> {
+        match resolve(&self.0).ok_or(ENOENT)? {
+            // Like sysfs, a store sees the whole write from offset 0.
+            Node::Attr(a) if off == 0 => a.store(buf),
+            Node::Attr(_) => Ok(0),
+            Node::Dir(_) => Err(EISDIR),
+            _ => Err(EACCES),
+        }
+    }
+
+    fn truncate(&self, _size: u64) -> KResult<()> {
+        match resolve(&self.0).ok_or(ENOENT)? {
+            Node::Attr(_) => Ok(()),
+            _ => Err(EACCES),
+        }
+    }
+
+    fn readlink(&self) -> KResult<String> {
+        match resolve(&self.0).ok_or(ENOENT)? {
+            Node::Link(t) => Ok(t),
+            _ => Err(EINVAL),
+        }
     }
 
     fn fs_id(&self) -> usize {

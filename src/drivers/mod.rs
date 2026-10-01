@@ -25,6 +25,8 @@ pub fn shutdown() {
     crate::vfs::finish_all();
     crate::block::sync_all();
     block::nvme::shutdown_all();
+    #[cfg(feature = "linuxkpi")]
+    crate::linuxkpi::shutdown();
     crate::net::shutdown_devices();
     crate::usb::shutdown();
 }

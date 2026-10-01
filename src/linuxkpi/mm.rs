@@ -105,3 +105,24 @@ extern "C" fn rustos_kpi_ioremap(phys: u64, size: u64, _wc: i32) -> *mut u8 {
 extern "C" fn rustos_kpi_iounmap(_addr: *mut u8) {
     // map_mmio has no unmap yet: the mapping stays (M27.2 gap).
 }
+
+/// Copy `n` bytes from user address `from`. Returns the bytes not copied
+/// (all of them if the range is not mapped readable in the current process).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_copy_from_user(to: *mut u8, from: u64, n: usize) -> usize {
+    let dst = unsafe { core::slice::from_raw_parts_mut(to, n) };
+    match crate::process::uaccess::copy_from_user(dst, from) {
+        Ok(()) => 0,
+        Err(_) => n,
+    }
+}
+
+/// Copy `n` bytes to user address `to`. Returns the bytes not copied.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_copy_to_user(to: u64, from: *const u8, n: usize) -> usize {
+    let src = unsafe { core::slice::from_raw_parts(from, n) };
+    match crate::process::uaccess::copy_to_user(to, src) {
+        Ok(()) => 0,
+        Err(_) => n,
+    }
+}

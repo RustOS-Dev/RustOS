@@ -96,6 +96,11 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
   - `request_firmware()` and its variants read from RustOS's firmware search path (`src/firmware.rs`).
   - Until a minute after boot, a lookup that misses waits for the boot drive to be mounted, because USB sticks enumerate late.
   - `request_firmware_nowait()` runs on `system_long_wq`.
+- **Device core and sysfs.**
+  - Linux's `drivers/base` runs unmodified, so bus matching, probing, devres, classes and platform devices behave as in Linux.
+  - Its sysfs calls go through `c/sysfs.c` into RustOS's `/sys` registry. kobject directories, attributes, groups and links appear in `/sys`, and reads and writes call the Linux `show()`/`store()` methods. Removal waits for running calls.
+  - PCI devices are added under `/sys/devices/pci0000:00` and bound through `pci_bus_type`.
+  - Uevents are dropped until netlink uevents arrive (M36).
 - **Initcalls.** Linux `module_init`/`*_initcall` entries are renamed into
   `kpi_initcall_<level>` sections. They run in level order after the native
   drivers have probed (`src/drivers/mod.rs`).

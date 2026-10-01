@@ -24,3 +24,9 @@ wait # $
 send dmesg | grep "e1000: eth0" | cat
 wait NIC Link is Up 1000 Mbps Full Duplex
 wait # $
+send ls /sys/bus/pci/drivers/e1000; cat /sys/bus/pci/devices/0000:00:02.0/vendor /sys/bus/pci/devices/0000:00:02.0/device
+wait 0x100e
+wait # $
+send readlink /sys/bus/pci/devices/0000:00:02.0/driver
+wait /sys/bus/pci/drivers/e1000
+wait # $

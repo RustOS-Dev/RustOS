@@ -5,7 +5,8 @@
 #   ./write_to_drive.sh --drive /dev/sdX
 #
 # Requirements:
-#   - cargo + Rust nightly toolchain
+#   - rustup (the nightly pinned in rust-toolchain.toml is installed and used
+#     even when another cargo comes first in PATH)
 #   - dd (coreutils), lsblk, sfdisk, sgdisk, mkfs.fat
 #   - Root privileges (or write access to the target drive)
 
@@ -29,10 +30,12 @@ reload_partition_table() {
     local device="$1"
     if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 0 ]]; then
         sudo blockdev --rereadpt "$device" || true
-        sudo partprobe "$device" || true
+        sudo partx -u "$device" 2>/dev/null || true
+        if command -v partprobe &>/dev/null; then sudo partprobe "$device" || true; fi
     else
         blockdev --rereadpt "$device" || true
-        partprobe "$device" || true
+        partx -u "$device" 2>/dev/null || true
+        if command -v partprobe &>/dev/null; then partprobe "$device" || true; fi
     fi
 }
 
@@ -67,6 +70,39 @@ resolve_source_dir() {
         git clone --quiet --branch "$branch" "$repo" "$src" >&2
     fi
     echo "$src"
+}
+
+# Run cargo from the nightly pinned in rust-toolchain.toml. A cargo that is
+# not that toolchain (a distro package, or rustup's stable) ignores the
+# [unstable] table in .cargo/config.toml and cannot build the kernel.
+pinned_cargo() {
+    local src="$1" toolchain
+    toolchain="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$src/rust-toolchain.toml")"
+    if [[ -z "$toolchain" ]]; then
+        echo "Error: no toolchain channel in $src/rust-toolchain.toml." >&2
+        exit 1
+    fi
+    if ! command -v rustup &>/dev/null; then
+        echo "Error: rustup is required to build RustOS (it uses $toolchain)." >&2
+        if command -v cargo &>/dev/null; then
+            echo "The cargo in PATH ($(command -v cargo), $(cargo -V 2>/dev/null)) cannot build it." >&2
+        fi
+        echo "Install rustup from https://rustup.rs and re-run this script." >&2
+        exit 1
+    fi
+    if ! rustup run "$toolchain" cargo -V &>/dev/null; then
+        echo "Installing Rust toolchain $toolchain (from rust-toolchain.toml)..." >&2
+        (cd "$src" && rustup toolchain install) >&2 ||
+            rustup toolchain install "$toolchain" --profile minimal \
+                --component rust-src --component llvm-tools \
+                --target x86_64-unknown-none >&2
+    fi
+    # Put the toolchain's own binaries first so that cargo, the rustc it
+    # runs and the nested cargo builds in build.rs all come from it.
+    local bin
+    bin="$(dirname "$(rustup which --toolchain "$toolchain" cargo)")"
+    export PATH="$bin:$PATH" RUSTUP_TOOLCHAIN="$toolchain"
+    CARGO_CMD=("$bin/cargo")
 }
 
 # Last chance to back out before the drive is overwritten. Reads the answer
@@ -353,7 +389,7 @@ main() {
     # ---------------------------------------------------------------------------
     # Tool checks
     # ---------------------------------------------------------------------------
-    for tool in cargo lsblk sfdisk mkfs.fat find; do
+    for tool in lsblk sfdisk mkfs.fat find; do
         if ! command -v "$tool" &>/dev/null; then
             echo "Error: required tool '$tool' is not installed." >&2
             exit 1
@@ -365,12 +401,13 @@ main() {
     # ---------------------------------------------------------------------------
     SCRIPT_DIR="$(resolve_source_dir)"
     cd "$SCRIPT_DIR"
+    pinned_cargo "$SCRIPT_DIR"
 
     echo "Updating submodules to pinned repository commits..."
     git submodule update --init --recursive
 
     echo "Building kernel (release)..."
-    cargo build --release
+    "${CARGO_CMD[@]}" build --release
 
     KERNEL_ELF=$(find "$SCRIPT_DIR/target" -path "*/release/rustos" -not -name "*.d" | head -1)
     if [[ -z "$KERNEL_ELF" || ! -f "$KERNEL_ELF" ]]; then
@@ -380,7 +417,7 @@ main() {
 
     IMG_FILE="$SCRIPT_DIR/rustos-local.img"
     echo "Creating local UEFI disk image: $IMG_FILE"
-    (cd "$SCRIPT_DIR/crates/create-image" && cargo run --release -- "$KERNEL_ELF" "$IMG_FILE")
+    (cd "$SCRIPT_DIR/crates/create-image" && "${CARGO_CMD[@]}" run --release -- "$KERNEL_ELF" "$IMG_FILE")
 
     # ---------------------------------------------------------------------------
     # Flash
@@ -411,6 +448,10 @@ main() {
     sleep 1
 
     PTTYPE=$(lsblk -dn -o PTTYPE "$DRIVE" | tr -d '[:space:]')
+    if [[ -z "$PTTYPE" ]]; then
+        # lsblk gets this from udev; read the disk itself when udev has not caught up.
+        PTTYPE=$(run_as_root blkid -p -o value -s PTTYPE "$DRIVE" 2>/dev/null | tr -d '[:space:]' || true)
+    fi
     if [[ -z "$PTTYPE" ]]; then
         echo "Error: could not detect partition table type on '$DRIVE' after flashing." >&2
         exit 1

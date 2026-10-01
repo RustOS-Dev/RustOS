@@ -129,24 +129,26 @@ Round 3 deviations so far:
 
 ### Round 4 (planned)
 
-Detailed plan: [ROADMAP-ROUND4.md](ROADMAP-ROUND4.md).
+Detailed plan: [ROADMAP-ROUND4.md](ROADMAP-ROUND4.md). RustOS is
+GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
+(Linux 6.18 LTS) instead of being rewritten.
 
-- [ ] **M27** Wi-Fi driver framework: shared 802.11 layer, per-chip hardware trait, simulated radio and software AP for CI
-- [ ] **M28** MediaTek MT7921/MT7921K (RZ608)/MT7922 PCIe Wi-Fi
-- [ ] **M29** MT7921AU USB Wi-Fi and MediaTek Bluetooth firmware (btmtk)
-- [ ] **M30** Older Intel Wi-Fi: AX200/AX201, 9000, 8000, 7000 series
-- [ ] **M31** USB Wi-Fi adapters: MT7612U, MT7601U, AR9271, Realtek rtw88 USB
-- [ ] **M32** Realtek PCIe Wi-Fi: rtw88 (8821CE/8822CE), then rtw89
-- [ ] **M33** Ethernet: RTL8152/8153/8156 and ASIX USB adapters; igb, alx, tg3, RTL8126, atlantic
-- [ ] **M34** I2C HID touchpads (DesignWare I2C, ACPI GPIO), SDHCI and Realtek card readers, USB serial, UVC webcams, Realtek Bluetooth
-- [ ] **M35** DRM/KMS uAPI on the firmware framebuffer; bochs and virtio-gpu drivers
-- [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, dma-buf/sync_file, uevents, VT switching, kernel FPU, ALSA uAPI
-- [ ] **M37** C++ runtime, meson/cmake cross builds, Wayland stack, Weston software-rendered desktop
-- [ ] **M38** LinuxKPI: Linux DRM drivers compiled from C, proven with virtio-gpu in QEMU
-- [ ] **M39** AMD GPUs (amdgpu): display, then command submission and power management
-- [ ] **M40** NVIDIA GPUs (nouveau, GSP firmware on Turing and newer)
-- [ ] **M41** Mesa: radeonsi/RADV, NVK, zink, EGL/GBM
-- [ ] **M42** Desktop environments: Weston, then labwc/Sway, Xwayland, GTK, Qt/KDE
+- [ ] **M27** LinuxKPI foundation: import tooling, C build, shim core (tasks, locking, RCU, timers, workqueues, memory/`struct page`, IRQ, DMA, PCI, firmware, cdev, device model); Linux e1000 in QEMU
+- [ ] **M28** Linux networking glue (netdev, skb, NAPI, netlink, AF_PACKET, crypto subset), cfg80211 + mac80211, wpa_supplicant/hostapd, `mac80211_hwsim` CI
+- [ ] **M29** MediaTek MT7921/MT7921K (RZ608)/MT7922 PCIe via Linux mt76
+- [ ] **M30** LinuxKPI USB core, xHCI isochronous IN, Linux usbnet in QEMU, MT7921AU, MediaTek Bluetooth firmware
+- [ ] **M31** Wi-Fi coverage: iwlwifi (all), rtw88, rtw89, mt76 family, mt7601u, ath9k/ath9k_htc, ath10k/11k/12k, brcmfmac
+- [ ] **M32** Ethernet coverage: r8152, usbnet family, igb, alx, tg3, atlantic, Linux r8169/e1000e/igc
+- [ ] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware
+- [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
+- [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
+- [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU
+- [ ] **M37** C++ runtime, Wayland stack, software-rendered Weston desktop
+- [ ] **M38** AMD GPUs (amdgpu): display, rendering, power
+- [ ] **M39** NVIDIA GPUs (nouveau, GSP firmware)
+- [ ] **M40** Intel GPUs (i915, xe)
+- [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
+- [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
 
 ## Context
 
@@ -279,7 +281,7 @@ Kernel pieces from M2 unblock these; rsh-side work goes to `RustOS-Dev/rsh`, bui
 
 ## Out of scope (stretch list)
 
-WPA-Enterprise, 802.11 AP mode, self-hosting. (GPUs, desktops, more Wi-Fi chips and USB Wi-Fi adapters moved into round 4; HDA audio and Bluetooth were done in round 3.)
+802.11 AP mode, self-hosting, system suspend/resume. (GPUs, desktops, more Wi-Fi chips, USB Wi-Fi adapters and WPA-Enterprise (via wpa_supplicant) moved into round 4; HDA audio and Bluetooth were done in round 3.)
 
 ## Dependency order
 

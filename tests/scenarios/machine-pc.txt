@@ -1,0 +1,11 @@
+wait # $ 240
+send dmesg | grep -c PANIC; dmesg | grep -i aml | head -3
+wait # $
+send dhcp -t 30
+wait leased 10\.0\.2\.15/24 40
+wait # $
+send ping -c 3 -i 0.3 10.0.2.2
+wait 3 received
+wait # $
+send grep -i eth /proc/interrupts
+wait # $

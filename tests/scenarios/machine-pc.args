@@ -1,0 +1,6 @@
+# i440FX "pc" machine instead of q35: different ACPI tables (its AML hit an
+# unimplemented path in the acpi crate and panicked at boot) and an e1000,
+# which has no MSI, so its interrupt is routed through _PRT.
+-machine pc
+-netdev user,id=n0
+-device e1000,netdev=n0

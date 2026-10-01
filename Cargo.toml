@@ -86,3 +86,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.ext4-core]
 opt-level = 3
+
+# acpi 6.1.1 with its AML panics (todo!/panic!/unimplemented!) turned into
+# AmlError::LibUnimplemented: firmware AML it cannot handle must not stop boot.
+[patch.crates-io]
+acpi = { path = "third_party/acpi" }

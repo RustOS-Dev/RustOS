@@ -182,4 +182,18 @@ from real hardware so [docs/HARDWARE.md](docs/HARDWARE.md) stays accurate.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+RustOS is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either **version 2 of the License, or (at your option) any later
+version** (SPDX: `GPL-2.0-or-later`). See [LICENSE](LICENSE) for the GPLv2
+text.
+
+Code from other projects keeps its own licence:
+- `third_party/acpi`: MIT or Apache-2.0.
+- `third_party/musl`: MIT.
+- Code imported from Linux (see [docs/ROADMAP-ROUND4.md](docs/ROADMAP-ROUND4.md)) keeps its SPDX headers, mostly `GPL-2.0-only`, `GPL-2.0 OR MIT` or `MIT`. A kernel that includes `GPL-2.0-only` files is distributed as a whole under GPLv2.
+- The `rsh` shell submodule is a separate program with its own licence.
+
+Firmware files (Intel, MediaTek, AMD, NVIDIA) are not part of this repository.
+`write_to_drive.sh` copies them from the host's `linux-firmware`
+installation, under their own redistribution terms.

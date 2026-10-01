@@ -1,6 +1,7 @@
 [package]
 name = "webclient"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2024"
 description = "HTTP(S) client glue for RustOS programs: sockets + TLS connector, CA bundle, cookies, captive-portal checks"
 

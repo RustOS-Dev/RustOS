@@ -3,7 +3,7 @@ name = "rustos-rt"
 version = "0.2.0"
 edition = "2024"
 description = "Userspace runtime for RustOS: process entry, heap, syscalls, and std-like io/fs/process/net modules"
-license = "MIT OR Apache-2.0"
+license = "GPL-2.0-or-later"
 
 [lib]
 name = "rustos_rt"

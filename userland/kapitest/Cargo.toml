@@ -1,6 +1,7 @@
 [package]
 name = "kapitest"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2024"
 description = "Kernel API self-test: epoll, eventfd, timerfd, signalfd, itimers, futexes, threads, affinity, pty, shared mmap"
 

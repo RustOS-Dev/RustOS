@@ -1,6 +1,7 @@
 [package]
 name = "httpc"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2021"
 description = "no_std HTTP/1.1 client: messages, chunked/gzip bodies, cookies, redirects, forms"
 

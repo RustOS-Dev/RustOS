@@ -1,6 +1,7 @@
 [package]
 name = "rustos"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 authors = ["RustOS Contributors"]
 edition = "2024"
 

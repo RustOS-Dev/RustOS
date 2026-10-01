@@ -1,6 +1,7 @@
 [package]
 name = "paint"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2024"
 description = "Pixel rendering for the graphical browser: fonts, text metrics, image decoding, painting layout fragments into an RGBA canvas, PNG encoding"
 

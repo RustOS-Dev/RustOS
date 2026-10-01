@@ -1,6 +1,7 @@
 [package]
 name = "weburl"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2021"
 description = "no_std URL parsing and resolution (RFC 3986 with browser leniency), percent and form encoding"
 

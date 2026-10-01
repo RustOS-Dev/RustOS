@@ -1,6 +1,7 @@
 [package]
 name = "ext4-core"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2024"
 description = "no_std ext4 building blocks: crc32c/crc16, metadata checksums, htree hashes, jbd2 journal replay and transactions"
 

@@ -1,6 +1,7 @@
 [package]
 name = "bt"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2024"
 description = "no_std Bluetooth host stack pieces: HCI, L2CAP, ATT/GATT, SMP, SDP, HID over GATT and HIDP"
 

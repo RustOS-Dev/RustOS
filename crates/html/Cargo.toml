@@ -1,6 +1,7 @@
 [package]
 name = "html"
 version = "0.1.0"
+license = "GPL-2.0-or-later"
 edition = "2021"
 description = "no_std tolerant HTML tokenizer and tree builder for a text browser"
 

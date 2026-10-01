@@ -1,0 +1,4 @@
+# Services init starts at boot, one name per line (a NAME.conf in
+# /etc/svc or /storage/etc/svc). `svc enable NAME` / `svc disable NAME`
+# keep the list in /storage/etc/svc/enabled, which replaces this file.
+# Nothing is enabled by default.

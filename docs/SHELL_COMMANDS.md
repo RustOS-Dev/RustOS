@@ -65,6 +65,12 @@ Built-ins: `:` `.` `[` `alias` `bg` `break` `cd` (`cd -`) `command`
 `uptime`, `free`/`meminfo`, `uname` (`-a`), `date` (`+FORMAT`), `hostname`,
 `id`, `whoami`, `env`, `which`, `dmesg`, `clear`, `sync`,
 `reboot`, `poweroff`/`shutdown`, `kapitest` (kernel API self-test).
+`ps` and `top` show CPU time (`TIME`), `top` and `uptime` the load
+averages.
+
+| Command | Synopsis |
+|---------|----------|
+| `svc` | `svc list [--json]` · `svc status NAME [--json]` · `svc start\|stop\|restart\|enable\|disable NAME` — services supervised by init; exit status 0, 1 (error) or 3 (unknown service) ([SERVICES.md](SERVICES.md)) |
 
 ## Terminals and users
 

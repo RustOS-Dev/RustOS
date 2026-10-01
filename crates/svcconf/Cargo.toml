@@ -1,0 +1,8 @@
+[package]
+name = "svcconf"
+version = "0.1.0"
+license = "GPL-2.0-or-later"
+edition = "2024"
+description = "no_std service definitions, state file and JSON for init's service manager and the svc tool"
+
+[dependencies]

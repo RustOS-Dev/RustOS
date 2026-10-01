@@ -115,6 +115,8 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   globbing, command substitution, functions, job control) but not fully
   POSIX: integer-only arithmetic, `trap` can only ignore or restore
   signals (no handler commands), no here-strings (`<<<`).
+* The service manager has no readiness notification, socket activation
+  or resource limits (see [SERVICES.md](SERVICES.md)).
 * Virtual consoles other than the visible one keep only their last
   32 KiB of output (replayed when shown); logins are optional and there
   is a single user (root) by default.

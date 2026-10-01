@@ -155,6 +155,7 @@ eDEX-DE desktop shell prerequisites (its system monitor reads `/proc`
 through the Rust `sysinfo` crate; its Services panel drives `svc`):
 
 - [x] CPU-time accounting: per-CPU user/nice/system/idle/irq/softirq ticks, per-thread and per-process utime/stime with reaped children, Linux-format `/proc/stat`, `/proc/[pid]/stat` times, `/proc/uptime` idle, `/proc/loadavg` (5 s fixed-point EWMA), real `getrusage`/`times`/`wait4` rusage and CPU-time clocks (`kapitest cputime`)
+- [x] `svc` service manager: init supervises `/etc/svc/NAME.conf` services (exec, tty, user, restart policy with 1-30 s back-off and give-up, `after=` ordering, env), enabled list on `/storage`, `svc list/status/start/stop/restart/enable/disable` with the `--json` contract, control over a FIFO in `/run/svc` (`svc` scenario, `crates/svcconf` host tests)
 
 ## Context
 

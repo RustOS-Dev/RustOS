@@ -47,8 +47,9 @@ images, canvas), forms, cookies and HTTPS that can log into captive-portal
 Wi-Fi ([docs/BROWSER.md](docs/BROWSER.md), [docs/CSS.md](docs/CSS.md),
 [docs/JAVASCRIPT.md](docs/JAVASCRIPT.md)).
 
-**Userland** — `init`, `sh` (pipes, redirection, variables, globbing,
-command substitution, functions, job control), `rbox` (≈90 coreutils:
+**Userland** — `init` with a service manager (`svc`), `sh` (pipes,
+redirection, variables, globbing, command substitution, functions, job
+control), `rbox` (≈90 coreutils:
 `ls`, `cp`, `grep -E`, `sed`, `find`, `dd`, `sha256sum`, `top`, …), all on
 the `rustos-rt` runtime; four virtual consoles (Alt-F1..F4) and
 pseudo-terminals; optional logins.
@@ -135,6 +136,7 @@ root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 | [docs/JAVASCRIPT.md](docs/JAVASCRIPT.md) | JavaScript in the browser: the `jsd` helper, supported APIs, security model |
 | [docs/PORTING.md](docs/PORTING.md) | musl sysroot, `rustos-cc`, ports (BusyBox, curl, QuickJS) |
 | [docs/SHELL_COMMANDS.md](docs/SHELL_COMMANDS.md) | shell and command reference |
+| [docs/SERVICES.md](docs/SERVICES.md) | init's service manager: service files, restart policies, `svc` and its JSON |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | contributing, debugging |
 
 ## Project structure

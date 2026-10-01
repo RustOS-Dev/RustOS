@@ -41,7 +41,7 @@ initramfs embedded in the kernel image.
 | `src/net/` | network core, sockets, socket syscalls |
 | `src/drivers/` | block, net, wifi, virtio, console, framebuffer, serial, PS/2, RNG |
 | `src/tty.rs`, `src/klog.rs`, `src/time.rs`, `src/firmware.rs`, `src/initramfs.rs` | terminal, kernel log, time, firmware loader, initramfs |
-| `crates/` | host-testable libraries: `wlan`, `usb-desc`, `fat-format`, `netproto` (DHCPv6/RA/portal codecs), `weburl`, `http` (package `httpc`), `nettls` (rustls + RustCrypto provider), `rustos-rt`, `create-image` |
+| `crates/` | host-testable libraries: `wlan`, `usb-desc`, `fat-format`, `netproto` (DHCPv6/RA/portal codecs), `weburl`, `http` (package `httpc`), `nettls` (rustls + RustCrypto provider), `svcconf` (service files and `svc` protocol), `rustos-rt`, `create-image` |
 | `userland/` | init, sh, rbox, nettools, ldso, dynamic-linking tests, root filesystem files |
 
 ## Boot
@@ -60,8 +60,9 @@ initramfs embedded in the kernel image.
    network core, probe all buses (`drivers::probe_all`: storage, NICs,
    Wi-Fi, USB), automount partitions (`/storage`, `/boot/efi`,
    `/mnt/<dev>`), then exec `/sbin/init`.
-4. **init** runs `/etc/rc` (network configuration, Wi-Fi autoconnect) and
-   keeps a login shell on the console.
+4. **init** runs `/etc/rc` (network configuration, Wi-Fi autoconnect),
+   starts and supervises the enabled services (`/etc/svc`, see
+   [SERVICES.md](SERVICES.md)) and keeps a login shell on the console.
 
 ## Memory
 

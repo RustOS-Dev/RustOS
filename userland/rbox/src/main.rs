@@ -17,6 +17,7 @@ mod login;
 mod regex;
 mod bluetooth;
 mod sound;
+mod svc;
 mod sys;
 mod text;
 
@@ -104,6 +105,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("sleep", sys::sleep),
     ("sort", text::sort),
     ("stat", files::stat),
+    ("svc", svc::svc),
     ("sync", sys::sync),
     ("tac", text::tac),
     ("tail", text::tail),

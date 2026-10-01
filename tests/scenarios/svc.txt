@@ -1,0 +1,98 @@
+# Service manager (docs/SERVICES.md): svc list/status/start/stop/restart/
+# enable/disable with JSON output and exit codes, restart=always,
+# back-off giving up, a missing executable, a service on a terminal.
+wait # $ 240
+send svc list
+wait tor\s+stopped\s+no
+wait # $
+send svc list --json
+wait \{"name":"tor","description":"Tor anonymity daemon","enabled":false,"state":"stopped","pid":null,"tty":null\}
+wait # $
+send svc status nosuch; echo rc=$?
+wait unknown service 'nosuch'
+wait rc=3
+wait # $
+# The shipped services are not installed yet: they fail at once.
+send svc start tor; echo rc=$?
+wait /usr/bin/tor: not found
+wait rc=1
+wait # $
+send svc status tor --json
+wait "name":"tor".*"state":"failed","pid":null
+wait # $
+send svc status edex --json
+wait "name":"edex".*"enabled":false.*"tty":"tty1"\}
+wait # $
+# A trivial service: a shell loop writing to its log.
+send printf 'description=Test ticker\nexec=while true; do echo tick; sleep 1; done\nrestart=always\n' > /etc/svc/ticker.conf
+wait # $
+send svc status ticker --json
+wait \{"name":"ticker","description":"Test ticker","enabled":false,"state":"stopped","pid":null,"tty":null\}
+wait # $
+send svc start ticker; echo rc=$?
+wait rc=0
+wait # $
+send svc status ticker --json
+wait "name":"ticker".*"state":"running","pid":\d+,"tty":null
+wait # $
+send sleep 2; grep -c tick /var/log/svc/ticker.log
+wait \r\n[1-9]\d*\r\n
+wait # $
+# restart=always: a killed service comes back with a new pid.
+send P=$(svc status ticker --json | cut -d, -f5 | cut -d: -f2); kill -9 $P; sleep 4; N=$(svc status ticker --json | cut -d, -f5 | cut -d: -f2); svc status ticker --json | grep -q '"state":"running"' && test "$N" != "$P" && echo RESPAWNED
+wait RESPAWNED 30
+wait # $
+send P=$(svc status ticker --json | cut -d, -f5 | cut -d: -f2); svc restart ticker; echo rc=$?; N=$(svc status ticker --json | cut -d, -f5 | cut -d: -f2); test "$N" != "$P" && echo RESTARTED
+wait rc=0
+wait RESTARTED
+wait # $
+send svc stop ticker; echo rc=$?; svc status ticker --json
+wait rc=0
+wait "name":"ticker".*"state":"stopped","pid":null
+wait # $
+# enable/disable edit /storage/etc/svc/enabled.
+send svc enable ticker; echo rc=$?; svc list --json | grep -o '"name":"ticker"[^}]*'; grep -c '^ticker$' /storage/etc/svc/enabled
+wait rc=0
+wait "name":"ticker","description":"Test ticker","enabled":true,"state":"stopped"
+wait \r\n1\r\n
+wait # $
+send svc disable ticker; svc status ticker --json
+wait "name":"ticker".*"enabled":false
+wait # $
+# Back-off: a service failing at once is retried 1, 2, 4, 8 s apart and
+# marked failed at the fifth failure within a minute.
+send printf 'description=Always fails\nexec=false\n' > /etc/svc/crasher.conf; svc start crasher; echo rc=$?
+wait rc=1 30
+wait service crasher failed: 5 failures within 60 s, giving up 60
+send svc status crasher --json
+wait "name":"crasher".*"state":"failed","pid":null
+wait # $
+send grep -c 'crasher: restarting in' /var/log/svc/init.log
+wait \r\n4\r\n
+wait # $
+# A service on a virtual console.
+send printf 'description=Console clock\nexec=while true; do date; sleep 1; done\ntty=tty4\n' > /etc/svc/vtclock.conf; svc start vtclock; echo rc=$?; svc status vtclock --json
+wait rc=0
+wait "name":"vtclock".*"state":"running","pid":\d+,"tty":"tty4"\}
+wait # $
+send svc stop vtclock; svc list | grep vtclock
+wait vtclock\S*\s+stopped
+wait # $
+send rm /etc/svc/ticker.conf /etc/svc/crasher.conf /etc/svc/vtclock.conf; svc list | grep -c -E 'ticker|crasher|vtclock'
+wait \r\n0\r\n
+wait # $
+# Enabled services start at boot in after= order; a service's terminal
+# gets no shell.
+send mkdir -p /storage/etc/svc; printf 'description=Boot dependency\nexec=sleep 1000\n' > /storage/etc/svc/bootdep.conf; printf 'description=Boot ticker\nexec=while true; do sleep 1; done\ntty=tty3\nafter=bootdep\n' > /storage/etc/svc/boottick.conf; svc enable boottick && svc enable bootdep && sync && reboot
+wait # $ 240
+send sleep 2; svc list --json | grep -o '"name":"boot[^}]*'
+wait "name":"bootdep","description":"Boot dependency","enabled":true,"state":"running","pid":\d+,"tty":null
+wait "name":"boottick","description":"Boot ticker","enabled":true,"state":"running","pid":\d+,"tty":"tty3"
+wait # $
+send grep -E 'boot(dep|tick): started|tty3: used' /var/log/svc/init.log | cat
+wait bootdep: started[\s\S]*boottick: started
+wait tty3: used by service boottick, no shell
+wait # $
+send svc stop boottick; svc stop bootdep; rm -r /storage/etc/svc; sync; svc list | grep -c boot
+wait \r\n0\r\n
+wait # $

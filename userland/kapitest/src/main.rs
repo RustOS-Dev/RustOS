@@ -53,6 +53,9 @@ mod nr {
     pub const SOCKETPAIR: usize = 53;
     pub const FSYNC: usize = 74;
     pub const UNLINK: usize = 87;
+    pub const GETRUSAGE: usize = 98;
+    pub const TIMES: usize = 100;
+    pub const CLOCK_GETTIME: usize = 228;
 }
 
 const EAGAIN: isize = -11;
@@ -525,6 +528,198 @@ fn fork_exit(r: &mut Report) {
         w == pid && (st >> 8) & 0xFF == 7,
         format!("wait {} status {:#x}", w, st),
     );
+}
+
+const CLOCK_PROCESS_CPUTIME_ID: usize = 2;
+const CLOCK_THREAD_CPUTIME_ID: usize = 3;
+
+fn clock_ns(id: usize) -> u64 {
+    let mut ts = [0i64; 2];
+    sc(nr::CLOCK_GETTIME, &[id, ts.as_mut_ptr() as usize]);
+    ts[0] as u64 * 1_000_000_000 + ts[1] as u64
+}
+
+/// Spin in user mode for `ms` milliseconds of wall time.
+fn busy(ms: u64) {
+    let end = time::millis() + ms;
+    let mut x = 1u64;
+    while time::millis() < end {
+        for i in 0..200_000u64 {
+            x = core::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(i));
+        }
+    }
+    core::hint::black_box(x);
+}
+
+/// getrusage: (user, system) time in microseconds.
+fn rusage(who: isize) -> (u64, u64) {
+    let mut ru = [0i64; 18];
+    sc(nr::GETRUSAGE, &[who as usize, ru.as_mut_ptr() as usize]);
+    (
+        (ru[0] * 1_000_000 + ru[1]) as u64,
+        (ru[2] * 1_000_000 + ru[3]) as u64,
+    )
+}
+
+/// The numeric fields of a /proc/stat "cpu" line.
+fn cpu_fields(line: &str) -> Option<Vec<u64>> {
+    let v: Vec<u64> = line
+        .split_whitespace()
+        .skip(1)
+        .map(|f| f.parse().ok())
+        .collect::<Option<_>>()?;
+    (v.len() == 10).then_some(v)
+}
+
+fn cputime(r: &mut Report) {
+    let (p0, t0, w0) = (
+        clock_ns(CLOCK_PROCESS_CPUTIME_ID),
+        clock_ns(CLOCK_THREAD_CPUTIME_ID),
+        time::millis(),
+    );
+    let (u0, _) = rusage(0);
+    busy(400);
+    let wall = (time::millis() - w0) * 1_000_000;
+    let (p1, t1) = (
+        clock_ns(CLOCK_PROCESS_CPUTIME_ID),
+        clock_ns(CLOCK_THREAD_CPUTIME_ID),
+    );
+    let (u1, _) = rusage(0);
+    // Another CPU-bound task may share this CPU: ask for a quarter.
+    r.check(
+        "CPU time advances under a busy loop",
+        p1 - p0 >= wall / 4 && p1 - p0 <= wall + 20_000_000 && t1 - t0 >= wall / 4,
+        format!(
+            "process {} ns, thread {} ns, wall {} ns",
+            p1 - p0,
+            t1 - t0,
+            wall
+        ),
+    );
+    r.check(
+        "getrusage(RUSAGE_SELF) user time",
+        u1 - u0 >= wall / 4000,
+        format!("{} -> {} us", u0, u1),
+    );
+    let mut tms = [0u64; 4];
+    sc(nr::TIMES, &[tms.as_mut_ptr() as usize]);
+    r.check("times() user ticks", tms[0] >= 5, format!("{:?}", tms));
+    let stat = rustos_rt::fs::read_to_string("/proc/self/stat").unwrap_or_default();
+    let f: Vec<&str> = stat
+        .rfind(')')
+        .map_or(Vec::new(), |i| stat[i + 2..].split_whitespace().collect());
+    let utime = f.get(11).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    r.check(
+        "/proc/self/stat utime",
+        f.len() == 50 && utime >= 5,
+        format!("{} fields, utime {}", f.len() + 2, utime),
+    );
+
+    // Sleeping takes no CPU time.
+    let s0 = clock_ns(CLOCK_PROCESS_CPUTIME_ID);
+    time::sleep_ms(300);
+    let s1 = clock_ns(CLOCK_PROCESS_CPUTIME_ID);
+    r.check(
+        "sleeping uses no CPU time",
+        s1 - s0 < 50_000_000,
+        format!("{} ns", s1 - s0),
+    );
+
+    // A reaped child's time goes to wait4's rusage and RUSAGE_CHILDREN.
+    let (c0, _) = rusage(-1);
+    let pid = sc(nr::FORK, &[]);
+    if pid == 0 {
+        busy(300);
+        sc(nr::EXIT, &[0]);
+    }
+    let mut st = 0i32;
+    let mut ru = [0i64; 18];
+    sc(
+        nr::WAIT4,
+        &[
+            pid as usize,
+            &mut st as *mut i32 as usize,
+            0,
+            ru.as_mut_ptr() as usize,
+        ],
+    );
+    let (c1, _) = rusage(-1);
+    let child_us = (ru[0] * 1_000_000 + ru[1]) as u64;
+    sc(nr::TIMES, &[tms.as_mut_ptr() as usize]);
+    r.check(
+        "children CPU time (wait4, RUSAGE_CHILDREN, times)",
+        child_us >= 50_000 && c1 - c0 >= child_us && tms[2] >= 5,
+        format!(
+            "wait4 {} us, children {} -> {} us, tms {:?}",
+            child_us, c0, c1, tms
+        ),
+    );
+
+    // /proc/stat: aggregate and per-CPU lines that advance.
+    let read = || rustos_rt::fs::read_to_string("/proc/stat").unwrap_or_default();
+    let a = read();
+    time::sleep_ms(200);
+    let b = read();
+    let total = |s: &str| {
+        s.lines()
+            .next()
+            .filter(|l| l.starts_with("cpu "))
+            .and_then(cpu_fields)
+            .map_or(0, |v| v.iter().sum::<u64>())
+    };
+    let ncpu = b
+        .lines()
+        .filter(|l| l.starts_with("cpu") && !l.starts_with("cpu "))
+        .filter(|l| cpu_fields(l).is_some())
+        .count();
+    let cpus = rustos_rt::fs::read_to_string("/proc/cpuinfo")
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| l.starts_with("processor"))
+        .count();
+    let keys = [
+        "intr ",
+        "ctxt ",
+        "btime ",
+        "processes ",
+        "procs_running ",
+        "procs_blocked ",
+    ];
+    r.check(
+        "/proc/stat parses",
+        total(&a) > 0
+            && total(&b) > total(&a)
+            && ncpu == cpus
+            && keys.iter().all(|k| b.lines().any(|l| l.starts_with(k))),
+        format!(
+            "{} -> {}, {} cpu lines, {} cpus",
+            total(&a),
+            total(&b),
+            ncpu,
+            cpus
+        ),
+    );
+    let up = rustos_rt::fs::read_to_string("/proc/uptime").unwrap_or_default();
+    let idle_ok = up
+        .split_whitespace()
+        .nth(1)
+        .and_then(|v| v.split_once('.'))
+        .and_then(|(i, f)| Some(i.parse::<u64>().ok()? * 100 + f.parse::<u64>().ok()?))
+        .is_some_and(|idle| idle > 0);
+    r.check("/proc/uptime idle time", idle_ok, up.trim().to_string());
+    let la = rustos_rt::fs::read_to_string("/proc/loadavg").unwrap_or_default();
+    let f: Vec<&str> = la.split_whitespace().collect();
+    let ok = f.len() == 5
+        && f[..3].iter().all(|v| {
+            v.split_once('.').is_some_and(|(i, d)| {
+                i.parse::<u64>().is_ok() && d.len() == 2 && d.parse::<u64>().is_ok()
+            })
+        })
+        && f[3].split_once('/').is_some_and(|(a, b)| {
+            a.parse::<u64>().is_ok_and(|a| a >= 1) && b.parse::<u64>().is_ok()
+        })
+        && f[4].parse::<u64>().is_ok();
+    r.check("/proc/loadavg parses", ok, la.trim().to_string());
 }
 
 const PROT_RW: usize = 3;
@@ -1010,7 +1205,7 @@ fn main(args: Vec<String>) -> i32 {
         println!("kapitest: {} passed, {} failed", r.passed, r.failed);
         return (r.failed != 0) as i32;
     }
-    let tests: [(&str, fn(&mut Report)); 11] = [
+    let tests: [(&str, fn(&mut Report)); 12] = [
         ("eventfd", eventfd),
         ("timerfd", timerfd),
         ("epoll", epoll),
@@ -1018,6 +1213,7 @@ fn main(args: Vec<String>) -> i32 {
         ("threads", threads),
         ("sched", scheduling),
         ("process", fork_exit),
+        ("cputime", cputime),
         ("memory", memory),
         ("pty", pty),
         ("wakeups", wakeups),

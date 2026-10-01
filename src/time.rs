@@ -245,7 +245,8 @@ fn sysrq_watchdog() {
     }
 }
 
-fn timer_interrupt(_frame: &mut idt::TrapFrame) {
+fn timer_interrupt(frame: &mut idt::TrapFrame) {
+    crate::sched::cputime::account_tick(frame.from_user());
     let cpu = crate::arch::x86_64::cpu::this();
     cpu.ticks.fetch_add(1, Ordering::Relaxed);
     if cpu.cpu_id == 0 {

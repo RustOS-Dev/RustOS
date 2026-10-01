@@ -392,7 +392,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         EXECVE => proc_::execve(frame, a[0], a[1], a[2]).map(|_| Ret::Frame),
         EXIT => proc_::exit(a[0] as i32),
         EXIT_GROUP => proc_::exit_group(a[0] as i32),
-        WAIT4 => v(proc_::wait4(a[0] as i32, a[1], a[2] as u32)),
+        WAIT4 => v(proc_::wait4(a[0] as i32, a[1], a[2] as u32, a[3])),
         KILL => v(proc_::kill(a[0] as i32, a[1] as u32)),
         TKILL => v(proc_::tkill(a[0], a[1] as u32)),
         TGKILL => v(proc_::tkill(a[1], a[2] as u32)),
@@ -432,14 +432,14 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
             Ok(Ret::Value(0))
         }
         GETRLIMIT | PRLIMIT64 => v(proc_::getrlimit(n, a)),
-        GETRUSAGE => v(proc_::getrusage(a[1])),
+        GETRUSAGE => v(proc_::getrusage(a[0] as i32, a[1])),
         TIMES => v(proc_::times(a[0])),
 
         // Time
         NANOSLEEP => v(misc::nanosleep(a[0], a[1])),
         CLOCK_NANOSLEEP => v(misc::clock_nanosleep(a[0] as u32, a[1] as u32, a[2], a[3])),
         CLOCK_GETTIME => v(misc::clock_gettime(a[0] as u32, a[1])),
-        CLOCK_GETRES => v(misc::clock_getres(a[1])),
+        CLOCK_GETRES => v(misc::clock_getres(a[0] as u32, a[1])),
         GETTIMEOFDAY => v(misc::gettimeofday(a[0])),
         SETTIMEOFDAY => v(misc::settimeofday(a[0])),
         CLOCK_SETTIME => v(misc::clock_settime(a[0] as u32, a[1])),

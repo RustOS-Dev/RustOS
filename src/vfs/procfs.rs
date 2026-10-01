@@ -126,7 +126,9 @@ fn pid_file(pid: u32, f: fn(Option<&Arc<Process>>) -> String) -> Arc<dyn Inode> 
     })
 }
 
-const PID_FILES: [&str; 6] = ["stat", "status", "cmdline", "comm", "maps", "environ"];
+const PID_FILES: [&str; 7] = [
+    "stat", "statm", "status", "cmdline", "comm", "maps", "environ",
+];
 
 impl Inode for ProcDir {
     fn metadata(&self) -> KResult<Metadata> {
@@ -179,6 +181,7 @@ impl Inode for ProcDir {
                     "cmdline" => Ok(pid_file(pid, gen_pid_cmdline)),
                     "comm" => Ok(pid_file(pid, gen_pid_comm)),
                     "maps" => Ok(pid_file(pid, gen_pid_maps)),
+                    "statm" => Ok(pid_file(pid, gen_pid_statm)),
                     "environ" => Ok(pid_file(pid, empty)),
                     "cwd" => Ok(Arc::new(ProcLink(p.cwd.lock().clone()))),
                     "exe" => Ok(Arc::new(ProcLink(p.exe.lock().clone()))),
@@ -297,7 +300,10 @@ fn state_char(p: &Process) -> char {
     }
 }
 
+/// `/proc/[pid]/stat` in the Linux layout (52 fields; times in
+/// `USER_HZ` clock ticks, `starttime` in clock ticks since boot).
 fn gen_pid_stat(p: Option<&Arc<Process>>) -> String {
+    use crate::sched::cputime::{USER_HZ, to_clock_t};
     let Some(p) = p else { return String::new() };
     let (vsz, rss) = p
         .vm()
@@ -306,19 +312,57 @@ fn gen_pid_stat(p: Option<&Arc<Process>>) -> String {
             (s.virtual_size(), s.resident_pages())
         })
         .unwrap_or((0, 0));
-    format!(
-        "{} ({}) {} {} {} {} 0 0 0 0 0 0 0 0 0 0 20 0 {} 0 {} {} {}\n",
+    let threads = p.live_threads();
+    let (nice, cpu) = threads.first().map_or((0, 0), |t| {
+        (t.nice.load(Ordering::Relaxed) as i64, t.last_cpu())
+    });
+    let (utime, stime) = p.cpu_times();
+    let (cutime, cstime) = p.children_cpu_times();
+    let mut s = format!(
+        "{} ({}) {} {} {} {} 0 -1 0 0 0 0 0 {} {} {} {} {} {} {} 0 {} {} {} {}",
         p.pid,
         p.name.lock(),
         state_char(p),
         p.ppid.load(Ordering::SeqCst),
         p.pgid.load(Ordering::SeqCst),
         p.sid.load(Ordering::SeqCst),
-        p.live_threads().len(),
-        p.start_ticks,
+        to_clock_t(utime),
+        to_clock_t(stime),
+        to_clock_t(cutime),
+        to_clock_t(cstime),
+        20 + nice,
+        nice,
+        threads.len(),
+        p.start_ns / (1_000_000_000 / USER_HZ),
         vsz,
-        rss
-    )
+        rss,
+        u64::MAX,
+    );
+    // Fields 26-52: startcode endcode startstack kstkesp kstkeip, signal
+    // blocked sigignore sigcatch, wchan nswap cnswap, exit_signal
+    // processor, then rt_priority .. exit_code (13 zeros).
+    let _ = writeln!(
+        s,
+        " 0 0 0 0 0 {} {} 0 0 0 0 0 17 {} 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        p.signals.pending.load(Ordering::SeqCst),
+        p.signals.blocked.load(Ordering::SeqCst),
+        cpu
+    );
+    s
+}
+
+/// `/proc/[pid]/statm`: size and resident set in pages (shared, text,
+/// lib, data and dirty are not tracked and read 0).
+fn gen_pid_statm(p: Option<&Arc<Process>>) -> String {
+    let Some(p) = p else { return String::new() };
+    let (vsz, rss) = p
+        .vm()
+        .map(|v| {
+            let s = v.lock();
+            (s.virtual_size(), s.resident_pages())
+        })
+        .unwrap_or((0, 0));
+    format!("{} {} 0 0 0 0 0\n", vsz / 4096, rss)
 }
 
 fn gen_pid_status(p: Option<&Arc<Process>>) -> String {
@@ -393,10 +437,14 @@ fn gen_version() -> String {
 
 fn gen_uptime() -> String {
     let ns = crate::time::nanos();
+    // Idle time summed over all CPUs, as on Linux.
+    let idle = crate::sched::cputime::to_clock_t(crate::sched::cputime::total_idle());
     format!(
-        "{}.{:02} 0.00\n",
+        "{}.{:02} {}.{:02}\n",
         ns / 1_000_000_000,
-        (ns / 10_000_000) % 100
+        (ns / 10_000_000) % 100,
+        idle / 100,
+        idle % 100
     )
 }
 
@@ -472,20 +520,65 @@ fn gen_interrupts() -> String {
     s
 }
 
+/// `/proc/stat`: per-CPU time in `USER_HZ` ticks (user nice system idle
+/// iowait irq softirq steal guest guest_nice), interrupts, context
+/// switches, boot time, forks and run-queue state.
 fn gen_stat() -> String {
-    format!(
-        "cpu  0 0 0 0 0 0 0 0 0 0\nctxt {}\nbtime {}\nprocesses {}\n",
+    use crate::sched::cputime::{NCLASS, cpu_stat, to_clock_t};
+    let ncpu = crate::cpu::cpu_count().max(1) as usize;
+    let per_cpu: Vec<[u64; NCLASS]> = (0..ncpu).map(cpu_stat).collect();
+    let mut total = [0u64; NCLASS];
+    for c in &per_cpu {
+        for (t, v) in total.iter_mut().zip(c) {
+            *t += v;
+        }
+    }
+    let mut s = String::new();
+    let line = |s: &mut String, name: &str, v: &[u64; NCLASS]| {
+        s.push_str(name);
+        for x in v {
+            let _ = write!(s, " {}", to_clock_t(*x));
+        }
+        s.push('\n');
+    };
+    line(&mut s, "cpu ", &total);
+    for (i, c) in per_cpu.iter().enumerate() {
+        line(&mut s, &format!("cpu{}", i), c);
+    }
+    let counts = crate::idt::interrupt_counts();
+    let mut by_vector = [0usize; 256];
+    for (v, c) in &counts {
+        by_vector[*v as usize] = *c;
+    }
+    let _ = write!(s, "intr {}", by_vector.iter().sum::<usize>());
+    for c in by_vector {
+        let _ = write!(s, " {}", c);
+    }
+    let _ = write!(
+        s,
+        "\nctxt {}\nbtime {}\nprocesses {}\nprocs_running {}\nprocs_blocked {}\n",
         crate::sched::context_switches(),
         crate::time::unix_time() - crate::time::nanos() / 1_000_000_000,
-        process::count()
-    )
+        process::last_pid(),
+        crate::sched::cputime::nr_running(),
+        crate::sched::cputime::nr_uninterruptible()
+    );
+    s
 }
 
+/// `/proc/loadavg`: 1, 5 and 15 minute load averages, runnable/total
+/// threads and the last process id handed out.
 fn gen_loadavg() -> String {
+    use crate::sched::cputime::{fmt_load, loadavg_raw, nr_running};
+    let [a, b, c] = loadavg_raw();
     format!(
-        "0.00 0.00 0.00 1/{} {}\n",
-        process::count(),
-        process::current_pid()
+        "{} {} {} {}/{} {}\n",
+        fmt_load(a),
+        fmt_load(b),
+        fmt_load(c),
+        nr_running(),
+        crate::sched::thread_count(),
+        process::last_pid()
     )
 }
 

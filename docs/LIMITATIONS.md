@@ -17,6 +17,13 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 
 * No real-time scheduling classes; `nice` only scales time slices; load
   balancing is by idle CPUs stealing work.
+* CPU time is sampled per timer tick (4 ms), so short-lived processes
+  may show no CPU time and the CPU-time clocks advance in 4 ms steps.
+  `/proc/stat` always reports 0 for iowait, steal and guest time;
+  "uninterruptible" (for the load average and `procs_blocked`) means a
+  user thread in a non-interruptible kernel wait such as disk I/O or a
+  sleeping mutex. `/proc/[pid]/stat` has no fault counts, `tty_nr` or
+  memory-layout addresses (they read 0).
 * TLB shootdowns flush the whole TLB; a CPU that keeps interrupts disabled
   for more than 500 ms is skipped with a warning (seen only under heavily
   overloaded emulators).

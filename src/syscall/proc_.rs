@@ -72,10 +72,13 @@ pub fn exit_group(code: i32) -> KResult<Ret> {
     process::exit_current(process::exit_code_status(code));
 }
 
-pub fn wait4(pid: i32, status: u64, options: u32) -> SysResult {
-    let (cpid, st) = process::wait(pid, options)?;
+pub fn wait4(pid: i32, status: u64, options: u32, rusage: u64) -> SysResult {
+    let (cpid, st, (u, s)) = process::wait(pid, options)?;
     if status != 0 && cpid != 0 {
         uaccess::write_user(status, &st)?;
+    }
+    if rusage != 0 && cpid != 0 {
+        uaccess::write_user(rusage, &Rusage::from_ticks(u, s, 0))?;
     }
     Ok(cpid as i64)
 }
@@ -317,15 +320,69 @@ pub fn getrlimit(n: u64, a: [u64; 6]) -> SysResult {
     Ok(0)
 }
 
-pub fn getrusage(buf: u64) -> SysResult {
-    uaccess::copy_to_user(buf, &[0u8; 144])?;
+/// `struct rusage`: user and system time as timevals, then 14 longs
+/// (`ru_maxrss` in KiB first; the rest stay 0).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct Rusage {
+    utime: [i64; 2],
+    stime: [i64; 2],
+    maxrss: i64,
+    rest: [i64; 13],
+}
+
+impl Rusage {
+    fn from_ticks(utime: u64, stime: u64, maxrss_kib: u64) -> Rusage {
+        let tv = |ticks: u64| {
+            let ns = crate::sched::cputime::to_ns(ticks);
+            [
+                (ns / 1_000_000_000) as i64,
+                ((ns % 1_000_000_000) / 1000) as i64,
+            ]
+        };
+        Rusage {
+            utime: tv(utime),
+            stime: tv(stime),
+            maxrss: maxrss_kib as i64,
+            rest: [0; 13],
+        }
+    }
+}
+
+const RUSAGE_SELF: i32 = 0;
+const RUSAGE_CHILDREN: i32 = -1;
+const RUSAGE_THREAD: i32 = 1;
+
+pub fn getrusage(who: i32, buf: u64) -> SysResult {
+    let p = cur()?;
+    let rss_kib = || p.vm().map_or(0, |v| v.lock().resident_pages() * 4);
+    let r = match who {
+        RUSAGE_SELF => {
+            let (u, s) = p.cpu_times();
+            Rusage::from_ticks(u, s, rss_kib())
+        }
+        RUSAGE_CHILDREN => {
+            let (u, s) = p.children_cpu_times();
+            Rusage::from_ticks(u, s, 0)
+        }
+        RUSAGE_THREAD => {
+            let (u, s) = crate::sched::current().cpu_times();
+            Rusage::from_ticks(u, s, rss_kib())
+        }
+        _ => return Err(EINVAL),
+    };
+    uaccess::write_user(buf, &r)?;
     Ok(0)
 }
 
 pub fn times(buf: u64) -> SysResult {
+    use crate::sched::cputime::to_clock_t;
     let ticks = crate::time::millis() / 10;
     if buf != 0 {
-        let t: [u64; 4] = [ticks, 0, 0, 0];
+        let p = cur()?;
+        let (u, s) = p.cpu_times();
+        let (cu, cs) = p.children_cpu_times();
+        let t: [u64; 4] = [to_clock_t(u), to_clock_t(s), to_clock_t(cu), to_clock_t(cs)];
         uaccess::write_user(buf, &t)?;
     }
     Ok(ticks as i64)

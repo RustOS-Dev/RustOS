@@ -62,11 +62,53 @@ pub fn clock_nanosleep(clock: u32, flags: u32, req: u64, rem: u64) -> SysResult 
     nanosleep(req, rem)
 }
 
+const CLOCK_PROCESS_CPUTIME_ID: u32 = 2;
+const CLOCK_THREAD_CPUTIME_ID: u32 = 3;
+
+/// CPU time in nanoseconds for a CPU-time clock: the two standard ids, or
+/// a dynamic clock from `clock_getcpuclockid`/`pthread_getcpuclockid`
+/// (negative: `(~pid << 3) | type`, bit 2 = thread, type 1 = user time
+/// only).
+fn cpu_clock_ns(clock: u32) -> KResult<Option<u64>> {
+    use crate::sched::cputime::to_ns;
+    let (thread, id, user_only) = match clock {
+        CLOCK_PROCESS_CPUTIME_ID => (false, 0, false),
+        CLOCK_THREAD_CPUTIME_ID => (true, 0, false),
+        c if (c as i32) < 0 => {
+            let c = c as i32;
+            if c & 3 == 3 {
+                return Err(EINVAL);
+            }
+            (c & 4 != 0, !(c >> 3) as u32, c & 3 == 1)
+        }
+        _ => return Ok(None),
+    };
+    let (u, s) = if thread {
+        let t = if id == 0 {
+            crate::sched::current()
+        } else {
+            crate::sched::find_thread(id as u64).ok_or(EINVAL)?
+        };
+        t.cpu_times()
+    } else {
+        let p = if id == 0 {
+            crate::process::current().ok_or(ESRCH)?
+        } else {
+            crate::process::find(id).ok_or(EINVAL)?
+        };
+        p.cpu_times()
+    };
+    Ok(Some(to_ns(if user_only { u } else { u + s })))
+}
+
 pub fn clock_gettime(clock: u32, tp: u64) -> SysResult {
     let (s, n) = match clock {
         0 | 8 | 11 => crate::time::realtime(), // REALTIME, *_ALARM, TAI
         _ => {
-            let ns = crate::time::nanos();
+            let ns = match cpu_clock_ns(clock)? {
+                Some(ns) => ns,
+                None => crate::time::nanos(),
+            };
             (ns / 1_000_000_000, ns % 1_000_000_000)
         }
     };
@@ -74,9 +116,14 @@ pub fn clock_gettime(clock: u32, tp: u64) -> SysResult {
     Ok(0)
 }
 
-pub fn clock_getres(tp: u64) -> SysResult {
+pub fn clock_getres(clock: u32, tp: u64) -> SysResult {
+    // CPU-time clocks advance by timer ticks.
+    let res = match cpu_clock_ns(clock)? {
+        Some(_) => crate::sched::cputime::to_ns(1) as i64,
+        None => 1,
+    };
     if tp != 0 {
-        uaccess::write_user(tp, &[0i64, 1])?;
+        uaccess::write_user(tp, &[0i64, res])?;
     }
     Ok(0)
 }
@@ -222,6 +269,7 @@ pub fn sysinfo(buf: u64) -> SysResult {
         uptime: (crate::time::nanos() / 1_000_000_000) as i64,
         totalram: total,
         freeram: free,
+        loads: crate::sched::cputime::loadavg_sysinfo(),
         procs: crate::process::count() as u16,
         mem_unit: 1,
         ..Default::default()

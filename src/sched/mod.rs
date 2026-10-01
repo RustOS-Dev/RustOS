@@ -15,6 +15,7 @@
 //! being written. Timed wake-ups and kernel timers (timerfd, itimers) live
 //! in one deadline heap served by the timer tick.
 
+pub mod cputime;
 pub mod mutex;
 pub mod wait;
 
@@ -98,6 +99,13 @@ pub struct Thread {
     /// LinuxKPI: this thread's Linux `task_struct` shadow (null until Linux
     /// code first asks for `current`).
     pub linux_task: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
+    /// Timer ticks charged to this thread in user and kernel mode
+    /// (see [`cputime`]).
+    utime: AtomicU64,
+    stime: AtomicU64,
+    /// Set once the ticks above were added to the process's total of
+    /// exited threads.
+    acct_folded: AtomicBool,
 }
 
 unsafe impl Send for Thread {}
@@ -369,6 +377,9 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         syscall_arg: AtomicU64::new(0),
         wchan: AtomicU64::new(0),
         linux_task: core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
+        utime: AtomicU64::new(0),
+        stime: AtomicU64::new(0),
+        acct_folded: AtomicBool::new(false),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t
@@ -686,7 +697,9 @@ pub fn timer_tick() {
     if !is_running() {
         return;
     }
+    let t0 = crate::time::rdtsc();
     run_timers(crate::time::nanos());
+    cputime::move_irq_to_softirq(crate::time::rdtsc().wrapping_sub(t0));
     let pc = cpu::this();
     // RCU readers run with preemption disabled: a tick that interrupted
     // preemptible code is a quiescent state for this CPU.
@@ -955,9 +968,12 @@ impl Drop for Thread {
         // entries). Tearing the process down (process table, open files,
         // address space) needs locks that preempted code on this CPU may
         // hold, so the worker does it.
-        if let Some(p) = self.process.get_mut().take()
-            && WORKER_STARTED.load(Ordering::SeqCst)
-        {
+        let Some(p) = self.process.get_mut().take() else {
+            return;
+        };
+        // Atomics only: safe wherever the drop happens.
+        self.fold_cpu_times(&p);
+        if WORKER_STARTED.load(Ordering::SeqCst) {
             defer(move || drop(p));
         }
     }
@@ -976,6 +992,12 @@ pub fn wait_channels() -> Vec<(Tid, u64)> {
             })
             .unwrap_or_default()
     })
+}
+
+/// Number of live threads, the per-CPU idle threads excluded.
+pub fn thread_count() -> usize {
+    let n = irqsave(|| ALL.lock().iter().filter(|w| w.strong_count() > 0).count());
+    n.saturating_sub(cpu::cpu_count().max(1) as usize)
 }
 
 pub fn thread_list() -> Vec<(Tid, String, State, bool)> {

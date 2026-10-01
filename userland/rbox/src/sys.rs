@@ -433,7 +433,15 @@ struct ProcInfo {
     vsz: u64,
     rss: u64,
     threads: u32,
+    /// Start time and CPU time (user + system) in clock ticks (1/100 s).
     start: u64,
+    cpu: u64,
+}
+
+/// Clock ticks (1/100 s) as [H:]MM:SS.
+fn cpu_time(ticks: u64) -> String {
+    let s = ticks / 100;
+    format!("{:02}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
 }
 
 fn procs() -> Vec<ProcInfo> {
@@ -470,10 +478,12 @@ fn procs() -> Vec<ProcInfo> {
             } else {
                 cmd
             },
-            threads: g(16) as u32,
-            start: g(18),
-            vsz: g(19),
-            rss: g(20),
+            // Fields after the name, from 3 (state): /proc/[pid]/stat(5).
+            threads: g(17) as u32,
+            start: g(19),
+            cpu: g(11) + g(12),
+            vsz: g(20),
+            rss: g(21),
         });
     }
     out.sort_by_key(|p| p.pid);
@@ -488,14 +498,11 @@ pub fn ps(args: &[String]) -> i32 {
     let list = procs();
     let total_mem = process::sysinfo().totalram.max(1);
     if full {
-        println!("USER       PID  PPID  PGID %MEM    VSZ   RSS STAT START COMMAND");
-        let uptime = process::sysinfo().uptime as u64;
+        println!("USER       PID  PPID  PGID %MEM    VSZ   RSS STAT START     TIME COMMAND");
         for p in &list {
-            let started_s = uptime.saturating_sub((uptime * 250).saturating_sub(p.start) / 250);
-            let _ = started_s;
             let mem = p.rss * 4096 * 1000 / total_mem;
             println!(
-                "root  {:>8} {:>5} {:>5} {:>2}.{} {:>6} {:>5} {:<4} {:>5} {}",
+                "root  {:>8} {:>5} {:>5} {:>2}.{} {:>6} {:>5} {:<4} {:>5} {} {}",
                 p.pid,
                 p.ppid,
                 p.pgid,
@@ -504,14 +511,15 @@ pub fn ps(args: &[String]) -> i32 {
                 p.vsz / 1024,
                 p.rss * 4,
                 p.state,
-                p.start / 250,
+                p.start / 100,
+                cpu_time(p.cpu),
                 p.cmd
             );
         }
     } else {
         println!("  PID TTY          TIME CMD");
         for p in &list {
-            println!("{:>5} tty1     00:00:00 {}", p.pid, p.name);
+            println!("{:>5} tty1     {} {}", p.pid, cpu_time(p.cpu), p.name);
         }
     }
     0
@@ -585,15 +593,22 @@ pub fn top(args: &[String]) -> i32 {
             human(si.totalram),
             human(si.freeram)
         );
-        println!("\n  PID  PPID S   RSS  THR COMMAND");
+        if let Ok(l) = fs::read_to_string("/proc/loadavg") {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            if f.len() >= 3 {
+                println!("load average: {}, {}, {}", f[0], f[1], f[2]);
+            }
+        }
+        println!("\n  PID  PPID S   RSS  THR     TIME COMMAND");
         for p in procs() {
             println!(
-                "{:>5} {:>5} {} {:>5} {:>4} {}",
+                "{:>5} {:>5} {} {:>5} {:>4} {} {}",
                 p.pid,
                 p.ppid,
                 p.state,
                 p.rss * 4,
                 p.threads,
+                cpu_time(p.cpu),
                 p.cmd
             );
         }
@@ -633,14 +648,17 @@ pub fn uptime(_: &[String]) -> i32 {
     let si = process::sysinfo();
     let (_, _, _, h, m, s) = time::civil(time::now());
     let up = si.uptime as u64;
+    let load = fs::read_to_string("/proc/loadavg").unwrap_or_default();
+    let f: Vec<&str> = load.split_whitespace().take(3).collect();
     println!(
-        " {:02}:{:02}:{:02} up {}:{:02}, {} tasks",
+        " {:02}:{:02}:{:02} up {}:{:02}, {} tasks, load average: {}",
         h,
         m,
         s,
         up / 3600,
         (up / 60) % 60,
-        si.procs
+        si.procs,
+        f.join(", ")
     );
     0
 }

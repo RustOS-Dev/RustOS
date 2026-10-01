@@ -17,7 +17,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 
 pub type Pid = u32;
 
@@ -48,7 +48,14 @@ pub struct Process {
     /// Parent waits here for child state changes.
     pub child_wq: WaitQueue,
     pub signals: signal::SignalState,
-    pub start_ticks: u64,
+    /// Monotonic time (ns since boot) when the process was created.
+    pub start_ns: u64,
+    /// CPU time (timer ticks) of exited threads, and of reaped children
+    /// (with their own reaped children): see `sched::cputime`.
+    pub dead_utime: AtomicU64,
+    pub dead_stime: AtomicU64,
+    pub cutime: AtomicU64,
+    pub cstime: AtomicU64,
     /// Controlling terminal of the process's session.
     pub ctty: Mutex<Option<Arc<crate::tty::Tty>>>,
 }
@@ -94,7 +101,11 @@ impl Process {
             stop_sig: AtomicI32::new(0),
             child_wq: WaitQueue::new(),
             signals: signal::SignalState::new(),
-            start_ticks: crate::time::ticks(),
+            start_ns: crate::time::nanos(),
+            dead_utime: AtomicU64::new(0),
+            dead_stime: AtomicU64::new(0),
+            cutime: AtomicU64::new(0),
+            cstime: AtomicU64::new(0),
             ctty: Mutex::new(match parent {
                 Some(p) => p.ctty.lock().clone(),
                 None => Some(crate::tty::console()),
@@ -122,6 +133,31 @@ impl Process {
             .iter()
             .filter_map(|w| w.upgrade())
             .collect()
+    }
+
+    /// (user, system) CPU ticks of the process: exited threads plus the
+    /// live ones.
+    pub fn cpu_times(&self) -> (u64, u64) {
+        let (mut u, mut s) = (
+            self.dead_utime.load(Ordering::Relaxed),
+            self.dead_stime.load(Ordering::Relaxed),
+        );
+        for t in self.live_threads() {
+            if !t.acct_folded() {
+                let (tu, ts) = t.cpu_times();
+                u += tu;
+                s += ts;
+            }
+        }
+        (u, s)
+    }
+
+    /// (user, system) CPU ticks of reaped children.
+    pub fn children_cpu_times(&self) -> (u64, u64) {
+        (
+            self.cutime.load(Ordering::Relaxed),
+            self.cstime.load(Ordering::Relaxed),
+        )
     }
 
     /// Resolve a user path against the working directory.
@@ -340,6 +376,7 @@ pub fn exit_thread(status: i32) -> ! {
             exit_current(status);
         }
         futex::clear_tid_and_wake(me.clear_child_tid.swap(0, Ordering::SeqCst));
+        me.fold_cpu_times(&p);
         p.threads
             .lock()
             .retain(|w| w.upgrade().is_some_and(|t| !Arc::ptr_eq(&t, &me)));
@@ -434,6 +471,7 @@ fn do_exit(p: &Arc<Process>, status: i32) {
         );
     }
     me.is_user.store(false, Ordering::SeqCst);
+    me.fold_cpu_times(p);
     *p.vm.lock() = None;
     *p.exit_status.lock() = Some(status);
 
@@ -462,8 +500,9 @@ pub const WNOHANG: u32 = 1;
 pub const WUNTRACED: u32 = 2;
 pub const WCONTINUED: u32 = 8;
 
-/// wait4(): returns (pid, status) or 0 with WNOHANG when nothing changed.
-pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
+/// wait4(): returns (pid, status, (utime, stime) of the reaped child in
+/// ticks, children included) or pid 0 with WNOHANG when nothing changed.
+pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32, (u64, u64))> {
     let p = current().ok_or(ESRCH)?;
     loop {
         let result = {
@@ -483,7 +522,8 @@ pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
             let mut found = None;
             for c in matching {
                 if c.zombie.load(Ordering::SeqCst) && c.exit_status.lock().is_some() {
-                    found = Some((c.pid, c.exit_status.lock().unwrap(), true));
+                    let ((u, s), (cu, cs)) = (c.cpu_times(), c.children_cpu_times());
+                    found = Some((c.pid, c.exit_status.lock().unwrap(), Some((u + cu, s + cs))));
                     break;
                 }
                 if options & WUNTRACED != 0
@@ -491,24 +531,28 @@ pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
                     && !c.stop_reported.swap(true, Ordering::SeqCst)
                 {
                     let sig = c.stop_sig.load(Ordering::SeqCst);
-                    found = Some((c.pid, (sig << 8) | 0x7f, false));
+                    found = Some((c.pid, (sig << 8) | 0x7f, None));
                     break;
                 }
                 if options & WCONTINUED != 0 && c.continued.swap(false, Ordering::SeqCst) {
-                    found = Some((c.pid, 0xffff, false));
+                    found = Some((c.pid, 0xffff, None));
                     break;
                 }
             }
             found
         };
-        if let Some((cpid, status, reap)) = result {
-            if reap {
+        if let Some((cpid, status, reaped)) = result {
+            let mut times = (0, 0);
+            if let Some((u, s)) = reaped {
                 p.children.lock().retain(|c| c.pid != cpid);
+                p.cutime.fetch_add(u, Ordering::Relaxed);
+                p.cstime.fetch_add(s, Ordering::Relaxed);
+                times = (u, s);
             }
-            return Ok((cpid, status));
+            return Ok((cpid, status, times));
         }
         if options & WNOHANG != 0 {
-            return Ok((0, 0));
+            return Ok((0, 0, (0, 0)));
         }
         let pp = p.clone();
         let ok = p.child_wq.wait_interruptible(|| {
@@ -529,6 +573,11 @@ pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
 /// Encode a normal exit status for wait4.
 pub fn exit_code_status(code: i32) -> i32 {
     (code & 0xff) << 8
+}
+
+/// Most recently assigned process id.
+pub fn last_pid() -> Pid {
+    NEXT_PID.load(Ordering::SeqCst).saturating_sub(1)
 }
 
 /// Number of live (non-zombie) processes.

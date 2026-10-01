@@ -129,14 +129,14 @@ impl WaitQueue {
 
     /// Block until `cond` returns true.
     pub fn wait_until(&self, mut cond: impl FnMut() -> bool) {
-        self.wait_until_deadline(&mut cond, None);
+        self.wait_until_deadline(&mut cond, None, false);
     }
 
     /// Block until `cond` is true or `ms` milliseconds pass. Returns the final
     /// value of `cond`.
     pub fn wait_timeout(&self, ms: u64, mut cond: impl FnMut() -> bool) -> bool {
         let deadline = crate::time::nanos() + ms * 1_000_000;
-        self.wait_until_deadline(&mut cond, Some(deadline))
+        self.wait_until_deadline(&mut cond, Some(deadline), false)
     }
 
     /// Like [`wait_until`](Self::wait_until) but also returns (false) when the
@@ -148,11 +148,18 @@ impl WaitQueue {
                 || t.as_ref()
                     .is_some_and(|t| t.interrupted.load(Ordering::SeqCst))
         };
-        self.wait_until_deadline(&mut c, None);
+        self.wait_until_deadline(&mut c, None, true);
         cond()
     }
 
-    fn wait_until_deadline(&self, cond: &mut dyn FnMut() -> bool, deadline: Option<u64>) -> bool {
+    /// `interruptible`: the sleep ends on signals; uninterruptible sleeps
+    /// of user threads count towards the load average (Linux's `D`).
+    fn wait_until_deadline(
+        &self,
+        cond: &mut dyn FnMut() -> bool,
+        deadline: Option<u64>,
+        interruptible: bool,
+    ) -> bool {
         if !is_running() {
             loop {
                 if cond() {
@@ -187,7 +194,12 @@ impl WaitQueue {
             if cond() {
                 wake(&t);
             }
-            schedule();
+            {
+                let _d = super::cputime::UninterruptibleSleep::new(
+                    !interruptible && t.is_user.load(Ordering::Relaxed),
+                );
+                schedule();
+            }
             x86_64::instructions::interrupts::without_interrupts(|| {
                 self.waiters.lock().retain(|w| !Arc::ptr_eq(w, &t));
             });

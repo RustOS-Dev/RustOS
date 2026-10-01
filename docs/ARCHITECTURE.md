@@ -157,6 +157,18 @@ MSI/MSI-X). Legacy IRQs are routed through the IOAPIC (MADT overrides,
 LAPIC timer drives scheduling and sleeps, and the RTC provides wall-clock
 time (`settimeofday`/`ntpdate` adjust it).
 
+**CPU-time accounting** (`src/sched/cputime.rs`): each tick charges the
+CPU's user, nice, system or idle time and, for user and system ticks, the
+interrupted thread (ring 3 or ring 0 from the saved `CS`). Interrupt
+handlers and timer callbacks are timed with the TSC and paid for in whole
+ticks as irq and softirq time, so a CPU's classes add up to its ticks. A
+process's time is that of its live threads plus what exited threads left
+behind; `wait4` adds a reaped child's to the parent's children total.
+CPU 0 samples runnable threads (plus user threads in uninterruptible
+waits) every 5 s into Linux-style fixed-point load averages. This feeds
+`/proc/stat`, `/proc/[pid]/stat`, `/proc/uptime`, `/proc/loadavg`,
+`getrusage`, `times`, `sysinfo` and the CPU-time clocks.
+
 ## Filesystems and I/O
 
 * **VFS**: inode trait objects, mount table, path resolution with

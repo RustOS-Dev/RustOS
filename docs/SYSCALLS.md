@@ -214,6 +214,10 @@ pages. `MAP_SHARED | MAP_ANONYMOUS` memory stays shared across `fork`.
 
 `futex` supports WAIT, WAKE, REQUEUE, CMP_REQUEUE, WAKE_OP and the
 BITSET variants (private and shared, keyed by physical address).
+`getrusage` (`RUSAGE_SELF`, `RUSAGE_CHILDREN`, `RUSAGE_THREAD`), `times`
+and the `rusage` argument of `wait4` report real user and system time
+(and `ru_maxrss` for the caller); a reaped child's time, including that
+of its own reaped children, is added to the parent's children total.
 `exit` ends only the calling thread (clearing and waking its
 `set_tid_address`/`CLONE_CHILD_CLEARTID` word); `exit_group` ends the
 process. Each CPU has its own run queue; idle CPUs steal work;
@@ -242,6 +246,12 @@ process. Each CPU has its own run queue; idle CPUs steal work;
 `setitimer` supports `ITIMER_REAL` (SIGALRM).
 
 ### Time
+
+`clock_gettime` supports `CLOCK_REALTIME`, `CLOCK_MONOTONIC` (and the
+`_RAW`/`_COARSE`/`BOOTTIME` variants), `CLOCK_PROCESS_CPUTIME_ID`,
+`CLOCK_THREAD_CPUTIME_ID` and the dynamic CPU clocks of
+`clock_getcpuclockid`/`pthread_getcpuclockid`. CPU time advances in
+timer ticks (4 ms, which `clock_getres` reports for those clocks).
 
 | # | Name |
 |---|------|

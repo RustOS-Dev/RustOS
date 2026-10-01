@@ -151,6 +151,11 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
 
+eDEX-DE desktop shell prerequisites (its system monitor reads `/proc`
+through the Rust `sysinfo` crate; its Services panel drives `svc`):
+
+- [x] CPU-time accounting: per-CPU user/nice/system/idle/irq/softirq ticks, per-thread and per-process utime/stime with reaped children, Linux-format `/proc/stat`, `/proc/[pid]/stat` times, `/proc/uptime` idle, `/proc/loadavg` (5 s fixed-point EWMA), real `getrusage`/`times`/`wait4` rusage and CPU-time clocks (`kapitest cputime`)
+
 ## Context
 
 RustOS is a ~10.8k-line x86_64 UEFI kernel (bootloader_api 0.11). Today it has:

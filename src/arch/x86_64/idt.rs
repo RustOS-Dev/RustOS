@@ -374,7 +374,14 @@ extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
     let h = HANDLERS[v].load(Ordering::Acquire);
     if !h.is_null() {
         let handler: &HandlerBox = unsafe { &*h };
-        handler(frame);
+        if v >= 32 && v != VEC_SYSCALL as usize {
+            // Hardware interrupt: its time is accounted as irq time.
+            let t0 = crate::time::rdtsc();
+            handler(frame);
+            crate::sched::cputime::add_irq_tsc(crate::time::rdtsc().wrapping_sub(t0));
+        } else {
+            handler(frame);
+        }
     } else if v < 32 {
         crate::arch::x86_64::exceptions::handle(frame);
     } else if v == VEC_SPURIOUS as usize {

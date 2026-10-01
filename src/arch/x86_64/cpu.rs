@@ -55,6 +55,12 @@ pub const PERCPU_KERNEL_RSP: usize = 8;
 pub const PERCPU_USER_RSP: usize = 16;
 
 pub const MAX_CPUS: usize = 64;
+
+/// `preempt_count` layout (Linux's): preemption-disable depth in bits 0-7,
+/// softirq in 8-15, hard-IRQ nesting in 16-19.
+pub const SOFTIRQ_OFFSET: u32 = 1 << 8;
+pub const HARDIRQ_OFFSET: u32 = 1 << 16;
+pub const HARDIRQ_MASK: u32 = 0xf << 16;
 static CPUS: [AtomicUsize; MAX_CPUS] = [const { AtomicUsize::new(0) }; MAX_CPUS];
 static CPU_COUNT: AtomicU32 = AtomicU32::new(0);
 

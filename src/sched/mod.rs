@@ -689,8 +689,9 @@ pub fn timer_tick() {
     run_timers(crate::time::nanos());
     let pc = cpu::this();
     // RCU readers run with preemption disabled: a tick that interrupted
-    // preemptible code is a quiescent state for this CPU.
-    if pc.preempt_count.load(Ordering::Relaxed) == 0 {
+    // preemptible code (only this interrupt's own hard-IRQ count) is a
+    // quiescent state for this CPU.
+    if pc.preempt_count.load(Ordering::Relaxed) & !cpu::HARDIRQ_MASK == 0 {
         pc.rcu_qs.fetch_add(1, Ordering::Relaxed);
     }
     #[cfg(feature = "linuxkpi")]

@@ -1,0 +1,24 @@
+# Netlink (rtnetlink) through BusyBox's ip: links, addresses, routes,
+# adding an address, link down/up.
+wait # $ 240
+send dhcp -t 30
+wait leased 10\.0\.2\.15/24 40
+wait # $
+send busybox ip link
+wait 2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500
+wait # $
+send busybox ip addr show dev eth0
+wait inet 10\.0\.2\.15/24 brd 10\.0\.2\.255 scope global eth0
+wait # $
+send busybox ip route
+wait default via 10\.0\.2\.2 dev eth0
+wait # $
+send busybox ip addr add 10.9.8.7/24 dev eth0 && busybox ip -4 addr show dev eth0
+wait inet 10\.9\.8\.7/24
+wait # $
+send busybox ip link set eth0 down && busybox ip link show eth0
+wait state DOWN
+wait # $
+send busybox ip link set eth0 up && busybox ip link show eth0
+wait state UP
+wait # $

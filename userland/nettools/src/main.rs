@@ -14,6 +14,7 @@ mod netstat;
 mod ntp;
 mod ping;
 mod wifi;
+mod wpa;
 
 use rustos_rt::prelude::*;
 

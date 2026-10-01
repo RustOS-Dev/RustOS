@@ -301,7 +301,32 @@ pub trait FileLike: Send + Sync + Any {
     fn open_instance(&self, _flags: u32) -> KResult<Option<Arc<dyn FileLike>>> {
         Ok(None)
     }
+    /// Device memory mapping: how `len` bytes at file offset `off` map into
+    /// a process, or `None` if the object cannot be mapped.
+    fn mmap(&self, _off: u64, _len: u64, _prot: u32) -> KResult<Option<DeviceMap>> {
+        Ok(None)
+    }
+    /// Sockets of non-IP families (AF_UNIX, AF_NETLINK, AF_PACKET).
+    fn as_socket(&self) -> Option<&dyn crate::net::generic::GenericSocket> {
+        None
+    }
     fn as_any(&self) -> &dyn Any;
+}
+
+/// How a device's memory maps into a process (`FileLike::mmap`).
+pub enum DeviceMap {
+    /// Physically contiguous memory starting at `base` (for the mapped file
+    /// offset), with memory type `cache`.
+    Phys { base: u64, cache: crate::mm::Cache },
+    /// Pages the driver supplies on fault (`MapPages::fault`).
+    Pages(Arc<dyn MapPages>),
+}
+
+/// A device mapping whose pages are looked up on fault.
+pub trait MapPages: Send + Sync {
+    /// The physical page backing page `pgoff` of the file, and its memory
+    /// type. The driver keeps the page alive while the mapping exists.
+    fn fault(&self, pgoff: u64, write: bool) -> KResult<(u64, crate::mm::Cache)>;
 }
 
 // ---------------------------------------------------------------------------

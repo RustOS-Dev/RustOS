@@ -152,3 +152,13 @@ extern "C" fn rustos_kpi_pci_has_msi(idx: u32) -> c_int {
 extern "C" fn rustos_kpi_random_u64() -> u64 {
     crate::drivers::random::u64()
 }
+
+/// Whether a native RustOS driver drives device `idx` (Linux drivers then
+/// do not bind it).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_pci_claimed(idx: u32) -> c_int {
+    with_dev(idx, |d| {
+        crate::pci::claimed_by(d.bus, d.dev, d.func).is_some() as c_int
+    })
+    .unwrap_or(0)
+}

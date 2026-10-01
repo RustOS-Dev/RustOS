@@ -18,7 +18,14 @@
 #include <linux/rtnetlink.h>
 #include <linux/skbuff.h>
 #include <linux/slab.h>
+#include <linux/jhash.h>
+#include <net/netdev_queues.h>
+#include <net/netdev_rx_queue.h>
 #include <net/checksum.h>
+#include <net/dst.h>
+#include <linux/utsname.h>
+#include <net/net_namespace.h>
+#include <net/netns/generic.h>
 #include "kpi.h"
 
 DEFINE_PER_CPU_ALIGNED(struct softnet_data, softnet_data);
@@ -30,9 +37,17 @@ void rtnl_lock(void)
 	mutex_lock(&rtnl_mutex);
 }
 
+static LIST_HEAD(kpi_net_todo);
+static void kpi_netdev_run_todo(struct list_head *list);
+
 void rtnl_unlock(void)
 {
+	LIST_HEAD(todo);
+
+	list_splice_init(&kpi_net_todo, &todo);
 	mutex_unlock(&rtnl_mutex);
+	/* Finish unregistrations outside the lock, as netdev_run_todo(). */
+	kpi_netdev_run_todo(&todo);
 }
 
 int rtnl_trylock(void)
@@ -43,6 +58,172 @@ int rtnl_trylock(void)
 int rtnl_is_locked(void)
 {
 	return mutex_is_locked(&rtnl_mutex);
+}
+
+/* ------------------------------------------------------------ namespaces */
+
+/*
+ * One network namespace, init_net. Per-namespace state (pernet_operations)
+ * is created for it when registered and torn down when unregistered.
+ */
+LIST_HEAD(net_namespace_list);
+struct net init_net;
+static DEFINE_MUTEX(kpi_pernet_lock);
+/* From net/core/net_namespace.c: ids index net_generic.ptr past its header. */
+#define MIN_PERNET_OPS_ID ((sizeof(struct net_generic) + sizeof(void *) - 1) / sizeof(void *))
+static unsigned int kpi_pernet_next_id = MIN_PERNET_OPS_ID;
+#define KPI_PERNET_IDS 64
+
+static const void *kpi_net_initial_ns(void)
+{
+	return &init_net;
+}
+
+static void *kpi_net_grab_current_ns(void)
+{
+	return &init_net;
+}
+
+static const void *kpi_net_netlink_ns(struct sock *sk)
+{
+	return &init_net;
+}
+
+static void kpi_net_drop_ns(void *p)
+{
+}
+
+const struct kobj_ns_type_operations net_ns_type_operations = {
+	.type = KOBJ_NS_TYPE_NET,
+	.grab_current_ns = kpi_net_grab_current_ns,
+	.netlink_ns = kpi_net_netlink_ns,
+	.initial_ns = kpi_net_initial_ns,
+	.drop_ns = kpi_net_drop_ns,
+};
+
+struct uts_namespace init_uts_ns = {
+	.name = {
+		.sysname = "Linux",
+		.nodename = "rustos",
+		.release = "6.18.54-rustos",
+		.version = "#1 SMP",
+		.machine = "x86_64",
+		.domainname = "(none)",
+	},
+};
+
+static int kpi_netns_init(void)
+{
+	struct net_generic *ng = kzalloc(struct_size(ng, ptr, KPI_PERNET_IDS), GFP_KERNEL);
+
+	if (!ng)
+		return -ENOMEM;
+	ng->s.len = KPI_PERNET_IDS;
+	rcu_assign_pointer(init_net.gen, ng);
+	refcount_set(&init_net.ns.__ns_ref, 1);
+	refcount_set(&init_net.passive, 1);
+	INIT_LIST_HEAD(&init_net.dev_base_head);
+	INIT_LIST_HEAD(&init_net.exit_list);
+	list_add_tail_rcu(&init_net.list, &net_namespace_list);
+	/* As net_ns_init(): classes tagged with network namespaces (ieee80211,
+	 * net) need the type registered. */
+	return kobj_ns_type_register(&net_ns_type_operations);
+}
+
+static int kpi_register_pernet(struct pernet_operations *ops)
+{
+	struct net_generic *ng = rcu_dereference_protected(init_net.gen, true);
+	unsigned int id = 0;
+	int err = 0;
+
+	mutex_lock(&kpi_pernet_lock);
+	if (ops->id) {
+		if (kpi_pernet_next_id >= KPI_PERNET_IDS) {
+			err = -ENOSPC;
+			goto out;
+		}
+		id = *ops->id = kpi_pernet_next_id++;
+		if (ops->size) {
+			ng->ptr[id] = kzalloc(ops->size, GFP_KERNEL);
+			if (!ng->ptr[id]) {
+				err = -ENOMEM;
+				goto out;
+			}
+		}
+	}
+	if (ops->init)
+		err = ops->init(&init_net);
+	if (err && id && ops->size) {
+		kfree(ng->ptr[id]);
+		ng->ptr[id] = NULL;
+	}
+out:
+	mutex_unlock(&kpi_pernet_lock);
+	return err;
+}
+
+static void kpi_unregister_pernet(struct pernet_operations *ops)
+{
+	struct net_generic *ng = rcu_dereference_protected(init_net.gen, true);
+	LIST_HEAD(nets);
+
+	mutex_lock(&kpi_pernet_lock);
+	list_add(&init_net.exit_list, &nets);
+	if (ops->pre_exit)
+		ops->pre_exit(&init_net);
+	if (ops->exit_rtnl) {
+		LIST_HEAD(kill);
+
+		rtnl_lock();
+		ops->exit_rtnl(&init_net, &kill);
+		unregister_netdevice_many(&kill);
+		rtnl_unlock();
+	}
+	if (ops->exit)
+		ops->exit(&init_net);
+	if (ops->exit_batch)
+		ops->exit_batch(&nets);
+	list_del_init(&init_net.exit_list);
+	if (ops->id && ops->size) {
+		kfree(ng->ptr[*ops->id]);
+		ng->ptr[*ops->id] = NULL;
+	}
+	mutex_unlock(&kpi_pernet_lock);
+}
+
+int register_pernet_subsys(struct pernet_operations *ops)
+{
+	return kpi_register_pernet(ops);
+}
+
+void unregister_pernet_subsys(struct pernet_operations *ops)
+{
+	kpi_unregister_pernet(ops);
+}
+
+int register_pernet_device(struct pernet_operations *ops)
+{
+	return kpi_register_pernet(ops);
+}
+
+void unregister_pernet_device(struct pernet_operations *ops)
+{
+	kpi_unregister_pernet(ops);
+}
+
+/* init_net is never freed. */
+void __put_net(struct net *net)
+{
+}
+
+struct net *get_net_ns_by_fd(int fd)
+{
+	return ERR_PTR(-EINVAL);
+}
+
+struct net *get_net_ns_by_pid(pid_t pid)
+{
+	return ERR_PTR(-ESRCH);
 }
 
 /* ---------------------------------------------------------- sk_buff core */
@@ -109,17 +290,25 @@ static void kpi_skb_free_head(struct sk_buff *skb)
 		kfree(skb->head);
 }
 
-static void kpi_skb_release(struct sk_buff *skb)
+/* Drop this skb's hold on its data (shared with clones). */
+static void kpi_skb_release_data(struct sk_buff *skb)
 {
 	struct skb_shared_info *sh = skb_shinfo(skb);
 
-	if (skb->destructor)
-		skb->destructor(skb);
 	if (skb->cloned && atomic_dec_return(&sh->dataref))
 		return;
 	for (int i = 0; i < sh->nr_frags; i++)
 		put_page(skb_frag_page(&sh->frags[i]));
+	if (sh->frag_list)
+		kfree_skb_list(sh->frag_list);
 	kpi_skb_free_head(skb);
+}
+
+static void kpi_skb_release(struct sk_buff *skb)
+{
+	if (skb->destructor)
+		skb->destructor(skb);
+	kpi_skb_release_data(skb);
 }
 
 static void kpi_kfree_skb(struct sk_buff *skb)
@@ -293,7 +482,17 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail, gfp_t gfp)
 	memcpy(data + nhead, skb->head, skb_tail_pointer(skb) - skb->head);
 	memcpy((struct skb_shared_info *)(data + size), sh,
 	       offsetof(struct skb_shared_info, frags[sh->nr_frags]));
-	kpi_skb_free_head(skb);
+	if (skb_cloned(skb)) {
+		/* The clones keep the old data: the copy takes its own
+		 * references on the fragments. */
+		for (int i = 0; i < sh->nr_frags; i++)
+			get_page(skb_frag_page(&sh->frags[i]));
+		for (struct sk_buff *f = sh->frag_list; f; f = f->next)
+			skb_get(f);
+		kpi_skb_release_data(skb);
+	} else {
+		kpi_skb_free_head(skb);
+	}
 	off = (data + nhead) - skb->head;
 	skb->head = data;
 	skb->head_frag = 0;
@@ -367,6 +566,261 @@ free:
 	return err;
 }
 
+void kfree_skb_list_reason(struct sk_buff *segs, enum skb_drop_reason reason)
+{
+	while (segs) {
+		struct sk_buff *next = segs->next;
+
+		kpi_kfree_skb(segs);
+		segs = next;
+	}
+}
+
+/* From net/core/skbuff.c, without fclones, skb extensions or dst. */
+static void kpi_copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
+{
+	new->tstamp = old->tstamp;
+	new->dev = old->dev;
+	memcpy(new->cb, old->cb, sizeof(old->cb));
+	new->queue_mapping = old->queue_mapping;
+	memcpy(&new->headers, &old->headers, sizeof(new->headers));
+}
+
+struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp)
+{
+	struct sk_buff *n = kmalloc(sizeof(*n), gfp & ~__GFP_DMA);
+
+	if (!n)
+		return NULL;
+	memset(n, 0, offsetof(struct sk_buff, tail));
+	n->next = n->prev = NULL;
+	n->sk = NULL;
+	kpi_copy_skb_header(n, skb);
+	n->len = skb->len;
+	n->data_len = skb->data_len;
+	n->mac_len = skb->mac_len;
+	n->hdr_len = skb->nohdr ? skb_headroom(skb) : skb->hdr_len;
+	n->cloned = 1;
+	n->nohdr = 0;
+	n->peeked = 0;
+	n->destructor = NULL;
+	n->tail = skb->tail;
+	n->end = skb->end;
+	n->head = skb->head;
+	n->head_frag = skb->head_frag;
+	n->data = skb->data;
+	n->truesize = skb->truesize;
+	n->fclone = SKB_FCLONE_UNAVAILABLE;
+	refcount_set(&n->users, 1);
+	atomic_inc(&skb_shinfo(skb)->dataref);
+	skb->cloned = 1;
+	return n;
+}
+
+void skb_copy_header(struct sk_buff *new, const struct sk_buff *old)
+{
+	kpi_copy_skb_header(new, old);
+	skb_shinfo(new)->gso_size = skb_shinfo(old)->gso_size;
+	skb_shinfo(new)->gso_segs = skb_shinfo(old)->gso_segs;
+	skb_shinfo(new)->gso_type = skb_shinfo(old)->gso_type;
+}
+
+struct sk_buff *skb_copy(const struct sk_buff *skb, gfp_t gfp)
+{
+	int headerlen = skb_headroom(skb);
+	unsigned int size = skb_end_offset(skb) + skb->data_len;
+	struct sk_buff *n = __alloc_skb(size, gfp, 0, NUMA_NO_NODE);
+
+	if (!n)
+		return NULL;
+	skb_reserve(n, headerlen);
+	skb_put(n, skb->len);
+	BUG_ON(skb_copy_bits(skb, -headerlen, n->head, headerlen + skb->len));
+	skb_copy_header(n, skb);
+	return n;
+}
+
+struct sk_buff *skb_copy_expand(const struct sk_buff *skb, int newheadroom, int newtailroom,
+				gfp_t gfp)
+{
+	int oldheadroom = skb_headroom(skb), head_copy_len, head_copy_off = 0;
+	struct sk_buff *n = __alloc_skb(newheadroom + skb->len + newtailroom, gfp, 0,
+					NUMA_NO_NODE);
+
+	if (!n)
+		return NULL;
+	skb_reserve(n, newheadroom);
+	skb_put(n, skb->len);
+	head_copy_len = oldheadroom;
+	if (newheadroom <= head_copy_len)
+		head_copy_len = newheadroom;
+	else
+		head_copy_off = newheadroom - head_copy_len;
+	BUG_ON(skb_copy_bits(skb, -head_copy_len, n->head + head_copy_off,
+			     skb->len + head_copy_len));
+	skb_copy_header(n, skb);
+	skb_headers_offset_update(n, newheadroom - oldheadroom);
+	return n;
+}
+
+int skb_ensure_writable(struct sk_buff *skb, unsigned int write_len)
+{
+	if (!pskb_may_pull(skb, write_len))
+		return -ENOMEM;
+	if (!skb_cloned(skb) || skb_clone_writable(skb, write_len))
+		return 0;
+	return pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
+}
+
+/* Transmit status for sockets (SO_WIFI_STATUS): no RustOS socket asks for
+ * it, and skbs from RustOS have no socket. */
+struct sk_buff *skb_clone_sk(struct sk_buff *skb)
+{
+	return NULL;
+}
+
+void skb_complete_wifi_ack(struct sk_buff *skb, bool acked)
+{
+	kpi_kfree_skb(skb);
+}
+
+struct sk_buff *skb_dequeue(struct sk_buff_head *list)
+{
+	unsigned long flags;
+	struct sk_buff *result;
+
+	spin_lock_irqsave(&list->lock, flags);
+	result = __skb_dequeue(list);
+	spin_unlock_irqrestore(&list->lock, flags);
+	return result;
+}
+
+struct sk_buff *skb_dequeue_tail(struct sk_buff_head *list)
+{
+	unsigned long flags;
+	struct sk_buff *result;
+
+	spin_lock_irqsave(&list->lock, flags);
+	result = __skb_dequeue_tail(list);
+	spin_unlock_irqrestore(&list->lock, flags);
+	return result;
+}
+
+void skb_queue_tail(struct sk_buff_head *list, struct sk_buff *newsk)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&list->lock, flags);
+	__skb_queue_tail(list, newsk);
+	spin_unlock_irqrestore(&list->lock, flags);
+}
+
+void skb_queue_head(struct sk_buff_head *list, struct sk_buff *newsk)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&list->lock, flags);
+	__skb_queue_head(list, newsk);
+	spin_unlock_irqrestore(&list->lock, flags);
+}
+
+void skb_unlink(struct sk_buff *skb, struct sk_buff_head *list)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&list->lock, flags);
+	__skb_unlink(skb, list);
+	spin_unlock_irqrestore(&list->lock, flags);
+}
+
+void skb_queue_purge_reason(struct sk_buff_head *list, enum skb_drop_reason reason)
+{
+	struct sk_buff_head tmp;
+	unsigned long flags;
+	struct sk_buff *skb;
+
+	if (skb_queue_empty_lockless(list))
+		return;
+	__skb_queue_head_init(&tmp);
+	spin_lock_irqsave(&list->lock, flags);
+	skb_queue_splice_init(list, &tmp);
+	spin_unlock_irqrestore(&list->lock, flags);
+	while ((skb = __skb_dequeue(&tmp)))
+		kpi_kfree_skb(skb);
+}
+
+void skb_add_rx_frag_netmem(struct sk_buff *skb, int i, netmem_ref netmem, int off, int size,
+			    unsigned int truesize)
+{
+	skb_fill_netmem_desc(skb, i, netmem, off, size);
+	skb->len += size;
+	skb->data_len += size;
+	skb->truesize += truesize;
+}
+
+/* Flow hash for queue selection (mac80211's fq): a hash of the frame's
+ * first bytes is as good as the flow dissector for spreading flows. */
+void __skb_get_hash_net(const struct net *net, struct sk_buff *skb)
+{
+	u8 buf[48];
+	unsigned int n = min_t(unsigned int, skb->len, sizeof(buf));
+
+	if (skb_copy_bits(skb, 0, buf, n))
+		n = 0;
+	__skb_set_sw_hash(skb, jhash(buf, n, 0x52757374) ?: 1, false);
+}
+
+/* No GSO: RustOS's stack never builds frames larger than the MTU. */
+struct sk_buff *__skb_gso_segment(struct sk_buff *skb, netdev_features_t features,
+				  bool tx_path)
+{
+	return ERR_PTR(-EPROTONOSUPPORT);
+}
+
+int skb_csum_hwoffload_help(struct sk_buff *skb, const netdev_features_t features)
+{
+	return 0;
+}
+
+void dst_release(struct dst_entry *dst)
+{
+}
+
+/* From lib/checksum.c (generic do_csum). */
+static unsigned int kpi_do_csum(const unsigned char *buff, int len)
+{
+	u64 sum = 0;
+	bool odd = (unsigned long)buff & 1;
+
+	if (odd && len > 0) {
+		sum += *buff++ << 8;
+		len--;
+	}
+	while (len > 1) {
+		sum += *(const u16 *)buff;
+		buff += 2;
+		len -= 2;
+	}
+	if (len > 0)
+		sum += *buff;
+	while (sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+	if (odd)
+		sum = ((sum >> 8) & 0xff) | ((sum & 0xff) << 8);
+	return sum;
+}
+
+__wsum csum_partial(const void *buff, int len, __wsum wsum)
+{
+	unsigned int sum = (__force unsigned int)wsum;
+	unsigned int result = kpi_do_csum(buff, len);
+
+	result += sum;
+	if (sum > result)
+		result += 1;
+	return (__force __wsum)result;
+}
+
 /* Page fragments for receive buffers: each fragment holds a page reference;
  * the cache holds one more until it moves on to a new page. */
 static DEFINE_SPINLOCK(kpi_frag_lock);
@@ -430,8 +884,18 @@ struct sk_buff *napi_alloc_skb(struct napi_struct *napi, unsigned int length)
 
 /* --------------------------------------------------------- net_device */
 
-#define KPI_MAX_NETDEVS 16
+/*
+ * Every registered net_device is also a RustOS interface (net.rs); the
+ * table below maps one to the other. RustOS interface indexes are Linux
+ * ifindexes. Registration follows net/core/dev.c without qdiscs, XDP,
+ * namespaces other than init_net, or the netdev instance lock: the
+ * netdevice notifier chain sees NETDEV_REGISTER/UP/GOING_DOWN/DOWN/
+ * UNREGISTER as in Linux, and freeing (needs_free_netdev) waits for
+ * rtnl_unlock() as Linux's netdev_run_todo() does.
+ */
+#define KPI_MAX_NETDEVS 32
 static struct { struct net_device *dev; u64 handle; bool opened; } kpi_netdevs[KPI_MAX_NETDEVS];
+static RAW_NOTIFIER_HEAD(netdev_chain);
 
 static u64 kpi_netdev_handle(const struct net_device *dev)
 {
@@ -441,34 +905,72 @@ static u64 kpi_netdev_handle(const struct net_device *dev)
 	return 0;
 }
 
-struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs, unsigned int rxqs)
+int call_netdevice_notifiers_info(unsigned long val, struct netdev_notifier_info *info)
 {
-	struct net_device *dev = kzalloc(struct_size(dev, priv, sizeof_priv), GFP_KERNEL);
+	return raw_notifier_call_chain(&netdev_chain, val, info);
+}
 
-	if (!dev)
-		return NULL;
-	dev->priv_len = sizeof_priv;
-	dev->_tx = kcalloc(txqs, sizeof(struct netdev_queue), GFP_KERNEL);
-	dev->dev_addr = kzalloc(MAX_ADDR_LEN, GFP_KERNEL);
-	if (!dev->_tx || !dev->dev_addr) {
-		kfree(dev->_tx);
-		kfree(dev->dev_addr);
-		kfree(dev);
-		return NULL;
-	}
-	dev->num_tx_queues = dev->real_num_tx_queues = txqs;
-	dev->num_rx_queues = dev->real_num_rx_queues = rxqs;
-	for (unsigned int i = 0; i < txqs; i++) {
-		struct netdev_queue *q = &dev->_tx[i];
+int call_netdevice_notifiers(unsigned long val, struct net_device *dev)
+{
+	struct netdev_notifier_info info = { .dev = dev };
 
-		q->dev = dev;
-		spin_lock_init(&q->_xmit_lock);
-		q->xmit_lock_owner = -1;
-#ifdef CONFIG_BQL
-		dql_init(&q->dql, HZ);
-#endif
+	return call_netdevice_notifiers_info(val, &info);
+}
+
+int register_netdevice_notifier(struct notifier_block *nb)
+{
+	int err;
+
+	rtnl_lock();
+	err = raw_notifier_chain_register(&netdev_chain, nb);
+	/* Replay the devices that exist, as Linux does. */
+	for (int i = 0; !err && i < KPI_MAX_NETDEVS; i++) {
+		struct net_device *dev = kpi_netdevs[i].dev;
+		struct netdev_notifier_info info = { .dev = dev };
+
+		if (!dev)
+			continue;
+		nb->notifier_call(nb, NETDEV_REGISTER, &info);
+		if (dev->flags & IFF_UP)
+			nb->notifier_call(nb, NETDEV_UP, &info);
 	}
-	/* ether_setup() */
+	rtnl_unlock();
+	return err;
+}
+
+int unregister_netdevice_notifier(struct notifier_block *nb)
+{
+	int err;
+
+	rtnl_lock();
+	err = raw_notifier_chain_unregister(&netdev_chain, nb);
+	rtnl_unlock();
+	return err;
+}
+
+/* IPv4 addresses live in RustOS's stack; nobody hears about them. */
+int register_inetaddr_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+int unregister_inetaddr_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+static const struct ethtool_ops default_ethtool_ops;
+
+void netdev_set_default_ethtool_ops(struct net_device *dev, const struct ethtool_ops *ops)
+{
+	if (dev->ethtool_ops == &default_ethtool_ops)
+		dev->ethtool_ops = ops;
+}
+
+/* From net/ethernet/eth.c. */
+void ether_setup(struct net_device *dev)
+{
+	dev->header_ops = NULL;
 	dev->type = ARPHRD_ETHER;
 	dev->hard_header_len = ETH_HLEN;
 	dev->min_header_len = ETH_HLEN;
@@ -480,27 +982,143 @@ struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs, unsign
 	dev->flags = IFF_BROADCAST | IFF_MULTICAST;
 	dev->priv_flags |= IFF_TX_SKB_SHARING;
 	eth_broadcast_addr(dev->broadcast);
+}
 
-	strscpy(dev->name, "eth%d", sizeof(dev->name));
+int eth_mac_addr(struct net_device *dev, void *p)
+{
+	struct sockaddr *addr = p;
+
+	if (!(dev->priv_flags & IFF_LIVE_ADDR_CHANGE) && netif_running(dev))
+		return -EBUSY;
+	if (!is_valid_ether_addr(addr->sa_data))
+		return -EADDRNOTAVAIL;
+	eth_hw_addr_set(dev, addr->sa_data);
+	return 0;
+}
+
+struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
+				    unsigned char name_assign_type,
+				    void (*setup)(struct net_device *), unsigned int txqs,
+				    unsigned int rxqs)
+{
+	struct net_device *dev;
+
+	if (!txqs || !rxqs)
+		return NULL;
+	dev = kzalloc(struct_size(dev, priv, sizeof_priv), GFP_KERNEL);
+	if (!dev)
+		return NULL;
+	dev->priv_len = sizeof_priv;
+	dev->pcpu_refcnt = alloc_percpu(int);
+	dev->dev_addr = kzalloc(MAX_ADDR_LEN, GFP_KERNEL);
+	dev->_tx = kcalloc(txqs, sizeof(struct netdev_queue), GFP_KERNEL);
+	dev->_rx = kcalloc(rxqs, sizeof(struct netdev_rx_queue), GFP_KERNEL);
+	dev->ethtool = kzalloc(sizeof(*dev->ethtool), GFP_KERNEL);
+	dev->cfg = kzalloc(sizeof(*dev->cfg), GFP_KERNEL);
+	dev->napi_config = kcalloc(max(txqs, rxqs), sizeof(*dev->napi_config), GFP_KERNEL);
+	if (!dev->pcpu_refcnt || !dev->dev_addr || !dev->_tx || !dev->_rx || !dev->ethtool ||
+	    !dev->cfg || !dev->napi_config) {
+		free_netdev(dev);
+		return NULL;
+	}
+	__dev_hold(dev);
+	dev_net_set(dev, &init_net);
+	dev->gso_max_size = GSO_LEGACY_MAX_SIZE;
+	dev->gso_max_segs = GSO_MAX_SEGS;
+	dev->gro_max_size = GRO_LEGACY_MAX_SIZE;
+	dev->tso_max_size = TSO_LEGACY_MAX_SIZE;
+	dev->tso_max_segs = TSO_MAX_SEGS;
+	dev->upper_level = 1;
+	dev->lower_level = 1;
 	INIT_LIST_HEAD(&dev->napi_list);
+	INIT_LIST_HEAD(&dev->unreg_list);
+	INIT_LIST_HEAD(&dev->close_list);
+	INIT_LIST_HEAD(&dev->link_watch_list);
+	INIT_LIST_HEAD(&dev->adj_list.upper);
+	INIT_LIST_HEAD(&dev->adj_list.lower);
+	INIT_LIST_HEAD(&dev->ptype_all);
+	INIT_LIST_HEAD(&dev->ptype_specific);
+	INIT_LIST_HEAD(&dev->net_notifier_list);
+	INIT_LIST_HEAD(&dev->todo_list);
+	INIT_LIST_HEAD(&dev->dev_list);
 	INIT_LIST_HEAD(&dev->uc.list);
 	INIT_LIST_HEAD(&dev->mc.list);
+	mutex_init(&dev->lock);
+	dev->priv_flags = IFF_XMIT_DST_RELEASE | IFF_XMIT_DST_RELEASE_PERM;
+	setup(dev);
+	if (!dev->tx_queue_len) {
+		dev->priv_flags |= IFF_NO_QUEUE;
+		dev->tx_queue_len = 1000;
+	}
+	dev->num_tx_queues = dev->real_num_tx_queues = txqs;
+	for (unsigned int i = 0; i < txqs; i++) {
+		struct netdev_queue *q = &dev->_tx[i];
+
+		q->dev = dev;
+		spin_lock_init(&q->_xmit_lock);
+		q->xmit_lock_owner = -1;
+#ifdef CONFIG_BQL
+		dql_init(&q->dql, HZ);
+#endif
+	}
+	dev->num_rx_queues = dev->real_num_rx_queues = rxqs;
+	for (unsigned int i = 0; i < rxqs; i++)
+		dev->_rx[i].dev = dev;
+	dev->cfg_pending = dev->cfg;
+	dev->num_napi_configs = max(txqs, rxqs);
+	strscpy(dev->name, name, sizeof(dev->name));
+	dev->name_assign_type = name_assign_type;
+	if (!dev->ethtool_ops)
+		dev->ethtool_ops = &default_ethtool_ops;
 	set_bit(__LINK_STATE_PRESENT, &dev->state);
 	return dev;
 }
+
+struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs, unsigned int rxqs)
+{
+	return alloc_netdev_mqs(sizeof_priv, "eth%d", NET_NAME_ENUM, ether_setup, txqs, rxqs);
+}
+
+static void kpi_netdev_free_mem(struct net_device *dev)
+{
+	free_percpu(dev->pcpu_refcnt);
+	kfree(dev->dev_addr);
+	kfree(dev->_tx);
+	kfree(dev->_rx);
+	kfree(dev->ethtool);
+	kfree(dev->cfg);
+	kfree(dev->napi_config);
+	kfree(dev);
+}
+
+/* The struct device of a registered net_device frees it on release. */
+static void kpi_netdev_release(struct device *d)
+{
+	kpi_netdev_free_mem(container_of(d, struct net_device, dev));
+}
+
+static const struct class kpi_net_class = {
+	.name = "net",
+	.dev_release = kpi_netdev_release,
+};
 
 void free_netdev(struct net_device *dev)
 {
 	if (!dev)
 		return;
-	kfree(dev->_tx);
-	kfree(dev->dev_addr);
-	kfree(dev);
+	if (dev->reg_state == NETREG_UNINITIALIZED) {
+		kpi_netdev_free_mem(dev);
+		return;
+	}
+	dev->reg_state = NETREG_RELEASED;
+	put_device(&dev->dev);
 }
 
 void dev_addr_mod(struct net_device *dev, unsigned int offset, const void *addr, size_t len)
 {
 	memcpy((u8 *)dev->dev_addr + offset, addr, len);
+	if (dev->reg_state == NETREG_REGISTERED && dev->addr_len == ETH_ALEN)
+		rustos_kpi_netdev_set_mac(kpi_netdev_handle(dev), dev->dev_addr);
 }
 
 int eth_validate_addr(struct net_device *dev)
@@ -523,27 +1141,157 @@ void netif_tx_stop_all_queues(struct net_device *dev)
 		netif_tx_stop_queue(netdev_get_tx_queue(dev, i));
 }
 
-int register_netdev(struct net_device *dev)
+/* Interface names: an exact name, or a template with %d that takes the
+ * lowest free number. Free means free in RustOS (native NICs too). */
+int dev_alloc_name(struct net_device *dev, const char *name)
 {
-	const char *drv = dev->dev.parent ? dev_driver_string(dev->dev.parent) : "linux";
-	u64 handle;
+	char buf[IFNAMSIZ];
 
-	rtnl_lock();
-	dev->reg_state = NETREG_REGISTERED;
-	handle = rustos_kpi_netdev_register(dev, dev->dev_addr, dev->mtu, kpi_netdev_is_wireless(dev),
-					    drv, dev->name, sizeof(dev->name));
-	for (int i = 0; i < KPI_MAX_NETDEVS; i++) {
-		if (!kpi_netdevs[i].dev) {
-			kpi_netdevs[i].dev = dev;
-			kpi_netdevs[i].handle = handle;
-			kpi_netdevs[i].opened = false;
-			break;
+	if (!strchr(name, '%')) {
+		if (!rustos_kpi_ifname_free(name))
+			return -EEXIST;
+		strscpy(dev->name, name, sizeof(dev->name));
+		return 0;
+	}
+	for (int i = 0; i < 1000; i++) {
+		snprintf(buf, sizeof(buf), name, i);
+		if (rustos_kpi_ifname_free(buf)) {
+			strscpy(dev->name, buf, sizeof(dev->name));
+			return i;
 		}
 	}
-	/* No carrier until opened (kpi_netdev_open_pending). */
+	return -ENFILE;
+}
+
+int register_netdevice(struct net_device *dev)
+{
+	const char *drv = dev->dev.parent ? dev_driver_string(dev->dev.parent) : "linux";
+	int slot = -1, err;
+	u64 handle;
+
+	ASSERT_RTNL();
+	for (int i = 0; i < KPI_MAX_NETDEVS; i++)
+		if (!kpi_netdevs[i].dev) {
+			slot = i;
+			break;
+		}
+	if (slot < 0)
+		return -ENFILE;
+	err = dev_alloc_name(dev, dev->name);
+	if (err < 0)
+		return err;
+	if (dev->netdev_ops->ndo_init) {
+		err = dev->netdev_ops->ndo_init(dev);
+		if (err)
+			return err > 0 ? -EIO : err;
+	}
+	if (dev->pcpu_stat_type == NETDEV_PCPU_STAT_TSTATS) {
+		dev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
+		if (!dev->tstats) {
+			err = -ENOMEM;
+			goto uninit;
+		}
+	} else if (dev->pcpu_stat_type == NETDEV_PCPU_STAT_DSTATS) {
+		dev->dstats = netdev_alloc_pcpu_stats(struct pcpu_dstats);
+		if (!dev->dstats) {
+			err = -ENOMEM;
+			goto uninit;
+		}
+	}
+	err = notifier_to_errno(call_netdevice_notifiers(NETDEV_POST_INIT, dev));
+	if (err)
+		goto uninit;
+	handle = rustos_kpi_netdev_register(dev, dev->dev_addr, dev->mtu,
+					    kpi_netdev_is_wireless(dev), dev->type == ARPHRD_ETHER,
+					    drv, dev->name);
+	dev->ifindex = rustos_kpi_netdev_ifindex(handle);
+	kpi_netdevs[slot].dev = dev;
+	kpi_netdevs[slot].handle = handle;
+	kpi_netdevs[slot].opened = false;
+
+	device_initialize(&dev->dev);
+	dev->dev.class = &kpi_net_class;
+	dev->dev.platform_data = dev;
+	dev_set_name(&dev->dev, "%s", dev->name);
+	err = device_add(&dev->dev);
+	if (err)
+		netdev_warn(dev, "sysfs registration failed: %d\n", err);
+
+	list_add_tail_rcu(&dev->dev_list, &init_net.dev_base_head);
+	dev->reg_state = NETREG_REGISTERED;
+	/* No carrier until opened (dev_open). */
 	rustos_kpi_netdev_carrier(handle, 0);
-	rtnl_unlock();
+	call_netdevice_notifiers(NETDEV_REGISTER, dev);
 	return 0;
+
+uninit:
+	if (dev->netdev_ops->ndo_uninit)
+		dev->netdev_ops->ndo_uninit(dev);
+	return err;
+}
+
+int register_netdev(struct net_device *dev)
+{
+	int err;
+
+	rtnl_lock();
+	err = register_netdevice(dev);
+	rtnl_unlock();
+	return err;
+}
+
+int dev_open(struct net_device *dev, struct netlink_ext_ack *extack)
+{
+	int err;
+
+	ASSERT_RTNL();
+	if (dev->flags & IFF_UP)
+		return 0;
+	if (!netif_device_present(dev))
+		return -ENODEV;
+	err = notifier_to_errno(call_netdevice_notifiers(NETDEV_PRE_UP, dev));
+	if (err)
+		return err;
+	set_bit(__LINK_STATE_START, &dev->state);
+	if (dev->netdev_ops->ndo_open)
+		err = dev->netdev_ops->ndo_open(dev);
+	if (err) {
+		clear_bit(__LINK_STATE_START, &dev->state);
+		return err;
+	}
+	dev->flags |= IFF_UP;
+	call_netdevice_notifiers(NETDEV_UP, dev);
+	rustos_kpi_netdev_carrier(kpi_netdev_handle(dev), netif_carrier_ok(dev));
+	return 0;
+}
+
+void dev_close(struct net_device *dev)
+{
+	ASSERT_RTNL();
+	if (!(dev->flags & IFF_UP))
+		return;
+	call_netdevice_notifiers(NETDEV_GOING_DOWN, dev);
+	clear_bit(__LINK_STATE_START, &dev->state);
+	smp_mb__after_atomic();
+	if (dev->netdev_ops->ndo_stop)
+		dev->netdev_ops->ndo_stop(dev);
+	dev->flags &= ~IFF_UP;
+	call_netdevice_notifiers(NETDEV_DOWN, dev);
+	rustos_kpi_netdev_carrier(kpi_netdev_handle(dev), 0);
+}
+
+/* `ip link set up/down` and SIOCSIFFLAGS from RustOS (net.rs). */
+int kpi_netdev_set_up(struct net_device *dev, int up)
+{
+	int err = 0;
+
+	rtnl_lock();
+	if (up)
+		err = dev_open(dev, NULL);
+	else
+		dev_close(dev);
+	rtnl_unlock();
+	return err;
 }
 
 /*
@@ -557,31 +1305,84 @@ void kpi_netdev_open_pending(void)
 	rtnl_lock();
 	for (int i = 0; i < KPI_MAX_NETDEVS; i++) {
 		struct net_device *dev = kpi_netdevs[i].dev;
-		int err = 0;
+		int err;
 
 		if (!dev || kpi_netdevs[i].opened)
 			continue;
 		kpi_netdevs[i].opened = true;
-		if (dev->netdev_ops->ndo_open)
-			err = dev->netdev_ops->ndo_open(dev);
-		if (err) {
+		err = dev_open(dev, NULL);
+		if (err)
 			netdev_err(dev, "open failed: %d\n", err);
-			continue;
-		}
-		set_bit(__LINK_STATE_START, &dev->state);
-		dev->flags |= IFF_UP;
-		rustos_kpi_netdev_carrier(kpi_netdevs[i].handle, netif_carrier_ok(dev));
 	}
 	rtnl_unlock();
+}
+
+static void kpi_unregister_one(struct net_device *dev)
+{
+	int i;
+
+	dev_close(dev);
+	call_netdevice_notifiers(NETDEV_UNREGISTER, dev);
+	list_del_rcu(&dev->dev_list);
+	for (i = 0; i < KPI_MAX_NETDEVS; i++)
+		if (kpi_netdevs[i].dev == dev)
+			break;
+	if (i < KPI_MAX_NETDEVS) {
+		rustos_kpi_netdev_unregister(kpi_netdevs[i].handle);
+		kpi_netdevs[i].dev = NULL;
+	}
+	if (dev->netdev_ops->ndo_uninit)
+		dev->netdev_ops->ndo_uninit(dev);
+	device_del(&dev->dev);
+	dev->reg_state = NETREG_UNREGISTERING;
+	list_add_tail(&dev->todo_list, &kpi_net_todo);
+}
+
+void unregister_netdevice_many(struct list_head *head)
+{
+	struct net_device *dev, *tmp;
+
+	list_for_each_entry_safe(dev, tmp, head, unreg_list) {
+		list_del_init(&dev->unreg_list);
+		kpi_unregister_one(dev);
+	}
+}
+
+void unregister_netdevice_queue(struct net_device *dev, struct list_head *head)
+{
+	ASSERT_RTNL();
+	if (head) {
+		list_move_tail(&dev->unreg_list, head);
+		return;
+	}
+	kpi_unregister_one(dev);
 }
 
 void unregister_netdev(struct net_device *dev)
 {
 	rtnl_lock();
-	if (test_and_clear_bit(__LINK_STATE_START, &dev->state) && dev->netdev_ops->ndo_stop)
-		dev->netdev_ops->ndo_stop(dev);
-	dev->reg_state = NETREG_UNREGISTERED;
+	unregister_netdevice(dev);
 	rtnl_unlock();
+}
+
+/* rtnl_unlock(): finish unregistrations (net/core/dev.c netdev_run_todo). */
+static void kpi_netdev_run_todo(struct list_head *list)
+{
+	struct net_device *dev, *tmp;
+
+	if (list_empty(list))
+		return;
+	synchronize_rcu();
+	list_for_each_entry_safe(dev, tmp, list, todo_list) {
+		list_del_init(&dev->todo_list);
+		dev->reg_state = NETREG_UNREGISTERED;
+		free_percpu(dev->tstats);
+		dev->tstats = NULL;
+		if (dev->priv_destructor)
+			dev->priv_destructor(dev);
+		if (dev->needs_free_netdev)
+			free_netdev(dev);
+	}
 }
 
 /* RustOS shutdown path (src/linuxkpi/net.rs). */
@@ -591,10 +1392,75 @@ void kpi_netdev_stop(struct net_device *dev)
 		dev->netdev_ops->ndo_stop(dev);
 }
 
+int dev_change_net_namespace(struct net_device *dev, struct net *net, const char *pat)
+{
+	return net == dev_net(dev) ? 0 : -EOPNOTSUPP;
+}
+
+struct net_device *__dev_get_by_index(struct net *net, int ifindex)
+{
+	for (int i = 0; i < KPI_MAX_NETDEVS; i++) {
+		struct net_device *dev = READ_ONCE(kpi_netdevs[i].dev);
+
+		if (dev && dev->ifindex == ifindex)
+			return dev;
+	}
+	return NULL;
+}
+
+struct net_device *dev_get_by_index_rcu(struct net *net, int ifindex)
+{
+	return __dev_get_by_index(net, ifindex);
+}
+
+struct net_device *dev_get_by_index(struct net *net, int ifindex)
+{
+	struct net_device *dev = __dev_get_by_index(net, ifindex);
+
+	dev_hold(dev);
+	return dev;
+}
+
+struct net_device *__dev_get_by_name(struct net *net, const char *name)
+{
+	for (int i = 0; i < KPI_MAX_NETDEVS; i++) {
+		struct net_device *dev = READ_ONCE(kpi_netdevs[i].dev);
+
+		if (dev && !strncmp(dev->name, name, IFNAMSIZ))
+			return dev;
+	}
+	return NULL;
+}
+
+void synchronize_net(void)
+{
+	synchronize_rcu();
+}
+
+/* Unicast/multicast address lists: RustOS's stack filters nothing in
+ * hardware, so the lists stay empty and syncing them is a no-op. */
+void __hw_addr_init(struct netdev_hw_addr_list *list)
+{
+	INIT_LIST_HEAD(&list->list);
+	list->count = 0;
+	list->tree = RB_ROOT;
+}
+
+int __hw_addr_sync(struct netdev_hw_addr_list *to_list, struct netdev_hw_addr_list *from_list,
+		   int addr_len)
+{
+	return 0;
+}
+
+void __hw_addr_unsync(struct netdev_hw_addr_list *to_list,
+		      struct netdev_hw_addr_list *from_list, int addr_len)
+{
+}
+
 void netif_carrier_on(struct net_device *dev)
 {
 	if (test_and_clear_bit(__LINK_STATE_NOCARRIER, &dev->state) &&
-	    dev->reg_state == NETREG_REGISTERED)
+	    dev->reg_state == NETREG_REGISTERED && netif_running(dev))
 		rustos_kpi_netdev_carrier(kpi_netdev_handle(dev), 1);
 }
 
@@ -631,36 +1497,59 @@ void netif_queue_set_napi(struct net_device *dev, unsigned int queue_index,
 {
 }
 
+/*
+ * Transmit without qdiscs: pick the queue (ndo_select_queue), then hand
+ * the skb to the driver unless that queue is stopped, in which case it is
+ * dropped (RustOS's stack retransmits).
+ */
+int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
+{
+	struct net_device *dev = skb->dev;
+	struct netdev_queue *txq;
+	netdev_tx_t rc = NETDEV_TX_BUSY;
+	u16 q = 0;
+
+	skb_reset_mac_header(skb);
+	if (dev->netdev_ops->ndo_select_queue)
+		q = dev->netdev_ops->ndo_select_queue(dev, skb, sb_dev);
+	if (q >= dev->real_num_tx_queues)
+		q = 0;
+	skb_set_queue_mapping(skb, q);
+	txq = netdev_get_tx_queue(dev, q);
+
+	local_bh_disable();
+	if (!dev->lltx)
+		__netif_tx_lock(txq, smp_processor_id());
+	if (netif_running(dev) && !netif_xmit_frozen_or_stopped(txq))
+		rc = dev->netdev_ops->ndo_start_xmit(skb, dev);
+	if (!dev->lltx)
+		__netif_tx_unlock(txq);
+	local_bh_enable();
+	if (rc != NETDEV_TX_OK) {
+		kpi_kfree_skb(skb);
+		return NET_XMIT_DROP;
+	}
+	return NET_XMIT_SUCCESS;
+}
+
 /* Frames from RustOS (src/linuxkpi/net.rs): a new linear skb each. */
 int kpi_netdev_xmit(struct net_device *dev, const u8 *data, u32 len)
 {
-	struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
 	struct sk_buff *skb;
-	netdev_tx_t rc = NETDEV_TX_BUSY;
 
 	if (!netif_running(dev) || !netif_carrier_ok(dev))
 		return -ENETDOWN;
-	skb = __netdev_alloc_skb(dev, len, GFP_ATOMIC);
+	skb = __netdev_alloc_skb(dev, len + dev->needed_headroom + dev->needed_tailroom,
+				 GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
+	skb_reserve(skb, dev->needed_headroom);
 	skb_put_data(skb, data, len);
 	skb_reset_mac_header(skb);
 	skb_set_network_header(skb, ETH_HLEN);
 	skb->protocol = ((const struct ethhdr *)data)->h_proto;
 	skb->ip_summed = CHECKSUM_NONE;
-	skb_set_queue_mapping(skb, 0);
-
-	local_bh_disable();
-	__netif_tx_lock(txq, smp_processor_id());
-	if (!netif_xmit_frozen_or_stopped(txq))
-		rc = dev->netdev_ops->ndo_start_xmit(skb, dev);
-	__netif_tx_unlock(txq);
-	local_bh_enable();
-	if (rc != NETDEV_TX_OK) {
-		kpi_kfree_skb(skb);
-		return -EBUSY;
-	}
-	return 0;
+	return __dev_queue_xmit(skb, NULL) == NET_XMIT_SUCCESS ? 0 : -EBUSY;
 }
 
 /* Hand a received skb to RustOS as an Ethernet frame and free it. */
@@ -690,6 +1579,16 @@ int netif_receive_skb(struct sk_buff *skb)
 {
 	kpi_netif_deliver(skb);
 	return NET_RX_SUCCESS;
+}
+
+void netif_receive_skb_list(struct list_head *head)
+{
+	struct sk_buff *skb, *next;
+
+	list_for_each_entry_safe(skb, next, head, list) {
+		skb_list_del_init(skb);
+		kpi_netif_deliver(skb);
+	}
 }
 
 int netif_rx(struct sk_buff *skb)
@@ -758,7 +1657,7 @@ void kpi_softirq_register(void (*fn)(void));
 int kpi_net_init(void)
 {
 	kpi_softirq_register(kpi_napi_run);
-	return 0;
+	return kpi_netns_init();
 }
 
 void netif_napi_add_weight_locked(struct net_device *dev, struct napi_struct *napi,

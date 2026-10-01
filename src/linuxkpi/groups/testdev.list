@@ -1,0 +1,2 @@
+# /dev/kpi-test, the character-device bridge test driver (linux-test).
+kpi:testdev.c

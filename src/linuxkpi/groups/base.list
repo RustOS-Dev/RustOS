@@ -31,3 +31,10 @@ kernel/async.c
 # ACPI/IRQ hooks, resources, init.
 kpi:sysfs.c
 kpi:devcore.c
+kpi:chrdev.c
+# Library code drivers and subsystems share.
+lib/scatterlist.c
+lib/rbtree.c
+lib/rhashtable.c
+lib/ratelimit.c
+lib/math/gcd.c

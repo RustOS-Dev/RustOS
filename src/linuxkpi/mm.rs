@@ -10,7 +10,8 @@
 use crate::mm::{self, FRAME_SIZE};
 use crate::sync::Mutex;
 use alloc::collections::BTreeMap;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::Ordering;
+use x86_64::instructions::interrupts::without_interrupts;
 use x86_64::structures::paging::PageTableFlags;
 
 /// `struct page` array for every frame (Linux `vmemmap_base`).
@@ -19,9 +20,11 @@ pub const VMEMMAP_BASE: u64 = 0xffff_f000_0000_0000;
 pub const VMALLOC_START: u64 = 0xffff_f800_0000_0000;
 pub const VMALLOC_END: u64 = 0xffff_fe00_0000_0000;
 
-static VMALLOC_NEXT: AtomicU64 = AtomicU64::new(VMALLOC_START);
+static VMALLOC_VA: Mutex<mm::VaAlloc> = Mutex::new(mm::VaAlloc::new(VMALLOC_START, VMALLOC_END));
 /// Live vmalloc areas: start → size.
 static VMALLOC_AREAS: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
+/// Live ioremap mappings: virtual address → size.
+static IOREMAPS: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
 
 fn rw() -> PageTableFlags {
     PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE
@@ -69,11 +72,15 @@ extern "C" fn rustos_kpi_free_frames(phys: u64, count: u64) {
 extern "C" fn rustos_kpi_vmalloc(size: u64) -> *mut u8 {
     let size = size.max(1).next_multiple_of(FRAME_SIZE);
     // One unmapped guard page after each area.
-    let virt = VMALLOC_NEXT.fetch_add(size + FRAME_SIZE, Ordering::SeqCst);
-    if virt + size > VMALLOC_END || mm::map_kernel_pages(virt, size, rw()).is_err() {
+    let Some(virt) = without_interrupts(|| VMALLOC_VA.lock().alloc(size + FRAME_SIZE)) else {
+        return core::ptr::null_mut();
+    };
+    if mm::map_kernel_pages(virt, size, rw()).is_err() {
+        mm::unmap_kernel_pages(virt, size);
+        without_interrupts(|| VMALLOC_VA.lock().free(virt, size + FRAME_SIZE));
         return core::ptr::null_mut();
     }
-    VMALLOC_AREAS.lock().insert(virt, size);
+    without_interrupts(|| VMALLOC_AREAS.lock().insert(virt, size));
     virt as *mut u8
 }
 
@@ -83,8 +90,9 @@ extern "C" fn rustos_kpi_vfree(addr: *const u8) {
         return;
     }
     let virt = addr as u64;
-    if let Some(size) = VMALLOC_AREAS.lock().remove(&virt) {
+    if let Some(size) = without_interrupts(|| VMALLOC_AREAS.lock().remove(&virt)) {
         mm::unmap_kernel_pages(virt, size);
+        without_interrupts(|| VMALLOC_VA.lock().free(virt, size + FRAME_SIZE));
     }
 }
 
@@ -94,16 +102,29 @@ extern "C" fn rustos_kpi_is_vmalloc(addr: *const u8) -> i32 {
     (VMALLOC_START..VMALLOC_END).contains(&a) as i32
 }
 
-/// Map device memory (uncached; write-combining is not supported yet and
-/// falls back to uncached).
+/// Map device memory: `cache` 0 uncached, 1 write-combining, 2 write-back.
 #[unsafe(no_mangle)]
-extern "C" fn rustos_kpi_ioremap(phys: u64, size: u64, _wc: i32) -> *mut u8 {
-    mm::map_mmio(phys, size as usize) as *mut u8
+extern "C" fn rustos_kpi_ioremap(phys: u64, size: u64, cache: i32) -> *mut u8 {
+    let cache = match cache {
+        1 => mm::Cache::WriteCombining,
+        2 => mm::Cache::WriteBack,
+        _ => mm::Cache::Uncached,
+    };
+    match mm::map_mmio_cache(phys, size as usize, cache) {
+        Some(v) => {
+            without_interrupts(|| IOREMAPS.lock().insert(v, size));
+            v as *mut u8
+        }
+        None => core::ptr::null_mut(),
+    }
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rustos_kpi_iounmap(_addr: *mut u8) {
-    // map_mmio has no unmap yet: the mapping stays (M27.2 gap).
+extern "C" fn rustos_kpi_iounmap(addr: *mut u8) {
+    let v = addr as u64;
+    if let Some(size) = without_interrupts(|| IOREMAPS.lock().remove(&v)) {
+        mm::unmap_mmio(v, size as usize);
+    }
 }
 
 /// Copy `n` bytes from user address `from`. Returns the bytes not copied

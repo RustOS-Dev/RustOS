@@ -5,6 +5,7 @@
 //! docs/ROADMAP-ROUND4.md §4.
 
 pub mod acpi;
+pub mod chrdev;
 pub mod firmware;
 pub mod mm;
 pub mod net;
@@ -34,6 +35,7 @@ unsafe extern "C" {
     fn kpi_workqueues_init() -> c_int;
     fn kpi_rcu_init() -> c_int;
     fn kpi_devcore_init() -> c_int;
+    fn kpi_chrdev_init() -> c_int;
     fn kpi_pci_bus_init() -> c_int;
     fn device_shutdown();
     fn kpi_selftest() -> c_int;
@@ -75,6 +77,10 @@ pub fn init() {
     }
     if unsafe { kpi_devcore_init() } != 0 {
         crate::println!("[linuxkpi] device core setup failed; LinuxKPI disabled");
+        return;
+    }
+    if unsafe { kpi_chrdev_init() } != 0 {
+        crate::println!("[linuxkpi] character device setup failed; LinuxKPI disabled");
         return;
     }
     pci::init();

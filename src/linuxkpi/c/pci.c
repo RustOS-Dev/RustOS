@@ -394,6 +394,9 @@ static struct kpi_pci_dev *kpi_pci_create(u32 idx)
 
 static int kpi_pci_bus_match(struct device *dev, const struct device_driver *drv)
 {
+	/* A device a native RustOS driver took is not offered to Linux ones. */
+	if (rustos_kpi_pci_claimed(kpi_idx(to_pci_dev(dev))))
+		return 0;
 	return kpi_pci_match(to_pci_driver(drv)->id_table, to_pci_dev(dev)) != NULL;
 }
 
@@ -613,7 +616,7 @@ static void kpi_irq_trampoline(void *arg)
 
 	if (!READ_ONCE(d->handler) || READ_ONCE(d->disabled))
 		return;
-	preempt_count_add(HARDIRQ_OFFSET);
+	/* RustOS's dispatch already counts hard-IRQ context (HARDIRQ_OFFSET). */
 	WRITE_ONCE(d->running, 1);
 	ret = d->handler(d->irq, d->dev_id);
 	if ((ret & IRQ_WAKE_THREAD) && d->thread) {
@@ -621,7 +624,6 @@ static void kpi_irq_trampoline(void *arg)
 		wake_up_process(d->thread);
 	}
 	WRITE_ONCE(d->running, 0);
-	preempt_count_sub(HARDIRQ_OFFSET);
 }
 
 static irqreturn_t kpi_default_primary(int irq, void *dev_id)

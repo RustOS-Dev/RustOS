@@ -371,6 +371,15 @@ extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
     let v = frame.vector as usize;
     COUNTS[v].fetch_add(1, Ordering::Relaxed);
 
+    // Device interrupts run in hard-IRQ context: count it in
+    // preempt_count, as Linux does (in_interrupt(), and no preemption).
+    // Exceptions (page faults may sleep) are not interrupts.
+    let irq = v >= 32 && super::cpu::is_initialized();
+    if irq {
+        super::cpu::this()
+            .preempt_count
+            .fetch_add(super::cpu::HARDIRQ_OFFSET, Ordering::Relaxed);
+    }
     let h = HANDLERS[v].load(Ordering::Acquire);
     if !h.is_null() {
         let handler: &HandlerBox = unsafe { &*h };
@@ -382,6 +391,11 @@ extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
     } else {
         crate::serial_println!("[irq] unhandled vector {}", v);
         super::apic::eoi();
+    }
+    if irq {
+        super::cpu::this()
+            .preempt_count
+            .fetch_sub(super::cpu::HARDIRQ_OFFSET, Ordering::Relaxed);
     }
 
     // Returning to user mode is the safe point for preemption and signals.

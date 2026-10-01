@@ -5,6 +5,7 @@ use crate::{Error, Result};
 use alloc::string::String;
 use alloc::vec::Vec;
 
+pub const AF_UNIX: u16 = 1;
 pub const AF_INET: u16 = 2;
 pub const AF_INET6: u16 = 10;
 pub const SOCK_STREAM: u32 = 1;
@@ -232,6 +233,24 @@ impl Socket {
 
     pub fn fd(&self) -> i32 {
         self.fd
+    }
+
+    /// Bind to a raw `sockaddr` (any family; see `unix_addr`).
+    pub fn bind_raw(&self, sa: &[u8]) -> Result<()> {
+        sys::check(sys::syscall(
+            nr::BIND,
+            &[self.fd as usize, sa.as_ptr() as usize, sa.len()],
+        ))
+        .map(|_| ())
+    }
+
+    /// Connect to a raw `sockaddr` (any family; see `unix_addr`).
+    pub fn connect_raw(&self, sa: &[u8]) -> Result<()> {
+        sys::check(sys::syscall(
+            nr::CONNECT,
+            &[self.fd as usize, sa.as_ptr() as usize, sa.len()],
+        ))
+        .map(|_| ())
     }
 
     pub fn bind(&self, a: SocketAddr) -> Result<()> {
@@ -935,4 +954,12 @@ pub fn mask_prefix(mask: Ipv4) -> u8 {
 pub fn prefix_mask(p: u8) -> Ipv4 {
     let m = if p == 0 { 0 } else { u32::MAX << (32 - p as u32) };
     Ipv4(m.to_be_bytes())
+}
+
+/// A `sockaddr_un` for filesystem path `path`.
+pub fn unix_addr(path: &str) -> Vec<u8> {
+    let mut v = AF_UNIX.to_ne_bytes().to_vec();
+    v.extend_from_slice(path.as_bytes());
+    v.push(0);
+    v
 }

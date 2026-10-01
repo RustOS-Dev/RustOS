@@ -1,0 +1,19 @@
+# cfg80211: wireless configuration and nl80211 (net/wireless). WEXT,
+# debugfs, OF and tracing are off.
+net/wireless/core.c
+net/wireless/sysfs.c
+net/wireless/radiotap.c
+net/wireless/util.c
+net/wireless/reg.c
+net/wireless/scan.c
+net/wireless/nl80211.c
+net/wireless/mlme.c
+net/wireless/ibss.c
+net/wireless/sme.c
+net/wireless/chan.c
+net/wireless/ethtool.c
+net/wireless/mesh.c
+net/wireless/ap.c
+net/wireless/ocb.c
+net/wireless/michael-mic.c
+net/wireless/pmsr.c

@@ -9,8 +9,33 @@
 //! kick the thread when they queue data.
 
 pub mod dhcpv6;
+pub mod generic;
+pub mod netlink;
+pub mod packet;
+pub mod rtnetlink;
 pub mod socket;
 pub mod syscalls;
+pub mod unix;
+
+/// Sockets of families other than IP and AF_UNIX (netlink, packet), or
+/// `None` if `domain` is not one of them.
+pub fn other_family_socket(
+    domain: u16,
+    kind: u32,
+    protocol: u32,
+) -> Option<crate::errno::KResult<alloc::sync::Arc<dyn crate::vfs::FileLike>>> {
+    match domain {
+        netlink::AF_NETLINK => Some(
+            netlink::NetlinkSocket::new(kind, protocol)
+                .map(|s| s as alloc::sync::Arc<dyn crate::vfs::FileLike>),
+        ),
+        packet::AF_PACKET => Some(
+            packet::PacketSocket::new(kind, protocol)
+                .map(|s| s as alloc::sync::Arc<dyn crate::vfs::FileLike>),
+        ),
+        _ => None,
+    }
+}
 
 use crate::errno::*;
 use crate::sched::WaitQueue;
@@ -68,6 +93,11 @@ pub trait NetDevice: Send + Sync {
     }
     /// Stop DMA before reboot / power-off.
     fn shutdown(&self) {}
+    /// The interface is being brought up or down (`ip link set`,
+    /// SIOCSIFFLAGS). Called without the network lock held.
+    fn set_up(&self, _up: bool) -> KResult<()> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -436,6 +466,13 @@ impl Iface {
         if !self.up {
             return None;
         }
+        if let Some(dev) = self.dev.as_ref() {
+            // The driver may change its address (SIOCSIFHWADDR, MLO).
+            let mac = HardwareAddress::Ethernet(EthernetAddress(dev.mac()));
+            if self.iface.hardware_addr() != mac {
+                self.iface.set_hardware_addr(mac);
+            }
+        }
         let link = self.link_up();
         if link != self.link {
             self.link = link;
@@ -444,6 +481,7 @@ impl Iface {
                 self.name,
                 if link { "up" } else { "down" }
             );
+            rtnetlink::link_event(self);
             if let Some(h) = self.dhcp {
                 self.sockets.get_mut::<dhcpv4::Socket>(h).reset();
             }
@@ -462,11 +500,15 @@ impl Iface {
             self.iface.poll(now, lo, &mut self.sockets);
         } else if let Some(dev) = self.dev.clone() {
             if !link {
-                // Drop frames while the link is down.
-                while dev.receive().is_some() {}
+                // Frames while the link is down reach packet sockets only
+                // (EAPOL can precede the carrier).
+                while let Some(f) = dev.receive() {
+                    packet::tap(self.index, dev.mac(), &f, false);
+                }
                 return None;
             }
             let mut p = Phy {
+                index: self.index,
                 dev: &dev,
                 stats: &mut self.stats,
                 arp: Some(&mut self.arp),
@@ -513,6 +555,8 @@ pub fn is_loopback_addr(a: &IpAddress) -> bool {
 
 /// smoltcp device adapter for a driver.
 struct Phy<'a> {
+    /// Interface index (for packet sockets).
+    index: u32,
     dev: &'a Arc<dyn NetDevice>,
     stats: &'a mut Stats,
     arp: Option<&'a mut BTreeMap<[u8; 4], [u8; 6]>>,
@@ -575,6 +619,7 @@ fn frame_summary(f: &[u8]) -> String {
 
 struct RxTok(Vec<u8>);
 struct TxTok<'a> {
+    index: u32,
     dev: &'a Arc<dyn NetDevice>,
     stats: *mut Stats,
 }
@@ -598,6 +643,7 @@ impl phy::TxToken for TxTok<'_> {
             Ok(()) => {
                 stats.tx_packets += 1;
                 stats.tx_bytes += len as u64;
+                packet::tap(self.index, self.dev.mac(), &buf, true);
             }
             Err(_) => stats.tx_errors += 1,
         }
@@ -648,9 +694,11 @@ impl Device for Phy<'_> {
         }
         self.stats.rx_packets += 1;
         self.stats.rx_bytes += frame.len() as u64;
+        packet::tap(self.index, self.dev.mac(), &frame, false);
         Some((
             RxTok(frame),
             TxTok {
+                index: self.index,
                 dev: self.dev,
                 stats: self.stats as *mut Stats,
             },
@@ -659,6 +707,7 @@ impl Device for Phy<'_> {
 
     fn transmit(&mut self, _t: Instant) -> Option<TxTok<'_>> {
         Some(TxTok {
+            index: self.index,
             dev: self.dev,
             stats: self.stats as *mut Stats,
         })
@@ -802,16 +851,32 @@ fn new_dhcp4() -> dhcpv4::Socket<'static> {
 
 /// Register a NIC. Returns the interface name. DHCP starts automatically.
 pub fn register(dev: Arc<dyn NetDevice>) -> String {
+    register_named(dev, None).0
+}
+
+/// True if no interface is called `name`.
+pub fn name_free(name: &str) -> bool {
+    with(|net| net.iface(name).is_none()).unwrap_or(true)
+}
+
+/// Register an interface under `name` (if given and free) or the next
+/// free ethN/wlanN; returns its name and index.
+pub fn register_named(dev: Arc<dyn NetDevice>, want: Option<&str>) -> (String, u32) {
     let mut g = NET.lock();
     let net = g.as_mut().expect("net::init not called");
     let prefix = match dev.kind() {
         IfKind::Ethernet => "eth",
         IfKind::Wireless => "wlan",
     };
-    let n = (0..)
-        .find(|n| net.iface(&format!("{}{}", prefix, n)).is_none())
-        .unwrap();
-    let name = format!("{}{}", prefix, n);
+    let name = match want {
+        Some(w) if !w.is_empty() && net.iface(w).is_none() => String::from(w),
+        _ => {
+            let n = (0..)
+                .find(|n| net.iface(&format!("{}{}", prefix, n)).is_none())
+                .unwrap();
+            format!("{}{}", prefix, n)
+        }
+    };
     let mac = dev.mac();
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
     config.random_seed = random_seed();
@@ -820,6 +885,7 @@ pub fn register(dev: Arc<dyn NetDevice>) -> String {
     let now = Instant::from_millis(crate::time::millis() as i64);
     let mut stats = Stats::default();
     let mut p = Phy {
+        index: 0,
         dev: &dev,
         stats: &mut stats,
         arp: None,
@@ -860,7 +926,48 @@ pub fn register(dev: Arc<dyn NetDevice>) -> String {
     net.ifaces.push(ifc);
     drop(g);
     kick();
-    name
+    (name, index)
+}
+
+/// Bring an interface up or down: the driver first (without the network
+/// lock, as it may call back into the stack), then the stack.
+pub fn set_link_up(name: &str, up: bool) -> KResult<()> {
+    let (dev, cur) = with(|net| {
+        net.iface(name)
+            .map(|i| (i.device().cloned(), i.up))
+            .ok_or(ENODEV)
+    })
+    .ok_or(ENODEV)??;
+    if cur == up {
+        return Ok(());
+    }
+    if let Some(d) = dev {
+        d.set_up(up)?;
+    }
+    with(|net| {
+        if let Some(ifc) = net.iface_mut(name)
+            && ifc.up != up
+        {
+            ifc.up = up;
+            rtnetlink::link_event(ifc);
+        }
+    });
+    kick();
+    Ok(())
+}
+
+/// Remove the interface with index `index`.
+pub fn unregister_index(index: u32) {
+    if let Some(name) = with(|net| {
+        net.ifaces
+            .iter()
+            .find(|i| i.index == index)
+            .map(|i| i.name.clone())
+    })
+    .flatten()
+    {
+        unregister(&name);
+    }
 }
 
 /// Remove an interface (hot-unplugged NIC).
@@ -920,6 +1027,7 @@ fn netd() {
 
 /// Create the loopback interface and start the network thread.
 pub fn init() {
+    rtnetlink::init();
     let mut lo_dev = Loopback::new(Medium::Ip);
     let mut config = Config::new(HardwareAddress::Ip);
     config.random_seed = random_seed();
@@ -933,8 +1041,9 @@ pub fn init() {
         let _ = a.push(IpCidr::new(IpAddress::Ipv6(Ipv6Address::LOCALHOST), 128));
     });
     *NET.lock() = Some(Net {
-        ifaces: vec![Iface::new(String::from("lo"), 0, None, Some(lo_dev), iface)],
-        next_index: 1,
+        // Linux numbering: 0 means "no interface"; loopback is 1.
+        ifaces: vec![Iface::new(String::from("lo"), 1, None, Some(lo_dev), iface)],
+        next_index: 2,
     });
     register_procfs();
     crate::sched::spawn("netd", netd);

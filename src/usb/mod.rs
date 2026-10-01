@@ -610,6 +610,7 @@ pub fn init() {
     for dev in ctrls {
         let idx = CONTROLLERS.lock().len();
         if let Some(hc) = xhci::probe(&dev, idx) {
+            crate::pci::claim(&dev, "xhci");
             CONTROLLERS.lock().push(hc.clone());
             crate::sched::spawn(&format!("xhci{}", idx), move || root_hub_thread(hc));
         }

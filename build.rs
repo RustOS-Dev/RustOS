@@ -305,13 +305,14 @@ fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
     let src = userland.join("musltest");
     let out = root.join("target").join("musltest");
     let _ = std::fs::create_dir_all(&out);
-    let steps: [(&[&str], &str, &str); 6] = [
+    let steps: [(&[&str], &str, &str); 7] = [
         (&["-O2"], "musl-hello", "hello.c"),
         (&["-O2", "-static"], "musl-hello-static", "hello.c"),
         (&["-O2", "-pthread"], "musl-threads", "threads.c"),
         (&["-O2", "-fPIC", "-shared"], "libplugin.so", "plugin.c"),
         (&["-O2"], "musl-dlopen", "dlopen.c"),
         (&["-O2"], "musl-libctest", "libctest.c"),
+        (&["-O2"], "musl-kpitest", "kpitest.c"),
     ];
     for (flags, name, file) in steps {
         let status = Command::new("sh")
@@ -345,6 +346,7 @@ fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
         ("musl-threads", "bin/musl-threads", 0o755),
         ("musl-dlopen", "bin/musl-dlopen", 0o755),
         ("musl-libctest", "bin/musl-libctest", 0o755),
+        ("musl-kpitest", "bin/musl-kpitest", 0o755),
         ("libplugin.so", "usr/lib/libplugin.so", 0o644),
     ] {
         if let Ok(d) = std::fs::read(out.join(name)) {

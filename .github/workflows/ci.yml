@@ -167,8 +167,8 @@ jobs:
           cargo build
           RUSTOS_SMP=4 tools/run-scenarios.sh
 
-      - name: Linux drivers through LinuxKPI (Linux e1000, 2 and 4 CPUs)
+      - name: Linux drivers through LinuxKPI (Linux e1000, test driver; 2 and 4 CPUs)
         run: |
-          cargo build --features linux-e1000
+          cargo build --features linux-e1000,linux-test
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/*.txt
           RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/*.txt

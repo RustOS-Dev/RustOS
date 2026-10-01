@@ -5,6 +5,7 @@
  * the I/O resource tree, and the subsystems driver_init() starts that
  * RustOS does not have (CPU and container devices, the block class).
  */
+#include <linux/radix-tree.h>
 #include <linux/acpi.h>
 #include <linux/backing-dev-defs.h>
 #include <linux/blkdev.h>
@@ -185,6 +186,17 @@ void __release_region(struct resource *parent, resource_size_t start, resource_s
 {
 }
 
+struct resource *__devm_request_region(struct device *dev, struct resource *parent,
+				      resource_size_t start, resource_size_t n, const char *name)
+{
+	return __request_region(parent, start, n, name, 0);
+}
+
+void __devm_release_region(struct device *dev, struct resource *parent, resource_size_t start,
+			   resource_size_t n)
+{
+}
+
 /* --------------------------------------- subsystems driver_init() starts */
 
 struct backing_dev_info noop_backing_dev_info;
@@ -253,9 +265,11 @@ int get_cmdline(struct task_struct *task, char *buffer, int buflen)
 
 struct kobject *kernel_kobj;
 
-/* driver_init() plus the /sys/kernel kobject (kernel/ksysfs.c). */
+/* What start_kernel() sets up for library code (radix trees back IDRs),
+ * driver_init(), and the /sys/kernel kobject (kernel/ksysfs.c). */
 int kpi_devcore_init(void)
 {
+	radix_tree_init();
 	driver_init();
 	kernel_kobj = kobject_create_and_add("kernel", NULL);
 	return kernel_kobj ? 0 : -ENOMEM;

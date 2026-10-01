@@ -68,11 +68,18 @@ void rustos_kpi_pci_write(u32 idx, u32 off, u32 size, u32 val);
  * interrupt context. Returns the vector or -1. */
 int rustos_kpi_pci_irq(u32 idx, int msi, void (*fn)(void *), void *arg);
 int rustos_kpi_pci_has_msi(u32 idx);
+int rustos_kpi_pci_claimed(u32 idx);
 u64 rustos_kpi_random_u64(void);
 
 /* Network devices (src/linuxkpi/net.rs). */
-u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless,
-			       const char *driver, char *name, u32 name_len);
+/* `ether`: 0 for interfaces that carry no Ethernet frames (radiotap
+ * monitors), which RustOS's IP stack leaves alone. */
+u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless, int ether,
+			       const char *driver, const char *name);
+int rustos_kpi_netdev_ifindex(u64 handle);
+void rustos_kpi_netdev_unregister(u64 handle);
+void rustos_kpi_netdev_set_mac(u64 handle, const u8 *mac);
+int rustos_kpi_ifname_free(const char *name);
 void rustos_kpi_netdev_rx(u64 handle, const void *data, u32 len);
 void rustos_kpi_netdev_carrier(u64 handle, int on);
 void rustos_kpi_netdev_mtu(u64 handle, u32 mtu);
@@ -105,8 +112,31 @@ int rustos_kpi_acpi_exists(const char *path);
 int rustos_kpi_acpi_pci_path(u8 bus, u8 dev, u8 func, char *buf, size_t len);
 int rustos_kpi_acpi_table(const u8 *sig, u32 instance, u64 *phys, u64 *len);
 
+/* Character devices and descriptors (src/linuxkpi/chrdev.rs). */
+int rustos_kpi_devnode_add(const char *name, u32 devt, int block);
+void rustos_kpi_devnode_remove(const char *name);
+void rustos_kpi_waitq_wake(void *waitq);
+int rustos_kpi_fd_install(void *file, int cloexec, int fd);
+int rustos_kpi_fd_reserve(int cloexec);
+void rustos_kpi_fd_unreserve(int fd);
+void *rustos_kpi_fd_file(int fd);
+
+/* Netlink (src/linuxkpi/net.rs): a kernel socket for protocol `unit`
+ * gets user datagrams through input() and closed user ports through
+ * release(); NULLs unregister. */
+void rustos_kpi_netlink_register(u32 unit, void (*input)(u32, u32, const void *, size_t),
+				 void (*release)(u32, u32));
+int rustos_kpi_netlink_unicast(u32 proto, u32 portid, const void *data, size_t len);
+int rustos_kpi_netlink_multicast(u32 proto, u32 group, u32 exclude_portid, const void *data,
+				 size_t len);	/* sockets reached */
+int rustos_kpi_netlink_has_listeners(u32 proto, u32 group);
+
+/* Credentials of the calling process (src/linuxkpi/sched.rs). */
+u32 rustos_kpi_current_uid(void);
+
 /* Shared between the C glue files. */
 void kpi_netdev_open_pending(void);
+bool kpi_uaccess_kernel(const void *addr, unsigned long n);
 struct pci_dev;
 void kpi_acpi_pci_companion(struct pci_dev *pdev);
 

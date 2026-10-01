@@ -451,6 +451,17 @@ int _printk(const char *fmt, ...)
 	return 0;
 }
 
+/* Logging never recurses into the scheduler here: deferral is not needed. */
+int _printk_deferred(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vprintk(fmt, ap);
+	va_end(ap);
+	return 0;
+}
+
 int __printk_ratelimit(const char *func)
 {
 	return 1;

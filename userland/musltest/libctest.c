@@ -17,6 +17,8 @@
 #include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/un.h>
+#include <stddef.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -161,6 +163,68 @@ static void sockets_and_polling(void) {
     close(ep); close(a); close(c); close(srv);
 }
 
+static void unix_sockets(void) {
+    /* Stream: bind to a path, listen, connect, accept, both directions. */
+    struct sockaddr_un sa = {.sun_family = AF_UNIX};
+    strcpy(sa.sun_path, "/tmp/libctest.sock");
+    unlink(sa.sun_path);
+    int srv = socket(AF_UNIX, SOCK_STREAM, 0);
+    CHECK("unix bind", bind(srv, (struct sockaddr *)&sa, sizeof sa) == 0);
+    struct stat st;
+    CHECK("unix socket node", stat(sa.sun_path, &st) == 0 && S_ISSOCK(st.st_mode));
+    CHECK("unix listen", listen(srv, 4) == 0);
+    int c = socket(AF_UNIX, SOCK_STREAM, 0);
+    CHECK("unix connect", connect(c, (struct sockaddr *)&sa, sizeof sa) == 0);
+    int a = accept(srv, 0, 0);
+    CHECK("unix accept", a >= 0);
+    char b[16] = {0};
+    CHECK("unix stream send", write(c, "hello", 5) == 5 && write(c, "world", 5) == 5);
+    CHECK("unix stream recv", read(a, b, sizeof b) == 10 && !memcmp(b, "helloworld", 10));
+    CHECK("unix stream reply", write(a, "ok", 2) == 2 && read(c, b, 2) == 2 && !memcmp(b, "ok", 2));
+    struct ucred cr; socklen_t crl = sizeof cr;
+    CHECK("SO_PEERCRED", getsockopt(a, SOL_SOCKET, SO_PEERCRED, &cr, &crl) == 0 && cr.pid == getpid());
+    close(c);
+    struct pollfd pfd = {.fd = a, .events = POLLIN};
+    CHECK("unix POLLHUP", poll(&pfd, 1, 1000) == 1 && (pfd.revents & (POLLIN | POLLHUP)));
+    CHECK("unix EOF", read(a, b, sizeof b) == 0);
+    close(a); close(srv); unlink(sa.sun_path);
+
+    /* Datagram with sender address, in the abstract namespace. */
+    struct sockaddr_un d1 = {.sun_family = AF_UNIX}, d2 = {.sun_family = AF_UNIX}, from;
+    memcpy(d1.sun_path, "\0libctest-d1", 12);
+    memcpy(d2.sun_path, "\0libctest-d2", 12);
+    socklen_t dl = offsetof(struct sockaddr_un, sun_path) + 12, fl = sizeof from;
+    int s1 = socket(AF_UNIX, SOCK_DGRAM, 0), s2 = socket(AF_UNIX, SOCK_DGRAM, 0);
+    CHECK("unix dgram bind", bind(s1, (struct sockaddr *)&d1, dl) == 0 && bind(s2, (struct sockaddr *)&d2, dl) == 0);
+    CHECK("unix dgram sendto", sendto(s1, "PING", 4, 0, (struct sockaddr *)&d2, dl) == 4);
+    CHECK("unix dgram peek", recv(s2, b, sizeof b, MSG_PEEK) == 4);
+    CHECK("unix dgram recvfrom", recvfrom(s2, b, sizeof b, 0, (struct sockaddr *)&from, &fl) == 4 &&
+          fl == dl && !memcmp(from.sun_path, d1.sun_path, 12));
+    CHECK("unix dgram EAGAIN", recv(s2, b, sizeof b, MSG_DONTWAIT) < 0 && errno == EAGAIN);
+    close(s1); close(s2);
+
+    /* socketpair + SCM_RIGHTS: pass a pipe's read end. */
+    int sv[2], p[2];
+    CHECK("socketpair", socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0 && pipe(p) == 0);
+    char cbuf[CMSG_SPACE(sizeof(int))] = {0};
+    struct iovec iov = {.iov_base = "F", .iov_len = 1};
+    struct msghdr m = {.msg_iov = &iov, .msg_iovlen = 1, .msg_control = cbuf, .msg_controllen = sizeof cbuf};
+    struct cmsghdr *cm = CMSG_FIRSTHDR(&m);
+    cm->cmsg_level = SOL_SOCKET; cm->cmsg_type = SCM_RIGHTS; cm->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(cm), &p[0], sizeof(int));
+    CHECK("SCM_RIGHTS send", sendmsg(sv[0], &m, 0) == 1);
+    close(p[0]);
+    char rbuf[CMSG_SPACE(sizeof(int))] = {0}, one;
+    struct iovec riov = {.iov_base = &one, .iov_len = 1};
+    struct msghdr rm = {.msg_iov = &riov, .msg_iovlen = 1, .msg_control = rbuf, .msg_controllen = sizeof rbuf};
+    CHECK("SCM_RIGHTS recv", recvmsg(sv[1], &rm, 0) == 1 && one == 'F');
+    struct cmsghdr *rc = CMSG_FIRSTHDR(&rm);
+    int got = -1;
+    if (rc && rc->cmsg_type == SCM_RIGHTS) memcpy(&got, CMSG_DATA(rc), sizeof(int));
+    CHECK("SCM_RIGHTS fd works", got >= 0 && write(p[1], "x", 1) == 1 && read(got, b, 1) == 1 && b[0] == 'x');
+    close(got); close(p[1]); close(sv[0]); close(sv[1]);
+}
+
 int main(void) {
     strings();
     memory();
@@ -168,6 +232,7 @@ int main(void) {
     signals_and_processes();
     threads_and_time();
     sockets_and_polling();
+    unix_sockets();
     printf("libctest: %d passed, %d failed\n", passed, failed);
     return failed != 0;
 }

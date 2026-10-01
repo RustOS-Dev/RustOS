@@ -1,0 +1,2 @@
+-netdev user,id=n0
+-device virtio-net-pci,netdev=n0

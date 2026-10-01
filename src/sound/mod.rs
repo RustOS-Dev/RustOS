@@ -662,14 +662,17 @@ impl crate::vfs::FileLike for MixerNode {
 }
 
 /// Probe PCI sound devices.
-pub fn probe(dev: &crate::pci::PciDevice) {
+pub fn probe(dev: &crate::pci::PciDevice) -> bool {
     if dev.class == 0x04 && dev.subclass == 0x03 {
         hda::probe(dev);
     } else if dev.vendor_id == crate::pci::ids::VENDOR_REDHAT
         && matches!(dev.device_id, 0x1059 | 0x1019)
     {
         virtio_snd::probe(dev);
+    } else {
+        return false;
     }
+    true
 }
 
 /// /proc/asound/cards.

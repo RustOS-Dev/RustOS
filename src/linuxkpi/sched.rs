@@ -287,3 +287,9 @@ extern "C" fn rustos_kpi_rcu_synchronize() {
 extern "C" fn rustos_kpi_realtime_ns() -> u64 {
     crate::time::realtime_nanos()
 }
+
+/// The calling process's user id (0 in kernel threads).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_current_uid() -> u32 {
+    crate::process::current().map_or(0, |p| p.uid.load(Ordering::Relaxed))
+}

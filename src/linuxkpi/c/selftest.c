@@ -13,6 +13,7 @@
 #include <linux/mutex.h>
 #include <linux/percpu.h>
 #include <linux/rcupdate.h>
+#include <linux/skbuff.h>
 #include <linux/srcu.h>
 #include <linux/ww_mutex.h>
 #include <linux/slab.h>
@@ -333,6 +334,28 @@ static void test_srcu(void)
 	CHECK(completion_done(&srcu_cb_done), "call_srcu + srcu_barrier");
 }
 
+static void test_skb(void)
+{
+	struct sk_buff *skb = alloc_skb(128, GFP_KERNEL);
+	u8 buf[8];
+
+	CHECK(skb, "alloc_skb");
+	if (!skb)
+		return;
+	skb_reserve(skb, 16);
+	skb_put_data(skb, "payload!", 8);
+	memcpy(skb_push(skb, 4), "hdr:", 4);
+	CHECK(skb->len == 12 && !memcmp(skb->data, "hdr:payload!", 12), "skb put/push");
+	skb_pull(skb, 4);
+	CHECK(skb->len == 8 && !memcmp(skb->data, "payload!", 8), "skb_pull");
+	CHECK(!pskb_expand_head(skb, 64, 64, GFP_KERNEL) && skb_headroom(skb) >= 64 + 16 &&
+	      !memcmp(skb->data, "payload!", 8), "pskb_expand_head keeps data");
+	skb_trim(skb, 3);
+	CHECK(skb->len == 3, "skb_trim");
+	CHECK(!skb_copy_bits(skb, 1, buf, 2) && !memcmp(buf, "ay", 2), "skb_copy_bits");
+	kfree_skb(skb);
+}
+
 static void test_acpi(void)
 {
 	struct acpi_buffer buf = { ACPI_ALLOCATE_BUFFER, NULL };
@@ -379,6 +402,7 @@ int kpi_selftest(void)
 		{ "RCU", test_rcu },
 		{ "ww_mutex", test_ww_mutex },
 		{ "SRCU", test_srcu },
+		{ "skb", test_skb },
 		{ "ACPI", test_acpi },
 	};
 

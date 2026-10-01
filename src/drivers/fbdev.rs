@@ -90,6 +90,17 @@ struct FixScreenInfo {
 }
 
 impl FileLike for FbDev {
+    /// The framebuffer, write-combining (much faster than uncached for
+    /// the streaming writes graphics code does).
+    fn mmap(&self, off: u64, len: u64, _prot: u32) -> KResult<Option<crate::vfs::DeviceMap>> {
+        if off + len > (self.len as u64).next_multiple_of(crate::mm::FRAME_SIZE) {
+            return Err(EINVAL);
+        }
+        Ok(Some(crate::vfs::DeviceMap::Phys {
+            base: self.phys + off,
+            cache: crate::mm::Cache::WriteCombining,
+        }))
+    }
     fn read(&self, _b: &mut [u8], _nb: bool) -> KResult<usize> {
         Ok(0)
     }

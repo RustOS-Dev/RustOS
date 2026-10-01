@@ -14,6 +14,9 @@ use std::sync::Mutex;
 const FEATURES: &[(&str, &[&str])] = &[
     ("LINUXKPI", &["proof", "kpi", "base"]),
     ("LINUX_E1000", &["e1000"]),
+    ("LINUX_TEST", &["testdev"]),
+    ("LINUX_WIFI", &["crypto", "netlink", "cfg80211", "mac80211"]),
+    ("LINUX_HWSIM", &["hwsim"]),
 ];
 
 pub fn build(root: &Path, out: &Path) {

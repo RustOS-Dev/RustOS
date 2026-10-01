@@ -345,9 +345,29 @@ void __iomem *ioremap_uc(resource_size_t offset, unsigned long size)
 	return (void __iomem *)rustos_kpi_ioremap(offset, size, 0);
 }
 
+void __iomem *ioremap_cache(resource_size_t offset, unsigned long size)
+{
+	return (void __iomem *)rustos_kpi_ioremap(offset, size, 2);
+}
+
 void iounmap(volatile void __iomem *addr)
 {
 	rustos_kpi_iounmap((void *)addr);
+}
+
+/* RAM goes through the direct map; anything else gets a mapping. */
+void *memremap(resource_size_t offset, size_t size, unsigned long flags)
+{
+	if (PHYS_PFN(offset + size - 1) < max_pfn && (flags & MEMREMAP_WB))
+		return __va(offset);
+	return (void __force *)rustos_kpi_ioremap(offset, size, flags & MEMREMAP_WC ? 1 :
+						  flags & MEMREMAP_WB ? 2 : 0);
+}
+
+void memunmap(void *addr)
+{
+	if (!virt_addr_valid(addr))
+		rustos_kpi_iounmap(addr);
 }
 
 /* ------------------------------------------------------- string copies */
@@ -486,7 +506,14 @@ void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 
 unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n)
 {
-	unsigned long left = rustos_kpi_copy_from_user(to, (const void __force *)from, n);
+	unsigned long left;
+
+	/* The kernel buffer of a read()/write() in progress (chrdev.c). */
+	if (kpi_uaccess_kernel((const void __force *)from, n)) {
+		memcpy(to, (const void __force *)from, n);
+		return 0;
+	}
+	left = rustos_kpi_copy_from_user(to, (const void __force *)from, n);
 
 	if (left)
 		memset(to + (n - left), 0, left);
@@ -495,7 +522,48 @@ unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n
 
 unsigned long _copy_to_user(void __user *to, const void *from, unsigned long n)
 {
+	if (kpi_uaccess_kernel((const void __force *)to, n)) {
+		memcpy((void __force *)to, from, n);
+		return 0;
+	}
 	return rustos_kpi_copy_to_user((void __force *)to, from, n);
+}
+
+/* --------------------------------------------------- page protections */
+
+/*
+ * The PAT layout src/mm/mod.rs programs (Linux's): entry 0 WB, 1 WC,
+ * 2 UC-, 3 UC, 4 WB, 5 WP, 6 UC-, 7 WT.
+ */
+uint16_t __cachemode2pte_tbl[_PAGE_CACHE_MODE_NUM] = {
+	[_PAGE_CACHE_MODE_WB] = 0,
+	[_PAGE_CACHE_MODE_WC] = _PAGE_PWT,
+	[_PAGE_CACHE_MODE_UC_MINUS] = _PAGE_PCD,
+	[_PAGE_CACHE_MODE_UC] = _PAGE_PCD | _PAGE_PWT,
+	[_PAGE_CACHE_MODE_WT] = _PAGE_PCD | _PAGE_PWT | _PAGE_PAT,
+	[_PAGE_CACHE_MODE_WP] = _PAGE_PWT | _PAGE_PAT,
+};
+
+uint8_t __pte2cachemode_tbl[8] = {
+	[__pte2cm_idx(0)] = _PAGE_CACHE_MODE_WB,
+	[__pte2cm_idx(_PAGE_PWT)] = _PAGE_CACHE_MODE_WC,
+	[__pte2cm_idx(_PAGE_PCD)] = _PAGE_CACHE_MODE_UC_MINUS,
+	[__pte2cm_idx(_PAGE_PWT | _PAGE_PCD)] = _PAGE_CACHE_MODE_UC,
+	[__pte2cm_idx(_PAGE_PAT)] = _PAGE_CACHE_MODE_WB,
+	[__pte2cm_idx(_PAGE_PWT | _PAGE_PAT)] = _PAGE_CACHE_MODE_WP,
+	[__pte2cm_idx(_PAGE_PCD | _PAGE_PAT)] = _PAGE_CACHE_MODE_UC_MINUS,
+	[__pte2cm_idx(_PAGE_PWT | _PAGE_PCD | _PAGE_PAT)] = _PAGE_CACHE_MODE_WT,
+};
+
+pgprot_t pgprot_writecombine(pgprot_t prot)
+{
+	return __pgprot((pgprot_val(prot) & ~_PAGE_CACHE_MASK) | _PAGE_PWT);
+}
+
+pgprot_t pgprot_writethrough(pgprot_t prot)
+{
+	return __pgprot((pgprot_val(prot) & ~_PAGE_CACHE_MASK) | _PAGE_PCD | _PAGE_PWT |
+			_PAGE_PAT);
 }
 
 void *memdup_user_nul(const void __user *src, size_t len)
@@ -523,4 +591,44 @@ void *memdup_user(const void __user *src, size_t len)
 		return ERR_PTR(-EFAULT);
 	}
 	return p;
+}
+
+/* From mm/slab_common.c. */
+void kfree_sensitive(const void *p)
+{
+	size_t ks;
+	void *mem = (void *)p;
+
+	ks = ksize(mem);
+	if (ks)
+		memzero_explicit(mem, ks);
+	kfree(mem);
+}
+
+/* The direct map covers all RAM; nothing else is a valid linear address. */
+bool __virt_addr_valid(unsigned long x)
+{
+	return x >= page_offset_base && (x - page_offset_base) >> PAGE_SHIFT < max_pfn;
+}
+
+/* is_kernel_rodata(): no Linux object is read-only data here. */
+char __start_rodata[0], __end_rodata[0];
+
+/* Write combining comes from the PAT (ioremap_wc), not MTRRs. */
+int arch_phys_wc_add(unsigned long base, unsigned long size)
+{
+	return 0;
+}
+
+void arch_phys_wc_del(int handle)
+{
+}
+
+int arch_io_reserve_memtype_wc(resource_size_t start, resource_size_t size)
+{
+	return 0;
+}
+
+void arch_io_free_memtype_wc(resource_size_t start, resource_size_t size)
+{
 }

@@ -72,6 +72,7 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
     let rsdp = boot_info.rsdp_addr.into_option();
     let boot_info: &'static BootInfo = boot_info;
     unsafe { mm::init(boot_info) };
+    mm::init_pat();
     let (free, total) = mm::memory_stats();
     println!(
         "[mm] {} MiB usable, {} MiB free, heap {} MiB",

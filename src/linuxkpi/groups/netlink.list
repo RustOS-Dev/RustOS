@@ -1,0 +1,6 @@
+# Generic netlink (Linux's), on LinuxKPI's kernel netlink sockets
+# (kpi:netlink.c) that talk to RustOS's AF_NETLINK (src/net/netlink.rs).
+net/netlink/genetlink.c
+net/netlink/policy.c
+lib/nlattr.c
+kpi:netlink.c

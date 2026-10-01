@@ -18,6 +18,12 @@ harness = false
 # See docs/ROADMAP-ROUND4.md.
 linuxkpi = []
 linux-e1000 = ["linuxkpi"]
+# Test-only Linux driver /dev/kpi-test (src/linuxkpi/c/testdev.c).
+linux-test = ["linuxkpi"]
+# Linux Wi-Fi stack: generic netlink, cfg80211, mac80211.
+linux-wifi = ["linuxkpi"]
+# Simulated radios for testing the Wi-Fi stack.
+linux-hwsim = ["linux-wifi"]
 
 [dependencies]
 bootloader_api = "0.11"

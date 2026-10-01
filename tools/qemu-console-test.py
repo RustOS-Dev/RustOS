@@ -159,15 +159,18 @@ for line in open(script):
             # Ask the kernel for a state dump (serial BREAK = SysRq).
             try:
                 import socket
-                m = socket.socket(socket.AF_UNIX)
-                m.connect(mon_path)
-                m.sendall(b"chardev-send-break serial0\n")
-                time.sleep(0.3)
-                m.close()
-                buf = b""
-                read_until("(?!x)x", 5)  # never matches: collect 5 s of output
-                dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l or b"[nmi]" in l)
-                print("*** kernel state:\n" + dump.decode(errors="replace"))
+                # Two samples a few seconds apart: a CPU stuck in one
+                # place shows the same location twice.
+                for sample in (1, 2):
+                    m = socket.socket(socket.AF_UNIX)
+                    m.connect(mon_path)
+                    m.sendall(b"chardev-send-break serial0\n")
+                    time.sleep(0.3)
+                    m.close()
+                    buf = b""
+                    read_until("(?!x)x", 5)  # never matches: collect 5 s of output
+                    dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l or b"[nmi]" in l)
+                    print(f"*** kernel state ({sample}):\n" + dump.decode(errors="replace"))
             except Exception as e:
                 print(f"*** no state dump: {e}")
             ok = False

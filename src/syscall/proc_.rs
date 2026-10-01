@@ -12,10 +12,11 @@ fn cur() -> KResult<Arc<Process>> {
 }
 
 pub fn fork(frame: &TrapFrame) -> SysResult {
-    Ok(process::fork(frame)? as i64)
+    Ok(process::fork(frame, true)? as i64)
 }
 
 const CLONE_VM: u64 = 0x100;
+const CLONE_VFORK: u64 = 0x4000;
 const CLONE_SETTLS: u64 = 0x80000;
 const CLONE_THREAD: u64 = 0x10000;
 const CLONE_CHILD_SETTID: u64 = 0x1000000;
@@ -49,12 +50,15 @@ pub fn clone(
         }
         return Ok(tid as i64);
     }
-    // Everything else behaves like fork (vfork included).
+    // Everything else behaves like fork (vfork included). As on Linux, a
+    // child sharing the address space (CLONE_VM without CLONE_VFORK) does
+    // not inherit the alternate signal stack.
     let mut f = *frame;
     if stack != 0 {
         f.rsp = stack;
     }
-    Ok(process::fork(&f)? as i64)
+    let keep_altstack = flags & (CLONE_VM | CLONE_VFORK) != CLONE_VM;
+    Ok(process::fork(&f, keep_altstack)? as i64)
 }
 
 pub fn execve(frame: &mut TrapFrame, path: u64, argv: u64, envp: u64) -> KResult<()> {
@@ -88,6 +92,7 @@ pub fn kill(pid: i32, sig: u32) -> SysResult {
         return Err(EINVAL);
     }
     let me = cur()?;
+    let info = signal::SigInfo::from_process(signal::SI_USER, &me);
     match pid {
         p if p > 0 => {
             let target = process::find(p as u32).ok_or(ESRCH)?;
@@ -95,23 +100,23 @@ pub fn kill(pid: i32, sig: u32) -> SysResult {
                 return Err(ESRCH);
             }
             if sig != 0 {
-                signal::send(&target, sig);
+                signal::send_info(&target, sig, info);
             }
         }
         0 => {
-            if signal::send_group(me.pgid.load(Ordering::SeqCst), sig) == 0 {
+            if signal::send_group_info(me.pgid.load(Ordering::SeqCst), sig, info) == 0 {
                 return Err(ESRCH);
             }
         }
         -1 => {
             for p in process::all() {
                 if p.pid > 1 && p.pid != me.pid {
-                    signal::send(&p, sig);
+                    signal::send_info(&p, sig, info);
                 }
             }
         }
         p => {
-            if signal::send_group((-p) as u32, sig) == 0 {
+            if signal::send_group_info((-p) as u32, sig, info) == 0 {
                 return Err(ESRCH);
             }
         }
@@ -191,11 +196,7 @@ pub fn sigaction(sig: u32, act: u64, old: u64) -> SysResult {
         }
         let a: signal::SigAction = uaccess::read_user(act)?;
         p.signals.actions.lock()[sig as usize] = a;
-        if a.handler == signal::SIG_IGN {
-            p.signals
-                .pending
-                .fetch_and(!(1u64 << (sig - 1)), Ordering::SeqCst);
-        }
+        signal::action_changed(&p, sig);
     }
     if old != 0 {
         uaccess::write_user(old, &prev)?;
@@ -203,9 +204,10 @@ pub fn sigaction(sig: u32, act: u64, old: u64) -> SysResult {
     Ok(0)
 }
 
+/// rt_sigprocmask: the calling thread's mask.
 pub fn sigprocmask(how: u32, set: u64, old: u64) -> SysResult {
-    let p = cur()?;
-    let prev = p.signals.blocked.load(Ordering::SeqCst);
+    let t = crate::sched::current();
+    let prev = t.sig.blocked();
     if set != 0 {
         let s: u64 = uaccess::read_user(set)?;
         let new = match how {
@@ -214,8 +216,7 @@ pub fn sigprocmask(how: u32, set: u64, old: u64) -> SysResult {
             2 => s,
             _ => return Err(EINVAL),
         };
-        let never = (1u64 << (signal::SIGKILL - 1)) | (1u64 << (signal::SIGSTOP - 1));
-        p.signals.blocked.store(new & !never, Ordering::SeqCst);
+        t.sig.set_blocked(new);
     }
     if old != 0 {
         uaccess::write_user(old, &prev)?;
@@ -223,29 +224,90 @@ pub fn sigprocmask(how: u32, set: u64, old: u64) -> SysResult {
     Ok(0)
 }
 
+/// rt_sigpending: blocked signals pending for the thread or its process.
 pub fn sigpending(set: u64) -> SysResult {
     let p = cur()?;
-    let v = p.signals.pending.load(Ordering::SeqCst) & p.signals.blocked.load(Ordering::SeqCst);
+    let t = crate::sched::current();
+    let v = signal::pending_for(&t, &p) & t.sig.blocked();
     uaccess::write_user(set, &v)?;
     Ok(0)
 }
 
-pub fn sigsuspend(mask: u64) -> SysResult {
-    let p = cur()?;
-    let m: u64 = uaccess::read_user(mask)?;
-    let old = p.signals.blocked.swap(m, Ordering::SeqCst);
+/// Sleep until a signal is deliverable to the calling thread (or its
+/// process exits).
+fn wait_for_signal() {
+    let t = crate::sched::current();
+    let Some(p) = process::current() else {
+        return;
+    };
+    let done = || signal::has_pending() || p.zombie.load(Ordering::SeqCst);
     let wq = crate::sched::WaitQueue::new();
-    wq.wait_interruptible(signal::has_pending);
-    // The original mask is restored after the handler runs; approximate by
-    // restoring now (the handler frame records the suspended mask).
-    let _ = old;
+    while !done() {
+        // A wake-up for a process signal another thread took first.
+        t.interrupted.store(false, Ordering::SeqCst);
+        wq.wait_interruptible(done);
+    }
+}
+
+/// rt_sigsuspend: wait with a temporary mask; the old mask comes back
+/// when the handler returns (it is the handler frame's uc_sigmask).
+pub fn sigsuspend(mask: u64) -> SysResult {
+    let m: u64 = uaccess::read_user(mask)?;
+    crate::sched::current().sig.set_temporary_mask(m);
+    wait_for_signal();
     Err(EINTR)
 }
 
 pub fn pause() -> SysResult {
-    let wq = crate::sched::WaitQueue::new();
-    wq.wait_interruptible(signal::has_pending);
+    wait_for_signal();
     Err(EINTR)
+}
+
+/// rt_sigtimedwait: dequeue a pending signal of `set` (the thread's own
+/// first, then the process's), waiting up to `timeout` (none: forever).
+pub fn sigtimedwait(set: u64, info: u64, timeout: u64) -> SysResult {
+    let p = cur()?;
+    let t = crate::sched::current();
+    let never = signal::bit(signal::SIGKILL) | signal::bit(signal::SIGSTOP);
+    let mask = uaccess::read_user::<u64>(set)? & !never;
+    let deadline = if timeout != 0 {
+        let ts: [i64; 2] = uaccess::read_user(timeout)?;
+        if ts[0] < 0 || !(0..1_000_000_000).contains(&ts[1]) {
+            return Err(EINVAL);
+        }
+        let ns = (ts[0] as u64)
+            .saturating_mul(1_000_000_000)
+            .saturating_add(ts[1] as u64);
+        Some(crate::time::nanos().saturating_add(ns))
+    } else {
+        None
+    };
+    let mut got = None;
+    crate::sched::wait::wait_any::<Errno>(
+        &[&signal::SIGNAL_WQ],
+        deadline,
+        || {
+            got = t
+                .sig
+                .pending
+                .take(mask)
+                .or_else(|| p.signals.shared.take(mask));
+            Ok(got.is_some() as usize)
+        },
+        signal::has_pending,
+    )?;
+    let Some((sig, si)) = got else {
+        return Err(if signal::has_pending() { EINTR } else { EAGAIN });
+    };
+    if info != 0 {
+        uaccess::write_user(info, &si.to_user(sig))?;
+    }
+    Ok(sig as i64)
+}
+
+pub fn sigaltstack(sp: u64, ss: u64, old: u64) -> SysResult {
+    signal::sigaltstack(sp, ss, old)?;
+    Ok(0)
 }
 
 pub fn arch_prctl(code: u64, addr: u64) -> SysResult {
@@ -271,16 +333,24 @@ pub fn arch_prctl(code: u64, addr: u64) -> SysResult {
     }
 }
 
-/// tkill/tgkill: signal the process of thread `tid` (signals are
-/// process-wide here).
-pub fn tkill(tid: u64, sig: u32) -> SysResult {
-    if sig as usize >= signal::NSIG {
+/// tkill/tgkill: signal thread `tid` (of thread group `tgid` for tgkill,
+/// None for tkill).
+pub fn tgkill(tgid: Option<i32>, tid: i32, sig: u32) -> SysResult {
+    if sig as usize >= signal::NSIG || tid <= 0 || tgid.is_some_and(|g| g <= 0) {
         return Err(EINVAL);
     }
-    let t = crate::sched::find_thread(tid).ok_or(ESRCH)?;
+    let t = crate::sched::find_thread(tid as u64).ok_or(ESRCH)?;
     let p = t.process.lock().clone().ok_or(ESRCH)?;
+    if tgid.is_some_and(|g| g as u32 != p.pid)
+        || t.state() == crate::sched::State::Dead
+        || p.zombie.load(Ordering::SeqCst)
+    {
+        return Err(ESRCH);
+    }
     if sig != 0 {
-        signal::send(&p, sig);
+        let me = cur()?;
+        let info = signal::SigInfo::from_process(signal::SI_TKILL, &me);
+        signal::send_thread(&t, &p, sig, info);
     }
     Ok(0)
 }

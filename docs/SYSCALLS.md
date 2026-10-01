@@ -236,6 +236,7 @@ process. Each CPU has its own run queue; idle CPUs steal work;
 | 38 | `setitimer` |
 | 62 | `kill` |
 | 127 | `rt_sigpending` |
+| 128 | `rt_sigtimedwait` |
 | 130 | `rt_sigsuspend` |
 | 131 | `sigaltstack` |
 | 200 | `tkill` |
@@ -244,6 +245,45 @@ process. Each CPU has its own run queue; idle CPUs steal work;
 | 289 | `signalfd4` |
 
 `setitimer` supports `ITIMER_REAL` (SIGALRM).
+
+Signal handlers get the Linux x86-64 `rt_sigframe`: at the handler's
+stack pointer the `sa_restorer` return address, then `struct ucontext`
+(`uc_flags`, `uc_link`, `uc_stack`, `struct sigcontext uc_mcontext`, the
+8-byte `uc_sigmask`), then the 128-byte `siginfo_t`, with the 512-byte
+FXSAVE area above them (64-byte aligned, pointed to by
+`uc_mcontext.fpstate`). The handler is entered with `rdi` = signal,
+`rsi` = `&siginfo`, `rdx` = `&ucontext`, `rax` = 0, `(rsp + 8) % 16 == 0`,
+below the 128-byte red zone, and with a fresh FPU state.
+`rt_sigreturn` restores the registers, signal mask, FPU state and
+alternate stack from that frame, so handlers may edit the context (Go's
+asynchronous preemption and panics on faults rewrite `rip`/`rsp`). Flags,
+segments and `rip` are sanitised; a bad frame raises SIGSEGV.
+
+`siginfo_t` carries `si_signo`, `si_code` and the matching union member:
+`SI_USER` with `si_pid`/`si_uid` from `kill`, `SI_TKILL` from
+`tkill`/`tgkill`, `SI_KERNEL` for terminal, timer and job-control
+signals, `CLD_EXITED`/`CLD_KILLED`/`CLD_DUMPED`/`CLD_STOPPED` with
+`si_pid`, `si_status`, `si_utime`, `si_stime` for SIGCHLD, and for faults
+`si_addr` with `SEGV_MAPERR`/`SEGV_ACCERR` (no mapping / mapping without
+the access), `FPE_INTDIV` and the x87/SSE `FPE_FLT*` codes, `ILL_ILLOPN`,
+`BUS_ADRALN`, `TRAP_TRACE` (`SI_KERNEL` for general protection faults).
+`signalfd` reads fill the same fields of `signalfd_siginfo`.
+
+Masks and pending sets are per thread, as on Linux: `rt_sigprocmask`,
+`rt_sigsuspend` and `rt_sigreturn` act on the calling thread, which a new
+thread or forked child inherits; `tkill`/`tgkill` and faults queue the
+signal for that thread, while `kill`, terminal signals, timers and SIGCHLD
+are pending for the process and taken by any thread that does not block
+them (one such thread is woken). `rt_sigpending` reports both sets
+(blocked signals only), `rt_sigtimedwait` dequeues from both. Standard
+and real-time signals alike keep one pending instance each.
+
+`sigaltstack` is per thread: `SS_ONSTACK`/`SS_DISABLE`/`SS_AUTODISARM`,
+`EPERM` while running on it, `ENOMEM` below `MINSIGSTKSZ` (2048).
+`SA_ONSTACK` handlers run on it when it is enabled and not already in use
+(overflowing it raises SIGSEGV); `uc_stack` reports it. A new thread
+(`clone` with `CLONE_VM` but not `CLONE_VFORK`) starts without one, `fork`
+inherits it, `execve` clears it.
 
 ### Time
 

@@ -1,10 +1,21 @@
 wait # $ 240
-# epoll, eventfd, timerfd, signalfd, itimers, futexes, threads, affinity,
+# epoll, eventfd, timerfd, signalfd, itimers, signal frames (siginfo,
+# ucontext, sigaltstack, per-thread masks), futexes, threads, affinity,
 # priorities, CPU-time accounting and /proc/stat, shared and file-backed mmap
 send kapitest
 wait PASS eventfd counter 30
 wait PASS epoll wakes on timerfd 30
 wait PASS setitimer SIGALRM 30
+wait PASS SA_SIGINFO siginfo from tgkill 30
+wait PASS rt_sigframe layout 30
+wait PASS handler edits uc_mcontext 30
+wait PASS SIGSEGV SEGV_MAPERR \+ si_addr, rip edited 30
+wait PASS SIGSEGV SEGV_ACCERR on PROT_NONE 30
+wait PASS sigaltstack set/query 30
+wait PASS SA_ONSTACK handler runs on the alternate stack 30
+wait PASS per-thread mask holds a tgkill'd signal 30
+wait PASS tgkill runs the handler on the target thread 30
+wait PASS SIGCHLD siginfo CLD_EXITED 30
 wait PASS futex wake \+ CLEARTID join 30
 wait PASS scheduler fairness 30
 wait PASS CPU time advances under a busy loop 30

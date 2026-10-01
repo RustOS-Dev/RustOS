@@ -32,6 +32,15 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   goes through to the filesystem (write-through, then the cached pages
   are updated) rather than dirtying the page cache.
 * No kernel modules; drivers are built in.
+* Signals: real-time signals do not queue (one pending instance per
+  signal, like standard signals) and carry no value; no
+  `rt_sigqueueinfo`/`rt_tgsigqueueinfo` or POSIX timers (`timer_create`),
+  so no `SI_QUEUE`/`SI_TIMER`. Signal frames hold the 512-byte FXSAVE
+  state only (the kernel does not enable XSAVE/AVX). A process-directed
+  signal goes to whichever thread not blocking it returns to user mode
+  first, not preferably the main thread. SIGCONT does not send the
+  parent a `CLD_CONTINUED` SIGCHLD; `int3` in user mode is logged rather
+  than raising SIGTRAP; no core dumps.
 * Missing system calls: `inotify`, `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

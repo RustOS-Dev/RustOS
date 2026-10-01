@@ -115,9 +115,15 @@ User layout (lower half, per process):
   `wait4`, process groups/sessions, `exit` of one thread with
   `CLONE_CHILD_CLEARTID`, `exit_group`; futexes keyed by physical address
   (`src/process/futex.rs`).
-* **Signals**: POSIX-style handlers with `sigaction` flags, masks,
-  `sigreturn`, alternate stacks, job control (SIGTSTP/SIGCONT/SIGTTIN),
-  faults turned into SIGSEGV/SIGFPE/SIGILL/SIGBUS.
+* **Signals** (`src/process/signal.rs`): Linux-compatible handlers with
+  `sigaction` flags, the Linux x86-64 `rt_sigframe` (`siginfo_t`,
+  `ucontext_t` with `sigcontext` and FXSAVE state) built on return to
+  user mode and read back by `rt_sigreturn`, per-thread masks, pending
+  sets and alternate stacks (`ThreadSignals` on each `sched::Thread`), a
+  process-wide disposition table and pending set for process-directed
+  signals, job control (SIGTSTP/SIGCONT/SIGTTIN; a stop stops every
+  thread), faults turned into SIGSEGV/SIGFPE/SIGILL/SIGBUS/SIGTRAP with
+  `si_code`/`si_addr` for the faulting thread.
 * **User access**: `copy_from_user`/`copy_to_user` validate ranges and
   fault pages in.
 

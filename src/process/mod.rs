@@ -242,8 +242,25 @@ pub fn handle_page_fault(frame: &mut TrapFrame, addr: u64) -> bool {
     vm.lock().handle_fault(addr, write, exec)
 }
 
-/// A fault in user mode that could not be resolved: signal the process.
-pub fn user_fault(frame: &mut TrapFrame, sig: u32, addr: u64) {
+/// A user page fault that could not be resolved: SIGSEGV with SEGV_ACCERR
+/// when a mapping covers `addr` (the access was not permitted), else
+/// SEGV_MAPERR, as Linux.
+pub fn user_page_fault(frame: &mut TrapFrame, addr: u64) {
+    let mapped = addr < crate::mm::USER_END
+        && current()
+            .and_then(|p| p.vm())
+            .is_some_and(|vm| vm.lock().find_area(addr).is_some());
+    let code = if mapped {
+        signal::SEGV_ACCERR
+    } else {
+        signal::SEGV_MAPERR
+    };
+    user_fault(frame, signal::SIGSEGV, code, addr);
+}
+
+/// A fault in user mode that could not be resolved: signal the faulting
+/// thread with `si_code` `code` and `si_addr` `addr`.
+pub fn user_fault(frame: &mut TrapFrame, sig: u32, code: i32, addr: u64) {
     if let Some(p) = current() {
         let area = p.vm().and_then(|vm| {
             vm.lock().find_area(addr).map(|a| {
@@ -260,7 +277,7 @@ pub fn user_fault(frame: &mut TrapFrame, sig: u32, addr: u64) {
             frame.error_code,
             area.as_deref().unwrap_or(" (no mapping)")
         );
-        signal::force_signal(&p, sig);
+        signal::force_fault(&p, sig, signal::SigInfo::fault(code, addr));
     } else {
         panic!("user fault without a process");
     }
@@ -312,8 +329,10 @@ pub fn basename(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_string()
 }
 
-/// fork(): duplicate the current process. Returns the child's pid.
-pub fn fork(frame: &TrapFrame) -> KResult<Pid> {
+/// fork(): duplicate the current process. Returns the child's pid. The
+/// child's thread inherits the caller's signal mask and, with
+/// `keep_altstack`, its alternate signal stack.
+pub fn fork(frame: &TrapFrame, keep_altstack: bool) -> KResult<Pid> {
     let parent = current().ok_or(ESRCH)?;
     let child = Process::new(Some(&parent));
     let space = parent.vm().ok_or(EFAULT)?.lock().fork()?;
@@ -337,7 +356,7 @@ pub fn fork(frame: &TrapFrame) -> KResult<Pid> {
         // Inherit the FPU/SSE state.
         core::arch::asm!("fxsave64 [{}]", in(reg) t.fpu.get(), options(nostack));
     }
-    let _ = cur;
+    t.sig.inherit(&cur.sig, keep_altstack);
     *t.process.lock() = Some(child.clone());
     child.threads.lock().push(Arc::downgrade(&t));
     sched::make_ready(t);
@@ -360,6 +379,8 @@ pub fn clone_thread(
         cf.rsp = stack;
     }
     let t = sched::new_user_thread(&p.name.lock(), &cf, pml4);
+    // Same mask as the creator, no alternate stack.
+    t.sig.inherit(&sched::current().sig, false);
     t.fs_base.store(
         tls.unwrap_or_else(|| x86_64::registers::model_specific::FsBase::read().as_u64()),
         Ordering::SeqCst,
@@ -433,6 +454,7 @@ pub fn exec(
     }
     p.files.lock().close_on_exec();
     p.signals.reset_on_exec();
+    t.sig.reset_on_exec();
     let name = basename(&abs);
     *p.name.lock() = name.clone();
     *t.name.lock() = name;
@@ -503,7 +525,15 @@ fn do_exit(p: &Arc<Process>, status: i32) {
     }
 
     if let Some(parent) = p.parent() {
-        signal::send(&parent, signal::SIGCHLD);
+        let (code, st) = if status & 0x7f == 0 {
+            (signal::CLD_EXITED, (status >> 8) & 0xff)
+        } else if status & 0x80 != 0 {
+            (signal::CLD_DUMPED, status & 0x7f)
+        } else {
+            (signal::CLD_KILLED, status & 0x7f)
+        };
+        let info = signal::SigInfo::child(code, st, p);
+        signal::send_info(&parent, signal::SIGCHLD, info);
         parent.child_wq.wake_all();
     }
     crate::tty::process_exited(p);

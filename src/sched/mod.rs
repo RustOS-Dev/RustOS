@@ -106,6 +106,8 @@ pub struct Thread {
     /// Set once the ticks above were added to the process's total of
     /// exited threads.
     acct_folded: AtomicBool,
+    /// Signal mask, thread-directed pending signals, alternate stack.
+    pub sig: crate::process::signal::ThreadSignals,
 }
 
 unsafe impl Send for Thread {}
@@ -380,6 +382,7 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         utime: AtomicU64::new(0),
         stime: AtomicU64::new(0),
         acct_folded: AtomicBool::new(false),
+        sig: crate::process::signal::ThreadSignals::new(),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t

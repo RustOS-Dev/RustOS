@@ -344,8 +344,8 @@ fn gen_pid_stat(p: Option<&Arc<Process>>) -> String {
     let _ = writeln!(
         s,
         " 0 0 0 0 0 {} {} 0 0 0 0 0 17 {} 0 0 0 0 0 0 0 0 0 0 0 0 0",
-        p.signals.pending.load(Ordering::SeqCst),
-        p.signals.blocked.load(Ordering::SeqCst),
+        main_pending(p) | p.signals.shared.pending(),
+        main_blocked(p),
         cpu
     );
     s
@@ -375,7 +375,7 @@ fn gen_pid_status(p: Option<&Arc<Process>>) -> String {
         })
         .unwrap_or((0, 0));
     format!(
-        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\nVmSize:\t{} kB\nVmRSS:\t{} kB\nThreads:\t{}\nSigPnd:\t{:016x}\nSigBlk:\t{:016x}\n",
+        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\nVmSize:\t{} kB\nVmRSS:\t{} kB\nThreads:\t{}\nSigPnd:\t{:016x}\nShdPnd:\t{:016x}\nSigBlk:\t{:016x}\n",
         p.name.lock(),
         state_char(p),
         p.pid,
@@ -384,9 +384,20 @@ fn gen_pid_status(p: Option<&Arc<Process>>) -> String {
         vsz / 1024,
         rss * 4,
         p.live_threads().len(),
-        p.signals.pending.load(Ordering::SeqCst),
-        p.signals.blocked.load(Ordering::SeqCst),
+        main_pending(p),
+        p.signals.shared.pending(),
+        main_blocked(p),
     )
+}
+
+/// Signals pending for / blocked by the main thread (Linux reports the
+/// thread group leader in /proc/[pid]).
+fn main_pending(p: &Process) -> u64 {
+    p.main_thread().map_or(0, |t| t.sig.pending.pending())
+}
+
+fn main_blocked(p: &Process) -> u64 {
+    p.main_thread().map_or(0, |t| t.sig.blocked())
 }
 
 fn gen_pid_cmdline(p: Option<&Arc<Process>>) -> String {

@@ -299,16 +299,25 @@ struct SignalFd {
 }
 
 impl SignalFd {
-    fn take(&self) -> Option<u32> {
+    /// Signals of the fd's process the reader can see: the process's
+    /// pending set and, when the reader is one of its threads, its own.
+    fn pending(&self, p: &process::Process) -> u64 {
+        let own = sched::try_current()
+            .filter(|t| t.process.lock().as_ref().is_some_and(|q| q.pid == p.pid))
+            .map_or(0, |t| t.sig.pending.pending());
+        (own | p.signals.shared.pending()) & self.mask.load(Ordering::SeqCst)
+    }
+
+    fn take(&self) -> Option<(u32, signal::SigInfo)> {
         let p = self.process.upgrade()?;
         let mask = self.mask.load(Ordering::SeqCst);
-        let pend = p.signals.pending.load(Ordering::SeqCst) & mask;
-        if pend == 0 {
-            return None;
+        if let Some(t) = sched::try_current()
+            && t.process.lock().as_ref().is_some_and(|q| q.pid == p.pid)
+            && let Some(s) = t.sig.pending.take(mask)
+        {
+            return Some(s);
         }
-        let sig = pend.trailing_zeros() + 1;
-        let bit = 1u64 << (sig - 1);
-        (p.signals.pending.fetch_and(!bit, Ordering::SeqCst) & bit != 0).then_some(sig)
+        p.signals.shared.take(mask)
     }
 }
 
@@ -320,7 +329,7 @@ impl FileLike for SignalFd {
         }
         let mut n = 0;
         while buf.len() - n >= SIZE {
-            let sig = if n == 0 {
+            let (sig, info) = if n == 0 {
                 block_until(&signal::SIGNAL_WQ, nonblock, || self.take())?
             } else {
                 match self.take() {
@@ -328,10 +337,20 @@ impl FileLike for SignalFd {
                     None => break,
                 }
             };
-            // struct signalfd_siginfo: ssi_signo, ssi_errno, ssi_code, ...
+            // struct signalfd_siginfo: ssi_signo, ssi_errno, ssi_code,
+            // ssi_pid, ssi_uid, ssi_fd, ssi_tid, ssi_band, ssi_overrun,
+            // ssi_trapno, ssi_status, ssi_int, ssi_ptr, ssi_utime,
+            // ssi_stime, ssi_addr.
             let rec = &mut buf[n..n + SIZE];
             rec.fill(0);
             rec[0..4].copy_from_slice(&sig.to_ne_bytes());
+            rec[8..12].copy_from_slice(&info.code.to_ne_bytes());
+            rec[12..16].copy_from_slice(&info.pid.to_ne_bytes());
+            rec[16..20].copy_from_slice(&info.uid.to_ne_bytes());
+            rec[40..44].copy_from_slice(&info.status.to_ne_bytes());
+            rec[56..64].copy_from_slice(&info.utime.to_ne_bytes());
+            rec[64..72].copy_from_slice(&info.stime.to_ne_bytes());
+            rec[72..80].copy_from_slice(&info.addr.to_ne_bytes());
             n += SIZE;
         }
         Ok(n)
@@ -343,11 +362,7 @@ impl FileLike for SignalFd {
         let Some(p) = self.process.upgrade() else {
             return 0;
         };
-        if p.signals.pending.load(Ordering::SeqCst) & self.mask.load(Ordering::SeqCst) != 0 {
-            POLLIN
-        } else {
-            0
-        }
+        if self.pending(&p) != 0 { POLLIN } else { 0 }
     }
     fn wait_queue(&self) -> &WaitQueue {
         &signal::SIGNAL_WQ

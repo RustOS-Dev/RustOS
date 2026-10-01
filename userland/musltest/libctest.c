@@ -1,5 +1,6 @@
 /* musl-libctest: a small libc conformance run (string, stdio, malloc,
- * pthread, time, signals, processes, files, sockets, poll/epoll). */
+ * pthread, time, signals (siginfo, ucontext, sigaltstack, per-thread
+ * masks), processes, files, sockets, poll/epoll). */
 #define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -20,6 +21,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <ucontext.h>
 #include <unistd.h>
 
 static int passed, failed;
@@ -116,6 +118,90 @@ static void signals_and_processes(void) {
     close(p[0]);
 }
 
+/* SA_SIGINFO handlers see musl's siginfo_t and ucontext_t over the
+ * kernel's rt_sigframe. */
+static sigjmp_buf segv_jb;
+static char *alt_base;
+static volatile int segv_code, segv_on_alt;
+static void *volatile segv_addr;
+static void on_segv(int s, siginfo_t *si, void *ctx) {
+    char here;
+    (void)s; (void)ctx;
+    segv_code = si->si_code;
+    segv_addr = si->si_addr;
+    segv_on_alt = &here >= alt_base && &here < alt_base + 65536;
+    siglongjmp(segv_jb, 1);
+}
+static volatile int usr2_code, usr2_pid;
+static volatile long usr2_rip;
+static void on_usr2(int s, siginfo_t *si, void *ctx) {
+    ucontext_t *uc = ctx;
+    (void)s;
+    usr2_code = si->si_code;
+    usr2_pid = si->si_pid;
+    usr2_rip = uc->uc_mcontext.gregs[REG_RIP];
+}
+static pthread_t waiter_thread;
+static void *sigwaiter(void *arg) {
+    sigset_t set;
+    int sig = 0;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    *(int *)arg = sigwait(&set, &sig) == 0 ? sig : -1;
+    return 0;
+}
+
+static void siginfo_and_altstack(void) {
+    stack_t ss = {.ss_sp = alt_base = malloc(65536), .ss_size = 65536};
+    CHECK("sigaltstack", sigaltstack(&ss, 0) == 0);
+    struct sigaction sa = {0};
+    sa.sa_sigaction = on_segv;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigaction(SIGSEGV, &sa, 0);
+    char *page = mmap(0, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    /* Volatile accesses only between sigsetjmp and the fault: nothing the
+     * compiler could move before the faulting store. */
+    static volatile int not_faulted;
+    if (!sigsetjmp(segv_jb, 1)) {
+        *(volatile char *)(page + 5) = 1;
+        not_faulted = 1;
+    }
+    CHECK("write to read-only page faults", !not_faulted);
+    CHECK("SIGSEGV siginfo (SEGV_ACCERR, si_addr)", segv_code == SEGV_ACCERR && segv_addr == page + 5);
+    CHECK("SIGSEGV handler on sigaltstack", segv_on_alt);
+    signal(SIGSEGV, SIG_DFL);
+    munmap(page, 4096);
+    ss.ss_flags = SS_DISABLE;
+    sigaltstack(&ss, 0);
+
+    sa.sa_sigaction = on_usr2;
+    sa.sa_flags = SA_SIGINFO;
+    sigaction(SIGUSR2, &sa, 0);
+    pthread_kill(pthread_self(), SIGUSR2);
+    CHECK("pthread_kill siginfo (SI_TKILL, si_pid, uc_mcontext)",
+          usr2_code == SI_TKILL && usr2_pid == getpid() && usr2_rip != 0);
+    signal(SIGUSR2, SIG_DFL);
+
+    /* Per-thread masks: the thread blocks SIGUSR1 (inherited) and takes it
+     * with sigwait; the main thread does not block it. */
+    sigset_t set, old;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    pthread_sigmask(SIG_BLOCK, &set, &old);
+    int got_sig = 0;
+    pthread_create(&waiter_thread, 0, sigwaiter, &got_sig);
+    pthread_sigmask(SIG_SETMASK, &old, 0);
+    sigset_t now;
+    pthread_sigmask(SIG_SETMASK, 0, &now);
+    CHECK("pthread_sigmask is per thread", !sigismember(&now, SIGUSR1));
+    struct timespec d = {0, 20 * 1000000};
+    nanosleep(&d, 0);
+    got = 0;
+    pthread_kill(waiter_thread, SIGUSR1);
+    pthread_join(waiter_thread, 0);
+    CHECK("sigwait in a thread takes pthread_kill'd signal", got_sig == SIGUSR1 && got == 0);
+}
+
 static void *adder(void *arg) { *(int *)arg += 1; return 0; }
 
 static void threads_and_time(void) {
@@ -166,6 +252,7 @@ int main(void) {
     memory();
     files();
     signals_and_processes();
+    siginfo_and_altstack();
     threads_and_time();
     sockets_and_polling();
     printf("libctest: %d passed, %d failed\n", passed, failed);

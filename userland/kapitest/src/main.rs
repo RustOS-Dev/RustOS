@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
 use rustos_rt::prelude::*;
 use rustos_rt::sys::syscall;
 use rustos_rt::time;
@@ -56,6 +56,11 @@ mod nr {
     pub const GETRUSAGE: usize = 98;
     pub const TIMES: usize = 100;
     pub const CLOCK_GETTIME: usize = 228;
+    pub const RT_SIGACTION: usize = 13;
+    pub const RT_SIGPENDING: usize = 127;
+    pub const SIGALTSTACK: usize = 131;
+    pub const GETTID: usize = 186;
+    pub const TGKILL: usize = 234;
 }
 
 const EAGAIN: isize = -11;
@@ -291,6 +296,526 @@ fn signals(r: &mut Report) {
     sc(nr::CLOSE, &[fd as usize]);
     let mut o = old;
     sc(nr::RT_SIGPROCMASK, &[2, &mut o as *mut u64 as usize, 0, 8]);
+}
+
+// ---------------------------------------------------------------------------
+// Signal frames: siginfo, ucontext, sigaltstack, per-thread masks
+// ---------------------------------------------------------------------------
+
+const SIGUSR2: usize = 12;
+const SIGSEGV: usize = 11;
+const SIGCHLD: usize = 17;
+const SA_SIGINFO: u64 = 4;
+const SA_RESTORER: u64 = 0x0400_0000;
+const SA_ONSTACK: u64 = 0x0800_0000;
+const SA_RESTART: u64 = 0x1000_0000;
+const SI_USER: i32 = 0;
+const SI_TKILL: i32 = -6;
+const SEGV_MAPERR: i32 = 1;
+const SEGV_ACCERR: i32 = 2;
+const CLD_EXITED: i32 = 1;
+const SS_ONSTACK: i32 = 1;
+const SS_DISABLE: i32 = 2;
+
+// Linux x86-64 ucontext / sigcontext offsets (bytes).
+const UC_STACK: usize = 16;
+const UC_MCONTEXT: usize = 40;
+const UC_SIGMASK: usize = 296;
+// sigcontext slots (u64 index): rax 13, rcx 14, rip 16, fpstate 23.
+const MC_RAX: usize = 13;
+const MC_RCX: usize = 14;
+const MC_RIP: usize = 16;
+const MC_FPSTATE: usize = 23;
+
+core::arch::global_asm!(
+    ".globl kapitest_sigreturn",
+    "kapitest_sigreturn:",
+    "    mov eax, 15",
+    "    syscall",
+    "    ud2",
+);
+
+unsafe extern "C" {
+    fn kapitest_sigreturn();
+}
+
+type InfoHandler = extern "C" fn(i32, *const u8, *mut u8);
+
+fn sigaction_info(sig: usize, h: InfoHandler, flags: u64) -> isize {
+    let act: [u64; 4] = [
+        h as usize as u64,
+        flags | SA_SIGINFO | SA_RESTORER,
+        kapitest_sigreturn as *const () as u64,
+        0,
+    ];
+    sc(nr::RT_SIGACTION, &[sig, act.as_ptr() as usize, 0, 8])
+}
+
+fn sigaction_default(sig: usize) {
+    let act: [u64; 4] = [0; 4];
+    sc(nr::RT_SIGACTION, &[sig, act.as_ptr() as usize, 0, 8]);
+}
+
+fn gettid() -> usize {
+    sc(nr::GETTID, &[]) as usize
+}
+
+fn tgkill(tid: usize, sig: usize) -> isize {
+    let pid = sc(nr::GETPID, &[]) as usize;
+    sc(nr::TGKILL, &[pid, tid, sig])
+}
+
+/// rt_sigprocmask(how, set) -> old mask.
+fn sigmask(how: usize, set: u64) -> u64 {
+    let mut old = 0u64;
+    sc(
+        nr::RT_SIGPROCMASK,
+        &[
+            how,
+            &set as *const u64 as usize,
+            &mut old as *mut u64 as usize,
+            8,
+        ],
+    );
+    old
+}
+
+fn current_mask() -> u64 {
+    let mut old = 0u64;
+    sc(
+        nr::RT_SIGPROCMASK,
+        &[0, 0, &mut old as *mut u64 as usize, 8],
+    );
+    old
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+struct StackT {
+    sp: u64,
+    flags: i32,
+    _pad: i32,
+    size: u64,
+}
+
+fn sigaltstack(new: Option<&StackT>, old: Option<&mut StackT>) -> isize {
+    sc(
+        nr::SIGALTSTACK,
+        &[
+            new.map_or(0, |s| s as *const StackT as usize),
+            old.map_or(0, |s| s as *mut StackT as usize),
+        ],
+    )
+}
+
+// What the last handler saw.
+static H_COUNT: AtomicU32 = AtomicU32::new(0);
+static H_SIGNO: AtomicI32 = AtomicI32::new(0);
+static H_CODE: AtomicI32 = AtomicI32::new(0);
+static H_PID: AtomicU32 = AtomicU32::new(0);
+static H_STATUS: AtomicI32 = AtomicI32::new(0);
+static H_ADDR: AtomicU64 = AtomicU64::new(0);
+static H_TID: AtomicU32 = AtomicU32::new(0);
+static H_SP: AtomicU64 = AtomicU64::new(0);
+static H_MASK: AtomicU64 = AtomicU64::new(0);
+static H_ALIGNED: AtomicU32 = AtomicU32::new(0);
+static H_FPSTATE: AtomicU64 = AtomicU64::new(0);
+static H_UC_STACK: AtomicU64 = AtomicU64::new(0);
+static H_ALT_FLAGS: AtomicI32 = AtomicI32::new(-1);
+static H_ALT_SET: AtomicI32 = AtomicI32::new(0);
+/// Value the handler writes into the interrupted context's rax (0: none).
+static H_SET_RAX: AtomicU64 = AtomicU64::new(0);
+
+fn reset_handler_state() {
+    for a in [&H_COUNT, &H_PID, &H_TID, &H_ALIGNED] {
+        a.store(0, Ordering::SeqCst);
+    }
+    for a in [&H_SIGNO, &H_CODE, &H_STATUS] {
+        a.store(0, Ordering::SeqCst);
+    }
+    for a in [&H_ADDR, &H_SP, &H_MASK, &H_FPSTATE, &H_UC_STACK, &H_SET_RAX] {
+        a.store(0, Ordering::SeqCst);
+    }
+    H_ALT_FLAGS.store(-1, Ordering::SeqCst);
+    H_ALT_SET.store(0, Ordering::SeqCst);
+}
+
+/// Record siginfo and ucontext fields.
+fn record(info: *const u8, uc: *mut u8) {
+    let local = 0u8;
+    H_SP.store(&local as *const u8 as u64, Ordering::SeqCst);
+    unsafe {
+        H_SIGNO.store(*(info as *const i32), Ordering::SeqCst);
+        H_CODE.store(*(info.add(8) as *const i32), Ordering::SeqCst);
+        H_PID.store(*(info.add(16) as *const u32), Ordering::SeqCst);
+        H_STATUS.store(*(info.add(24) as *const i32), Ordering::SeqCst);
+        H_ADDR.store(*(info.add(16) as *const u64), Ordering::SeqCst);
+        H_MASK.store(*(uc.add(UC_SIGMASK) as *const u64), Ordering::SeqCst);
+        H_UC_STACK.store(*(uc.add(UC_STACK) as *const u64), Ordering::SeqCst);
+        let mc = uc.add(UC_MCONTEXT) as *mut u64;
+        H_FPSTATE.store(*mc.add(MC_FPSTATE), Ordering::SeqCst);
+    }
+    // rt_sigframe: the handler's entry rsp is &siginfo - 312, and it is
+    // 16-byte aligned minus 8 (as after a call).
+    H_ALIGNED.store(
+        ((info as usize - 312 + 8) % 16 == 0) as u32,
+        Ordering::SeqCst,
+    );
+    H_TID.store(gettid() as u32, Ordering::SeqCst);
+}
+
+extern "C" fn info_handler(_sig: i32, info: *const u8, uc: *mut u8) {
+    record(info, uc);
+    let v = H_SET_RAX.load(Ordering::SeqCst);
+    if v != 0 {
+        unsafe {
+            *(uc.add(UC_MCONTEXT) as *mut u64).add(MC_RAX) = v;
+        }
+    }
+    H_COUNT.fetch_add(1, Ordering::SeqCst);
+}
+
+/// SIGSEGV: record, then resume at the address the faulting code left in
+/// rcx with rax = 0xC0FFEE (both edits of uc_mcontext).
+extern "C" fn segv_handler(_sig: i32, info: *const u8, uc: *mut u8) {
+    record(info, uc);
+    unsafe {
+        let mc = uc.add(UC_MCONTEXT) as *mut u64;
+        *mc.add(MC_RIP) = *mc.add(MC_RCX);
+        *mc.add(MC_RAX) = 0xC0FFEE;
+    }
+    H_COUNT.fetch_add(1, Ordering::SeqCst);
+}
+
+/// On the alternate stack: query it, and try to change it (EPERM).
+extern "C" fn alt_handler(_sig: i32, info: *const u8, uc: *mut u8) {
+    record(info, uc);
+    let mut cur = StackT::default();
+    sigaltstack(None, Some(&mut cur));
+    H_ALT_FLAGS.store(cur.flags, Ordering::SeqCst);
+    let off = StackT {
+        flags: SS_DISABLE,
+        ..StackT::default()
+    };
+    H_ALT_SET.store(sigaltstack(Some(&off), None) as i32, Ordering::SeqCst);
+    H_COUNT.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Load from `addr`; the SIGSEGV handler resumes after the load.
+fn faulting_load(addr: usize) -> u64 {
+    let out: u64;
+    unsafe {
+        core::arch::asm!(
+            "lea rcx, [rip + 2f]",
+            "mov rax, qword ptr [rdi]",
+            "2:",
+            in("rdi") addr,
+            out("rax") out,
+            out("rcx") _,
+            options(nostack),
+        );
+    }
+    out
+}
+
+static MT_TID: AtomicU32 = AtomicU32::new(0);
+static MT_READY: AtomicU32 = AtomicU32::new(0);
+static MT_GO: AtomicU32 = AtomicU32::new(0);
+static MT_SEEN_BEFORE: AtomicU32 = AtomicU32::new(0);
+static MT_PENDING: AtomicU64 = AtomicU64::new(0);
+static MT_SEEN_AFTER: AtomicU32 = AtomicU32::new(0);
+
+/// Blocks SIGUSR2, waits for the main thread to tgkill it, checks it is
+/// pending (not delivered), then unblocks it.
+extern "C" fn masked_thread(_arg: usize) {
+    sigmask(0, 1 << (SIGUSR2 - 1));
+    MT_TID.store(gettid() as u32, Ordering::SeqCst);
+    MT_READY.store(1, Ordering::SeqCst);
+    futex_wake(&MT_READY, 1);
+    while MT_GO.load(Ordering::SeqCst) == 0 {
+        futex_wait(&MT_GO, 0, 2000);
+    }
+    time::sleep_ms(30);
+    MT_SEEN_BEFORE.store(H_COUNT.load(Ordering::SeqCst), Ordering::SeqCst);
+    let mut pend = 0u64;
+    sc(nr::RT_SIGPENDING, &[&mut pend as *mut u64 as usize, 8]);
+    MT_PENDING.store(pend, Ordering::SeqCst);
+    // The handler runs on the way back from this call.
+    sigmask(1, 1 << (SIGUSR2 - 1));
+    MT_SEEN_AFTER.store(H_COUNT.load(Ordering::SeqCst), Ordering::SeqCst);
+}
+
+fn sigframes(r: &mut Report) {
+    let pid = sc(nr::GETPID, &[]) as u32;
+    let me = gettid();
+    let saved_mask = current_mask();
+    // Unblock what the tests use (the shell may hand us a mask).
+    sigmask(
+        1,
+        (1 << (SIGUSR1 - 1)) | (1 << (SIGUSR2 - 1)) | (1 << (SIGCHLD - 1)),
+    );
+
+    // SA_SIGINFO handler: siginfo from tgkill, frame layout and alignment.
+    reset_handler_state();
+    sigaction_info(SIGUSR1, info_handler, 0);
+    let rc = tgkill(me, SIGUSR1);
+    r.check(
+        "SA_SIGINFO siginfo from tgkill",
+        rc == 0
+            && H_COUNT.load(Ordering::SeqCst) == 1
+            && H_SIGNO.load(Ordering::SeqCst) == SIGUSR1 as i32
+            && H_CODE.load(Ordering::SeqCst) == SI_TKILL
+            && H_PID.load(Ordering::SeqCst) == pid
+            && H_TID.load(Ordering::SeqCst) == me as u32,
+        format!(
+            "rc {} count {} signo {} code {} pid {} tid {}",
+            rc,
+            H_COUNT.load(Ordering::SeqCst),
+            H_SIGNO.load(Ordering::SeqCst),
+            H_CODE.load(Ordering::SeqCst),
+            H_PID.load(Ordering::SeqCst),
+            H_TID.load(Ordering::SeqCst)
+        ),
+    );
+    let fp = H_FPSTATE.load(Ordering::SeqCst);
+    r.check(
+        "rt_sigframe layout",
+        H_ALIGNED.load(Ordering::SeqCst) == 1
+            && fp != 0
+            && fp % 64 == 0
+            && H_MASK.load(Ordering::SeqCst) & (1 << (SIGUSR1 - 1)) == 0,
+        format!(
+            "aligned {} fpstate {:#x} uc_sigmask {:#x}",
+            H_ALIGNED.load(Ordering::SeqCst),
+            fp,
+            H_MASK.load(Ordering::SeqCst)
+        ),
+    );
+    reset_handler_state();
+    sc(nr::KILL, &[pid as usize, SIGUSR1]);
+    r.check(
+        "SA_SIGINFO siginfo from kill",
+        H_COUNT.load(Ordering::SeqCst) == 1
+            && H_CODE.load(Ordering::SeqCst) == SI_USER
+            && H_PID.load(Ordering::SeqCst) == pid,
+        format!(
+            "count {} code {} pid {}",
+            H_COUNT.load(Ordering::SeqCst),
+            H_CODE.load(Ordering::SeqCst),
+            H_PID.load(Ordering::SeqCst)
+        ),
+    );
+
+    // The handler edits uc_mcontext.rax: the interrupted tgkill "returns"
+    // the new value after rt_sigreturn.
+    reset_handler_state();
+    H_SET_RAX.store(0x5A5A, Ordering::SeqCst);
+    let rc = tgkill(me, SIGUSR1);
+    H_SET_RAX.store(0, Ordering::SeqCst);
+    r.check(
+        "handler edits uc_mcontext",
+        rc == 0x5A5A,
+        format!("tgkill returned {:#x}", rc),
+    );
+    sigaction_default(SIGUSR1);
+
+    // Faults: SEGV_MAPERR on an unmapped page, SEGV_ACCERR on PROT_NONE,
+    // recovered by moving uc_mcontext.rip past the load.
+    sigaction_info(SIGSEGV, segv_handler, 0);
+    let page = mmap(4096, 0x22, -1, 0);
+    sc(nr::MUNMAP, &[page as usize, 4096]);
+    reset_handler_state();
+    let v = faulting_load(page as usize + 8);
+    r.check(
+        "SIGSEGV SEGV_MAPERR + si_addr, rip edited",
+        v == 0xC0FFEE
+            && H_SIGNO.load(Ordering::SeqCst) == SIGSEGV as i32
+            && H_CODE.load(Ordering::SeqCst) == SEGV_MAPERR
+            && H_ADDR.load(Ordering::SeqCst) == page as u64 + 8,
+        format!(
+            "rax {:#x} signo {} code {} addr {:#x} (want {:#x})",
+            v,
+            H_SIGNO.load(Ordering::SeqCst),
+            H_CODE.load(Ordering::SeqCst),
+            H_ADDR.load(Ordering::SeqCst),
+            page as u64 + 8
+        ),
+    );
+    let none = sc(nr::MMAP, &[0, 4096, 0, 0x22, usize::MAX, 0]);
+    reset_handler_state();
+    let v = faulting_load(none as usize);
+    r.check(
+        "SIGSEGV SEGV_ACCERR on PROT_NONE",
+        v == 0xC0FFEE
+            && H_CODE.load(Ordering::SeqCst) == SEGV_ACCERR
+            && H_ADDR.load(Ordering::SeqCst) == none as u64,
+        format!(
+            "rax {:#x} code {} addr {:#x}",
+            v,
+            H_CODE.load(Ordering::SeqCst),
+            H_ADDR.load(Ordering::SeqCst)
+        ),
+    );
+    sc(nr::MUNMAP, &[none as usize, 4096]);
+    sigaction_default(SIGSEGV);
+
+    // sigaltstack: set, query, too small, run a handler on it.
+    const ALT: usize = 64 * 1024;
+    let alt = sc(nr::MMAP, &[0, ALT, 3, 0x22, usize::MAX, 0]) as u64;
+    let mut q = StackT::default();
+    let q0 = sigaltstack(None, Some(&mut q));
+    let initially_off = q0 == 0 && q.flags == SS_DISABLE;
+    let small = StackT {
+        sp: alt,
+        size: 1024,
+        ..StackT::default()
+    };
+    let enomem = sigaltstack(Some(&small), None);
+    let ss = StackT {
+        sp: alt,
+        size: ALT as u64,
+        ..StackT::default()
+    };
+    let set = sigaltstack(Some(&ss), None);
+    let mut q = StackT::default();
+    sigaltstack(None, Some(&mut q));
+    r.check(
+        "sigaltstack set/query",
+        initially_off
+            && enomem == -12
+            && set == 0
+            && q.sp == alt
+            && q.size == ALT as u64
+            && q.flags == 0,
+        format!(
+            "initially_off {} enomem {} set {} query {:?}",
+            initially_off, enomem, set, q
+        ),
+    );
+    reset_handler_state();
+    sigaction_info(SIGUSR2, alt_handler, SA_ONSTACK);
+    tgkill(me, SIGUSR2);
+    let hsp = H_SP.load(Ordering::SeqCst);
+    r.check(
+        "SA_ONSTACK handler runs on the alternate stack",
+        H_COUNT.load(Ordering::SeqCst) == 1
+            && (alt..alt + ALT as u64).contains(&hsp)
+            && H_ALT_FLAGS.load(Ordering::SeqCst) == SS_ONSTACK
+            && H_ALT_SET.load(Ordering::SeqCst) == -1
+            && H_UC_STACK.load(Ordering::SeqCst) == alt,
+        format!(
+            "count {} sp {:#x} alt {:#x} flags {} set {} uc_stack {:#x}",
+            H_COUNT.load(Ordering::SeqCst),
+            hsp,
+            alt,
+            H_ALT_FLAGS.load(Ordering::SeqCst),
+            H_ALT_SET.load(Ordering::SeqCst),
+            H_UC_STACK.load(Ordering::SeqCst)
+        ),
+    );
+    let off = StackT {
+        flags: SS_DISABLE,
+        ..StackT::default()
+    };
+    let rc = sigaltstack(Some(&off), None);
+    let mut q = StackT::default();
+    sigaltstack(None, Some(&mut q));
+    r.check(
+        "sigaltstack SS_DISABLE",
+        rc == 0 && q.flags == SS_DISABLE,
+        format!("rc {} query {:?}", rc, q),
+    );
+    sc(nr::MUNMAP, &[alt as usize, ALT]);
+
+    // Per-thread masks: a thread blocking SIGUSR2 keeps a tgkill'd SIGUSR2
+    // pending until it unblocks it; the main thread's mask is separate and
+    // does not get it.
+    reset_handler_state();
+    sigaction_info(SIGUSR2, info_handler, 0);
+    let tid = AtomicU32::new(0);
+    spawn_thread(masked_thread, 0, &tid);
+    while MT_READY.load(Ordering::SeqCst) == 0 {
+        futex_wait(&MT_READY, 0, 2000);
+    }
+    let main_mask = current_mask();
+    let t = MT_TID.load(Ordering::SeqCst) as usize;
+    let rc = tgkill(t, SIGUSR2);
+    time::sleep_ms(20);
+    let main_count = H_COUNT.load(Ordering::SeqCst);
+    MT_GO.store(1, Ordering::SeqCst);
+    futex_wake(&MT_GO, 1);
+    let joined = join(&tid);
+    r.check(
+        "per-thread mask holds a tgkill'd signal",
+        rc == 0
+            && joined
+            && main_mask & (1 << (SIGUSR2 - 1)) == 0
+            && main_count == 0
+            && MT_SEEN_BEFORE.load(Ordering::SeqCst) == 0
+            && MT_PENDING.load(Ordering::SeqCst) & (1 << (SIGUSR2 - 1)) != 0,
+        format!(
+            "rc {} joined {} main mask {:#x} main count {} before {} pending {:#x}",
+            rc,
+            joined,
+            main_mask,
+            main_count,
+            MT_SEEN_BEFORE.load(Ordering::SeqCst),
+            MT_PENDING.load(Ordering::SeqCst)
+        ),
+    );
+    r.check(
+        "tgkill runs the handler on the target thread",
+        MT_SEEN_AFTER.load(Ordering::SeqCst) == 1
+            && H_TID.load(Ordering::SeqCst) == t as u32
+            && H_CODE.load(Ordering::SeqCst) == SI_TKILL,
+        format!(
+            "after {} handler tid {} (target {}) code {}",
+            MT_SEEN_AFTER.load(Ordering::SeqCst),
+            H_TID.load(Ordering::SeqCst),
+            t,
+            H_CODE.load(Ordering::SeqCst)
+        ),
+    );
+    r.check(
+        "tgkill with a wrong tgid is ESRCH",
+        sc(nr::TGKILL, &[pid as usize + 100_000, me, SIGUSR2]) == -3,
+        String::new(),
+    );
+    sigaction_default(SIGUSR2);
+
+    // SIGCHLD siginfo: CLD_EXITED, the child's pid and exit status.
+    reset_handler_state();
+    sigaction_info(SIGCHLD, info_handler, SA_RESTART);
+    let child = sc(nr::FORK, &[]);
+    if child == 0 {
+        sc(nr::EXIT, &[3]);
+    }
+    let mut st = 0i32;
+    sc(
+        nr::WAIT4,
+        &[child as usize, &mut st as *mut i32 as usize, 0, 0],
+    );
+    let t0 = time::millis();
+    while H_COUNT.load(Ordering::SeqCst) == 0 && time::millis() - t0 < 1000 {
+        time::sleep_ms(5);
+    }
+    r.check(
+        "SIGCHLD siginfo CLD_EXITED",
+        H_SIGNO.load(Ordering::SeqCst) == SIGCHLD as i32
+            && H_CODE.load(Ordering::SeqCst) == CLD_EXITED
+            && H_PID.load(Ordering::SeqCst) == child as u32
+            && H_STATUS.load(Ordering::SeqCst) == 3,
+        format!(
+            "signo {} code {} pid {} (child {}) status {}",
+            H_SIGNO.load(Ordering::SeqCst),
+            H_CODE.load(Ordering::SeqCst),
+            H_PID.load(Ordering::SeqCst),
+            child,
+            H_STATUS.load(Ordering::SeqCst)
+        ),
+    );
+    sigaction_default(SIGCHLD);
+    sigmask(2, saved_mask);
 }
 
 // ---------------------------------------------------------------------------
@@ -1205,11 +1730,12 @@ fn main(args: Vec<String>) -> i32 {
         println!("kapitest: {} passed, {} failed", r.passed, r.failed);
         return (r.failed != 0) as i32;
     }
-    let tests: [(&str, fn(&mut Report)); 12] = [
+    let tests: [(&str, fn(&mut Report)); 13] = [
         ("eventfd", eventfd),
         ("timerfd", timerfd),
         ("epoll", epoll),
         ("signals", signals),
+        ("sigframes", sigframes),
         ("threads", threads),
         ("sched", scheduling),
         ("process", fork_exit),

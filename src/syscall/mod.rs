@@ -145,6 +145,7 @@ pub mod nr {
     pub const GETPGID: u64 = 121;
     pub const GETSID: u64 = 124;
     pub const RT_SIGPENDING: u64 = 127;
+    pub const RT_SIGTIMEDWAIT: u64 = 128;
     pub const RT_SIGSUSPEND: u64 = 130;
     pub const SIGALTSTACK: u64 = 131;
     pub const MKNOD: u64 = 133;
@@ -394,8 +395,8 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         EXIT_GROUP => proc_::exit_group(a[0] as i32),
         WAIT4 => v(proc_::wait4(a[0] as i32, a[1], a[2] as u32, a[3])),
         KILL => v(proc_::kill(a[0] as i32, a[1] as u32)),
-        TKILL => v(proc_::tkill(a[0], a[1] as u32)),
-        TGKILL => v(proc_::tkill(a[1], a[2] as u32)),
+        TKILL => v(proc_::tgkill(None, a[0] as i32, a[1] as u32)),
+        TGKILL => v(proc_::tgkill(Some(a[0] as i32), a[1] as i32, a[2] as u32)),
         GETPID => v(proc_::getpid()),
         GETPPID => v(proc_::getppid()),
         GETTID => Ok(Ret::Value(crate::sched::current_tid() as i64)),
@@ -412,8 +413,9 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         RT_SIGPROCMASK => v(proc_::sigprocmask(a[0] as u32, a[1], a[2])),
         RT_SIGPENDING => v(proc_::sigpending(a[0])),
         RT_SIGSUSPEND => v(proc_::sigsuspend(a[0])),
+        RT_SIGTIMEDWAIT => v(proc_::sigtimedwait(a[0], a[1], a[2])),
         RT_SIGRETURN => crate::process::signal::sigreturn(frame).map(|_| Ret::Frame),
-        SIGALTSTACK => Ok(Ret::Value(0)),
+        SIGALTSTACK => v(proc_::sigaltstack(frame.rsp, a[0], a[1])),
         PAUSE => v(proc_::pause()),
         ARCH_PRCTL => v(proc_::arch_prctl(a[0], a[1])),
         PRCTL => Ok(Ret::Value(0)),

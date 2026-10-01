@@ -25,20 +25,23 @@ pub fn handle(frame: &mut TrapFrame) {
                 return;
             }
             if frame.from_user() {
-                crate::process::user_fault(frame, crate::process::signal::SIGSEGV, addr);
+                crate::process::user_page_fault(frame, addr);
                 return;
             }
             fatal(frame, Some(addr));
         }
         _ if frame.from_user() => {
-            let sig = match frame.vector {
-                0 | 16 | 19 => crate::process::signal::SIGFPE,
-                6 => crate::process::signal::SIGILL,
-                1 => crate::process::signal::SIGTRAP,
-                17 => crate::process::signal::SIGBUS,
-                _ => crate::process::signal::SIGSEGV,
+            use crate::process::signal::*;
+            // Signal, si_code and si_addr as Linux's trap handlers.
+            let (sig, code, addr) = match frame.vector {
+                0 => (SIGFPE, FPE_INTDIV, frame.rip),
+                16 | 19 => (SIGFPE, fpe_code(frame.vector), frame.rip),
+                6 => (SIGILL, ILL_ILLOPN, frame.rip),
+                1 => (SIGTRAP, TRAP_TRACE, frame.rip),
+                17 => (SIGBUS, BUS_ADRALN, 0),
+                _ => (SIGSEGV, SI_KERNEL, 0),
             };
-            crate::process::user_fault(frame, sig, 0);
+            crate::process::user_fault(frame, sig, code, addr);
         }
         2 => {
             if super::smp::NMI_DUMP.load(core::sync::atomic::Ordering::SeqCst) {
@@ -66,6 +69,40 @@ pub fn handle(frame: &mut TrapFrame) {
             }
         }
         _ => fatal(frame, None),
+    }
+}
+
+/// si_code of an x87 (#MF, vector 16) or SIMD (#XM, 19) floating-point
+/// exception, from the unmasked exception flags (Linux's
+/// `fpu__exception_code`). The user's FPU state is still live here.
+fn fpe_code(vector: u64) -> i32 {
+    use crate::process::signal::*;
+    let err = if vector == 19 {
+        let mut mxcsr = 0u32;
+        unsafe {
+            core::arch::asm!("stmxcsr [{}]", in(reg) &mut mxcsr, options(nostack));
+        }
+        mxcsr & !(mxcsr >> 7) & 0x3f
+    } else {
+        let (mut sw, mut cw) = (0u16, 0u16);
+        unsafe {
+            core::arch::asm!("fnstsw [{}]", in(reg) &mut sw, options(nostack));
+            core::arch::asm!("fnstcw [{}]", in(reg) &mut cw, options(nostack));
+        }
+        (sw & !cw & 0x3f) as u32
+    };
+    if err & 0x01 != 0 {
+        FPE_FLTINV
+    } else if err & 0x04 != 0 {
+        FPE_FLTDIV
+    } else if err & 0x08 != 0 {
+        FPE_FLTOVF
+    } else if err & 0x12 != 0 {
+        FPE_FLTUND
+    } else if err & 0x20 != 0 {
+        FPE_FLTRES
+    } else {
+        SI_KERNEL
     }
 }
 

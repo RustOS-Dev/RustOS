@@ -128,7 +128,8 @@ root@rustos:/# ls /sys/class/net; cat /proc/cpuinfo
 | [docs/AUDIO.md](docs/AUDIO.md) | Sound cards (HD Audio, USB audio, virtio-sound), `/dev/dsp`, `play`/`rec`/`mixer` |
 | [docs/HARDWARE.md](docs/HARDWARE.md) | supported hardware and validation status |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | known gaps |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | the completion plan (M0–M16) and its status |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | the completion plan (M0–M26) and its status |
+| [docs/ROADMAP-ROUND4.md](docs/ROADMAP-ROUND4.md) | round 4 plan: more Wi-Fi chips, everyday hardware, GPUs and a desktop |
 | [docs/BROWSER.md](docs/BROWSER.md) | the `browse` text web browser and captive-portal login |
 | [docs/CSS.md](docs/CSS.md) | the CSS engine and layout (supported CSS, character cells) |
 | [docs/JAVASCRIPT.md](docs/JAVASCRIPT.md) | JavaScript in the browser: the `jsd` helper, supported APIs, security model |

@@ -127,6 +127,27 @@ Round 3 deviations so far:
 - **Found during M26:** smoltcp's SLAAC keeps a stale router-solicitation deadline after its retries go unanswered, so `netd` polled in a busy loop and used a whole CPU on networks without an IPv6 router. `netd` now waits (20 ms, or until kicked) when a poll moves no packets.
 - **M19** — tests: a host end-to-end suite (`crates/jsproto/tests/jsd.rs`) plus the `browser-js` and `captive-portal-js` scenarios stand in for the WPT subset.
 
+### Round 4 (planned)
+
+Detailed plan: [ROADMAP-ROUND4.md](ROADMAP-ROUND4.md).
+
+- [ ] **M27** Wi-Fi driver framework: shared 802.11 layer, per-chip hardware trait, simulated radio and software AP for CI
+- [ ] **M28** MediaTek MT7921/MT7921K (RZ608)/MT7922 PCIe Wi-Fi
+- [ ] **M29** MT7921AU USB Wi-Fi and MediaTek Bluetooth firmware (btmtk)
+- [ ] **M30** Older Intel Wi-Fi: AX200/AX201, 9000, 8000, 7000 series
+- [ ] **M31** USB Wi-Fi adapters: MT7612U, MT7601U, AR9271, Realtek rtw88 USB
+- [ ] **M32** Realtek PCIe Wi-Fi: rtw88 (8821CE/8822CE), then rtw89
+- [ ] **M33** Ethernet: RTL8152/8153/8156 and ASIX USB adapters; igb, alx, tg3, RTL8126, atlantic
+- [ ] **M34** I2C HID touchpads (DesignWare I2C, ACPI GPIO), SDHCI and Realtek card readers, USB serial, UVC webcams, Realtek Bluetooth
+- [ ] **M35** DRM/KMS uAPI on the firmware framebuffer; bochs and virtio-gpu drivers
+- [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, dma-buf/sync_file, uevents, VT switching, kernel FPU, ALSA uAPI
+- [ ] **M37** C++ runtime, meson/cmake cross builds, Wayland stack, Weston software-rendered desktop
+- [ ] **M38** LinuxKPI: Linux DRM drivers compiled from C, proven with virtio-gpu in QEMU
+- [ ] **M39** AMD GPUs (amdgpu): display, then command submission and power management
+- [ ] **M40** NVIDIA GPUs (nouveau, GSP firmware on Turing and newer)
+- [ ] **M41** Mesa: radeonsi/RADV, NVK, zink, EGL/GBM
+- [ ] **M42** Desktop environments: Weston, then labwc/Sway, Xwayland, GTK, Qt/KDE
+
 ## Context
 
 RustOS is a ~10.8k-line x86_64 UEFI kernel (bootloader_api 0.11). Today it has:
@@ -258,7 +279,7 @@ Kernel pieces from M2 unblock these; rsh-side work goes to `RustOS-Dev/rsh`, bui
 
 ## Out of scope (stretch list)
 
-GPU acceleration, window manager/GUI, Intel HDA audio, Broadcom/Realtek WiFi, USB WiFi dongles, WPA-Enterprise, 802.11 AP mode, Bluetooth (AX210 BT is a separate USB function), self-hosting.
+WPA-Enterprise, 802.11 AP mode, self-hosting. (GPUs, desktops, more Wi-Fi chips and USB Wi-Fi adapters moved into round 4; HDA audio and Bluetooth were done in round 3.)
 
 ## Dependency order
 

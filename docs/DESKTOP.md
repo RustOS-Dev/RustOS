@@ -6,9 +6,12 @@ settings) on its own Wayland compositor, `edex-comp`, built with Smithay. It is 
 in [ROADMAP.md](ROADMAP.md).
 
 Status: the RustOS side that does not need graphics is done (CPU-time accounting, the `svc`
-service manager, the ports below except `edex-de` itself). eDEX-DE builds for RustOS once M37
-supplies the desktop libraries and runs once the graphics milestones (M35–M42) are in. What it
-needs from RustOS, call by call, is listed in eDEX-DE's
+service manager, Linux signal frames for Go and Rust programs, the ports below except `edex-de`
+itself). In a `RUSTOS_DESKTOP=1` image under QEMU, `tor` checks its configuration, `wg` makes keys,
+`lyrebird` and `snowflake-client` start, and a dynamically linked Rust program unwinds a panic
+through the `libunwind` port. eDEX-DE builds for RustOS once M37 supplies the desktop libraries
+and runs once the graphics milestones (M35–M42) are in. What it needs from RustOS, call by call,
+is listed in eDEX-DE's
 [docs/rustos.md](https://github.com/RustOS-Dev/eDEX-DE-RS/blob/master/docs/rustos.md).
 
 ## What runs

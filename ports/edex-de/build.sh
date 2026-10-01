@@ -13,8 +13,8 @@
 # commit.
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 set -e
-COMMIT=91cfaf2ebc2dc808adb08eb84b0625248e3cb673
-SHA256=c710ae1bfb2302eaf2e49c3a3dbce0c274cd216a6c7e1554f989b1a2fcbdaaec
+COMMIT=3980d323c0976e40f11c6fbc8fdfb970de5944d8
+SHA256=4fd3b26c13cc1c781c67f5524de1245a2b51443f71d47a93cc61522a8f9da545
 TARGET=x86_64-unknown-linux-musl
 BINS="edex-comp edex-de edex-greeter edex-auth"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

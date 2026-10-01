@@ -39,9 +39,28 @@ reload_partition_table() {
     fi
 }
 
+# Under sudo, build as the invoking user: their rustup and toolchains live in
+# their home, and root-owned files in their checkout would break later builds.
+# Only partitioning, formatting and writing the drive need root.
+BUILD_USER=""
+BUILD_HOME="$HOME"
+if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]]; then
+    BUILD_USER="$SUDO_USER"
+    BUILD_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+fi
+
+as_build_user() {
+    if [[ -n "$BUILD_USER" ]]; then
+        sudo -u "$BUILD_USER" -H env "PATH=$PATH" ${RUSTUP_TOOLCHAIN:+"RUSTUP_TOOLCHAIN=$RUSTUP_TOOLCHAIN"} "$@"
+    else
+        "$@"
+    fi
+}
+
 # Directory holding the RustOS sources: the checkout this script lives in, or,
 # when the script is piped in (curl ... | bash), a clone kept in
-# $RUSTOS_SRC_DIR (default ~/.cache/rustos-src) and updated on every run.
+# $RUSTOS_SRC_DIR (default ~/.cache/rustos-src of the building user) and
+# updated on every run.
 resolve_source_dir() {
     local self="${BASH_SOURCE[0]:-}"
     if [[ -n "$self" && -f "$self" ]]; then
@@ -55,19 +74,21 @@ resolve_source_dir() {
 
     local repo="${RUSTOS_REPO:-https://github.com/RustOS-Dev/RustOS}"
     local branch="${RUSTOS_BRANCH:-main}"
-    local src="${RUSTOS_SRC_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/rustos-src}"
+    local cache="${XDG_CACHE_HOME:-$HOME/.cache}"
+    [[ -n "$BUILD_USER" ]] && cache="$BUILD_HOME/.cache"
+    local src="${RUSTOS_SRC_DIR:-$cache/rustos-src}"
     if ! command -v git &>/dev/null; then
         echo "Error: required tool 'git' is not installed." >&2
         exit 1
     fi
     if [[ -d "$src/.git" ]]; then
         echo "Updating RustOS sources in $src ($branch)..." >&2
-        git -C "$src" fetch --quiet origin "$branch" >&2
-        git -C "$src" checkout --quiet --force -B "$branch" FETCH_HEAD >&2
+        as_build_user git -C "$src" fetch --quiet origin "$branch" >&2
+        as_build_user git -C "$src" checkout --quiet --force -B "$branch" FETCH_HEAD >&2
     else
         echo "Cloning RustOS sources into $src ($branch)..." >&2
-        mkdir -p "$(dirname "$src")"
-        git clone --quiet --branch "$branch" "$repo" "$src" >&2
+        as_build_user mkdir -p "$(dirname "$src")"
+        as_build_user git clone --quiet --branch "$branch" "$repo" "$src" >&2
     fi
     echo "$src"
 }
@@ -82,7 +103,13 @@ pinned_cargo() {
         echo "Error: no toolchain channel in $src/rust-toolchain.toml." >&2
         exit 1
     fi
-    if ! command -v rustup &>/dev/null; then
+    local rustup
+    rustup="$(command -v rustup || true)"
+    if [[ -z "$rustup" && -x "$BUILD_HOME/.cargo/bin/rustup" ]]; then
+        # Not in PATH, e.g. under sudo: use the building user's rustup.
+        rustup="$BUILD_HOME/.cargo/bin/rustup"
+    fi
+    if [[ -z "$rustup" ]]; then
         echo "Error: rustup is required to build RustOS (it uses $toolchain)." >&2
         if command -v cargo &>/dev/null; then
             echo "The cargo in PATH ($(command -v cargo), $(cargo -V 2>/dev/null)) cannot build it." >&2
@@ -90,17 +117,17 @@ pinned_cargo() {
         echo "Install rustup from https://rustup.rs and re-run this script." >&2
         exit 1
     fi
-    if ! rustup run "$toolchain" cargo -V &>/dev/null; then
+    if ! as_build_user "$rustup" run "$toolchain" cargo -V &>/dev/null; then
         echo "Installing Rust toolchain $toolchain (from rust-toolchain.toml)..." >&2
-        (cd "$src" && rustup toolchain install) >&2 ||
-            rustup toolchain install "$toolchain" --profile minimal \
+        (cd "$src" && as_build_user "$rustup" toolchain install) >&2 ||
+            as_build_user "$rustup" toolchain install "$toolchain" --profile minimal \
                 --component rust-src --component llvm-tools \
                 --target x86_64-unknown-none >&2
     fi
     # Put the toolchain's own binaries first so that cargo, the rustc it
     # runs and the nested cargo builds in build.rs all come from it.
     local bin
-    bin="$(dirname "$(rustup which --toolchain "$toolchain" cargo)")"
+    bin="$(dirname "$(as_build_user "$rustup" which --toolchain "$toolchain" cargo)")"
     export PATH="$bin:$PATH" RUSTUP_TOOLCHAIN="$toolchain"
     CARGO_CMD=("$bin/cargo")
 }
@@ -404,10 +431,10 @@ main() {
     pinned_cargo "$SCRIPT_DIR"
 
     echo "Updating submodules to pinned repository commits..."
-    git submodule update --init --recursive
+    as_build_user git submodule update --init --recursive
 
     echo "Building kernel (release)..."
-    "${CARGO_CMD[@]}" build --release
+    as_build_user "${CARGO_CMD[@]}" build --release
 
     KERNEL_ELF=$(find "$SCRIPT_DIR/target" -path "*/release/rustos" -not -name "*.d" | head -1)
     if [[ -z "$KERNEL_ELF" || ! -f "$KERNEL_ELF" ]]; then
@@ -417,7 +444,7 @@ main() {
 
     IMG_FILE="$SCRIPT_DIR/rustos-local.img"
     echo "Creating local UEFI disk image: $IMG_FILE"
-    (cd "$SCRIPT_DIR/crates/create-image" && "${CARGO_CMD[@]}" run --release -- "$KERNEL_ELF" "$IMG_FILE")
+    (cd "$SCRIPT_DIR/crates/create-image" && as_build_user "${CARGO_CMD[@]}" run --release -- "$KERNEL_ELF" "$IMG_FILE")
 
     # ---------------------------------------------------------------------------
     # Flash

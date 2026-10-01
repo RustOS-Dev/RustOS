@@ -12,6 +12,7 @@
 set -euo pipefail
 
 DRIVE=""
+ASSUME_YES=0
 AX210_FIRMWARE_SOURCE="${RUSTOS_AX210_FIRMWARE:-}"
 PARTITION_SYNC_DELAY_SECONDS=1
 AX210_FIRMWARE_SEARCH_DIRS=(
@@ -32,6 +33,61 @@ reload_partition_table() {
     else
         blockdev --rereadpt "$device" || true
         partprobe "$device" || true
+    fi
+}
+
+# Directory holding the RustOS sources: the checkout this script lives in, or,
+# when the script is piped in (curl ... | bash), a clone kept in
+# $RUSTOS_SRC_DIR (default ~/.cache/rustos-src) and updated on every run.
+resolve_source_dir() {
+    local self="${BASH_SOURCE[0]:-}"
+    if [[ -n "$self" && -f "$self" ]]; then
+        local dir
+        dir="$(cd "$(dirname "$(realpath "$self")")" && pwd)"
+        if [[ -f "$dir/Cargo.toml" && -d "$dir/crates/create-image" ]]; then
+            echo "$dir"
+            return
+        fi
+    fi
+
+    local repo="${RUSTOS_REPO:-https://github.com/RustOS-Dev/RustOS}"
+    local branch="${RUSTOS_BRANCH:-main}"
+    local src="${RUSTOS_SRC_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/rustos-src}"
+    if ! command -v git &>/dev/null; then
+        echo "Error: required tool 'git' is not installed." >&2
+        exit 1
+    fi
+    if [[ -d "$src/.git" ]]; then
+        echo "Updating RustOS sources in $src ($branch)..." >&2
+        git -C "$src" fetch --quiet origin "$branch" >&2
+        git -C "$src" checkout --quiet --force -B "$branch" FETCH_HEAD >&2
+    else
+        echo "Cloning RustOS sources into $src ($branch)..." >&2
+        mkdir -p "$(dirname "$src")"
+        git clone --quiet --branch "$branch" "$repo" "$src" >&2
+    fi
+    echo "$src"
+}
+
+# Last chance to back out before the drive is overwritten. Reads the answer
+# from the terminal, since stdin is the script itself under curl | bash.
+confirm_erase() {
+    local device="$1"
+    [[ "$ASSUME_YES" == 1 ]] && return
+    echo
+    lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS "$device" 2>/dev/null ||
+        lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINT "$device" || true
+    echo
+    if [[ ! -r /dev/tty ]]; then
+        echo "Error: no terminal to confirm on; pass --yes to skip the prompt." >&2
+        exit 1
+    fi
+    local answer
+    printf "Type 'yes' to erase everything on %s: " "$device" > /dev/tty
+    read -r answer < /dev/tty
+    if [[ "$answer" != "yes" ]]; then
+        echo "Aborted; nothing was written." >&2
+        exit 1
     fi
 }
 
@@ -231,8 +287,12 @@ main() {
                 AX210_FIRMWARE_SOURCE="$2"
                 shift 2
                 ;;
+            -y|--yes)
+                ASSUME_YES=1
+                shift
+                ;;
             -h|--help)
-                echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>]"
+                echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>] [--yes]"
                 echo
                 echo "Builds a local RustOS UEFI disk image and writes it to the"
                 echo "specified drive.  The drive will be COMPLETELY OVERWRITTEN."
@@ -242,11 +302,15 @@ main() {
                 echo "Example:"
                 echo "  $0 --drive /dev/sdb"
                 echo "  $0 --drive /dev/sdb --ax210-firmware /path/to/linux-firmware"
+                echo
+                echo "--yes skips the confirmation prompt before the drive is erased."
+                echo "Piped from curl, the script clones RustOS into \$RUSTOS_SRC_DIR"
+                echo "(default ~/.cache/rustos-src) from \$RUSTOS_REPO and \$RUSTOS_BRANCH."
                 exit 0
                 ;;
             *)
                 echo "Unknown argument: $1" >&2
-                echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>]" >&2
+                echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>] [--yes]" >&2
                 exit 1
                 ;;
         esac
@@ -254,7 +318,7 @@ main() {
 
     if [[ -z "$DRIVE" ]]; then
         echo "Error: --drive is required." >&2
-        echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>]" >&2
+        echo "Usage: $0 --drive /dev/sdX [--ax210-firmware <file-or-dir>] [--yes]" >&2
         exit 1
     fi
 
@@ -299,7 +363,7 @@ main() {
     # ---------------------------------------------------------------------------
     # Build local image
     # ---------------------------------------------------------------------------
-    SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+    SCRIPT_DIR="$(resolve_source_dir)"
     cd "$SCRIPT_DIR"
 
     echo "Updating submodules to pinned repository commits..."
@@ -325,6 +389,7 @@ main() {
     echo "Target drive: $DRIVE"
     echo
     echo "WARNING: ALL DATA ON '$DRIVE' WILL BE PERMANENTLY DESTROYED."
+    confirm_erase "$DRIVE"
     echo
 
     echo "Writing image to $DRIVE ..."
@@ -434,6 +499,7 @@ main() {
     rm -f "$IMG_FILE"
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+# Run unless sourced; BASH_SOURCE is empty when the script comes from stdin.
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
     main "$@"
 fi

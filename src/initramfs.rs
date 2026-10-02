@@ -14,7 +14,9 @@ pub fn unpack() -> usize {
     unpack_archive(ARCHIVE)
 }
 
-pub fn unpack_archive(data: &[u8]) -> usize {
+/// Regular files keep pointing into `data` (tmpfs copies one only when it
+/// is written), so the archive costs no kernel heap.
+pub fn unpack_archive(data: &'static [u8]) -> usize {
     let mut off = 0usize;
     let mut count = 0;
     while off + 110 <= data.len() {
@@ -58,9 +60,15 @@ pub fn unpack_archive(data: &[u8]) -> usize {
                 {
                     let _ = vfs::mkdir_p(parent);
                 }
-                if vfs::write_all(&path, body).is_ok()
+                if vfs::write_all(&path, &[]).is_ok()
                     && let Ok(i) = vfs::lookup(&path)
                 {
+                    match i.as_any().downcast_ref::<vfs::tmpfs::TmpInode>() {
+                        Some(t) => t.set_static(body),
+                        None => {
+                            let _ = vfs::write_all(&path, body);
+                        }
+                    }
                     let _ = i.chmod(mode & 0o7777);
                 }
             }

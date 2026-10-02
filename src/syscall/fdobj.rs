@@ -75,13 +75,13 @@ pub fn seals(f: &File, cmd: u32, arg: u64) -> SysResult {
     if !f.writable() {
         return Err(EPERM);
     }
-    let target = m as *const memfd::Memfd as *const ();
+    let target = Arc::as_ptr(m.pages()) as *const ();
     m.add_seals(arg as u32, mapped_writable(target))?;
     Ok(0)
 }
 
-/// Whether any process has a writable shared mapping of the inode at
-/// `target`.
+/// Whether any process has a writable shared mapping of the memfd
+/// frames at `target`.
 fn mapped_writable(target: *const ()) -> bool {
     use crate::process::vm::{Backing, MAP_SHARED, PROT_WRITE};
     process::all().iter().any(|p| {
@@ -89,8 +89,8 @@ fn mapped_writable(target: *const ()) -> bool {
             vm.lock().areas.values().any(|a| {
                 a.flags & MAP_SHARED != 0
                     && a.prot & PROT_WRITE != 0
-                    && matches!(&a.backing, Backing::File { inode, .. }
-                        if Arc::as_ptr(inode) as *const () == target)
+                    && matches!(&a.backing, Backing::Shm { obj, .. }
+                        if Arc::as_ptr(obj) as *const () == target)
             })
         })
     })

@@ -1,0 +1,30 @@
+#!/bin/sh
+# Compile C++ for RustOS: g++ on the musl sysroot (like tools/rustos-cc)
+# with LLVM's libc++, libc++abi and libunwind (built by the libcxx port,
+# tools/install-port.sh libcxx) instead of the host's libstdc++. The C++
+# runtime is linked statically.
+#   tools/rustos-c++ -O2 -o hello hello.cpp
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SYSROOT="${RUSTOS_SYSROOT:-$ROOT/target/sysroot}"
+SPECS="$SYSROOT/usr/lib/rustos-gcc.specs"
+if [ ! -f "$SPECS" ]; then
+    "$ROOT/tools/build-musl.sh" "$SYSROOT" >&2 || exit 1
+fi
+CXXINC="$SYSROOT/usr/include/c++/v1"
+# While the libcxx port builds the runtime itself, no runtime is linked.
+if [ -n "$RUSTOS_CXX_BOOTSTRAP" ]; then
+    exec "${HOST_CXX:-g++}" -specs "$SPECS" -nostdinc++ "$@"
+fi
+if [ ! -d "$CXXINC" ]; then
+    echo "rustos-c++: no libc++ in $SYSROOT (run tools/install-port.sh libcxx)" >&2
+    exit 1
+fi
+link=1
+for a in "$@"; do
+    case "$a" in -c|-S|-E|-M|-MM) link=0 ;; esac
+done
+if [ "$link" = 1 ]; then
+    exec "${HOST_CXX:-g++}" -specs "$SPECS" -nostdinc++ -isystem "$CXXINC" "$@" \
+        -nostdlib++ -Wl,-Bstatic -lc++ -lc++abi -lunwind -Wl,-Bdynamic
+fi
+exec "${HOST_CXX:-g++}" -specs "$SPECS" -nostdinc++ -isystem "$CXXINC" "$@"

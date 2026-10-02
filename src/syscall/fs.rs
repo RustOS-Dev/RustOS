@@ -289,6 +289,9 @@ pub fn ioctl(fd: i32, cmd: u64, arg: u64) -> SysResult {
     const FIONBIO: u64 = 0x5421;
     const FIOCLEX: u64 = 0x5451;
     const FIONCLEX: u64 = 0x5450;
+    // The request is an unsigned int in Linux; musl passes an int, so
+    // requests with bit 31 set (_IOR) arrive sign-extended.
+    let cmd = cmd & 0xffff_ffff;
     let f = file(fd)?;
     match cmd {
         FIONBIO => {

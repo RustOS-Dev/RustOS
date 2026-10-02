@@ -65,7 +65,13 @@ pub fn mmap(addr: u64, len: u64, prot: u32, flags: u32, fd: i32, off: u64) -> Sy
         return Ok(start as i64);
     }
 
+    // Shared mappings of a memfd map its frames.
+    let memfd = file.as_deref().and_then(super::fdobj::as_memfd);
     let backing = match &file {
+        Some(_) if flags & MAP_SHARED != 0 && memfd.is_some() => Backing::Shm {
+            obj: memfd.unwrap().pages().clone(),
+            offset: off,
+        },
         Some(f) => match &f.object {
             crate::vfs::FileObject::Inode(i) => Backing::File {
                 inode: i.clone(),

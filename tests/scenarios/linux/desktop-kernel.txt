@@ -16,7 +16,7 @@ sleep 3
 monitor device_add usb-kbd,bus=xhci.0,id=kbd2
 sleep 6
 send wait; cat /tmp/ue.txt
-wait add@/devices/virtual/input/input\d+/event\d+
+wait add@/devices/virtual/rustos-input/input\d+/event\d+
 wait DEVNAME=input/event\d+
 wait add@/devices/usb/
 wait PRODUCT=627/1/

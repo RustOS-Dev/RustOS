@@ -125,6 +125,7 @@ pub fn start_userspace() -> ! {
     }
     bluetooth::late_init();
 
+    syscall::init();
     if option_env!("RUSTOS_STRACE").is_some() {
         syscall::TRACE.store(true, core::sync::atomic::Ordering::Relaxed);
     }
@@ -134,7 +135,11 @@ pub fn start_userspace() -> ! {
             match process::spawn_init(
                 path,
                 &[path],
-                &["PATH=/bin:/sbin:/usr/bin", "HOME=/root", "TERM=vt100"],
+                &[
+                    "PATH=/bin:/sbin:/usr/bin:/usr/local/bin",
+                    "HOME=/root",
+                    "TERM=vt100",
+                ],
             ) {
                 Ok(p) => {
                     println!("[init] started {} (pid {})", path, p.pid);

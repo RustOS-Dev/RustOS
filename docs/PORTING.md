@@ -28,12 +28,38 @@ thread-local storage, mutexes and condition variables (futexes),
 sockets, `poll`/`select`/`epoll`, `eventfd`/`timerfd`/`signalfd`, file
 `mmap`, pseudo-terminals. See [SYSCALLS.md](SYSCALLS.md) and
 [LIMITATIONS.md](LIMITATIONS.md) for what is missing (e.g. `ptrace`,
-System V IPC, `inotify`).
+System V IPC).
 
 The boot image contains a few test programs built this way:
 `musl-hello`, `musl-hello-static`, `musl-threads`, `musl-dlopen` (with
 `/usr/lib/libplugin.so`) and `musl-libctest` (a small libc conformance
 run); the `musl` boot scenario runs them.
+
+## C++: `rustos-c++`
+
+`tools/rustos-c++` is `g++` on the same sysroot with LLVM's C++ runtime
+(libc++, libc++abi and libunwind 18) instead of the host's libstdc++. The
+`libcxx` port builds that runtime into the sysroot (static, PIC); the
+runtime is linked statically into each program.
+
+```sh
+tools/install-port.sh libcxx                  # once: runtime into target/sysroot
+tools/rustos-c++ -O2 -std=c++20 -o hello hello.cpp
+```
+
+Exceptions, RTTI, threads, `<filesystem>`, `<regex>` and the rest of the
+library work; `cxxtest` (installed by the port, run by the `cxx` scenario)
+checks them. The specs add `--eh-frame-hdr` to every link, which unwinding
+needs.
+
+## Meson and pkg-config
+
+`tools/cross/meson-cross.ini.in` is a meson cross file (replace `@ROOT@`
+with the repository path) and `tools/cross/rustos-pkg-config` a pkg-config
+that only sees libraries staged under `$RUSTOS_STAGE` (installed there with
+`DESTDIR`, prefix `/usr/local`). `ports/weston/build.sh` shows how ports use
+them, including a native build for tools that run on the build host
+(`wayland-scanner`, passed with `-Dbuild.pkg_config_path`).
 
 ## Ports
 
@@ -46,8 +72,26 @@ stages the result in `target/ports/NAME` (laid out like `/usr/local`).
 | `busybox` | BusyBox 1.36.1, static (`defconfig` minus a few applets needing missing kernel features) |
 | `curl` | curl 8.10.1 with mbedTLS 3.6.2, static, HTTPS against `/etc/ssl/certs/ca-certificates.crt` |
 | `quickjs` | QuickJS-ng 0.16.2 (from the `rquickjs-sys` crate's vendored copy): `qjs`, `qjsc`, `run-test262`, and `libquickjs.a` + headers for embedding |
+| `wpa_supplicant`, `hostapd` | 2.11 with OpenSSL and libnl (nl80211) |
+| `libcxx` | libc++/libc++abi/libunwind 18 into the sysroot, and `cxxtest` |
+| `weston` | Weston 14 (DRM and headless backends, pixman renderer, desktop and kiosk shells, `weston-terminal`) and its stack, shared: wayland 1.23, wayland-protocols, libxkbcommon + xkeyboard-config, pixman, cairo, freetype, fontconfig, libpng, zlib, expat, libffi, libdrm (with `modetest`), libevdev, mtdev, libudev-zero, libinput, seatd/libseat, libdisplay-info. Needs meson, ninja, gperf, bison and hwdata on the build host |
 
-The ports named in `ports/default.list` (all three) are built by the
+Running Weston (kernel with a DRM driver, e.g. `--features linux-drivers`):
+
+```sh
+mkdir -p /tmp/xdg; chmod 700 /tmp/xdg
+export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin
+weston --backend=drm --renderer=pixman &
+WAYLAND_DISPLAY=wayland-1 weston-terminal &
+```
+
+libseat's embedded seat takes the console (VT_PROCESS, `K_OFF`) and DRM
+master; libinput finds input devices through libudev-zero, which reads
+`/sys/dev/char`, `/sys/class/input` and uevents. The `desktop` scenario
+does this on QEMU's standard VGA and types into the terminal.
+
+The ports named in `ports/default.list` (busybox, curl, quickjs,
+wpa_supplicant, hostapd) are built by the
 kernel build on first use and installed in the boot image under
 `/usr/bin`; later builds reuse them until their `build.sh` changes. Set
 `RUSTOS_PORTS=0` to build without them (a port that fails to build, e.g.

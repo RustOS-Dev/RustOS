@@ -13,6 +13,7 @@ mod proc_;
 
 use crate::arch::x86_64::idt::TrapFrame;
 use crate::errno::*;
+use alloc::string::String;
 
 pub type SysResult = KResult<i64>;
 
@@ -135,6 +136,12 @@ pub mod nr {
     pub const SYSLOG: u64 = 103;
     pub const GETGID: u64 = 104;
     pub const SETUID: u64 = 105;
+    pub const SETREUID: u64 = 113;
+    pub const SETREGID: u64 = 114;
+    pub const SETRESUID: u64 = 117;
+    pub const GETRESUID: u64 = 118;
+    pub const SETRESGID: u64 = 119;
+    pub const GETRESGID: u64 = 120;
     pub const SETGID: u64 = 106;
     pub const GETEUID: u64 = 107;
     pub const GETEGID: u64 = 108;
@@ -208,6 +215,7 @@ pub mod nr {
     pub const PIDFD_SEND_SIGNAL: u64 = 424;
     pub const PIDFD_OPEN: u64 = 434;
     pub const CLOSE_RANGE: u64 = 436;
+    pub const FACCESSAT2: u64 = 439;
 }
 
 /// Entry point from both syscall paths.
@@ -217,7 +225,8 @@ pub fn dispatch(frame: &mut TrapFrame) {
     let (a1, a2, a3, a4, a5, a6) = (
         frame.rdi, frame.rsi, frame.rdx, frame.r10, frame.r8, frame.r9,
     );
-    if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
+    let trace = tracing();
+    if trace {
         crate::serial_println!(
             "[strace] pid {} nr {} ({:#x}, {:#x}, {:#x})",
             crate::process::current_pid(),
@@ -232,7 +241,7 @@ pub fn dispatch(frame: &mut TrapFrame) {
     crate::sched::note_syscall(n, a1);
     let r = handle(frame, n, [a1, a2, a3, a4, a5, a6]);
     crate::sched::note_syscall(u64::MAX, 0);
-    if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
+    if trace {
         crate::serial_println!(
             "[strace]   -> {:?}",
             r.as_ref().map(|v| match v {
@@ -285,6 +294,53 @@ fn restartable(n: u64) -> bool {
 /// Log every syscall to the serial port (debugging aid).
 pub static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
+/// Processes whose name is in /sys/kernel/debug/strace have their
+/// syscalls logged (`echo weston-terminal > /sys/kernel/debug/strace`;
+/// an empty write stops it).
+static TRACE_NAME: crate::sync::Mutex<String> = crate::sync::Mutex::new(String::new());
+static TRACE_SOME: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+struct StraceAttr;
+
+impl crate::vfs::sysfs::Attr for StraceAttr {
+    fn show(&self) -> KResult<alloc::vec::Vec<u8>> {
+        let mut v = TRACE_NAME.lock().clone().into_bytes();
+        v.push(b'\n');
+        Ok(v)
+    }
+    fn store(&self, data: &[u8]) -> KResult<usize> {
+        let name = String::from_utf8_lossy(data).trim().into();
+        *TRACE_NAME.lock() = name;
+        TRACE_SOME.store(
+            !TRACE_NAME.lock().is_empty(),
+            core::sync::atomic::Ordering::SeqCst,
+        );
+        Ok(data.len())
+    }
+    fn mode(&self) -> u32 {
+        0o644
+    }
+}
+
+/// Register /sys/kernel/debug/strace.
+pub fn init() {
+    let _ = crate::vfs::sysfs::add_file("kernel/debug/strace", alloc::sync::Arc::new(StraceAttr));
+}
+
+fn tracing() -> bool {
+    if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
+        return true;
+    }
+    if !TRACE_SOME.load(core::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
+    let want = TRACE_NAME.lock().clone();
+    crate::process::current().is_some_and(|p| {
+        let n = p.name.lock();
+        n.rsplit('/').next() == Some(want.as_str())
+    })
+}
+
 pub enum Ret {
     Value(i64),
     Frame,
@@ -318,7 +374,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         WRITEV => v(fs::writev(a[0] as i32, a[1], a[2])),
         IOCTL => v(fs::ioctl(a[0] as i32, a[1], a[2])),
         ACCESS => v(fs::faccessat(fs::AT_FDCWD, a[0], a[1] as u32)),
-        FACCESSAT => v(fs::faccessat(a[0] as i32, a[1], a[2] as u32)),
+        FACCESSAT | FACCESSAT2 => v(fs::faccessat(a[0] as i32, a[1], a[2] as u32)),
         PIPE => v(fs::pipe2(a[0], 0)),
         PIPE2 => v(fs::pipe2(a[0], a[1] as u32)),
         DUP => v(fs::dup(a[0] as i32)),
@@ -436,7 +492,14 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         GETSID => v(proc_::getsid(a[0] as u32)),
         SETSID => v(proc_::setsid()),
         GETUID | GETEUID | GETGID | GETEGID => Ok(Ret::Value(0)),
-        SETUID | SETGID => Ok(Ret::Value(0)),
+        // Everything runs as root: changing ids succeeds and changes nothing.
+        SETUID | SETGID | SETREUID | SETREGID | SETRESUID | SETRESGID => Ok(Ret::Value(0)),
+        GETRESUID | GETRESGID => {
+            for p in [a[0], a[1], a[2]] {
+                crate::process::uaccess::write_user(p, &0u32)?;
+            }
+            Ok(Ret::Value(0))
+        }
         GETGROUPS => Ok(Ret::Value(0)),
         UMASK => v(proc_::umask(a[0] as u32)),
         RT_SIGACTION => v(proc_::sigaction(a[0] as u32, a[1], a[2])),

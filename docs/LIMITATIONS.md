@@ -25,6 +25,10 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   goes through to the filesystem (write-through, then the cached pages
   are updated) rather than dirtying the page cache.
 * No kernel modules; drivers are built in.
+* Files written to tmpfs (`/`, `/tmp`, `/dev/shm`) live on the kernel heap
+  (a quarter of RAM at boot); files from the boot image do not (they stay
+  in the kernel image until written), and memfds use page frames.
+* No OpenGL or Vulkan yet: Weston uses its software (pixman) renderer.
 * Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

@@ -1,0 +1,9 @@
+#!/bin/sh
+# pkg-config for RustOS ports: looks only at libraries staged under
+# $RUSTOS_STAGE (installed there with DESTDIR, prefix /usr/local) and
+# returns paths inside the stage.
+: "${RUSTOS_STAGE:?set RUSTOS_STAGE to the staging root}"
+export PKG_CONFIG_SYSROOT_DIR="$RUSTOS_STAGE"
+export PKG_CONFIG_LIBDIR="$RUSTOS_STAGE/usr/local/lib/pkgconfig:$RUSTOS_STAGE/usr/local/share/pkgconfig"
+unset PKG_CONFIG_PATH
+exec pkg-config "$@"

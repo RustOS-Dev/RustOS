@@ -235,8 +235,168 @@ pub fn register(info: Info) -> Arc<InputDev> {
         (13 << 8) | (64 + dev.idx as u64),
         Arc::new(EventNode(Some(dev.clone()))),
     );
+    publish_sysfs(&dev);
     input_uevent("add", &dev);
     dev
+}
+
+/// A bitmap as Linux prints capabilities (input_print_bitmap): 64-bit
+/// words in hex, most significant first, leading zero words left out.
+fn linux_bitmap(bits: impl Iterator<Item = u16>) -> String {
+    let mut words: Vec<u64> = Vec::new();
+    for b in bits {
+        let (w, i) = (b as usize / 64, b % 64);
+        if words.len() <= w {
+            words.resize(w + 1, 0);
+        }
+        words[w] |= 1 << i;
+    }
+    while words.len() > 1 && words.last() == Some(&0) {
+        words.pop();
+    }
+    let mut out = alloc::format!("{:x}", words.last().copied().unwrap_or(0));
+    for w in words.iter().rev().skip(1) {
+        out.push_str(&alloc::format!(" {:016x}", w));
+    }
+    out
+}
+
+/// A sysfs file computed from the device's description.
+struct InfoAttr(Weak<InputDev>, fn(&InputDev, &Info) -> String);
+
+impl crate::vfs::sysfs::Attr for InfoAttr {
+    fn show(&self) -> KResult<Vec<u8>> {
+        let d = self.0.upgrade().ok_or(ENODEV)?;
+        let info = irqless(|| d.info.lock().clone());
+        let mut s = (self.1)(&d, &info);
+        s.push('\n');
+        Ok(s.into_bytes())
+    }
+}
+
+/// The device's capabilities as Linux names them in uevents and in
+/// capabilities/*: (name, bitmap).
+fn capabilities(info: &Info) -> [(&'static str, String); 6] {
+    let ev = info.ev_bits();
+    [
+        (
+            "ev",
+            linux_bitmap((0..32u16).filter(|b| ev & (1 << b) != 0)),
+        ),
+        ("key", linux_bitmap(info.keys.iter().copied())),
+        ("rel", linux_bitmap(info.rel.iter().copied())),
+        ("abs", linux_bitmap(info.abs.iter().map(|(c, _)| *c))),
+        ("led", linux_bitmap(info.leds.iter().copied())),
+        (
+            "prop",
+            linux_bitmap((0..32u16).filter(|b| info.props & (1 << b) != 0)),
+        ),
+    ]
+}
+
+/// The device in /sys as Linux lays it out, which libudev(-zero) and
+/// libinput read: devices/virtual/input/inputN (name, id/*,
+/// capabilities/*, uevent with the capability bitmaps; under
+/// devices/virtual/rustos-input) and its eventN node (dev, uevent with
+/// DEVNAME), linked from class/input/eventN and dev/char/13:M. Shared directories (class/input, dev/char, ...) are not
+/// registered: they exist implicitly, and the Linux device core (when
+/// built in) registers its own.
+fn publish_sysfs(dev: &Arc<InputDev>) {
+    use crate::vfs::sysfs::{add_dir, add_file, add_link};
+    let n = dev.idx;
+    // A parent directory of RustOS's own: the Linux input core (when built
+    // in) numbers its inputN devices independently.
+    let base = alloc::format!("devices/virtual/rustos-input/input{n}");
+    let ev = alloc::format!("{base}/event{n}");
+    let w = Arc::downgrade(dev);
+    let file = |path: String, f: fn(&InputDev, &Info) -> String| {
+        let _ = add_file(&path, Arc::new(InfoAttr(w.clone(), f)));
+    };
+    let _ = add_dir(&base);
+    let _ = add_link(&alloc::format!("{base}/subsystem"), "/sys/class/input");
+    file(alloc::format!("{base}/name"), |_, i| i.name.clone());
+    file(alloc::format!("{base}/phys"), |_, i| i.phys.clone());
+    file(alloc::format!("{base}/uniq"), |_, i| i.uniq.clone());
+    let _ = add_dir(&alloc::format!("{base}/id"));
+    file(alloc::format!("{base}/id/bustype"), |_, i| {
+        alloc::format!("{:04x}", i.id[0])
+    });
+    file(alloc::format!("{base}/id/vendor"), |_, i| {
+        alloc::format!("{:04x}", i.id[1])
+    });
+    file(alloc::format!("{base}/id/product"), |_, i| {
+        alloc::format!("{:04x}", i.id[2])
+    });
+    file(alloc::format!("{base}/id/version"), |_, i| {
+        alloc::format!("{:04x}", i.id[3])
+    });
+    let _ = add_dir(&alloc::format!("{base}/capabilities"));
+    file(alloc::format!("{base}/capabilities/ev"), |_, i| {
+        capabilities(i)[0].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/key"), |_, i| {
+        capabilities(i)[1].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/rel"), |_, i| {
+        capabilities(i)[2].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/abs"), |_, i| {
+        capabilities(i)[3].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/led"), |_, i| {
+        capabilities(i)[4].1.clone()
+    });
+    file(alloc::format!("{base}/properties"), |_, i| {
+        capabilities(i)[5].1.clone()
+    });
+    file(alloc::format!("{base}/uevent"), |_, i| {
+        let mut s = alloc::format!(
+            "PRODUCT={:x}/{:x}/{:x}/{:x}\nNAME=\"{}\"\nPHYS=\"{}\"",
+            i.id[0],
+            i.id[1],
+            i.id[2],
+            i.id[3],
+            i.name,
+            i.phys
+        );
+        for (k, v) in capabilities(i) {
+            if v != "0" || k == "ev" || k == "prop" {
+                s.push_str(&alloc::format!("\n{}={}", k.to_uppercase(), v));
+            }
+        }
+        s
+    });
+    let _ = add_dir(&ev);
+    let _ = add_link(&alloc::format!("{ev}/subsystem"), "/sys/class/input");
+    let _ = add_link(
+        &alloc::format!("{ev}/device"),
+        &alloc::format!("/sys/{base}"),
+    );
+    file(alloc::format!("{ev}/dev"), |d, _| {
+        alloc::format!("13:{}", 64 + d.idx)
+    });
+    file(alloc::format!("{ev}/uevent"), |d, _| {
+        alloc::format!(
+            "MAJOR=13\nMINOR={}\nDEVNAME=input/event{}",
+            64 + d.idx,
+            d.idx
+        )
+    });
+    let _ = add_link(
+        &alloc::format!("class/input/event{n}"),
+        &alloc::format!("/sys/{ev}"),
+    );
+    let _ = add_link(
+        &alloc::format!("dev/char/13:{}", 64 + n),
+        &alloc::format!("/sys/{ev}"),
+    );
+}
+
+fn unpublish_sysfs(n: usize) {
+    use crate::vfs::sysfs::remove;
+    remove(&alloc::format!("dev/char/13:{}", 64 + n));
+    remove(&alloc::format!("class/input/event{n}"));
+    remove(&alloc::format!("devices/virtual/rustos-input/input{n}"));
 }
 
 /// The uevent for an input device's event node (what libinput's udev
@@ -245,7 +405,11 @@ fn input_uevent(action: &str, dev: &InputDev) {
     let name = alloc::format!("input/event{}", dev.idx);
     crate::net::netlink::uevent(
         action,
-        &alloc::format!("/devices/virtual/input/input{}/event{}", dev.idx, dev.idx),
+        &alloc::format!(
+            "/devices/virtual/rustos-input/input{}/event{}",
+            dev.idx,
+            dev.idx
+        ),
         "input",
         &[
             ("MAJOR", "13"),
@@ -259,6 +423,7 @@ fn input_uevent(action: &str, dev: &InputDev) {
 pub fn unregister(dev: &Arc<InputDev>) {
     crate::vfs::devfs::unregister(&alloc::format!("input/event{}", dev.idx));
     input_uevent("remove", dev);
+    unpublish_sysfs(dev.idx);
     irqless(|| DEVICES.lock().retain(|d| !Arc::ptr_eq(d, dev)));
 }
 

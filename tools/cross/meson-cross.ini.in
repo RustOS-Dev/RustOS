@@ -1,0 +1,17 @@
+# Meson cross file for RustOS userland (musl sysroot, tools/rustos-cc).
+# Ports generate the real file from this template, replacing @ROOT@.
+[binaries]
+c = '@ROOT@/tools/rustos-cc'
+cpp = '@ROOT@/tools/rustos-c++'
+ar = 'ar'
+strip = 'strip'
+pkg-config = '@ROOT@/tools/cross/rustos-pkg-config'
+
+[properties]
+needs_exe_wrapper = true
+
+[host_machine]
+system = 'linux'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'

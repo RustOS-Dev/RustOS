@@ -208,3 +208,124 @@ extern "C" fn rustos_kpi_acpi_table(
         None => -ENOENT.0,
     }
 }
+
+fn id_string(v: &Value) -> Option<String> {
+    match v {
+        Value::Integer(i) => Some(acpi::eisa_id(*i)),
+        Value::String(s) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// Every device in the namespace for Linux's ACPI device objects
+/// (c/acpi.c): `cb(ctx, path, hid, cids, uid, sta, adr, has_adr)` per
+/// device, parents before children. `cids` is `_CID` joined with commas;
+/// strings are empty when the object is absent; `sta` is `_STA` (0xf when
+/// absent).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_acpi_for_each_device(
+    cb: extern "C" fn(
+        *mut c_void,
+        *const c_char,
+        *const c_char,
+        *const c_char,
+        *const c_char,
+        u32,
+        u64,
+        c_int,
+    ),
+    ctx: *mut c_void,
+) {
+    let devices = DEVICES.call_once(acpi::devices);
+    for d in devices {
+        let cids = match acpi::eval(&alloc::format!("{}._CID", d.path), &[]) {
+            Ok(Value::Package(p)) => p.iter().filter_map(id_string).collect::<Vec<_>>(),
+            Ok(v) => id_string(&v).into_iter().collect(),
+            Err(_) => Vec::new(),
+        }
+        .join(",");
+        let uid = match acpi::eval(&alloc::format!("{}._UID", d.path), &[]) {
+            Ok(Value::Integer(i)) => alloc::format!("{i}"),
+            Ok(Value::String(s)) => s,
+            _ => String::new(),
+        };
+        let sta = match acpi::eval(&alloc::format!("{}._STA", d.path), &[]) {
+            Ok(Value::Integer(i)) => i as u32,
+            _ => 0xf,
+        };
+        let z = |s: &str| {
+            let mut v = Vec::from(s.as_bytes());
+            v.retain(|&b| b != 0);
+            v.push(0);
+            v
+        };
+        let (path, hid, cids, uid) = (
+            z(&d.path),
+            z(d.hid.as_deref().unwrap_or("")),
+            z(&cids),
+            z(&uid),
+        );
+        cb(
+            ctx,
+            path.as_ptr() as *const c_char,
+            hid.as_ptr() as *const c_char,
+            cids.as_ptr() as *const c_char,
+            uid.as_ptr() as *const c_char,
+            sta,
+            d.adr.unwrap_or(0),
+            d.adr.is_some() as c_int,
+        );
+    }
+}
+
+struct SendPtr(*mut c_void);
+unsafe impl Send for SendPtr {}
+unsafe impl Sync for SendPtr {}
+
+/// Route global system interrupt `gsi` to `f(arg)` (interrupt context),
+/// sharing the line with other users. Returns the vector or -1.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_gsi_request(
+    gsi: u32,
+    level: c_int,
+    active_low: c_int,
+    f: extern "C" fn(*mut c_void),
+    arg: *mut c_void,
+) -> c_int {
+    let arg = SendPtr(arg);
+    crate::pci::request_gsi(
+        gsi,
+        level != 0,
+        active_low != 0,
+        alloc::boxed::Box::new(move || {
+            let a = &arg;
+            f(a.0)
+        }),
+    )
+    .map(|v| v as c_int)
+    .unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_gsi_mask(gsi: u32, masked: c_int) {
+    crate::arch::x86_64::apic::set_gsi_masked(gsi, masked != 0);
+}
+
+/// The GSI and polarity/trigger for ISA IRQ `irq` (MADT source overrides).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_isa_irq(irq: u32, gsi: *mut u32, level: *mut c_int, low: *mut c_int) {
+    let ov = acpi::platform()
+        .isa_overrides
+        .iter()
+        .find(|o| o.isa_irq as u32 == irq)
+        .copied();
+    let (g, l, a) = match ov {
+        Some(o) => (o.gsi, o.level, o.active_low),
+        None => (irq, false, false),
+    };
+    unsafe {
+        *gsi = g;
+        *level = l as c_int;
+        *low = a as c_int;
+    }
+}

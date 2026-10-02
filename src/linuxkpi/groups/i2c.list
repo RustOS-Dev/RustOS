@@ -1,8 +1,8 @@
 # Linux I2C core (M32): adapters, clients, SMBus emulation, and the
-# bit-banging algorithm NIC drivers use for their sensor buses. ACPI
-# enumeration of clients comes with M33 (c/i2c.c stands in until then).
-kpi:i2c.c
+# bit-banging algorithm NIC drivers use for their sensor buses, and ACPI
+# enumeration of clients (I2cSerialBus resources, M33).
 drivers/i2c/i2c-core-base.c
 drivers/i2c/i2c-core-smbus.c
 drivers/i2c/i2c-boardinfo.c
 drivers/i2c/algos/i2c-algo-bit.c
+drivers/i2c/i2c-core-acpi.c

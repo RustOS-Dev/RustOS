@@ -45,3 +45,11 @@ lib/llist.c
 kernel/locking/semaphore.c
 kernel/time/timecounter.c
 lib/crypto/sha256.c
+# ACPI device objects and platform devices (M33), interrupt descriptors
+# and domains for GSIs and GPIO controllers, fallbacks for the GPIO
+# consumer API when gpiolib is not built.
+kpi:irq.c
+kpi:acpiscan.c
+kpi:gpiostubs.c
+drivers/acpi/resource.c
+drivers/acpi/acpi_platform.c

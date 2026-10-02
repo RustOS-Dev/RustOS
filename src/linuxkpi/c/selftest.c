@@ -6,6 +6,9 @@
  */
 #include <linux/acpi.h>
 #include <linux/completion.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/irqdomain.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
 #include <linux/kthread.h>
@@ -377,6 +380,122 @@ static void test_acpi(void)
 		      "acpi_evaluate_integer");
 }
 
+/* An interrupt controller like a GPIO chip's: a domain, a level flow
+ * handler, a one-shot threaded handler that keeps the line masked. */
+static int irq_masks, irq_unmasks, irq_thread_runs;
+static DECLARE_COMPLETION(irq_thread_done);
+
+static void test_irq_mask(struct irq_data *d)
+{
+	irq_masks++;
+}
+
+static void test_irq_unmask(struct irq_data *d)
+{
+	irq_unmasks++;
+}
+
+static struct irq_chip test_irq_chip = {
+	.name = "kpi-test",
+	.irq_mask = test_irq_mask,
+	.irq_unmask = test_irq_unmask,
+};
+
+static int test_irq_map(struct irq_domain *d, unsigned int virq, irq_hw_number_t hw)
+{
+	irq_set_chip_and_handler(virq, &test_irq_chip, handle_level_irq);
+	irq_set_chip_data(virq, d->host_data);
+	return 0;
+}
+
+static const struct irq_domain_ops test_irq_ops = {
+	.map = test_irq_map,
+	.xlate = irq_domain_xlate_twocell,
+};
+
+static irqreturn_t test_irq_thread(int irq, void *dev)
+{
+	irq_thread_runs++;
+	/* Still masked while the thread runs. */
+	CHECK(irq_masks == irq_unmasks + 1, "one-shot line masked in thread");
+	complete(&irq_thread_done);
+	return IRQ_HANDLED;
+}
+
+static void test_irq_domain(void)
+{
+	struct irq_domain *d = irq_domain_create_linear(NULL, 4, &test_irq_ops, &test_irq_chip);
+	unsigned int virq;
+	unsigned long flags;
+
+	CHECK(d, "irq_domain_create_linear");
+	if (!d)
+		return;
+	virq = irq_create_mapping(d, 2);
+	CHECK(virq && irq_find_mapping(d, 2) == virq && !irq_find_mapping(d, 1),
+	      "irq_create_mapping");
+	CHECK(irq_get_irq_data(virq)->hwirq == 2 &&
+	      irq_get_chip_data(virq) == &test_irq_chip, "irq data");
+	CHECK(!request_threaded_irq(virq, NULL, test_irq_thread, IRQF_ONESHOT |
+				    IRQF_TRIGGER_LOW, "kpi-test", &test_irq_chip),
+	      "request_threaded_irq");
+	CHECK(irq_get_trigger_type(virq) == IRQ_TYPE_LEVEL_LOW, "trigger type");
+	irq_masks = irq_unmasks = 0;
+	local_irq_save(flags);
+	CHECK(!generic_handle_domain_irq(d, 2), "generic_handle_domain_irq");
+	local_irq_restore(flags);
+	CHECK(wait_for_completion_timeout(&irq_thread_done, HZ), "irq thread ran");
+	synchronize_irq(virq);
+	CHECK(irq_thread_runs == 1 && irq_masks == 1 && irq_unmasks == 1,
+	      "one-shot mask/unmask");
+	/* Disabled: the interrupt is remembered, not handled. */
+	disable_irq(virq);
+	disable_irq(virq);
+	enable_irq(virq);
+	local_irq_save(flags);
+	generic_handle_domain_irq(d, 2);
+	local_irq_restore(flags);
+	CHECK(irq_thread_runs == 1, "disabled irq not handled");
+	enable_irq(virq);
+	free_irq(virq, &test_irq_chip);
+	irq_dispose_mapping(virq);
+	CHECK(!irq_find_mapping(d, 2), "irq_dispose_mapping");
+	irq_domain_remove(d);
+}
+
+/* QEMU's PS/2 keyboard: IO(0x60), IO(0x64), IRQNoFlags(1). */
+static acpi_status test_kbd_res(struct acpi_resource *r, void *ctx)
+{
+	int *seen = ctx;
+
+	if (r->type == ACPI_RESOURCE_TYPE_IO && r->data.io.minimum == 0x60)
+		*seen |= 1;
+	if (r->type == ACPI_RESOURCE_TYPE_IRQ && r->data.irq.interrupt_count == 1 &&
+	    r->data.irq.interrupts[0] == 1)
+		*seen |= 2;
+	if (r->type == ACPI_RESOURCE_TYPE_END_TAG)
+		*seen |= 4;
+	return AE_OK;
+}
+
+static void test_acpi_devices(void)
+{
+	struct acpi_device *kbd = acpi_dev_get_first_match_dev("PNP0303", NULL, -1);
+	acpi_handle a, b;
+	int seen = 0;
+
+	CHECK(ACPI_SUCCESS(acpi_get_handle(NULL, "\\_SB.PCI0", &a)) &&
+	      ACPI_SUCCESS(acpi_get_handle(NULL, "\\_SB_.PCI0", &b)) && a == b,
+	      "ACPI path normalisation");
+	if (!kbd)
+		return;	/* not every machine has one */
+	CHECK(!strcmp(dev_name(&kbd->dev), "PNP0303:00"), "ACPI device name");
+	CHECK(acpi_fetch_acpi_dev(kbd->handle) == kbd, "acpi_fetch_acpi_dev");
+	CHECK(ACPI_SUCCESS(acpi_walk_resources(kbd->handle, METHOD_NAME__CRS, test_kbd_res,
+					       &seen)) && seen == 7, "_CRS resources");
+	acpi_dev_put(kbd);
+}
+
 static void test_printf(void)
 {
 	static const u8 mac[6] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
@@ -404,6 +523,8 @@ int kpi_selftest(void)
 		{ "SRCU", test_srcu },
 		{ "skb", test_skb },
 		{ "ACPI", test_acpi },
+		{ "ACPI devices", test_acpi_devices },
+		{ "IRQ domains", test_irq_domain },
 	};
 
 	failures = 0;

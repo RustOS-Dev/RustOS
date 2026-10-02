@@ -244,6 +244,33 @@ pub const EXT_CAP_AER: u16 = 0x0001;
 pub const EXT_CAP_LTR: u16 = 0x0018;
 pub const EXT_CAP_L1SS: u16 = 0x001E;
 
+/// Add `handler` to global system interrupt `gsi` (shared with PCI INTx
+/// handlers on the same line), routing it on first use. Returns the vector.
+pub fn request_gsi(
+    gsi: u32,
+    level: bool,
+    active_low: bool,
+    handler: alloc::boxed::Box<dyn Fn() + Send + Sync>,
+) -> Option<u8> {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut lines = INTX.lock();
+        if let Some(line) = lines.get_mut(&gsi) {
+            line.handlers.push(handler);
+            return Some(line.vector);
+        }
+        let v = idt::alloc_vector(move |_f| intx_dispatch(gsi))?;
+        lines.insert(
+            gsi,
+            IntxLine {
+                vector: v,
+                handlers: alloc::vec![handler],
+            },
+        );
+        apic::route_gsi(gsi, v, apic::id(), level, active_low);
+        Some(v)
+    })
+}
+
 impl PciDevice {
     pub fn read32(&self, off: u16) -> u32 {
         config_read32(self.segment, self.bus, self.dev, self.func, off)

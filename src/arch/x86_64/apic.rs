@@ -246,6 +246,26 @@ pub fn route_gsi(gsi: u32, vector: u8, dest_apic: u32, level: bool, active_low: 
     false
 }
 
+/// Mask or unmask a routed global system interrupt, keeping its routing
+/// (for interrupts whose handlers finish in a thread).
+pub fn set_gsi_masked(gsi: u32, masked: bool) {
+    let list = IOAPICS.lock();
+    for io in list.iter() {
+        if gsi >= io.gsi_base && gsi < io.gsi_base + io.entries {
+            let reg = 0x10 + (gsi - io.gsi_base) * 2;
+            let low = io.read(reg);
+            io.write(
+                reg,
+                if masked {
+                    low | 1 << 16
+                } else {
+                    low & !(1 << 16)
+                },
+            );
+        }
+    }
+}
+
 pub fn mask_gsi(gsi: u32) {
     let list = IOAPICS.lock();
     for io in list.iter() {

@@ -47,6 +47,22 @@ instead, which the `usb-hid-linux` scenario runs (typing on the console,
 tablet buttons and absolute axes through `evtest`). I2C-HID touchpads need the
 ACPI I2C controller and GPIO drivers, which are not imported yet.
 
+M33: ACPI devices are Linux device objects (`c/acpiscan.c`): the namespace
+walk gives each Device its _HID/_CID ids, _UID and _STA. `_CRS` buffers are
+converted to ACPICA resources, including GpioInt/GpioIo and I2cSerialBus.
+Devices with a _HID become platform devices, except I2C/SPI/UART slaves,
+which their controller's driver enumerates. `c/irq.c` is a small interrupt
+core on Linux's `irq_desc`: ACPI GSIs and interrupt domains (GPIO
+controllers), level/edge/fasteoi flow handlers, and one-shot threaded
+handlers. `--features linux-platform` (in release images) adds gpiolib with
+its ACPI part, the pin-control core, pinctrl-amd (AMDI0030), DesignWare I2C
+(AMDI0010) with regmap, i2c-core-acpi and fixed-rate clocks (`c/clk.c`):
+the chain to an I2C-HID touchpad on AMD laptops. QEMU has none of these
+devices, so the chain is compiled but untested on hardware. The
+`acpi-platform` scenario checks the ACPI scan, and the boot self-test checks
+`_CRS` conversion and a GPIO-style domain with a one-shot thread. Intel LPSS
+I2C (intel-lpss PCI) and Intel pin controllers are not imported yet.
+
 M30: the LinuxKPI USB core runs Linux USB drivers on RustOS's xHCI driver
 (`--features linux-usb`). Linux's `usbnet` with `cdc_ether` and
 `rndis_host` drives QEMU's `usb-net` behind `--features linux-usbnet`

@@ -15,6 +15,8 @@
 #include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
+#include <linux/resource_ext.h>
+#include <linux/slab.h>
 #include <linux/irq.h>
 #include <linux/kobject.h>
 #include <linux/platform_device.h>
@@ -80,14 +82,6 @@ int add_uevent_var(struct kobj_uevent_env *env, const char *format, ...)
 
 /* ----------------------------------------------- ACPI device-core hooks */
 
-void acpi_device_notify(struct device *dev)
-{
-}
-
-void acpi_device_notify_remove(struct device *dev)
-{
-}
-
 int acpi_device_uevent_modalias(const struct device *dev, struct kobj_uevent_env *env)
 {
 	return -ENODEV;
@@ -96,11 +90,6 @@ int acpi_device_uevent_modalias(const struct device *dev, struct kobj_uevent_env
 int acpi_device_modalias(struct device *dev, char *buf, int size)
 {
 	return -ENODEV;
-}
-
-bool acpi_driver_match_device(struct device *dev, const struct device_driver *drv)
-{
-	return false;
 }
 
 enum dev_dma_attr acpi_get_dma_attr(struct acpi_device *adev)
@@ -131,16 +120,26 @@ int irq_update_affinity_desc(unsigned int irq, struct irq_affinity_desc *affinit
 	return 0;
 }
 
-struct irq_data *irq_get_irq_data(unsigned int irq)
-{
-	return NULL;
-}
-
-void irq_dispose_mapping(unsigned int virq)
-{
-}
-
 /* ------------------------------------------------------------- resources */
+
+struct resource_entry *resource_list_create_entry(struct resource *res, size_t extra_size)
+{
+	struct resource_entry *entry = kzalloc(sizeof(*entry) + extra_size, GFP_KERNEL);
+
+	if (entry) {
+		INIT_LIST_HEAD(&entry->node);
+		entry->res = res ? res : &entry->__res;
+	}
+	return entry;
+}
+
+void resource_list_free(struct list_head *head)
+{
+	struct resource_entry *entry, *tmp;
+
+	list_for_each_entry_safe(entry, tmp, head, node)
+		resource_list_destroy_entry(entry);
+}
 
 /*
  * The resource tree is not kept: RustOS assigns and tracks BARs itself.

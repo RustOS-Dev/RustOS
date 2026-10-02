@@ -1,0 +1,15 @@
+# ACPI I2C controllers (M33): Synopsys DesignWare on AMD (AMDI0010) and
+# other ACPI platforms, with regmap, and fixed-rate clocks (c/clk.c).
+kpi:clk.c
+cflags: -I@LINUX@/drivers/base/regmap
+drivers/base/regmap/regmap.c
+drivers/base/regmap/regcache.c
+drivers/base/regmap/regcache-flat.c
+drivers/base/regmap/regcache-rbtree.c
+drivers/base/regmap/regcache-maple.c
+lib/maple_tree.c
+module: i2c_designware_core
+drivers/i2c/busses/i2c-designware-common.c
+drivers/i2c/busses/i2c-designware-master.c
+module: i2c_designware_platform
+drivers/i2c/busses/i2c-designware-platdrv.c

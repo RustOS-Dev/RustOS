@@ -715,8 +715,8 @@ static irqreturn_t kpi_default_primary(int irq, void *dev_id)
 	return IRQ_WAKE_THREAD;
 }
 
-int request_threaded_irq(unsigned int irq, irq_handler_t handler, irq_handler_t thread_fn,
-			 unsigned long flags, const char *name, void *dev)
+int kpi_pci_request_irq(unsigned int irq, irq_handler_t handler, irq_handler_t thread_fn,
+			unsigned long flags, const char *name, void *dev)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 	struct kpi_pci_dev *k;
@@ -752,15 +752,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler, irq_handler_t 
 	return 0;
 }
 
-int request_any_context_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
-			    const char *name, void *dev_id)
-{
-	int r = request_threaded_irq(irq, handler, NULL, flags, name, dev_id);
-
-	return r ? r : IRQC_IS_HARDIRQ;
-}
-
-void synchronize_irq(unsigned int irq)
+void kpi_pci_synchronize_irq(unsigned int irq)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
@@ -815,18 +807,18 @@ void devm_free_irq(struct device *dev, unsigned int irq, void *dev_id)
 	WARN_ON(devres_release(dev, kpi_devm_irq_release, kpi_devm_irq_match, &m));
 }
 
-const void *free_irq(unsigned int irq, void *dev_id)
+const void *kpi_pci_free_irq(unsigned int irq, void *dev_id)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
 	if (!d)
 		return NULL;
 	WRITE_ONCE(d->handler, NULL);
-	synchronize_irq(irq);
+	kpi_pci_synchronize_irq(irq);
 	return d->name;
 }
 
-void disable_irq_nosync(unsigned int irq)
+void kpi_pci_disable_irq(unsigned int irq)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
@@ -834,13 +826,7 @@ void disable_irq_nosync(unsigned int irq)
 		WRITE_ONCE(d->disabled, d->disabled + 1);
 }
 
-void disable_irq(unsigned int irq)
-{
-	disable_irq_nosync(irq);
-	synchronize_irq(irq);
-}
-
-void enable_irq(unsigned int irq)
+void kpi_pci_enable_irq(unsigned int irq)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
@@ -1129,44 +1115,6 @@ int pci_vpd_check_csum(const void *buf, unsigned int len)
 	return -ENOENT;
 }
 
-/* ---------------------------------------------- IRQ domains (not used yet) */
-
-/* Interrupt controllers in Linux drivers (GPIO chips, SMBus host notify)
- * get no domain: their users fall back or skip the feature. */
-struct irq_domain *irq_domain_instantiate(const struct irq_domain_info *info)
-{
-	return ERR_PTR(-EOPNOTSUPP);
-}
-
-void irq_domain_remove(struct irq_domain *domain)
-{
-}
-
-unsigned int irq_create_mapping_affinity(struct irq_domain *domain, irq_hw_number_t hwirq,
-					 const struct irq_affinity_desc *affinity)
-{
-	return 0;
-}
-
-struct irq_desc *__irq_resolve_mapping(struct irq_domain *domain, irq_hw_number_t hwirq,
-				       unsigned int *irq)
-{
-	return NULL;
-}
-
-void handle_simple_irq(struct irq_desc *desc)
-{
-}
-
-struct irq_chip dummy_irq_chip = {
-	.name = "dummy",
-};
-
-void irq_set_chip_and_handler_name(unsigned int irq, const struct irq_chip *chip,
-				   irq_flow_handler_t handle, const char *name)
-{
-}
-
 int __irq_apply_affinity_hint(unsigned int irq, const struct cpumask *m, bool setaffinity)
 {
 	return 0;
@@ -1202,8 +1150,9 @@ void dmam_free_coherent(struct device *dev, size_t size, void *vaddr, dma_addr_t
 	WARN_ON(devres_release(dev, kpi_dmam_release, kpi_dmam_match, vaddr));
 }
 
-/* Interrupts do not wake the system (no suspend). */
-int irq_set_irq_wake(unsigned int irq, unsigned int on)
+
+/* The resource tree is not kept (c/devcore.c): no parent resources. */
+struct resource *pci_find_resource(struct pci_dev *dev, struct resource *res)
 {
-	return 0;
+	return NULL;
 }

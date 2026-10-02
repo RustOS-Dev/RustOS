@@ -496,6 +496,90 @@ void kmem_cache_free(struct kmem_cache *s, void *objp)
 	kfree(objp);
 }
 
+/*
+ * Sheaves: arrays of objects preallocated so later allocations cannot
+ * fail (the maple tree reserves nodes this way).
+ */
+struct slab_sheaf {
+	unsigned int capacity;
+	unsigned int size;
+	void *objects[];
+};
+
+static int kpi_sheaf_fill(struct kmem_cache *s, gfp_t gfp, struct slab_sheaf *sh,
+			  unsigned int size)
+{
+	while (sh->size < size) {
+		void *obj = kmem_cache_alloc_noprof(s, gfp);
+
+		if (!obj)
+			return -ENOMEM;
+		sh->objects[sh->size++] = obj;
+	}
+	return 0;
+}
+
+struct slab_sheaf *kmem_cache_prefill_sheaf(struct kmem_cache *s, gfp_t gfp, unsigned int size)
+{
+	struct slab_sheaf *sh = kzalloc(struct_size(sh, objects, size), gfp);
+
+	if (!sh)
+		return NULL;
+	sh->capacity = size;
+	if (kpi_sheaf_fill(s, gfp, sh, size)) {
+		kmem_cache_return_sheaf(s, gfp, sh);
+		return NULL;
+	}
+	return sh;
+}
+
+int kmem_cache_refill_sheaf(struct kmem_cache *s, gfp_t gfp, struct slab_sheaf **sheafp,
+			    unsigned int size)
+{
+	struct slab_sheaf *sh = *sheafp, *big;
+
+	if (!sh)
+		return -EINVAL;
+	if (sh->size >= size)
+		return 0;
+	if (sh->capacity < size) {
+		big = kzalloc(struct_size(big, objects, size), gfp);
+		if (!big)
+			return -ENOMEM;
+		big->capacity = size;
+		big->size = sh->size;
+		memcpy(big->objects, sh->objects, sh->size * sizeof(void *));
+		kfree(sh);
+		*sheafp = sh = big;
+	}
+	return kpi_sheaf_fill(s, gfp, sh, size);
+}
+
+void kmem_cache_return_sheaf(struct kmem_cache *s, gfp_t gfp, struct slab_sheaf *sheaf)
+{
+	while (sheaf->size)
+		kmem_cache_free(s, sheaf->objects[--sheaf->size]);
+	kfree(sheaf);
+}
+
+void *kmem_cache_alloc_from_sheaf_noprof(struct kmem_cache *s, gfp_t gfp,
+					 struct slab_sheaf *sheaf)
+{
+	void *obj;
+
+	if (WARN_ON_ONCE(!sheaf->size))
+		return NULL;
+	obj = sheaf->objects[--sheaf->size];
+	if (gfp & __GFP_ZERO)
+		memset(obj, 0, s->size);
+	return obj;
+}
+
+unsigned int kmem_cache_sheaf_size(struct slab_sheaf *sheaf)
+{
+	return sheaf->size;
+}
+
 void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 {
 	for (size_t i = 0; i < size; i++)

@@ -1,0 +1,12 @@
+# ACPI platform devices and interrupt domains in LinuxKPI (kernel built
+# with --features linux-platform): the boot self-test covers ACPI device
+# objects, _CRS conversion and a GPIO-style interrupt domain with a
+# one-shot threaded handler; ACPI devices with a _HID become platform
+# devices for Linux drivers (DesignWare I2C, AMD GPIO on laptops).
+wait # $ 240
+send dmesg | grep -a 'APIs ready'
+wait self-test passed 10
+wait # $
+send dmesg | grep -a "ACPI: [0-9]"
+wait platform devices 10
+wait # $

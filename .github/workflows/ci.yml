@@ -200,6 +200,10 @@ jobs:
         run: |
           cargo build --features linux-mmc
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/sdcard.txt
+      - name: ACPI platform devices and IRQ domains (acpi-platform)
+        run: |
+          cargo build --features linux-platform
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/acpi-platform.txt
       - name: Linux usbhid and input core (usb-hid-linux)
         run: |
           cargo build --features linux-usbhid

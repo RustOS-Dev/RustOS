@@ -411,6 +411,11 @@ const struct dmi_system_id *dmi_first_match(const struct dmi_system_id *list)
 	return NULL;
 }
 
+int dmi_check_system(const struct dmi_system_id *list)
+{
+	return 0;
+}
+
 void memcpy_fromio(void *dst, const volatile void __iomem *src, size_t count)
 {
 	u8 *d = dst;

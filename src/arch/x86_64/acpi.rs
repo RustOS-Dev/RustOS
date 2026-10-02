@@ -588,7 +588,7 @@ pub struct Device {
     pub hid: Option<String>,
 }
 
-fn eisa_id(v: u64) -> String {
+pub fn eisa_id(v: u64) -> String {
     let v = (v as u32).swap_bytes();
     let c = |s: u32| (b'@' + ((v >> s) & 0x1f) as u8) as char;
     alloc::format!("{}{}{}{:04X}", c(26), c(21), c(16), v & 0xffff)

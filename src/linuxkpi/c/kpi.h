@@ -9,6 +9,7 @@
 #define _RUSTOS_KPI_H
 
 #include <linux/types.h>
+#include <linux/irqreturn.h>
 
 /* Memory (src/linuxkpi/mm.rs). Physical addresses; 0 means failure. */
 u64 rustos_kpi_page_offset(void);
@@ -116,6 +117,29 @@ int rustos_kpi_acpi_eval(const char *path, const void *args, size_t args_len,
 int rustos_kpi_acpi_exists(const char *path);
 int rustos_kpi_acpi_pci_path(u8 bus, u8 dev, u8 func, char *buf, size_t len);
 int rustos_kpi_acpi_table(const u8 *sig, u32 instance, u64 *phys, u64 *len);
+void rustos_kpi_acpi_for_each_device(void (*cb)(void *ctx, const char *path, const char *hid,
+						   const char *cids, const char *uid, u32 sta,
+						   u64 adr, int has_adr),
+				     void *ctx);
+int rustos_kpi_gsi_request(u32 gsi, int level, int active_low, void (*fn)(void *), void *arg);
+void rustos_kpi_gsi_mask(u32 gsi, int masked);
+void rustos_kpi_isa_irq(u32 irq, u32 *gsi, int *level, int *active_low);
+
+/* ACPI namespace nodes and device objects (c/acpi.c, c/acpiscan.c). */
+struct acpi_device;
+void *kpi_acpi_intern(const char *path);
+const char *kpi_acpi_path(void *handle);
+void kpi_acpi_scan_devices(void);
+struct acpi_device *kpi_acpi_device_at(const char *path);
+bool acpi_device_is_present(const struct acpi_device *adev);
+
+/* PCI functions' own interrupts (c/pci.c), behind c/irq.c's API. */
+int kpi_pci_request_irq(unsigned int irq, irqreturn_t (*handler)(int, void *),
+			irqreturn_t (*thread_fn)(int, void *), unsigned long flags, const char *name, void *dev);
+const void *kpi_pci_free_irq(unsigned int irq, void *dev_id);
+void kpi_pci_synchronize_irq(unsigned int irq);
+void kpi_pci_disable_irq(unsigned int irq);
+void kpi_pci_enable_irq(unsigned int irq);
 
 /* Character devices and descriptors (src/linuxkpi/chrdev.rs). */
 int rustos_kpi_devnode_add(const char *name, u32 devt, int block);

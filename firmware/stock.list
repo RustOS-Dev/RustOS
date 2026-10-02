@@ -39,3 +39,44 @@ lf LICENCE.mediatek LICENSES/LICENCE.mediatek a90d3f66704d85889945fec5525ea77622
 regdb regulatory.db regulatory.db 7e236caecd939c8ec98be4870bf30422f28ffef2565a38aaaa2d9ddabd0c2641
 regdb regulatory.db.p7s regulatory.db.p7s 50332f0db09b8bcc719235ec4985c27377f2cc2f42abb7b5dcf951866c5a888a
 regdb LICENSE.wireless-regdb LICENSE 678b0df753c86198fc496d1f1033429bbd57f101472132ee7eaaf9f5e0a7fae1
+
+# Ethernet (Linux r8169, r8152, tg3; M32): PHY/MAC patches the drivers
+# load when present. Their terms are in linux-firmware's WHENCE.
+lf rtl_nic/rtl8105e-1.fw rtl_nic/rtl8105e-1.fw 03f7ee92f1a7c1723ac7a7447ae006930c9bb07e1d77c3d12bc70cc0d855bb00
+lf rtl_nic/rtl8106e-1.fw rtl_nic/rtl8106e-1.fw b249074519d87ff8bde17185894333c993f25f747f221305cf69a5d7b4519674
+lf rtl_nic/rtl8106e-2.fw rtl_nic/rtl8106e-2.fw ba4f7ed4bac4768810ba8a6c118457f5912f61a0380aa4fb322093caf52de0ef
+lf rtl_nic/rtl8107e-2.fw rtl_nic/rtl8107e-2.fw edc3a14a76852c411c4af5514dae5d55be37873f56a7563f80db7a76f2dc1ba7
+lf rtl_nic/rtl8125a-3.fw rtl_nic/rtl8125a-3.fw 3f6c328af0ceff5969c729edf0f535e8bb2a9b9e05d15b6be3199a3e6d421b99
+lf rtl_nic/rtl8125b-2.fw rtl_nic/rtl8125b-2.fw 529bf1c25c97ff52b401090d00ff89cc22351012336e5a0c9662728a3ee909ef
+lf rtl_nic/rtl8125bp-2.fw rtl_nic/rtl8125bp-2.fw 70010caccdb0d87461f26d77a15f86615dc970549126cf17db01a7f43baf5287
+lf rtl_nic/rtl8125d-1.fw rtl_nic/rtl8125d-1.fw bc3c82939f02df2f58a17e7354096375001a80a5c1ca3f459c555d5a7d42bf1b
+lf rtl_nic/rtl8125d-2.fw rtl_nic/rtl8125d-2.fw c1cb0d358ca985b0d45584612143fd93613d567064702e265bfb370e99c90e35
+lf rtl_nic/rtl8126a-2.fw rtl_nic/rtl8126a-2.fw 2ffa201aa7dec5e3726e268a10342b175ae8de4fa9f39f535bbbbf5cb8245879
+lf rtl_nic/rtl8126a-3.fw rtl_nic/rtl8126a-3.fw 18ffaf3b873d217bf780503a80f04fe2b03c088ba2d0c2a3d626145cb8e53b26
+lf rtl_nic/rtl8127a-1.fw rtl_nic/rtl8127a-1.fw 6cddd9249565e7c7b900391fdadd356ac06de9b509cd68c5de0842ba90db30e0
+lf rtl_nic/rtl8153a-2.fw rtl_nic/rtl8153a-2.fw 7d4f422ec0e8141576c1b486fe6b7c6ce8ec9ea1f650815fd4058878c038366d
+lf rtl_nic/rtl8153a-3.fw rtl_nic/rtl8153a-3.fw c7099a1b0fc80e02ff7276aacbb08b5771e2f5c763fb76a7a8df3a89d58d8208
+lf rtl_nic/rtl8153a-4.fw rtl_nic/rtl8153a-4.fw 99a05414fc0ae3b99a453d73b5cae90bfa6d371320f78011fc58cb03a33e2a09
+lf rtl_nic/rtl8153b-2.fw rtl_nic/rtl8153b-2.fw 137c9c752e8648ecfcf3b74ffc7d675c098145c222e2969721e6257af31716bc
+lf rtl_nic/rtl8153c-1.fw rtl_nic/rtl8153c-1.fw bbe5f74bd2625b71c9a70e0588472ef670b5eeb65f83b1202cd25b3381720a3f
+lf rtl_nic/rtl8156a-2.fw rtl_nic/rtl8156a-2.fw 7b50f4a307bde7b3f384935537c4d9705457fa42613eb0003ffbc4e19461a1e0
+lf rtl_nic/rtl8156b-2.fw rtl_nic/rtl8156b-2.fw 5a3b21e27305876af8eac4b9bd11a821487b338e4ac1b58b8be8d23467d3f91f
+lf rtl_nic/rtl8168d-1.fw rtl_nic/rtl8168d-1.fw ded779f55b3fc5bb8576b2d2b6c724581c72160b3c2f88e33b42dc6c2c4e70b0
+lf rtl_nic/rtl8168d-2.fw rtl_nic/rtl8168d-2.fw 35dd68c01a7b24f6e554bd2c0b9cf57cf962a826651f66e75ffcea37cf2c3bb9
+lf rtl_nic/rtl8168e-1.fw rtl_nic/rtl8168e-1.fw c38d6818a99336c8e43883bbc136f9fab3b1b470ec0e86c61bf5dac617fe94bd
+lf rtl_nic/rtl8168e-2.fw rtl_nic/rtl8168e-2.fw 0a489929b270df1533645a75d55ff357fd66e42057aa4e198ab738930de39386
+lf rtl_nic/rtl8168e-3.fw rtl_nic/rtl8168e-3.fw 1287fdd82ff2f60d75c9970c108b49cfd11456ad3fe29c9666b8539a35777dbf
+lf rtl_nic/rtl8168f-1.fw rtl_nic/rtl8168f-1.fw ed3794c651d38b807168c7c49431bb8036922b16766588c520a20287f277615d
+lf rtl_nic/rtl8168f-2.fw rtl_nic/rtl8168f-2.fw 5586b2093502f7dec762f23091fa90d6d8731e7d873509072ce2eae23ab8ee99
+lf rtl_nic/rtl8168fp-3.fw rtl_nic/rtl8168fp-3.fw c526c06aa0ab8d9b57ba2b730bb1e40a1c3513f8591e238dceb2e0f45210ed27
+lf rtl_nic/rtl8168g-2.fw rtl_nic/rtl8168g-2.fw f878ec719f78e0b104bc73362a9862611858bec893f58a1b3b289a0a57d71d25
+lf rtl_nic/rtl8168g-3.fw rtl_nic/rtl8168g-3.fw e4d5e62b0a5a097af34c7aa3c55f634fd5be2c232e02c6b983ebd7e699cb27e9
+lf rtl_nic/rtl8168h-2.fw rtl_nic/rtl8168h-2.fw 0b4beab008e308f28296c13188ee23edfeff7d865e398a7ade170495c8cec7e6
+lf rtl_nic/rtl8402-1.fw rtl_nic/rtl8402-1.fw a14adee93b7c7ecc738137d910334761ecf9c64d3addeccbd024a2f902f7f808
+lf rtl_nic/rtl8411-1.fw rtl_nic/rtl8411-1.fw e66a3183787c80987e1e36c9f7d4b2c3cd5d976640b83f462702f914febc4b38
+lf rtl_nic/rtl8411-2.fw rtl_nic/rtl8411-2.fw 80dbdacba4d5dfee46b6c2b4e433f6f2eeb756d29ad46bf2362ba20c8ec594b1
+lf tigon/tg3.bin tigon/tg3.bin 8c2d7ba213e319b88d047fbaa218c9e5d974c8ec1931865580aa120aa59541fa
+lf tigon/tg357766.bin tigon/tg357766.bin 7b99e2110443767f0dd7d18b7db28370f7b3c46ed0701eeceec70a9e72db117b
+lf tigon/tg3_tso.bin tigon/tg3_tso.bin 519197f0b5431733845b9542c5d94972639c6b9475a3091e06aabb0491c8a8ea
+lf tigon/tg3_tso5.bin tigon/tg3_tso5.bin bbe0b8b8e5d53dae4f56675aacbb88f01b473ed7978bcc8b192ecdf39b60ba03
+lf LICENSES/WHENCE WHENCE 9350832c1e9afc35df50fa8b9793b31d60d78ef963152eec903fc0dbc6b4a559

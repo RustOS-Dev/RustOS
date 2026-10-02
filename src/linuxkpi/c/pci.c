@@ -15,10 +15,12 @@
  * caches coherent, so the sync calls are barriers.
  */
 #include <linux/acpi.h>
+#include <linux/bitfield.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/irq.h>
+#include <linux/irqdomain.h>
 #include <linux/kthread.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
@@ -974,4 +976,198 @@ unsigned int dma_map_sg_attrs(struct device *dev, struct scatterlist *sg, int ne
 void dma_unmap_sg_attrs(struct device *dev, struct scatterlist *sg, int nents,
 			enum dma_data_direction dir, unsigned long attrs)
 {
+}
+
+/* ------------------------------------------------ more PCI (M32 drivers) */
+
+/* One interrupt vector per device (MSI or INTx): MSI-X requests fail and
+ * drivers fall back to MSI, as they do on systems without MSI-X. */
+int pci_enable_msix_range(struct pci_dev *dev, struct msix_entry *entries, int minvec,
+			  int maxvec)
+{
+	return -ENOSPC;
+}
+
+void pci_disable_msix(struct pci_dev *dev)
+{
+}
+
+int pcie_get_readrq(struct pci_dev *dev)
+{
+	u16 ctl;
+
+	pcie_capability_read_word(dev, PCI_EXP_DEVCTL, &ctl);
+	return 128 << FIELD_GET(PCI_EXP_DEVCTL_READRQ, ctl);
+}
+
+int pcie_set_readrq(struct pci_dev *dev, int rq)
+{
+	u16 v;
+
+	if (rq < 128 || rq > 4096 || !is_power_of_2(rq))
+		return -EINVAL;
+	v = FIELD_PREP(PCI_EXP_DEVCTL_READRQ, ffs(rq) - 8);
+	return pcie_capability_clear_and_set_word_unlocked(dev, PCI_EXP_DEVCTL,
+							   PCI_EXP_DEVCTL_READRQ, v);
+}
+
+void pcie_print_link_status(struct pci_dev *dev)
+{
+	u16 sta;
+
+	if (!pci_is_pcie(dev))
+		return;
+	pcie_capability_read_word(dev, PCI_EXP_LNKSTA, &sta);
+	pci_info(dev, "PCIe link: gen %u x%u\n", sta & PCI_EXP_LNKSTA_CLS,
+		 FIELD_GET(PCI_EXP_LNKSTA_NLW, sta));
+}
+
+void __iomem *pcim_iomap_region(struct pci_dev *pdev, int bar, const char *name)
+{
+	void __iomem **table = (void __iomem **)pcim_iomap_table(pdev);
+
+	if (!table)
+		return IOMEM_ERR_PTR(-ENOMEM);
+	if (!table[bar])
+		table[bar] = pci_iomap(pdev, bar, 0);
+	return table[bar] ? table[bar] : IOMEM_ERR_PTR(-ENOMEM);
+}
+
+int pcim_set_mwi(struct pci_dev *dev)
+{
+	return pci_set_mwi(dev);
+}
+
+/* Secondary bus resets are not done: report it as unsupported. */
+int pci_reset_bus(struct pci_dev *dev)
+{
+	return -ENOTTY;
+}
+
+int pci_status_get_and_clear_errors(struct pci_dev *pdev)
+{
+	u16 status;
+
+	pci_read_config_word(pdev, PCI_STATUS, &status);
+	status &= PCI_STATUS_ERROR_BITS;
+	if (status)
+		pci_write_config_word(pdev, PCI_STATUS, status);
+	return status;
+}
+
+int pci_prepare_to_sleep(struct pci_dev *dev)
+{
+	return 0;
+}
+
+bool pci_dev_run_wake(struct pci_dev *dev)
+{
+	return false;
+}
+
+bool pci_device_is_present(struct pci_dev *pdev)
+{
+	u32 v;
+
+	pci_read_config_dword(pdev, PCI_VENDOR_ID, &v);
+	return (v & 0xffff) != 0xffff;
+}
+
+/* Lookups over the devices LinuxKPI knows (one PCI segment). */
+struct pci_dev *pci_get_device(unsigned int vendor, unsigned int device, struct pci_dev *from)
+{
+	u32 start = 0;
+
+	if (from) {
+		start = kpi_idx(from) + 1;
+		pci_dev_put(from);
+	}
+	for (u32 i = start; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && (vendor == PCI_ANY_ID || d->vendor == vendor) &&
+		    (device == PCI_ANY_ID || d->device == device))
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+struct pci_dev *pci_get_slot(struct pci_bus *bus, unsigned int devfn)
+{
+	for (u32 i = 0; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && d->bus == bus && d->devfn == devfn)
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+int pci_dev_present(const struct pci_device_id *ids)
+{
+	for (u32 i = 0; i < kpi_pci_n; i++)
+		if (kpi_pci[i] && kpi_pci_match(ids, &kpi_pci[i]->pdev))
+			return 1;
+	return 0;
+}
+
+/* Vital Product Data is not read: drivers use their other sources (the
+ * EEPROM / NVM) for what VPD would give. */
+void *pci_vpd_alloc(struct pci_dev *dev, unsigned int *size)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+int pci_vpd_find_ro_info_keyword(const void *buf, unsigned int len, const char *kw,
+				 unsigned int *size)
+{
+	return -ENOENT;
+}
+
+int pci_vpd_check_csum(const void *buf, unsigned int len)
+{
+	return -ENOENT;
+}
+
+/* ---------------------------------------------- IRQ domains (not used yet) */
+
+/* Interrupt controllers in Linux drivers (GPIO chips, SMBus host notify)
+ * get no domain: their users fall back or skip the feature. */
+struct irq_domain *irq_domain_instantiate(const struct irq_domain_info *info)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+
+void irq_domain_remove(struct irq_domain *domain)
+{
+}
+
+unsigned int irq_create_mapping_affinity(struct irq_domain *domain, irq_hw_number_t hwirq,
+					 const struct irq_affinity_desc *affinity)
+{
+	return 0;
+}
+
+struct irq_desc *__irq_resolve_mapping(struct irq_domain *domain, irq_hw_number_t hwirq,
+				       unsigned int *irq)
+{
+	return NULL;
+}
+
+void handle_simple_irq(struct irq_desc *desc)
+{
+}
+
+struct irq_chip dummy_irq_chip = {
+	.name = "dummy",
+};
+
+void irq_set_chip_and_handler_name(unsigned int irq, const struct irq_chip *chip,
+				   irq_flow_handler_t handle, const char *name)
+{
+}
+
+int __irq_apply_affinity_hint(unsigned int irq, const struct cpumask *m, bool setaffinity)
+{
+	return 0;
 }

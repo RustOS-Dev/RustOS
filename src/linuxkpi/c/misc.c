@@ -6,6 +6,12 @@
 #include <linux/capability.h>
 #include <linux/ctype.h>
 #include <linux/crc32.h>
+#include <linux/dmi.h>
+#include <linux/io.h>
+#include <linux/overflow.h>
+#include <linux/pm_qos.h>
+#include <linux/vmalloc.h>
+#include <asm/processor.h>
 #include <linux/kernel.h>
 #include <linux/limits.h>
 #include <linux/moduleparam.h>
@@ -369,4 +375,51 @@ void kernel_param_lock(struct module *mod)
 
 void kernel_param_unlock(struct module *mod)
 {
+}
+
+/* ------------------------------------------------------- M32 odds and ends */
+
+/* CPU feature bits are not published to Linux code: boot_cpu_has() is
+ * false for everything, which only turns off optional paths (e1000e's
+ * ART cross-timestamping, for one). */
+struct cpuinfo_x86 boot_cpu_data;
+
+/* Static keys are plain variables here (jump labels are off). */
+bool static_key_initialized = true;
+
+/* CPU latency requests (PM QoS) have nothing to act on: RustOS does not
+ * use deep C-states. */
+void cpu_latency_qos_add_request(struct pm_qos_request *req, s32 value)
+{
+}
+
+void cpu_latency_qos_update_request(struct pm_qos_request *req, s32 new_value)
+{
+}
+
+void cpu_latency_qos_remove_request(struct pm_qos_request *req)
+{
+}
+
+/* No DMI (SMBIOS) table matching: per-machine quirk tables match nothing. */
+const struct dmi_system_id *dmi_first_match(const struct dmi_system_id *list)
+{
+	return NULL;
+}
+
+void memcpy_fromio(void *dst, const volatile void __iomem *src, size_t count)
+{
+	u8 *d = dst;
+
+	for (size_t i = 0; i < count; i++)
+		d[i] = readb(src + i);
+}
+
+void *vmalloc_array_noprof(size_t n, size_t size)
+{
+	size_t bytes;
+
+	if (unlikely(check_mul_overflow(n, size, &bytes)))
+		return NULL;
+	return vmalloc_noprof(bytes);
 }

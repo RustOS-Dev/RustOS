@@ -525,9 +525,33 @@ fn enumerate(dev: &Arc<UsbDevice>) -> KResult<()> {
     }
     // RUSTOS_USB_PREFER_RNDIS (build-time) exercises the RNDIS path in tests.
     let want_rndis = option_env!("RUSTOS_USB_PREFER_RNDIS").is_some();
-    let preferred = configs
-        .iter()
-        .position(|c| {
+    // Realtek RTL815x adapters (and their OEM versions) offer a vendor
+    // configuration besides CDC ECM/NCM; Linux r8152 drives the vendor one
+    // and selects it, as Linux's r8152-cfgselector does.
+    let r8152 = cfg!(feature = "linux-usbnet")
+        && matches!(
+            desc.vendor,
+            0x0bda
+                | 0x0b05
+                | 0x413c
+                | 0x2001
+                | 0x17ef
+                | 0x13b1
+                | 0x045e
+                | 0x0955
+                | 0x04e8
+                | 0x2357
+                | 0x20f4
+        );
+    let vendor_cfg = configs.iter().position(|c| {
+        c.interfaces
+            .first()
+            .is_some_and(|i| i.class == 0xFF && i.subclass == 0xFF)
+    });
+    let preferred = if let (true, Some(v)) = (r8152, vendor_cfg) {
+        Some(v)
+    } else {
+        configs.iter().position(|c| {
             c.interfaces.iter().any(|i| {
                 if want_rndis {
                     i.class == 0xE0 || (i.class == usb_desc::CLASS_CDC && i.subclass == 2)
@@ -536,7 +560,8 @@ fn enumerate(dev: &Arc<UsbDevice>) -> KResult<()> {
                 }
             })
         })
-        .unwrap_or(0);
+    }
+    .unwrap_or(0);
     if configs.is_empty() {
         return Err(EIO);
     }

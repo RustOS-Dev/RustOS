@@ -20,6 +20,11 @@ behind `--features linux-wifi` / `linux-hwsim`. hostapd and wpa_supplicant
 
 `wifi-hwsim-eap.txt` covers PEAP-MSCHAPv2.
 
+M32: Linux `igb` passes the same steps on QEMU's 82576
+(`tests/scenarios/linux/eth-igb.txt`). e1000e, igc, alx, tg3, atlantic,
+r8169, r8152, ASIX and ipheth are compiled into release images and take
+the devices native drivers do not claim. Their firmware ships in the image.
+
 M30: the LinuxKPI USB core runs Linux USB drivers on RustOS's xHCI driver
 (`--features linux-usb`). Linux's `usbnet` with `cdc_ether` and
 `rndis_host` drives QEMU's `usb-net` behind `--features linux-usbnet`
@@ -62,9 +67,10 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
 - `linux-e1000` adds `e1000`;
 - `linux-wifi` adds `crypto`, `netlink`, `cfg80211`, `mac80211`, and `linux-hwsim` adds `hwsim`;
 - `linux-usb` adds `usb` (the USB core);
-- `linux-usbnet` adds `usbnet` (and turns off the native CDC ECM/RNDIS driver);
+- `linux-usbnet` adds `usbnet` with `linux-phy` (and turns off the native CDC ECM/RNDIS driver);
 - `linux-mt7921` adds `mt7921` and `mt7921u`;
-- `linux-drivers` is the release set (`linux-mt7921`).
+- `linux-i2c` adds `i2c`, `linux-phy` adds `phy` (phylib, MDIO, phylink), and `linux-eth` adds `eth` (igb, e1000e, igc, alx, tg3, atlantic, r8169) with both;
+- `linux-drivers` is the release set (`linux-mt7921`, `linux-eth`, `linux-usbnet`).
 
 ## How the pieces fit
 
@@ -182,6 +188,16 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
   (`CONFIG_PM` is off).
 - **Unplug.** The interfaces are removed from the device core, so drivers
   disconnect; their URBs fail with `-ESHUTDOWN`.
+- **Group lists.** Besides file paths, a group's `.list` can hold
+  `module: NAME`, which sets KBUILD_MODNAME (driver and log names) for the
+  files that follow. It can also hold `cflags: ...` for extra flags, like a
+  Makefile's `ccflags-y`; `@LINUX@` is the imported tree. Files in a group
+  are linked in list order, which is also their initcall order within a
+  level, so keep Linux's link order (the MDIO bus before phylib, for one).
+- **Features without a RustOS counterpart.** XDP (no BPF), tc flow
+  offload, MSI-X (one vector per device; drivers fall back to MSI), PCI VPD
+  and the ethtool netlink extras are stubbed in `c/netstubs.c` and
+  `c/pci.c`. They report "not supported", so drivers take their plain paths.
 - **Transmit flow control.** A Linux netdev whose queues are all stopped
   reports itself not ready (`NetDevice::tx_ready`). The RustOS stack then holds
   packets instead of dropping them, and `netif_wake_queue` kicks it.

@@ -481,8 +481,27 @@ static void kpi_queue(struct workqueue_struct *wq, struct work_struct *work)
 	wake_up(&wq->more);
 }
 
+/* Work items disabled by disable_work*() (and how often): queueing them
+ * fails until enable_work*() balances the count. Linux keeps the count in
+ * work->data; a small table does here. */
+#define KPI_MAX_DISABLED 128
+static struct {
+	struct work_struct *work;
+	int count;
+} kpi_disabled[KPI_MAX_DISABLED];
+
+static bool kpi_work_disabled(struct work_struct *work)
+{
+	for (int i = 0; i < KPI_MAX_DISABLED; i++)
+		if (READ_ONCE(kpi_disabled[i].work) == work)
+			return true;
+	return false;
+}
+
 bool queue_work_on(int cpu, struct workqueue_struct *wq, struct work_struct *work)
 {
+	if (kpi_work_disabled(work))
+		return false;
 	if (test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))
 		return false;
 	kpi_queue(wq, work);
@@ -498,12 +517,18 @@ void delayed_work_timer_fn(struct timer_list *t)
 {
 	struct delayed_work *dwork = timer_container_of(dwork, t, timer);
 
+	if (kpi_work_disabled(&dwork->work)) {
+		clear_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&dwork->work));
+		return;
+	}
 	kpi_queue(dwork->wq, &dwork->work);
 }
 
 bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq, struct delayed_work *dwork,
 			   unsigned long delay)
 {
+	if (kpi_work_disabled(&dwork->work))
+		return false;
 	if (test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&dwork->work)))
 		return false;
 	dwork->wq = wq;
@@ -567,6 +592,89 @@ bool cancel_delayed_work_sync(struct delayed_work *dwork)
 	bool t = timer_delete_sync(&dwork->timer);
 
 	return cancel_work_sync(&dwork->work) || t;
+}
+
+bool disable_work(struct work_struct *work)
+{
+	unsigned long flags;
+	bool was = kpi_cancel(work);
+	int free = -1;
+
+	raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+	for (int i = 0; i < KPI_MAX_DISABLED; i++) {
+		if (kpi_disabled[i].work == work) {
+			kpi_disabled[i].count++;
+			free = -2;
+			break;
+		}
+		if (!kpi_disabled[i].work && free == -1)
+			free = i;
+	}
+	if (free >= 0) {
+		kpi_disabled[free].work = work;
+		kpi_disabled[free].count = 1;
+	}
+	raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+	WARN_ON_ONCE(free == -1);
+	return was;
+}
+
+bool disable_work_sync(struct work_struct *work)
+{
+	bool was = disable_work(work);
+
+	while (kpi_work_running(work))
+		rustos_kpi_yield();
+	return was;
+}
+
+bool enable_work(struct work_struct *work)
+{
+	unsigned long flags;
+	bool enabled = true;
+
+	raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+	for (int i = 0; i < KPI_MAX_DISABLED; i++) {
+		if (kpi_disabled[i].work != work)
+			continue;
+		if (--kpi_disabled[i].count == 0)
+			kpi_disabled[i].work = NULL;
+		else
+			enabled = false;
+		break;
+	}
+	raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+	return enabled;
+}
+
+bool disable_delayed_work(struct delayed_work *dwork)
+{
+	bool t = timer_delete(&dwork->timer);
+
+	return disable_work(&dwork->work) || t;
+}
+
+bool disable_delayed_work_sync(struct delayed_work *dwork)
+{
+	bool t = timer_delete_sync(&dwork->timer);
+
+	return disable_work_sync(&dwork->work) || t;
+}
+
+bool enable_delayed_work(struct delayed_work *dwork)
+{
+	return enable_work(&dwork->work);
+}
+
+unsigned int work_busy(struct work_struct *work)
+{
+	unsigned int ret = 0;
+
+	if (test_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))
+		ret |= WORK_BUSY_PENDING;
+	if (kpi_work_running(work))
+		ret |= WORK_BUSY_RUNNING;
+	return ret;
 }
 
 bool flush_work(struct work_struct *work)
@@ -795,4 +903,41 @@ unsigned long round_jiffies_up_relative(unsigned long j)
 	unsigned long j0 = jiffies;
 
 	return kpi_round_jiffies(j + j0, true) - j0;
+}
+
+void set_normalized_timespec64(struct timespec64 *ts, time64_t sec, s64 nsec)
+{
+	while (nsec >= NSEC_PER_SEC) {
+		nsec -= NSEC_PER_SEC;
+		++sec;
+	}
+	while (nsec < 0) {
+		nsec += NSEC_PER_SEC;
+		--sec;
+	}
+	ts->tv_sec = sec;
+	ts->tv_nsec = nsec;
+}
+
+void ktime_get_clock_ts64(clockid_t id, struct timespec64 *ts)
+{
+	if (id == CLOCK_REALTIME)
+		ktime_get_real_ts64(ts);
+	else
+		*ts = ktime_to_timespec64(ktime_get());
+}
+
+/* No cross-timestamping between device and system clocks (PTP). */
+int get_device_system_crosststamp(int (*get_time_fn)(ktime_t *device_time,
+						     struct system_counterval_t *sys_counterval,
+						     void *ctx),
+				  void *ctx, struct system_time_snapshot *history,
+				  struct system_device_crosststamp *xtstamp)
+{
+	return -EOPNOTSUPP;
+}
+
+u64 sched_clock(void)
+{
+	return ktime_get_ns();
 }

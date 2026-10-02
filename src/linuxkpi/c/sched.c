@@ -19,6 +19,7 @@
 #include <linux/kthread.h>
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
+#include <linux/rtmutex.h>
 #include <linux/ww_mutex.h>
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
@@ -77,9 +78,9 @@ pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
 
 /* ------------------------------------------------------------ schedule */
 
-static void kpi_sleep(u64 deadline_ns)
+static noinline void kpi_sleep(u64 deadline_ns)
 {
-	rustos_kpi_sleep(deadline_ns);
+	rustos_kpi_sleep(deadline_ns, __builtin_return_address(0));
 }
 
 asmlinkage __visible void __sched schedule(void)
@@ -998,4 +999,33 @@ long wait_woken(struct wait_queue_entry *wq_entry, unsigned mode, long timeout)
 	__set_current_state(TASK_RUNNING);
 	smp_store_mb(wq_entry->flags, wq_entry->flags & ~WQ_FLAG_WOKEN);
 	return timeout;
+}
+
+/* ------------------------------------------------------------- rt_mutex */
+
+/* No priority inheritance (RustOS has no priority scheduling): an rt_mutex
+ * is a sleeping lock owned through ->owner, retried after a short sleep
+ * when contended (I2C bus locks, rarely contended). */
+void __rt_mutex_init(struct rt_mutex *lock, const char *name, struct lock_class_key *key)
+{
+	raw_spin_lock_init(&lock->rtmutex.wait_lock);
+	lock->rtmutex.waiters = RB_ROOT_CACHED;
+	lock->rtmutex.owner = NULL;
+}
+
+int rt_mutex_trylock(struct rt_mutex *lock)
+{
+	return try_cmpxchg_acquire(&lock->rtmutex.owner, &(struct task_struct *){ NULL }, current);
+}
+
+void rt_mutex_lock(struct rt_mutex *lock)
+{
+	might_sleep();
+	while (!rt_mutex_trylock(lock))
+		usleep_range(50, 100);
+}
+
+void rt_mutex_unlock(struct rt_mutex *lock)
+{
+	smp_store_release(&lock->rtmutex.owner, NULL);
 }

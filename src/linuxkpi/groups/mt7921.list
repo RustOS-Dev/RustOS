@@ -1,6 +1,7 @@
 # MediaTek MT7921/MT7921K (RZ608)/MT7920/MT7922 PCIe Wi-Fi (Linux mt76):
 # mt76 core, connac library, mt792x library and mt7921e. Debugfs,
 # tracing, WED and testmode are configured out.
+module: mt76
 drivers/net/wireless/mediatek/mt76/mmio.c
 drivers/net/wireless/mediatek/mt76/debugfs.c
 drivers/net/wireless/mediatek/mt76/util.c
@@ -13,18 +14,22 @@ drivers/net/wireless/mediatek/mt76/mcu.c
 drivers/net/wireless/mediatek/mt76/scan.c
 drivers/net/wireless/mediatek/mt76/channel.c
 drivers/net/wireless/mediatek/mt76/pci.c
+module: mt76_connac_lib
 drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c
 drivers/net/wireless/mediatek/mt76/mt76_connac_mac.c
 drivers/net/wireless/mediatek/mt76/mt76_connac3_mac.c
+module: mt792x_lib
 drivers/net/wireless/mediatek/mt76/mt792x_core.c
 drivers/net/wireless/mediatek/mt76/mt792x_mac.c
 drivers/net/wireless/mediatek/mt76/mt792x_dma.c
 drivers/net/wireless/mediatek/mt76/mt792x_acpi_sar.c
+module: mt7921_common
 drivers/net/wireless/mediatek/mt76/mt7921/mac.c
 drivers/net/wireless/mediatek/mt76/mt7921/mcu.c
 drivers/net/wireless/mediatek/mt76/mt7921/main.c
 drivers/net/wireless/mediatek/mt76/mt7921/init.c
 drivers/net/wireless/mediatek/mt76/mt7921/debugfs.c
+module: mt7921e
 drivers/net/wireless/mediatek/mt76/mt7921/pci.c
 drivers/net/wireless/mediatek/mt76/mt7921/pci_mac.c
 drivers/net/wireless/mediatek/mt76/mt7921/pci_mcu.c

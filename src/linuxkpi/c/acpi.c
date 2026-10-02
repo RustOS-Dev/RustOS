@@ -508,3 +508,14 @@ void kpi_acpi_pci_companion(struct pci_dev *pdev)
 	fwnode_init(&adev->fwnode, &acpi_device_fwnode_ops);
 	ACPI_COMPANION_SET(&pdev->dev, adev);
 }
+
+/* ACPI tables are not reloaded at run time (no SSDT overlays). */
+int acpi_reconfig_notifier_register(struct notifier_block *nb)
+{
+	return 0;
+}
+
+int acpi_reconfig_notifier_unregister(struct notifier_block *nb)
+{
+	return 0;
+}

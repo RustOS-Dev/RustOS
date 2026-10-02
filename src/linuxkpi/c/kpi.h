@@ -32,7 +32,9 @@ u64 rustos_kpi_nanos(void);
 void rustos_kpi_delay_ns(u64 ns);
 u64 rustos_kpi_thread_id(void);
 void **rustos_kpi_task_slot(void);	/* per-thread slot for the task_struct shadow */
-void rustos_kpi_sleep(u64 deadline_ns);	/* until woken; 0 = no timeout */
+/* Until woken; 0 = no timeout. `site` (the caller) shows as the thread's
+ * wait channel in state dumps. */
+void rustos_kpi_sleep(u64 deadline_ns, void *site);
 void rustos_kpi_wake(u64 tid);
 void rustos_kpi_yield(void);
 u64 rustos_kpi_spawn(void (*fn)(void *), void *arg, const char *name);

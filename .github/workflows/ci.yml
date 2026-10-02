@@ -85,7 +85,7 @@ jobs:
         run: |
           cargo clippy -- -D warnings
           # Feature builds compile Rust that the default build leaves out.
-          cargo clippy --features linux-hwsim,linux-usbnet,linux-drivers,linux-e1000,linux-test -- -D warnings
+          cargo clippy --features linux-hwsim,linux-drivers,linux-e1000,linux-test -- -D warnings
 
   host-crates:
     name: Host crate tests
@@ -187,5 +187,14 @@ jobs:
           RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux.txt
           RUSTOS_USB_PREFER_RNDIS=1 cargo build --features linux-usbnet
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux-rndis.txt
+      - name: Linux Ethernet drivers (igb on QEMU's 82576; e1000e, igc, alx, tg3, atlantic, r8169 compiled)
+        run: |
+          cargo build --features linux-eth
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
+          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
+      - name: Native drivers keep their devices in the release driver set
+        run: |
+          cargo build --features linux-drivers
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/eth-e1000.txt tests/scenarios/eth-e1000e.txt tests/scenarios/eth-usb.txt tests/scenarios/usb.txt
       - name: Release driver set (linux-drivers, as write_to_drive.sh builds it)
         run: cargo build --release --features linux-drivers

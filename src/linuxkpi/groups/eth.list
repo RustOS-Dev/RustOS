@@ -1,0 +1,79 @@
+# Linux PCIe Ethernet drivers (M32). RustOS's native drivers keep the
+# devices they support (e1000e, I219, igc, r8169 IDs); these take the rest.
+# Intel 82575/82576/I210/I211/I350 (QEMU -device igb: eth-igb).
+module: igb
+drivers/net/ethernet/intel/igb/igb_main.c
+drivers/net/ethernet/intel/igb/igb_ethtool.c
+drivers/net/ethernet/intel/igb/e1000_82575.c
+drivers/net/ethernet/intel/igb/e1000_mac.c
+drivers/net/ethernet/intel/igb/e1000_nvm.c
+drivers/net/ethernet/intel/igb/e1000_phy.c
+drivers/net/ethernet/intel/igb/e1000_mbx.c
+drivers/net/ethernet/intel/igb/e1000_i210.c
+drivers/net/ethernet/intel/igb/igb_ptp.c
+drivers/net/ethernet/intel/igb/igb_hwmon.c
+drivers/net/ethernet/intel/igb/igb_xsk.c
+# Intel 82571-82574, 82583, ICH8-PCH (e1000e).
+module: e1000e
+cflags: -I@LINUX@/drivers/net/ethernet/intel/e1000e
+drivers/net/ethernet/intel/e1000e/82571.c
+drivers/net/ethernet/intel/e1000e/ich8lan.c
+drivers/net/ethernet/intel/e1000e/80003es2lan.c
+drivers/net/ethernet/intel/e1000e/mac.c
+drivers/net/ethernet/intel/e1000e/manage.c
+drivers/net/ethernet/intel/e1000e/nvm.c
+drivers/net/ethernet/intel/e1000e/phy.c
+drivers/net/ethernet/intel/e1000e/param.c
+drivers/net/ethernet/intel/e1000e/ethtool.c
+drivers/net/ethernet/intel/e1000e/netdev.c
+drivers/net/ethernet/intel/e1000e/ptp.c
+# Intel I225/I226 (igc).
+module: igc
+drivers/net/ethernet/intel/igc/igc_main.c
+drivers/net/ethernet/intel/igc/igc_mac.c
+drivers/net/ethernet/intel/igc/igc_i225.c
+drivers/net/ethernet/intel/igc/igc_base.c
+drivers/net/ethernet/intel/igc/igc_nvm.c
+drivers/net/ethernet/intel/igc/igc_phy.c
+drivers/net/ethernet/intel/igc/igc_diag.c
+drivers/net/ethernet/intel/igc/igc_ethtool.c
+drivers/net/ethernet/intel/igc/igc_ptp.c
+drivers/net/ethernet/intel/igc/igc_dump.c
+drivers/net/ethernet/intel/igc/igc_tsn.c
+drivers/net/ethernet/intel/igc/igc_xdp.c
+# Qualcomm Atheros / Killer E2200-E2600, AR8161/AR8171 (alx).
+module: alx
+drivers/net/ethernet/atheros/alx/main.c
+drivers/net/ethernet/atheros/alx/ethtool.c
+drivers/net/ethernet/atheros/alx/hw.c
+# Broadcom NetXtreme / NetLink (tg3).
+module: tg3
+drivers/net/ethernet/broadcom/tg3.c
+# Aquantia / Marvell AQC107/AQC108/AQC113 (atlantic).
+module: atlantic
+cflags: -I@LINUX@/drivers/net/ethernet/aquantia/atlantic
+drivers/net/ethernet/aquantia/atlantic/aq_main.c
+drivers/net/ethernet/aquantia/atlantic/aq_nic.c
+drivers/net/ethernet/aquantia/atlantic/aq_pci_func.c
+drivers/net/ethernet/aquantia/atlantic/aq_vec.c
+drivers/net/ethernet/aquantia/atlantic/aq_ring.c
+drivers/net/ethernet/aquantia/atlantic/aq_hw_utils.c
+drivers/net/ethernet/aquantia/atlantic/aq_ethtool.c
+drivers/net/ethernet/aquantia/atlantic/aq_drvinfo.c
+drivers/net/ethernet/aquantia/atlantic/aq_filters.c
+drivers/net/ethernet/aquantia/atlantic/aq_phy.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl/hw_atl_a0.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl/hw_atl_b0.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl/hw_atl_utils.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl/hw_atl_utils_fw2x.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl/hw_atl_llh.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl2/hw_atl2.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl2/hw_atl2_utils.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl2/hw_atl2_utils_fw.c
+drivers/net/ethernet/aquantia/atlantic/hw_atl2/hw_atl2_llh.c
+drivers/net/ethernet/aquantia/atlantic/macsec/macsec_api.c
+# Realtek RTL8101/8102/8168/8111/8125/8126/8127 (r8169).
+module: r8169
+drivers/net/ethernet/realtek/r8169_main.c
+drivers/net/ethernet/realtek/r8169_firmware.c
+drivers/net/ethernet/realtek/r8169_phy_config.c

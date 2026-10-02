@@ -1961,3 +1961,309 @@ int skb_to_sgvec(struct sk_buff *skb, struct scatterlist *sg, int offset, int le
 	return elt;
 }
 EXPORT_SYMBOL_GPL(skb_to_sgvec);
+
+/* ---------------------------------------- more netdev API (M32 drivers) */
+
+int __hw_addr_sync_dev(struct netdev_hw_addr_list *list, struct net_device *dev,
+		       int (*sync)(struct net_device *, const unsigned char *),
+		       int (*unsync)(struct net_device *, const unsigned char *))
+{
+	struct netdev_hw_addr *ha;
+
+	list_for_each_entry(ha, &list->list, list) {
+		if (ha->sync_cnt)
+			continue;
+		if (sync(dev, ha->addr))
+			return -ENOMEM;
+		ha->sync_cnt++;
+		ha->refcount++;
+	}
+	return 0;
+}
+
+void __hw_addr_unsync_dev(struct netdev_hw_addr_list *list, struct net_device *dev,
+			  int (*unsync)(struct net_device *, const unsigned char *))
+{
+	struct netdev_hw_addr *ha;
+
+	list_for_each_entry(ha, &list->list, list) {
+		if (!ha->sync_cnt)
+			continue;
+		if (unsync && unsync(dev, ha->addr))
+			continue;
+		ha->sync_cnt--;
+		ha->refcount--;
+	}
+}
+
+void __page_frag_cache_drain(struct page *page, unsigned int count)
+{
+	if (page_ref_sub_and_test(page, count))
+		__free_pages(page, compound_order(page));
+}
+
+struct rtnl_link_stats64 *dev_get_stats(struct net_device *dev, struct rtnl_link_stats64 *storage)
+{
+	const struct net_device_ops *ops = dev->netdev_ops;
+
+	memset(storage, 0, sizeof(*storage));
+	if (ops->ndo_get_stats64)
+		ops->ndo_get_stats64(dev, storage);
+	else if (ops->ndo_get_stats)
+		netdev_stats_to_stats64(storage, ops->ndo_get_stats(dev));
+	else
+		netdev_stats_to_stats64(storage, &dev->stats);
+	return storage;
+}
+
+int dev_set_mac_address(struct net_device *dev, struct sockaddr_storage *ss,
+			struct netlink_ext_ack *extack)
+{
+	const struct net_device_ops *ops = dev->netdev_ops;
+	int err;
+
+	if (!ops->ndo_set_mac_address)
+		return -EOPNOTSUPP;
+	if (ss->ss_family != dev->type)
+		return -EINVAL;
+	if (!netif_device_present(dev))
+		return -ENODEV;
+	err = ops->ndo_set_mac_address(dev, ss);
+	if (err)
+		return err;
+	call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+	rustos_kpi_netdev_set_mac(kpi_netdev_handle(dev), dev->dev_addr);
+	return 0;
+}
+
+unsigned long dev_trans_start(struct net_device *dev)
+{
+	unsigned long res = READ_ONCE(netdev_get_tx_queue(dev, 0)->trans_start);
+
+	for (unsigned int i = 1; i < dev->num_tx_queues; i++) {
+		unsigned long val = READ_ONCE(netdev_get_tx_queue(dev, i)->trans_start);
+
+		if (val && time_after(val, res))
+			res = val;
+	}
+	return res;
+}
+
+/* No firmware-provided (device tree, platform) MAC addresses: drivers use
+ * the one in their EEPROM. */
+int device_get_mac_address(struct device *dev, char *addr)
+{
+	return -ENOENT;
+}
+
+int eth_platform_get_mac_address(struct device *dev, u8 *mac_addr)
+{
+	return -ENODEV;
+}
+
+int platform_get_ethdev_address(struct device *dev, struct net_device *netdev)
+{
+	return -ENODEV;
+}
+
+static void kpi_devm_free_netdev(struct device *dev, void *res)
+{
+	free_netdev(*(struct net_device **)res);
+}
+
+struct net_device *devm_alloc_etherdev_mqs(struct device *dev, int sizeof_priv,
+					   unsigned int txqs, unsigned int rxqs)
+{
+	struct net_device **dr = devres_alloc(kpi_devm_free_netdev, sizeof(*dr), GFP_KERNEL);
+	struct net_device *ndev;
+
+	if (!dr)
+		return NULL;
+	ndev = alloc_etherdev_mqs(sizeof_priv, txqs, rxqs);
+	if (!ndev) {
+		devres_free(dr);
+		return NULL;
+	}
+	*dr = ndev;
+	devres_add(dev, dr);
+	return ndev;
+}
+
+/* Header length of a received frame, for drivers that copy the headers
+ * out of a page (net/ethernet/eth.c uses the flow dissector). */
+u32 eth_get_headlen(const struct net_device *dev, const void *data, u32 len)
+{
+	const u8 *p = data;
+	u32 off = ETH_HLEN;
+	u16 proto;
+	u8 l4 = 0;
+
+	if (len < ETH_HLEN)
+		return len;
+	proto = get_unaligned_be16(p + 12);
+	while ((proto == ETH_P_8021Q || proto == ETH_P_8021AD) && len >= off + 4) {
+		proto = get_unaligned_be16(p + off + 2);
+		off += 4;
+	}
+	if (proto == ETH_P_IP && len >= off + 20) {
+		u32 ihl = (p[off] & 0xf) * 4;
+
+		l4 = p[off + 9];
+		off += max_t(u32, ihl, 20);
+	} else if (proto == ETH_P_IPV6 && len >= off + 40) {
+		l4 = p[off + 6];
+		off += 40;
+	} else {
+		return min(off, len);
+	}
+	if (l4 == IPPROTO_TCP && len >= off + 20)
+		off += max_t(u32, (p[off + 12] >> 4) * 4, 20);
+	else if (l4 == IPPROTO_UDP)
+		off += 8;
+	return min(off, len);
+}
+
+void linkwatch_fire_event(struct net_device *dev)
+{
+	if (dev->reg_state == NETREG_REGISTERED)
+		rustos_kpi_netdev_carrier(kpi_netdev_handle(dev), netif_carrier_ok(dev));
+}
+
+void napi_enable_locked(struct napi_struct *n)
+{
+	napi_enable(n);
+}
+
+int ndo_dflt_fdb_add(struct ndmsg *ndm, struct nlattr *tb[], struct net_device *dev,
+		     const unsigned char *addr, u16 vid, u16 flags)
+{
+	return -EOPNOTSUPP;
+}
+
+/* Traffic classes (mqprio) cannot be configured here; drivers that ask
+ * get the plain single-class layout. */
+void netdev_reset_tc(struct net_device *dev)
+{
+	dev->num_tc = 0;
+	memset(dev->tc_to_txq, 0, sizeof(dev->tc_to_txq));
+	memset(dev->prio_tc_map, 0, sizeof(dev->prio_tc_map));
+}
+
+int netdev_set_tc_queue(struct net_device *dev, u8 tc, u16 count, u16 offset)
+{
+	if (tc >= dev->num_tc)
+		return -EINVAL;
+	dev->tc_to_txq[tc].count = count;
+	dev->tc_to_txq[tc].offset = offset;
+	return 0;
+}
+
+int netdev_set_num_tc(struct net_device *dev, u8 num_tc)
+{
+	if (num_tc > TC_MAX_QUEUE)
+		return -EINVAL;
+	dev->num_tc = num_tc;
+	return 0;
+}
+
+void netdev_rss_key_fill(void *buffer, size_t len)
+{
+	get_random_bytes(buffer, len);
+}
+
+void netdev_sw_irq_coalesce_default_on(struct net_device *dev)
+{
+}
+
+/* net/core/dev.c __netdev_update_features() without upper/lower devices. */
+void netdev_update_features(struct net_device *dev)
+{
+	netdev_features_t features = (dev->features & ~dev->hw_features) | dev->wanted_features;
+	int err = 0;
+
+	if (dev->netdev_ops->ndo_fix_features)
+		features = dev->netdev_ops->ndo_fix_features(dev, features);
+	if (dev->features == features)
+		return;
+	if (dev->netdev_ops->ndo_set_features)
+		err = dev->netdev_ops->ndo_set_features(dev, features);
+	if (err < 0) {
+		netdev_err(dev, "set_features() failed (%d)\n", err);
+		return;
+	}
+	if (!err)
+		dev->features = features;
+	call_netdevice_notifiers(NETDEV_FEAT_CHANGE, dev);
+}
+
+/* One interrupt vector per device: one queue pair. */
+int netif_get_num_default_rss_queues(void)
+{
+	return 1;
+}
+
+int netif_set_real_num_tx_queues(struct net_device *dev, unsigned int txq)
+{
+	if (txq < 1 || txq > dev->num_tx_queues)
+		return -EINVAL;
+	dev->real_num_tx_queues = txq;
+	return 0;
+}
+
+int netif_set_real_num_rx_queues(struct net_device *dev, unsigned int rxq)
+{
+	if (rxq < 1 || rxq > dev->num_rx_queues)
+		return -EINVAL;
+	dev->real_num_rx_queues = rxq;
+	return 0;
+}
+
+int netif_set_real_num_queues(struct net_device *dev, unsigned int txq, unsigned int rxq)
+{
+	return netif_set_real_num_tx_queues(dev, txq) ?: netif_set_real_num_rx_queues(dev, rxq);
+}
+
+void netif_set_tso_max_size(struct net_device *dev, unsigned int size)
+{
+	WRITE_ONCE(dev->tso_max_size, min(GSO_MAX_SIZE, size));
+	if (size < READ_ONCE(dev->gso_max_size))
+		WRITE_ONCE(dev->gso_max_size, size);
+}
+
+void netif_set_tso_max_segs(struct net_device *dev, unsigned int segs)
+{
+	dev->tso_max_segs = segs;
+	if (segs < READ_ONCE(dev->gso_max_segs))
+		WRITE_ONCE(dev->gso_max_segs, segs);
+}
+
+netdev_features_t passthru_features_check(struct sk_buff *skb, struct net_device *dev,
+					  netdev_features_t features)
+{
+	return features;
+}
+
+/* Finish a CHECKSUM_PARTIAL checksum in software. */
+int skb_checksum_help(struct sk_buff *skb)
+{
+	int offset;
+	__wsum csum;
+
+	if (skb->ip_summed != CHECKSUM_PARTIAL)
+		return 0;
+	if (skb_linearize(skb))
+		return -ENOMEM;
+	offset = skb_checksum_start_offset(skb);
+	if (offset < 0 || offset + skb->csum_offset + 2 > skb_headlen(skb))
+		return -EINVAL;
+	csum = csum_partial(skb->data + offset, skb->len - offset, 0);
+	offset += skb->csum_offset;
+	*(__sum16 *)(skb->data + offset) = csum_fold(csum) ?: CSUM_MANGLED_0;
+	skb->ip_summed = CHECKSUM_NONE;
+	return 0;
+}
+
+struct sk_buff *slab_build_skb(void *data)
+{
+	return build_skb(data, 0);
+}

@@ -46,7 +46,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Ethernet: CDC ECM, RNDIS | CI (`usb-net`) |
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
 | Linux USB drivers through the LinuxKPI USB core (`linux-usb`) | CI (`usb-net` with Linux usbnet) |
-| Ethernet: Linux `usbnet` with `cdc_ether`, `rndis_host`, `cdc_ncm` (`--features linux-usbnet`) | CI (`eth-usb-linux`, `eth-usb-linux-rndis`); NCM compiled |
+| Ethernet: Linux `usbnet` with `cdc_ether`, `rndis_host`, `cdc_ncm` (`--features linux-usbnet`, in release images instead of the native CDC ECM/RNDIS driver) | CI (`eth-usb-linux`, `eth-usb-linux-rndis`); NCM compiled |
 
 ## Network
 
@@ -62,6 +62,10 @@ devices are cached (write-back buffer cache, `sync`).
 | MediaTek MT7921AU USB Wi-Fi (0e8d:7961 and OEM IDs): Linux `mt7921u` on the LinuxKPI USB core, in release images | compiled, untested on hardware: `hwcheck wifi` results wanted |
 | Linux 802.11 stack (cfg80211/mac80211) with wpa_supplicant/hostapd: WPA2, WPA3-SAE, PMF, PEAP | CI (`mac80211_hwsim`: `wifi-hwsim`, `wifi-hwsim-eap`) |
 | Linux `e1000` (82540EM) via LinuxKPI | CI (`eth-linux-e1000`, `--features linux-e1000`) |
+| Intel 82575/82576/I210/I211/I350: Linux `igb` via LinuxKPI, in release images | CI (`eth-igb` on QEMU `-device igb`) |
+| Intel e1000e / I225-I226 / Realtek RTL8101-8127 devices the native drivers do not claim: Linux `e1000e`, `igc`, `r8169` (with phylib and the Realtek PHY driver), in release images | compiled, untested on hardware |
+| Qualcomm Atheros / Killer E2200-E2600, AR8161/8171 (`alx`); Broadcom NetXtreme (`tg3`); Aquantia AQC107/108/113 (`atlantic`), in release images | compiled, untested on hardware |
+| USB Ethernet: Realtek RTL8152/8153/8156/8157 (`r8152`), ASIX AX88772/AX88178/AX88179 (`asix`, `ax88179_178a`), iPhone tethering (`ipheth`), in release images | compiled, untested on hardware |
 
 ## Input and display
 

@@ -684,7 +684,7 @@ static bool kpi_match_endpoint(struct usb_endpoint_descriptor *epd,
 	       (!int_in || *int_in) && (!int_out || *int_out);
 }
 
-int __usb_find_common_endpoints(struct usb_host_interface *alt,
+int usb_find_common_endpoints(struct usb_host_interface *alt,
 				struct usb_endpoint_descriptor **bulk_in,
 				struct usb_endpoint_descriptor **bulk_out,
 				struct usb_endpoint_descriptor **int_in,
@@ -703,9 +703,9 @@ int __usb_find_common_endpoints(struct usb_host_interface *alt,
 			return 0;
 	return -ENXIO;
 }
-EXPORT_SYMBOL_GPL(__usb_find_common_endpoints);
+EXPORT_SYMBOL_GPL(usb_find_common_endpoints);
 
-int __usb_find_common_endpoints_reverse(struct usb_host_interface *alt,
+int usb_find_common_endpoints_reverse(struct usb_host_interface *alt,
 					struct usb_endpoint_descriptor **bulk_in,
 					struct usb_endpoint_descriptor **bulk_out,
 					struct usb_endpoint_descriptor **int_in,
@@ -724,7 +724,7 @@ int __usb_find_common_endpoints_reverse(struct usb_host_interface *alt,
 			return 0;
 	return -ENXIO;
 }
-EXPORT_SYMBOL_GPL(__usb_find_common_endpoints_reverse);
+EXPORT_SYMBOL_GPL(usb_find_common_endpoints_reverse);
 
 static const struct usb_host_endpoint *kpi_find_endpoint(const struct usb_interface *intf,
 							 unsigned int ep_addr)
@@ -1119,6 +1119,26 @@ int usb_register_driver(struct usb_driver *new_driver, struct module *owner,
 	return err;
 }
 EXPORT_SYMBOL_GPL(usb_register_driver);
+
+/* Device-level drivers (r8152's configuration selector) are not run:
+ * RustOS selects the configuration (src/usb/mod.rs prefers the vendor one
+ * of Realtek adapters in linux-usbnet builds, as r8152's selector does). */
+int usb_register_device_driver(struct usb_device_driver *new_udriver, struct module *owner)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(usb_register_device_driver);
+
+void usb_deregister_device_driver(struct usb_device_driver *udriver)
+{
+}
+EXPORT_SYMBOL_GPL(usb_deregister_device_driver);
+
+/* Link power management stays as the controller set it. */
+void usb_enable_lpm(struct usb_device *udev)
+{
+}
+EXPORT_SYMBOL_GPL(usb_enable_lpm);
 
 void usb_deregister(struct usb_driver *driver)
 {

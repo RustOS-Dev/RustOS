@@ -72,11 +72,12 @@ extern "C" fn rustos_kpi_task_slot() -> *mut *mut c_void {
 /// reference to the thread while it is blocked: RustOS's thread list is
 /// weak, and nothing else owns a thread sleeping in Linux code.
 #[unsafe(no_mangle)]
-extern "C" fn rustos_kpi_sleep(deadline_ns: u64) {
+extern "C" fn rustos_kpi_sleep(deadline_ns: u64, site: *const c_void) {
     if !sched::is_running() {
         return;
     }
     let me = sched::current();
+    me.wchan.store(site as u64, Ordering::Relaxed);
     if !sched::prepare_block() {
         return;
     }

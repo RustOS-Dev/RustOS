@@ -1,7 +1,24 @@
 # Linux USB networking (M30): usbnet with CDC ECM, RNDIS and CDC NCM
 # (QEMU -device usb-net, phones, docks).
+module: usbnet
 drivers/net/mii.c
 drivers/net/usb/usbnet.c
+module: cdc_ether
 drivers/net/usb/cdc_ether.c
+module: rndis_host
 drivers/net/usb/rndis_host.c
+module: cdc_ncm
 drivers/net/usb/cdc_ncm.c
+# Realtek RTL8152/8153/8156/8157 adapters and docks (r8152).
+module: r8152
+drivers/net/usb/r8152.c
+# ASIX AX88772/AX88178/AX88172A and AX88179/AX88178A adapters.
+module: asix
+drivers/net/usb/asix_devices.c
+drivers/net/usb/asix_common.c
+drivers/net/usb/ax88172a.c
+module: ax88179_178a
+drivers/net/usb/ax88179_178a.c
+# iPhone USB tethering (ipheth).
+module: ipheth
+drivers/net/usb/ipheth.c

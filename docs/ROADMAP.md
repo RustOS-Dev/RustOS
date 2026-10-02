@@ -154,6 +154,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [ ] isochronous URBs in the LinuxKPI USB core: moved to M34, where Linux snd-usb-audio on QEMU `usb-audio` tests them (the xHCI driver already queues isochronous IN TDs)
 - [ ] **M31** Wi-Fi coverage: iwlwifi (all), rtw88, rtw89, mt76 family, mt7601u, ath9k/ath9k_htc, ath10k/11k/12k, brcmfmac
 - [ ] **M32** Ethernet coverage: r8152, usbnet family, igb, alx, tg3, atlantic, Linux r8169/e1000e/igc
+  - [x] Linux igb in QEMU (`eth-igb`); e1000e, igc, alx, tg3, atlantic, r8169 (+ phylib, Realtek PHY), r8152, ASIX, ipheth compiled into release images; their firmware ships
+  - [ ] hardware: `hwcheck ethernet` on each family (compiled, untested on hardware)
 - [ ] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware
 - [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
 - [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu

@@ -3,7 +3,10 @@
 //! endpoint and ACL data on the bulk pipes (SCO is not used). Intel
 //! controllers with TLV version information (AX200/AX210/...) start in a
 //! bootloader and get their firmware (`intel/ibt-*.sfi`, then `.ddc`)
-//! here before the standard HCI initialisation.
+//! here before the standard HCI initialisation. MediaTek controllers
+//! (MT7921/MT7922/MT7925, including the MT7921AU combo adapter) get their
+//! patch (`mediatek/BT_RAM_CODE_*_hdr.bin`) over WMT commands, answered
+//! through a vendor control request.
 
 use super::UsbDevice;
 use crate::bluetooth::{self, Hci, Transport};
@@ -15,6 +18,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use bt::hci::{self, Event};
 use bt::intel;
+use bt::mtk;
 use usb_desc::{Endpoint, Interface, TransferType};
 
 struct BtUsb {
@@ -52,6 +56,10 @@ impl Transport for BtUsb {
     fn setup(&self, h: &Arc<Hci>) -> KResult<()> {
         if self.vendor == 0x8087 {
             intel_setup(h)?;
+        } else if let Some(dev) = self.dev.upgrade()
+            && let Some(id) = mtk_chip(&dev)
+        {
+            self.mtk_setup(h, &dev, id)?;
         }
         Ok(())
     }
@@ -223,4 +231,111 @@ fn intel_setup(h: &Arc<Hci>) -> KResult<()> {
         v.build_num
     );
     Ok(())
+}
+
+/// MediaTek chip ID (0x7961, 0x7922, ...), read from the chip's registers
+/// by the vendor request btmtk uses; None for other controllers.
+fn mtk_chip(dev: &UsbDevice) -> Option<u32> {
+    let d = *dev.desc.lock();
+    if !mtk::is_mediatek(d.vendor, d.product) {
+        return None;
+    }
+    let id = mtk_reg(dev, mtk::REG_DEV_ID).ok()?;
+    mtk::supported(id).then_some(id)
+}
+
+fn mtk_reg(dev: &UsbDevice, reg: u32) -> KResult<u32> {
+    let v = dev.control_in(0x40, 0x63, (reg >> 16) as u16, reg as u16, 4)?;
+    let b: [u8; 4] = v.get(..4).ok_or(EIO)?.try_into().unwrap();
+    Ok(u32::from_le_bytes(b))
+}
+
+impl BtUsb {
+    /// One WMT command and its answer: the command goes out as HCI command
+    /// 0xFC6F (outside the HCI command queue: no Command Complete follows),
+    /// the answer is polled with vendor control-IN requests.
+    fn wmt(&self, dev: &UsbDevice, op: u8, flag: u8, data: &[u8]) -> KResult<mtk::WmtEvent> {
+        self.send(
+            hci::H4_CMD,
+            &hci::cmd(mtk::OP_WMT, &mtk::wmt_cmd(op, flag, data)),
+        )?;
+        let deadline = crate::time::Deadline::after_ms(5000);
+        while !deadline.expired() {
+            if dev.is_gone() {
+                return Err(ENODEV);
+            }
+            let r = dev.control_in(0x40, 0x01, 0x30, 0, 64)?;
+            if !r.is_empty() {
+                if let Some(e) = mtk::parse_event(&r)
+                    && e.op == op
+                {
+                    return Ok(e);
+                }
+                return Err(EIO);
+            }
+            crate::time::delay_us(500);
+        }
+        Err(ETIMEDOUT)
+    }
+
+    /// MediaTek 79xx: download the patch, reset the endpoints, turn the
+    /// Bluetooth function on (btmtk_usb_setup()).
+    fn mtk_setup(&self, h: &Arc<Hci>, dev: &UsbDevice, id: u32) -> KResult<()> {
+        let version = mtk_reg(dev, mtk::REG_FW_VERSION).unwrap_or(0);
+        let flavor = (mtk_reg(dev, mtk::REG_FW_FLAVOR).unwrap_or(0) & 0x80) >> 7;
+        let name = mtk::firmware_name(id, version, flavor);
+        let fw = crate::firmware::load(&name).inspect_err(|_| {
+            crate::println!(
+                "[bt] {}: MT{:04x}: firmware {} not found",
+                h.name(),
+                id,
+                name
+            );
+        })?;
+        let sections = mtk::sections(&fw, id).ok_or(EINVAL)?;
+        crate::println!(
+            "[bt] {}: MT{:04x}: downloading {} ({}; {} sections)",
+            h.name(),
+            id,
+            name,
+            mtk::describe(&fw).unwrap_or_default(),
+            sections.len()
+        );
+        for sec in &sections {
+            let mut tries = 20;
+            let send = loop {
+                let e = self.wmt(dev, mtk::WMT_PATCH_DWNLD, 0, &sec.announce)?;
+                match mtk::status(&e) {
+                    Some(mtk::Status::PatchUndone) => break true,
+                    Some(mtk::Status::PatchDone) => break false,
+                    Some(mtk::Status::PatchProgress) if tries > 0 => {
+                        tries -= 1;
+                        crate::time::sleep_ms(100);
+                    }
+                    s => {
+                        crate::println!("[bt] {}: MT{:04x}: patch status {:?}", h.name(), id, s);
+                        return Err(EIO);
+                    }
+                }
+            };
+            if send {
+                for (flag, block) in &sec.blocks {
+                    self.wmt(dev, mtk::WMT_PATCH_DWNLD, *flag, block)?;
+                }
+            }
+        }
+        // Let the patch activate.
+        crate::time::sleep_ms(110);
+        let reg = mtk::REG_EP_RST_OPT;
+        dev.control_out(
+            0x5E,
+            0x02,
+            (reg >> 16) as u16,
+            reg as u16,
+            &mtk::EP_RST_IN_OUT_OPT.to_le_bytes(),
+        )?;
+        self.wmt(dev, mtk::WMT_FUNC_CTRL, 0, &[1])?;
+        crate::println!("[bt] {}: MT{:04x}: firmware running", h.name(), id);
+        Ok(())
+    }
 }

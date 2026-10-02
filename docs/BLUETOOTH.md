@@ -11,7 +11,7 @@ The stack has three parts:
 
 | Transport | Devices | Notes |
 |-----------|---------|-------|
-| USB (class E0/01/01) | Intel AX200/AX210/AX211 Bluetooth (8087:0029/0032/0033), most USB dongles | Commands on the control pipe, events on interrupt IN, ACL on bulk. SCO (voice) is not used. |
+| USB (class E0/01/01) | Intel AX200/AX210/AX211 Bluetooth (8087:0029/0032/0033), MediaTek MT7921/MT7922/MT7925 (laptop combo cards and the MT7921AU adapter), most USB dongles | Commands on the control pipe, events on interrupt IN, ACL on bulk. SCO (voice) is not used. |
 | H4 UART | any H4 controller on a legacy serial port | `bt attach com2`, or `bt.h4=com2` in `/storage/etc/kernel.conf`. COM2 is interrupt-driven; COM3 and COM4 are polled. |
 
 **Intel controllers** start in a bootloader. The driver:
@@ -21,7 +21,15 @@ The stack has three parts:
 4. Boots it with Intel Reset at the address from the image.
 5. Applies `intel/ibt-*.ddc`.
 
-The controller's firmware must be present. Without it, `dmesg` names the missing file.
+**MediaTek controllers** (MT7961 = MT7921, MT7922, MT7925, and MT7902/MT6639 as Linux btmtk handles them). The driver:
+1. Reads the chip ID, firmware version and flavour from chip registers (vendor control requests).
+2. Loads `mediatek/BT_RAM_CODE_MT*_hdr.bin` (`mediatek/mt7925/` for MT7925).
+3. Downloads each section of the patch with WMT commands. Each section is announced, then sent in 250-byte blocks over HCI vendor command 0xFC6F. The answers are polled with a vendor control-IN request.
+4. Resets the endpoint options and turns the Bluetooth function on (WMT function control).
+
+The patch format is in `crates/bt/src/mtk.rs`, which is host-tested against the linux-firmware files.
+
+The controller's firmware must be present. It ships in the image (`firmware/stock.list`). Without it, `dmesg` names the missing file.
 
 ## Using it
 
@@ -74,7 +82,7 @@ Answer on the terminal running `bt pair`.
 
 ## Testing
 
-- **Host tests:** `crates/bt` checks the SMP crypto against the Core specification's sample data (AES-CMAC, f4/f5/f6/g2, ah, c1/s1, the debug P-256 key pair). It also runs the pairing state machine against an independent responder in every association model (Just Works, numeric comparison, passkey both ways, legacy), and covers the HCI/L2CAP/ATT/SDP codecs, GATT discovery with long reads, HOGP against an in-memory server, and the Intel firmware fragmenting.
+- **Host tests:** `crates/bt` checks the SMP crypto against the Core specification's sample data (AES-CMAC, f4/f5/f6/g2, ah, c1/s1, the debug P-256 key pair). It also runs the pairing state machine against an independent responder in every association model (Just Works, numeric comparison, passkey both ways, legacy), and covers the HCI/L2CAP/ATT/SDP codecs, GATT discovery with long reads, HOGP against an in-memory server, the Intel firmware fragmenting, and the MediaTek patch sections (on the linux-firmware files when they have been fetched).
 - **`tests/scenarios/bluetooth`:**
   - Runs an H4 controller on COM2, connected to `tools/fake-hci.py`: a scripted LE controller with a BLE HID keyboard, whose own SMP, AES and P-256 code is separate Python.
   - The scenario scans, pairs with LE Secure Connections (the fake checks the LTK the host encrypts with), gets key events on the keyboard's evdev node, and checks the bond file.
@@ -85,4 +93,4 @@ Answer on the terminal running `bt pair`.
 - **Audio:** A2DP and SCO (headsets), so no Bluetooth audio.
 - **Roles and services:** peripheral and advertising roles, a GATT server (requests to ours get "not found"), LE audio, mesh, file transfer and networking profiles.
 - **Legacy PIN pairing** for pre-2.1 BR/EDR devices.
-- **Unverified parts:** BR/EDR HID and the USB transport run only on real hardware and are untested in QEMU. The Intel firmware download follows Linux btintel and has not yet run on an AX210.
+- **Unverified parts:** BR/EDR HID and the USB transport run only on real hardware and are untested in QEMU. The Intel firmware download follows Linux btintel and has not yet run on an AX210. The MediaTek download follows Linux btmtk and has not yet run on a MediaTek controller.

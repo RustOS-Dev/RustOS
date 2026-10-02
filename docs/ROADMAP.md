@@ -149,7 +149,9 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 - [ ] **M30** LinuxKPI USB core, xHCI isochronous IN, Linux usbnet in QEMU, MT7921AU, MediaTek Bluetooth firmware
   - [x] LinuxKPI USB core (device/interface model on the `usb` bus, URBs on per-endpoint workers, unlink/kill, hot-unplug)
   - [x] Linux usbnet + cdc_ether + rndis_host in QEMU (`eth-usb-linux`, `eth-usb-linux-rndis`); cdc_ncm compiled
-  - [ ] MT7921AU, MediaTek Bluetooth firmware, xHCI isochronous IN
+  - [x] MT7921AU (`mt7921u`, mt76 USB) compiled into release images; untested on hardware
+  - [x] MediaTek Bluetooth firmware (btmtk WMT patch download in the native btusb; format host-tested); untested on hardware
+  - [ ] isochronous URBs in the LinuxKPI USB core: moved to M34, where Linux snd-usb-audio on QEMU `usb-audio` tests them (the xHCI driver already queues isochronous IN TDs)
 - [ ] **M31** Wi-Fi coverage: iwlwifi (all), rtw88, rtw89, mt76 family, mt7601u, ath9k/ath9k_htc, ath10k/11k/12k, brcmfmac
 - [ ] **M32** Ethernet coverage: r8152, usbnet family, igb, alx, tg3, atlantic, Linux r8169/e1000e/igc
 - [ ] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware

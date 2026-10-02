@@ -1107,11 +1107,16 @@ EXPORT_SYMBOL_GPL(usb_bus_type);
 int usb_register_driver(struct usb_driver *new_driver, struct module *owner,
 			const char *mod_name)
 {
+	int err;
+
 	new_driver->driver.name = new_driver->name;
 	new_driver->driver.bus = &usb_bus_type;
 	new_driver->driver.owner = owner;
 	new_driver->driver.mod_name = mod_name;
-	return driver_register(&new_driver->driver);
+	err = driver_register(&new_driver->driver);
+	if (!err)
+		pr_info("usbcore: registered new interface driver %s\n", new_driver->name);
+	return err;
 }
 EXPORT_SYMBOL_GPL(usb_register_driver);
 

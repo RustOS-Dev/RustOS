@@ -42,7 +42,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Mass storage (Bulk-Only) | CI (`usb-storage`) |
 | USB Attached SCSI (bulk streams, 8 commands queued; USB 2 without streams) | CI (`usb-uas` on SuperSpeed and high-speed ports) |
 | USB Audio Class 1/2 playback (isochronous) | CI (`usb-audio`) |
-| Bluetooth controllers (class E0/01/01), Intel AX200/AX210/AX211 firmware | written ([BLUETOOTH.md](BLUETOOTH.md)) |
+| Bluetooth controllers (class E0/01/01), Intel AX200/AX210/AX211 and MediaTek MT7921/MT7922/MT7925 firmware | written ([BLUETOOTH.md](BLUETOOTH.md)); MediaTek patch format host-tested |
 | Ethernet: CDC ECM, RNDIS | CI (`usb-net`) |
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
 | Linux USB drivers through the LinuxKPI USB core (`linux-usb`) | CI (`usb-net` with Linux usbnet) |
@@ -59,6 +59,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Realtek RTL8111/8168/8125 (`r8169`) | written |
 | Intel AX210 Wi-Fi, AX211/AX201 CNVi (incl. 6 GHz, power save) | written ([WIFI.md](WIFI.md)) |
 | MediaTek MT7921/MT7921K (RZ608)/MT7920/MT7922 PCIe Wi-Fi: Linux `mt7921e` (mt76) via LinuxKPI, in release images (`linux-drivers`) | compiled, untested on hardware: `hwcheck wifi` results wanted |
+| MediaTek MT7921AU USB Wi-Fi (0e8d:7961 and OEM IDs): Linux `mt7921u` on the LinuxKPI USB core, in release images | compiled, untested on hardware: `hwcheck wifi` results wanted |
 | Linux 802.11 stack (cfg80211/mac80211) with wpa_supplicant/hostapd: WPA2, WPA3-SAE, PMF, PEAP | CI (`mac80211_hwsim`: `wifi-hwsim`, `wifi-hwsim-eap`) |
 | Linux `e1000` (82540EM) via LinuxKPI | CI (`eth-linux-e1000`, `--features linux-e1000`) |
 
@@ -141,5 +142,5 @@ to the log.
 ## Not supported
 
 GPU acceleration, Bluetooth audio, HD Audio behind an Intel SOF DSP,
-Broadcom/Realtek Wi-Fi, USB Wi-Fi dongles, Thunderbolt
+Broadcom/Realtek Wi-Fi, USB Wi-Fi dongles other than the MT7921AU, Thunderbolt
 tunnelling beyond what firmware sets up, suspend/resume (S3).

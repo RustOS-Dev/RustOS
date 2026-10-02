@@ -7,7 +7,8 @@ switching, ACKs, retransmission, rate scaling, CCMP/GCMP encryption) runs in
 the adapter's firmware; authentication, association and the WPA handshakes
 run in the kernel.
 
-Adapters with Linux drivers (MediaTek MT7921 and others, M29 onwards) use
+Adapters with Linux drivers (MediaTek MT7921 PCIe cards and MT7921AU USB
+adapters, M29/M30 onwards) use
 Linux's 802.11 stack through [LinuxKPI](LINUXKPI.md), with **wpa_supplicant**
 doing the security. `wifi` drives these adapters through wpa_supplicant's
 control socket (`userland/nettools/src/wpa.rs`), starting wpa_supplicant when

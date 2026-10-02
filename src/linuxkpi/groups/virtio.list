@@ -1,0 +1,13 @@
+# Linux's virtio core and PCI transport (M35) for virtio devices without
+# a native RustOS driver (virtio-gpu); native drivers keep theirs.
+module: virtio
+drivers/virtio/virtio.c
+drivers/virtio/virtio_ring.c
+drivers/virtio/virtio_anchor.c
+drivers/virtio/virtio_dma_buf.c
+module: virtio_pci_modern_dev
+drivers/virtio/virtio_pci_modern_dev.c
+module: virtio_pci
+drivers/virtio/virtio_pci_modern.c
+drivers/virtio/virtio_pci_common.c
+drivers/virtio/virtio_pci_admin_legacy_io.c

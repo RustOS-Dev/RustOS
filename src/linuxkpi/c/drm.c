@@ -317,3 +317,28 @@ static int __init kpi_fwfb_init(void)
 }
 /* Before DRM drivers (module_init) probe and evict it. */
 subsys_initcall(kpi_fwfb_init);
+
+int vga_get(struct pci_dev *pdev, unsigned int rsrc, int interruptible)
+{
+	return 0;
+}
+
+void vga_put(struct pci_dev *pdev, unsigned int rsrc)
+{
+}
+
+/* PAT entries as RustOS programs them (src/mm): WB 0, WC PWT, UC- PCD,
+ * UC PCD|PWT. */
+unsigned long cachemode2protval(enum page_cache_mode pcm)
+{
+	switch (pcm) {
+	case _PAGE_CACHE_MODE_WB:
+		return 0;
+	case _PAGE_CACHE_MODE_WC:
+		return _PAGE_PWT;
+	case _PAGE_CACHE_MODE_UC_MINUS:
+		return _PAGE_PCD;
+	default:
+		return _PAGE_PCD | _PAGE_PWT;
+	}
+}

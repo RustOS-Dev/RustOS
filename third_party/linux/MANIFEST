@@ -276,6 +276,20 @@ drivers/gpu/drm/drm_vblank_work.c	MIT	8d87eaad8e7a21029c8eee2252978da1c23b2ac588
 drivers/gpu/drm/drm_vma_manager.c	GPL-2.0 OR MIT	01b94890c38f00e71bc6b71536b460fa855c13d8da204e5414f83085c6c6a210
 drivers/gpu/drm/drm_writeback.c	GPL-2.0	304ac9ff130263fae730adfe880b2e5ac9a932e5b5de38b07a35157d8116278f
 drivers/gpu/drm/tiny/bochs.c	GPL-2.0-or-later	93f5c4bc2811ad1e0961a4e3d5c0410ac4b2336b2bdc96cc2c40802cc439ffe3
+drivers/gpu/drm/virtio/virtgpu_display.c	GPL-2.0-only (untagged, per Linux COPYING)	bbdd93c69e6e40b4de94c40f08d06333adaebeaba8b7ec75ffd87a4cf2623177
+drivers/gpu/drm/virtio/virtgpu_drv.c	GPL-2.0-only (untagged, per Linux COPYING)	0dd024029e411704b4686902fe5bc3d7e3ca70a646acc2f364756929b73830ed
+drivers/gpu/drm/virtio/virtgpu_drv.h	GPL-2.0-only (untagged, per Linux COPYING)	8ec4d577cb83b42868831bfb10876c66244697d922c7e82e3b0f3065f58b84c1
+drivers/gpu/drm/virtio/virtgpu_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	307141a298e767a0df453763e84ba05ec29331424bf4e1753808fc7040391f74
+drivers/gpu/drm/virtio/virtgpu_gem.c	GPL-2.0-only (untagged, per Linux COPYING)	493dd15bf2fea38417eb9dff9360ad154a124aec88a08cca4dfbe1f9b96e6cc2
+drivers/gpu/drm/virtio/virtgpu_ioctl.c	GPL-2.0-only (untagged, per Linux COPYING)	d50a2d3eace4169c3fb76788e046e70856ebd4c9d6818b7a7b2a8c4b7490e5c9
+drivers/gpu/drm/virtio/virtgpu_kms.c	GPL-2.0-only (untagged, per Linux COPYING)	f0f5432f74dea96b4e8a7eb9f9524baaae7f80bfe66db1763a37ba5ff971c7cc
+drivers/gpu/drm/virtio/virtgpu_object.c	GPL-2.0-only (untagged, per Linux COPYING)	0da51d8a7f0ab5065fb010a0cba2c41f1e8d12da49c53e5b4bc25e7158a542e3
+drivers/gpu/drm/virtio/virtgpu_plane.c	GPL-2.0-only (untagged, per Linux COPYING)	0f403831c65082f1a16696dabcf5a9224b11a8a3f6a93f9b2371ff89dce58753
+drivers/gpu/drm/virtio/virtgpu_prime.c	GPL-2.0-only (untagged, per Linux COPYING)	020c324ad104ae243bd8452bde4cba93892e507001f69e4f72eeeeb4507d5b18
+drivers/gpu/drm/virtio/virtgpu_submit.c	MIT	6d5376aab8f4d8c743473a32f9ab679e90cb74f36a04b9fd295cba813ea27e81
+drivers/gpu/drm/virtio/virtgpu_trace.h	GPL-2.0	0f3c8851f7e42743315014d3f9ddfea56b4abfc053305d5f46fd935da45e2ca0
+drivers/gpu/drm/virtio/virtgpu_vq.c	GPL-2.0-only (untagged, per Linux COPYING)	d36834eb2004e581d51ef475677855c1750508da1ca8b72d108ed5bfcae84b94
+drivers/gpu/drm/virtio/virtgpu_vram.c	GPL-2.0	96e8acc6d4be057cb023561f04f5da0b9593679e25213312af0ddb43d676c1b2
 drivers/hid/hid-core.c	GPL-2.0-or-later	3ea596bac1808f7efc3eb892f4be05a7c6f5afcf3d77463b938b7c4580af966d
 drivers/hid/hid-generic.c	GPL-2.0-or-later	78ec96cd1a97fc8b186853e571eef5648866bd3b8c74c9141b374e09318ad93b
 drivers/hid/hid-haptic.h	GPL-2.0-or-later	435229f915e28f572aca5bf6f6430a65cd58cdecb5f7cd557c46878a1afefbaf
@@ -660,6 +674,15 @@ drivers/video/aperture.c	MIT	c397bb5c95c28f95a5c8a5e8481e7394ce3517f43ba1fb93949
 drivers/video/cmdline.c	GPL-2.0	6a98e70f4dde8cf5910f4e93f506ee54521a8e783f59db6e39219e098e93d515
 drivers/video/hdmi.c	GPL-2.0-only (untagged, per Linux COPYING)	ef02c368b974cb24749f4f49ecbb4b7c53f162b48c40f624a70a50acbd399b73
 drivers/video/nomodeset.c	GPL-2.0	b83f40f5a31c9940e41e0f0c1b77787ed1a6c484be8726608562191e46fbff59
+drivers/virtio/virtio.c	GPL-2.0-only	8f8ae249f00194584cd026b5ad706db07998a3cd6b2300757e6104e2057f5a92
+drivers/virtio/virtio_anchor.c	GPL-2.0-only	9d6077f11ea8687127315f27bee8d1837cf4fe0633b667a8192f74da50bc92b5
+drivers/virtio/virtio_dma_buf.c	GPL-2.0-or-later	9ec237e934df0ec7a272a91f7c7528b320f4a0abecf1c3aa36cb0f5596e2afa2
+drivers/virtio/virtio_pci_admin_legacy_io.c	GPL-2.0-only	6e06eecbdef23e1cf8356d59adaaf6fb0a31c97140a2d749a81cee2e1ba614d8
+drivers/virtio/virtio_pci_common.c	GPL-2.0-or-later	9161ff566cd8401d67da5483e8a73ff7e6e8760654f0b1be58b527a07af5da72
+drivers/virtio/virtio_pci_common.h	GPL-2.0-or-later	bb54d2c0bdfa9fbd4326b8b12eeb6170894dd687bdb692f811284c21b08590da
+drivers/virtio/virtio_pci_modern.c	GPL-2.0-or-later	6f14be5f55d2638a6c54848b7aed0dfa5bae4cfb83e4e3186804095aaa83f763
+drivers/virtio/virtio_pci_modern_dev.c	GPL-2.0-or-later	3382268afb5b1b6a3f1368dcb70cc17e99c178cf39a9de148f428e582c5a75d7
+drivers/virtio/virtio_ring.c	GPL-2.0-or-later	5b9f9d087861f5ebfeac96413e7e591e331459bb67298eb422fb8a3a232f96f4
 include/acpi/acbuffer.h	BSD-3-Clause OR GPL-2.0	35ba604ea76c3efb445c815d14047e3d8fefa549145516ab50559a0ec5d90a60
 include/acpi/acconfig.h	BSD-3-Clause OR GPL-2.0	52f9d2ba3e82b6ea809171e47beffcaed79418ea45bf23fdb5060ae43b1460f6
 include/acpi/acexcep.h	BSD-3-Clause OR GPL-2.0	e5d3462825191d92a078d6af1c08be7a501d19498ceb22a24efef4f0dae0785b
@@ -1513,9 +1536,15 @@ include/linux/vga_switcheroo.h	GPL-2.0-only (untagged, per Linux COPYING)	51f6d3
 include/linux/vgaarb.h	MIT	7d820c1ea71ad35c200f3e84ce69c865302913ba52dd932cdbedb589e639fc60
 include/linux/videodev2.h	GPL-2.0-only (untagged, per Linux COPYING)	d5d0052ac951db02e47536335f9267a34c6fda7998af11f4ff98d41e33b2d53e
 include/linux/virtio.h	GPL-2.0	b755225845717db632e06cdd9a0d7f5c9ac7042f18e66a7c814d78504364d8e7
+include/linux/virtio_anchor.h	GPL-2.0	7985f1b780e6eadd8d6ef7a89bd969c44aba5ee53f956f64573031458c211d53
 include/linux/virtio_byteorder.h	GPL-2.0	985eb2e72ce24ea172ec57614d0548712d508c96b9a180c346c927749e98349c
 include/linux/virtio_config.h	GPL-2.0	16cf61ad032dd5a50b5238e2742c554ae8451cafefe9d567db86710b2e9030bc
+include/linux/virtio_dma_buf.h	GPL-2.0	9aa83f0da07d9cf7e5253c51add35eacac85dec814e0c0404d2e440c2147f846
 include/linux/virtio_features.h	GPL-2.0	2e564e6e24e21d79e82d93d14cf50114f0cc0f7f8f9ffbbe98d8c88e84391ca3
+include/linux/virtio_pci_admin.h	GPL-2.0	9b7898dd1fa7d197decc35a0b847bc639605a2e989019a115b017ce0d8d02399
+include/linux/virtio_pci_legacy.h	GPL-2.0	a5fd7fc1085f2e9d3e90aa93aad4147732f6042465066bdae23e4ac7f6cf1cb3
+include/linux/virtio_pci_modern.h	GPL-2.0	b187dd0991499dfd0cd9376283873ae6d9224e9a69889ed47b3f7316de2b4883
+include/linux/virtio_ring.h	GPL-2.0	f8414b3b9ce56e19e7eeacbead9e5a2464f4ba65f67e0aab37980a966c2803f7
 include/linux/vm_event_item.h	GPL-2.0	77a72ded28f757b54011220d01df9dc77edb84a94523ee87ea5be22221f8e2e5
 include/linux/vmalloc.h	GPL-2.0	f67e60caae71ebbd199c38c4935530fd730eb734bb0542be01d46afa42eb026d
 include/linux/vmpressure.h	GPL-2.0	29f54d6dfb43d5b7f3de3d4f724134308b28881dd4eb0eb6019c5c3a43b387d2
@@ -1744,6 +1773,7 @@ include/uapi/asm-generic/types.h	GPL-2.0 WITH Linux-syscall-note	e768a8355242ccf
 include/uapi/drm/drm.h	GPL-2.0-only (untagged, per Linux COPYING)	9adac9567a18a234770d98a31c6c505a18e2db02fb0eca596730314d86a46549
 include/uapi/drm/drm_fourcc.h	GPL-2.0-only (untagged, per Linux COPYING)	d521522ed871d67578e0eb9682541d49041e3dc3f5b1aafac6f3ba9e6cf9c566
 include/uapi/drm/drm_mode.h	GPL-2.0-only (untagged, per Linux COPYING)	40b502fee0f74fe46366afd7a744e7e125580d55a86167dca3592a7cef009754
+include/uapi/drm/virtgpu_drm.h	GPL-2.0-only (untagged, per Linux COPYING)	3fb60f5131574dd1fb4aff3e10a45448fa67fe10796e0cf21c6ee583eb996cbd
 include/uapi/linux/aio_abi.h	GPL-2.0-only (untagged, per Linux COPYING)	1f149322eeb746481527a6627e2432ea384c78dee0ee309797d27886e638d352
 include/uapi/linux/audit.h	GPL-2.0+ WITH Linux-syscall-note	9d906005bd35b90266e68a80c1677f375009c2f72fd796d6655cec62fd9818f0
 include/uapi/linux/auxvec.h	GPL-2.0 WITH Linux-syscall-note	8dadb9bdd5f00bbcbb6439086f5a9d429b4eff457a61b11ce08941d1dd8d60fa
@@ -1910,7 +1940,10 @@ include/uapi/linux/v4l2-subdev.h	GPL-2.0 WITH Linux-syscall-note	dc48ccfdf583fa4
 include/uapi/linux/vesa.h	GPL-2.0 WITH Linux-syscall-note	3f7e96dafaf2c5eebf5b63f2e0e00157ae6817213983056c4006205754d09067
 include/uapi/linux/videodev2.h	((GPL-2.0+ WITH Linux-syscall-note) OR BSD-3-Clause)	1d48da8fa2db7930bff2e6d75c8f32489eabb153ff4ef25a8985453a51158910
 include/uapi/linux/virtio_config.h	GPL-2.0-only (untagged, per Linux COPYING)	00291a2835f3011b420077c8bddb5bfacfc65b982a8c85e29d5574dee8913ebd
+include/uapi/linux/virtio_gpu.h	GPL-2.0-only (untagged, per Linux COPYING)	1665b49e5a886e54df1af97266763eef90f37ed2d24dfdc1274ed5a015df1a3f
 include/uapi/linux/virtio_ids.h	GPL-2.0-only (untagged, per Linux COPYING)	e9957fd3ce022c978b4d06e6e222e74d9cb4697d17cda4001608b635c9516c0f
+include/uapi/linux/virtio_pci.h	GPL-2.0-only (untagged, per Linux COPYING)	da0a0393323c95b3e4e0404f113944c392fc644031b177fae283ddc752e34545
+include/uapi/linux/virtio_ring.h	GPL-2.0-only (untagged, per Linux COPYING)	57fd059ebd45422fce646bc81d9c6a148f6d9dc15354573f389d53264dec193c
 include/uapi/linux/virtio_types.h	GPL-2.0-only (untagged, per Linux COPYING)	3a6bf6debdb7873b234ca57693a61a77b6b43c68b90d60bfc14ae5fcce5d6d09
 include/uapi/linux/wireless.h	GPL-2.0 WITH Linux-syscall-note	e1e430ccbd3be73efc5cd224815606c26ef59a373c269a3a2946de1d1d40f585
 include/uapi/linux/xattr.h	GPL-2.0 WITH Linux-syscall-note	d32560f914b4b70448b980cb774181e03af9824a0c65acbfe628a51af0813b89

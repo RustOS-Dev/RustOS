@@ -920,3 +920,16 @@ void *gen_pool_dma_alloc_align(struct gen_pool *pool, size_t size, dma_addr_t *d
 void gen_pool_free_owner(struct gen_pool *pool, unsigned long addr, size_t size, void **owner)
 {
 }
+
+long strncpy_from_user(char *dst, const char __user *src, long count)
+{
+	long i;
+
+	for (i = 0; i < count; i++) {
+		if (copy_from_user(dst + i, src + i, 1))
+			return -EFAULT;
+		if (!dst[i])
+			return i;
+	}
+	return count;
+}

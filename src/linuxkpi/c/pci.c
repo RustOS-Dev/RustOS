@@ -1271,3 +1271,62 @@ const struct pci_device_id *pci_match_id(const struct pci_device_id *ids, struct
 	}
 	return NULL;
 }
+
+/* --------------------------------------------- more PCI (M35 virtio) */
+
+void __iomem *pci_iomap_range(struct pci_dev *dev, int bar, unsigned long offset,
+			      unsigned long maxlen)
+{
+	unsigned long len = pci_resource_len(dev, bar);
+
+	if (len <= offset || !len)
+		return NULL;
+	len -= offset;
+	if (maxlen && len > maxlen)
+		len = maxlen;
+	if (pci_resource_flags(dev, bar) & IORESOURCE_IO)
+		return ioport_map(pci_resource_start(dev, bar) + offset, len);
+	return ioremap(pci_resource_start(dev, bar) + offset, len);
+}
+
+u8 pci_find_next_capability(struct pci_dev *dev, u8 pos, int cap)
+{
+	u8 id;
+	int ttl = 48;
+
+	pci_read_config_byte(dev, pos + PCI_CAP_LIST_NEXT, &pos);
+	while (ttl-- && pos >= 0x40) {
+		pos &= ~3;
+		pci_read_config_byte(dev, pos + PCI_CAP_LIST_ID, &id);
+		if (id == 0xff)
+			break;
+		if (id == cap)
+			return pos;
+		pci_read_config_byte(dev, pos + PCI_CAP_LIST_NEXT, &pos);
+	}
+	return 0;
+}
+
+int pci_alloc_irq_vectors_affinity(struct pci_dev *dev, unsigned int min_vecs,
+				   unsigned int max_vecs, unsigned int flags,
+				   struct irq_affinity *affd)
+{
+	return pci_alloc_irq_vectors(dev, min_vecs, max_vecs, flags);
+}
+
+const struct cpumask *pci_irq_get_affinity(struct pci_dev *pdev, int vec)
+{
+	return NULL;
+}
+
+/* MMIO and other device resources: bus address = physical address. */
+dma_addr_t dma_map_resource(struct device *dev, phys_addr_t phys_addr, size_t size,
+			    enum dma_data_direction dir, unsigned long attrs)
+{
+	return phys_addr;
+}
+
+void dma_unmap_resource(struct device *dev, dma_addr_t addr, size_t size,
+			enum dma_data_direction dir, unsigned long attrs)
+{
+}

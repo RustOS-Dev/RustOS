@@ -72,7 +72,11 @@ firmware framebuffer is an aperture owner, as Linux's sysfb devices are:
 when a DRM driver takes the display, RustOS stops drawing its console
 there (text continues on the serial port; M35.3 moves the console onto
 DRM). `drmtest` (rbox) exercises the KMS API; the `drm-bochs` scenario
-checks the result with a QEMU screendump.
+checks the result with a QEMU screendump. virtio-gpu runs on Linux's
+virtio core and PCI transport (`linux-drm-virtio`, in release images),
+which take only virtio devices without a native RustOS driver; the
+`drm-virtio` scenario is the same test on QEMU's virtio-gpu-pci (2D; no
+virgl).
 
 M34: Linux sound (`--features linux-sound`, in release images in place of
 the native HDA and USB audio drivers): the ALSA core with OSS emulation,

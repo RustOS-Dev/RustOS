@@ -29,6 +29,7 @@ const FEATURES: &[(&str, &[&str])] = &[
     ("LINUX_SOUND", &["regmap", "sound", "hda", "sndusb"]),
     ("LINUX_DRM", &["dmabuf", "drm"]),
     ("LINUX_DRM_BOCHS", &["bochs"]),
+    ("LINUX_DRM_VIRTIO", &["virtio", "virtiogpu"]),
     ("LINUX_PHY", &["phy"]),
     ("LINUX_ETH", &["eth"]),
     ("LINUX_MT7921", &["mt7921", "mt7921u"]),

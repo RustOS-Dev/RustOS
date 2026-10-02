@@ -1,0 +1,8 @@
+# DMA buffer sharing (M33 for videobuf2; M35 for DRM): dma-buf objects,
+# fences and reservation objects.
+drivers/dma-buf/dma-buf.c
+drivers/dma-buf/dma-fence.c
+drivers/dma-buf/dma-fence-array.c
+drivers/dma-buf/dma-fence-chain.c
+drivers/dma-buf/dma-fence-unwrap.c
+drivers/dma-buf/dma-resv.c

@@ -840,9 +840,21 @@ pub fn stty(args: &[String]) -> i32 {
             "speed {} baud; cs{}{}{}{}",
             speed,
             bits,
-            if t.lflag & 0o10 != 0 { " echo" } else { " -echo" },
-            if t.lflag & 0o2 != 0 { " icanon" } else { " -icanon" },
-            if t.cflag & 0o20000000000 != 0 { " crtscts" } else { "" }
+            if t.lflag & 0o10 != 0 {
+                " echo"
+            } else {
+                " -echo"
+            },
+            if t.lflag & 0o2 != 0 {
+                " icanon"
+            } else {
+                " -icanon"
+            },
+            if t.cflag & 0o20000000000 != 0 {
+                " crtscts"
+            } else {
+                ""
+            }
         );
         return 0;
     }

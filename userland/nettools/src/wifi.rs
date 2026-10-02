@@ -175,7 +175,9 @@ fn connect(
 ) -> bool {
     let started = if native(iface) {
         if eap.is_some() {
-            Err(String::from("802.1X (--eap) needs a Linux driver (wpa_supplicant)"))
+            Err(String::from(
+                "802.1X (--eap) needs a Linux driver (wpa_supplicant)",
+            ))
         } else {
             let mut s = ssid.as_bytes().to_vec();
             request(iface, WIFI_CONNECT, &mut s, pass.as_bytes()).map_err(|e| format!("{}", e))

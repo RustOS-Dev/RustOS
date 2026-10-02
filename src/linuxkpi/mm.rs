@@ -147,3 +147,26 @@ extern "C" fn rustos_kpi_copy_to_user(to: u64, from: *const u8, n: usize) -> usi
         Err(_) => n,
     }
 }
+
+/// Physical address of kernel virtual address `virt` (0 if unmapped).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_virt_to_phys(virt: u64) -> u64 {
+    mm::virt_to_phys(virt).unwrap_or(0)
+}
+
+/// Map `count` frames (physical addresses) at consecutive addresses.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_vmap(phys: *const u64, count: u64) -> *mut u8 {
+    if phys.is_null() || count == 0 {
+        return core::ptr::null_mut();
+    }
+    let frames = unsafe { core::slice::from_raw_parts(phys, count as usize) };
+    mm::map_frames(frames).map_or(core::ptr::null_mut(), |v| v as *mut u8)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_vunmap(virt: *const u8, count: u64) {
+    if !virt.is_null() {
+        mm::unmap_frames(virt as u64, count as usize);
+    }
+}

@@ -964,6 +964,13 @@ void dma_unmap_sg_attrs(struct device *dev, struct scatterlist *sg, int nents,
 {
 }
 
+int dma_map_sgtable(struct device *dev, struct sg_table *sgt, enum dma_data_direction dir,
+		    unsigned long attrs)
+{
+	sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents, dir, attrs);
+	return 0;
+}
+
 /* ------------------------------------------------ more PCI (M32 drivers) */
 
 /* One interrupt vector per device (MSI or INTx): MSI-X requests fail and

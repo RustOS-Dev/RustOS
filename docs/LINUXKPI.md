@@ -63,6 +63,19 @@ devices, so the chain is compiled but untested on hardware. The
 `_CRS` conversion and a GPIO-style domain with a one-shot thread. Intel LPSS
 I2C (intel-lpss PCI) and Intel pin controllers are not imported yet.
 
+M33: webcams through Linux's media controller, V4L2 core, videobuf2
+(vmalloc buffers) and uvcvideo (`--features linux-video`, in release
+images): `/dev/videoN` and `/dev/mediaN`. Buffers map into user space page
+by page (`remap_vmalloc_range`). dma-buf is imported for videobuf2 and for
+DRM later; dma-buf files carry a pseudo-filesystem dentry, so buffers are
+freed on their last close as in Linux. The LinuxKPI USB core now carries
+isochronous URBs: each packet is an xHCI isochronous TD, with up to four
+URBs queued per endpoint and per-packet lengths and status reported back.
+For isochronous IN, the xHCI driver now counts the bytes received.
+QEMU has no USB camera, so uvcvideo is untested on hardware. `vgrab`
+(rbox) captures frames, and `hwcheck webcam` runs it. User-pointer
+buffers (V4L2_MEMORY_USERPTR) are not supported.
+
 M30: the LinuxKPI USB core runs Linux USB drivers on RustOS's xHCI driver
 (`--features linux-usb`). Linux's `usbnet` with `cdc_ether` and
 `rndis_host` drives QEMU's `usb-net` behind `--features linux-usbnet`

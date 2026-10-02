@@ -304,6 +304,34 @@ pub fn unmap_mmio(virt: u64, size: usize) {
     });
 }
 
+/// Map existing frames (write-back) at consecutive kernel addresses, as
+/// Linux's vmap(); undo with `unmap_frames`.
+pub fn map_frames(frames: &[u64]) -> Option<u64> {
+    let n = frames.len() as u64;
+    let virt = x86_64::instructions::interrupts::without_interrupts(|| {
+        MMIO_VA.lock().alloc((n + 1) * FRAME_SIZE)
+    })?;
+    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+    with_mapper(|m| {
+        for (i, &phys) in frames.iter().enumerate() {
+            let page =
+                Page::<Size4KiB>::containing_address(VirtAddr::new(virt + i as u64 * FRAME_SIZE));
+            let frame = PhysFrame::containing_address(PhysAddr::new(phys));
+            unsafe {
+                m.map_to(page, frame, flags, &mut GlobalFrames)
+                    .expect("map_frames")
+                    .flush();
+            }
+        }
+    });
+    Some(virt)
+}
+
+/// Remove a `map_frames` mapping of `count` frames (the frames stay).
+pub fn unmap_frames(virt: u64, count: usize) {
+    unmap_mmio(virt, count * FRAME_SIZE as usize);
+}
+
 /// Map fresh zeroed frames at `virt..virt+size` in the kernel address space.
 pub fn map_kernel_pages(
     virt: u64,

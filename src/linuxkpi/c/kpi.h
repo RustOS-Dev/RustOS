@@ -20,6 +20,9 @@ void rustos_kpi_free_frames(u64 phys, u64 count);
 void *rustos_kpi_vmalloc(u64 size);
 void rustos_kpi_vfree(const void *addr);
 int rustos_kpi_is_vmalloc(const void *addr);
+u64 rustos_kpi_virt_to_phys(u64 virt);
+void *rustos_kpi_vmap(const u64 *phys, u64 count);
+void rustos_kpi_vunmap(const void *virt, u64 count);
 void *rustos_kpi_ioremap(u64 phys, u64 size, int wc);
 void rustos_kpi_iounmap(void *addr);
 
@@ -163,8 +166,11 @@ int rustos_kpi_netlink_has_listeners(u32 proto, u32 group);
 /* USB (src/linuxkpi/usb.rs). Endpoints are addresses (bit 7: IN); 0 is
  * the control endpoint, whose URBs carry `setup`. Errors are -errno. */
 int rustos_kpi_usb_control(u64 handle, const u8 *setup, void *data, u32 timeout_ms);
+/* Isochronous URBs pass their struct usb_iso_packet_descriptor array,
+ * whose actual_length and status RustOS fills in. */
 int rustos_kpi_usb_submit(u64 handle, u8 ep, void *buf, u32 len, const u8 *setup,
-			  int zero_packet, void *urb);	/* completes via kpi_usb_complete() */
+			  int zero_packet, void *iso, u32 npackets,
+			  void *urb);	/* completes via kpi_usb_complete() */
 int rustos_kpi_usb_cancel(u64 handle, u8 ep, void *urb);
 int rustos_kpi_usb_clear_halt(u64 handle, u8 ep);
 int rustos_kpi_usb_set_interface(u64 handle, u32 ifnum, u32 alt, int select);

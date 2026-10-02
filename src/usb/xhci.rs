@@ -767,7 +767,7 @@ impl Xhci {
         let mut moved = 0usize;
         let data_len = |i: usize| -> usize {
             let t = (trbs[i].2 >> 10) & 0x3F;
-            if t == TRB_NORMAL || t == TRB_DATA {
+            if t == TRB_NORMAL || t == TRB_DATA || t == TRB_ISOCH {
                 (trbs[i].1 & 0x1_FFFF) as usize
             } else {
                 0

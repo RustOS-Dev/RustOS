@@ -99,3 +99,9 @@ int __weak gpiod_to_irq(const struct gpio_desc *desc)
 void __weak gpiod_toggle_active_low(struct gpio_desc *desc)
 {
 }
+
+struct gpio_desc *__weak devm_gpiod_get_optional(struct device *dev, const char *con_id,
+						 enum gpiod_flags flags)
+{
+	return NULL;
+}

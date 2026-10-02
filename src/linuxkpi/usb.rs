@@ -44,6 +44,9 @@ struct Req {
     len: usize,
     setup: Option<[u8; 8]>,
     zero_packet: bool,
+    /// Isochronous: the URB's packet descriptors ([`IsoPacket`]).
+    iso: usize,
+    npackets: usize,
 }
 
 struct EpWorker {
@@ -278,6 +281,8 @@ extern "C" fn rustos_kpi_usb_submit(
     len: u32,
     setup: *const u8,
     zero_packet: c_int,
+    iso: *mut c_void,
+    npackets: u32,
     ctx: *mut c_void,
 ) -> c_int {
     let Some(d) = dev(handle) else {
@@ -303,8 +308,11 @@ extern "C" fn rustos_kpi_usb_submit(
                     stop: AtomicBool::new(false),
                 });
                 let (w2, d2) = (w.clone(), d.clone());
-                sched::spawn(&alloc::format!("usb-ep{:02x}", ep), move || {
-                    worker(d2, ep, w2)
+                let iso_ep =
+                    endpoint(&d.usb, ep).filter(|e| e.transfer_type() == TransferType::Isochronous);
+                sched::spawn(&alloc::format!("usb-ep{:02x}", ep), move || match iso_ep {
+                    Some(e) => iso_worker(d2, w2, e),
+                    None => worker(d2, ep, w2),
                 });
                 w
             })
@@ -317,6 +325,8 @@ extern "C" fn rustos_kpi_usb_submit(
         setup,
         zero_packet: zero_packet != 0,
         cancelled: false,
+        iso: iso as usize,
+        npackets: if iso.is_null() { 0 } else { npackets as usize },
     });
     w.wq.wake_all();
     0
@@ -434,5 +444,134 @@ fn run(usb: &UsbDevice, ep: u8, r: &Req, w: &EpWorker) -> (c_int, usize) {
             let _ = usb.transfer(&e, &buf, 0, Some(5000));
         }
         (0, n)
+    }
+}
+
+/// A packet of an isochronous URB: Linux's struct usb_iso_packet_descriptor.
+#[repr(C)]
+struct IsoPacket {
+    offset: u32,
+    length: u32,
+    actual: u32,
+    status: i32,
+}
+
+/// Isochronous URBs kept on the controller at once, so the stream has no
+/// gaps between them.
+const ISO_DEPTH: usize = 4;
+
+/// An isochronous URB whose packets are queued.
+struct IsoUrb {
+    req: Req,
+    buf: DmaBuffer,
+    tds: Vec<Option<crate::usb::xhci::Td>>,
+}
+
+fn iso_submit(usb: &UsbDevice, e: &Endpoint, r: Req) -> Result<IsoUrb, (Req, c_int)> {
+    let Some(mut buf) = DmaBuffer::new(r.len.max(1)) else {
+        return Err((r, errno(ENOMEM)));
+    };
+    if !e.is_in() && r.len > 0 {
+        buf.as_mut_slice()[..r.len]
+            .copy_from_slice(unsafe { core::slice::from_raw_parts(r.buf as *const u8, r.len) });
+    }
+    let pkts = unsafe { core::slice::from_raw_parts_mut(r.iso as *mut IsoPacket, r.npackets) };
+    let mut tds = Vec::with_capacity(pkts.len());
+    for p in pkts.iter_mut() {
+        p.actual = 0;
+        p.status = 0;
+        let td = if p.length == 0 || (p.offset + p.length) as usize > r.len {
+            None
+        } else {
+            match usb.submit_isoch(e, &buf, p.offset as usize, p.length as usize) {
+                Ok(td) => Some(td),
+                Err(err) => {
+                    p.status = errno(err);
+                    None
+                }
+            }
+        };
+        tds.push(td);
+    }
+    Ok(IsoUrb { req: r, buf, tds })
+}
+
+/// Wait for an isochronous URB's packets; fills in each packet's result
+/// and returns the bytes moved.
+fn iso_finish(usb: &UsbDevice, e: &Endpoint, u: &mut IsoUrb) -> usize {
+    let pkts =
+        unsafe { core::slice::from_raw_parts_mut(u.req.iso as *mut IsoPacket, u.req.npackets) };
+    let mut total = 0;
+    for (p, td) in pkts.iter_mut().zip(u.tds.iter()) {
+        let Some(td) = td else { continue };
+        // Packets complete in their (micro)frame whatever the device does;
+        // the timeout only guards against a stuck endpoint.
+        let res = usb.wait(td, Some(1000));
+        if res == Err(ETIMEDOUT) {
+            usb.cancel(td);
+        }
+        match res {
+            Ok(n) => {
+                let n = n.min(p.length as usize);
+                p.actual = n as u32;
+                if e.is_in() && n > 0 {
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(
+                            u.buf.as_slice().as_ptr().add(p.offset as usize),
+                            (u.req.buf as *mut u8).add(p.offset as usize),
+                            n,
+                        )
+                    };
+                }
+                total += n;
+            }
+            Err(ECANCELED) | Err(ENODEV) => p.status = -(ESHUTDOWN.0),
+            Err(err) => p.status = errno(err),
+        }
+    }
+    total
+}
+
+/// Worker for an isochronous endpoint: up to ISO_DEPTH URBs queued on
+/// the controller; each is given back when its last packet is done.
+/// Unlinking stops further submission; packets already queued finish.
+fn iso_worker(d: Arc<Dev>, w: Arc<EpWorker>, e: Endpoint) {
+    let mut inflight: VecDeque<IsoUrb> = VecDeque::new();
+    loop {
+        while inflight.len() < ISO_DEPTH && !w.stop.load(Ordering::SeqCst) {
+            let Some(r) = w.queue.lock().pop_front() else {
+                break;
+            };
+            if r.cancelled {
+                unsafe { kpi_usb_complete(r.ctx as *mut c_void, -(ENOENT.0), 0) };
+                continue;
+            }
+            match iso_submit(&d.usb, &e, r) {
+                Ok(u) => inflight.push_back(u),
+                Err((r, status)) => unsafe { kpi_usb_complete(r.ctx as *mut c_void, status, 0) },
+            }
+        }
+        let Some(mut u) = inflight.pop_front() else {
+            w.wq.wait_until(|| w.stop.load(Ordering::SeqCst) || !w.queue.lock().is_empty());
+            if w.stop.load(Ordering::SeqCst) {
+                let left: Vec<Req> = w.queue.lock().drain(..).collect();
+                for r in left {
+                    unsafe { kpi_usb_complete(r.ctx as *mut c_void, -(ESHUTDOWN.0), 0) };
+                }
+                return;
+            }
+            continue;
+        };
+        *w.current.lock() = Some(u.req.ctx);
+        let n = iso_finish(&d.usb, &e, &mut u);
+        *w.current.lock() = None;
+        let status = if w.stop.load(Ordering::SeqCst) {
+            -(ESHUTDOWN.0)
+        } else if w.cancel.swap(false, Ordering::SeqCst) {
+            -(ENOENT.0)
+        } else {
+            0
+        };
+        unsafe { kpi_usb_complete(u.req.ctx as *mut c_void, status, n as u32) };
     }
 }

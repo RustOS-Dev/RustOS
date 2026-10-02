@@ -8,6 +8,7 @@
 
 extern crate alloc;
 
+mod bluetooth;
 mod files;
 mod fsutil;
 mod hash;
@@ -15,10 +16,10 @@ mod hw;
 mod input;
 mod login;
 mod regex;
-mod bluetooth;
 mod sound;
 mod sys;
 mod text;
+mod video;
 
 use rustos_rt::fs;
 use rustos_rt::prelude::*;
@@ -50,6 +51,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("echo", text::echo),
     ("env", sys::env),
     ("evtest", input::evtest),
+    ("vgrab", video::vgrab),
     ("fallocate", fsutil::fallocate),
     ("false", |_| 1),
     ("fgconsole", sys::fgconsole),

@@ -48,6 +48,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
 | Serial adapters: Linux `usb-serial` with `ftdi_sio`, `cp210x`, `ch341`, `pl2303`, `option` (3G/LTE modems), and `cdc_acm` (`/dev/ttyUSB*`, `/dev/ttyACM*`), in release images | CI (`usb-serial`: FTDI on QEMU `usb-serial`, data both ways, `stty`, unplug); others compiled |
 | HID devices through Linux HID core (`hid-generic`, `hid-multitouch`, vendor quirk drivers) and the Linux input core, as `/dev/input/eventN`, in release images; USB HID stays native unless built with `linux-usbhid` | CI (`usb-hid-linux`: QEMU `usb-kbd` + `usb-tablet` on Linux usbhid); I2C-HID touchpads on AMD laptops (DesignWare I2C AMDI0010, AMD GPIO AMDI0030): compiled, untested on hardware; Intel LPSS not yet |
+| Webcams: Linux uvcvideo (USB Video Class, isochronous and bulk) with V4L2/videobuf2, `/dev/videoN`, in release images | compiled, untested on hardware (`hwcheck webcam`, `vgrab`); no QEMU camera |
 | Linux USB drivers through the LinuxKPI USB core (`linux-usb`) | CI (`usb-net` with Linux usbnet) |
 | Ethernet: Linux `usbnet` with `cdc_ether`, `rndis_host`, `cdc_ncm` (`--features linux-usbnet`, in release images instead of the native CDC ECM/RNDIS driver) | CI (`eth-usb-linux`, `eth-usb-linux-rndis`); NCM compiled |
 

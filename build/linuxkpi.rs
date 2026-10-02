@@ -25,6 +25,7 @@ const FEATURES: &[(&str, &[&str])] = &[
     ("LINUX_HID", &["input", "hid", "i2chid"]),
     ("LINUX_USBHID", &["usbhid"]),
     ("LINUX_PLATFORM", &["gpio", "i2cplat"]),
+    ("LINUX_VIDEO", &["dmabuf", "media", "uvc"]),
     ("LINUX_PHY", &["phy"]),
     ("LINUX_ETH", &["eth"]),
     ("LINUX_MT7921", &["mt7921", "mt7921u"]),

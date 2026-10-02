@@ -156,13 +156,13 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 - [ ] **M32** Ethernet coverage: r8152, usbnet family, igb, alx, tg3, atlantic, Linux r8169/e1000e/igc
   - [x] Linux igb in QEMU (`eth-igb`); e1000e, igc, alx, tg3, atlantic, r8169 (+ phylib, Realtek PHY), r8152, ASIX, ipheth compiled into release images; their firmware ships
   - [ ] hardware: `hwcheck ethernet` on each family (compiled, untested on hardware)
-- [ ] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware
+- [x] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware
   - [x] USB serial (usb-serial, ftdi_sio, cp210x, ch341, pl2303, option, cdc-acm) on RustOS terminals (`usb-serial`); `stty`
   - [x] SD/MMC: Linux MMC core + sdhci-pci/sdhci-acpi, cards as `mmcblkN` (`sdcard`)
   - [x] Linux input core + HID core (hid-generic, hid-multitouch, quirk drivers), i2c-hid core; Linux usbhid behind `linux-usbhid` (`usb-hid-linux`)
   - [x] ACPI platform devices, IRQ domains, gpiolib + pinctrl-amd, DesignWare I2C, i2c-core-acpi: I2C-HID touchpads on AMD (compiled, untested on hardware; `acpi-platform`)
   - [ ] Intel LPSS I2C and Intel pin controllers
-  - [ ] UVC webcams (V4L2, videobuf2, uvcvideo)
+  - [x] UVC webcams (media controller, V4L2, videobuf2, uvcvideo), isochronous URBs in the LinuxKPI USB core, xHCI isochronous IN; `vgrab`, `hwcheck webcam` (untested on hardware)
   - [x] Realtek (btrtl) and Broadcom (btbcm) Bluetooth firmware loading in btusb; rtl_bt firmware ships (untested on hardware)
 - [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
 - [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu

@@ -71,7 +71,11 @@ impl Ctrl {
     pub fn ok(&self, cmd: &str) -> Result<(), String> {
         match self.request(cmd) {
             Ok(r) if r.trim() == "OK" => Ok(()),
-            Ok(r) => Err(format!("{}: {}", cmd.split(' ').next().unwrap_or(cmd), r.trim())),
+            Ok(r) => Err(format!(
+                "{}: {}",
+                cmd.split(' ').next().unwrap_or(cmd),
+                r.trim()
+            )),
             Err(e) => Err(format!("{}", e)),
         }
     }
@@ -93,16 +97,7 @@ pub fn ensure(iface: &str) -> Result<Ctrl, String> {
     );
     rustos_rt::fs::write(&conf, text.as_bytes()).map_err(|e| format!("{}: {}", conf, e))?;
     let log = format!("/var/log/wpa_supplicant-{}.log", iface);
-    match rustos_rt::process::run(&[
-        "wpa_supplicant",
-        "-B",
-        "-i",
-        iface,
-        "-c",
-        &conf,
-        "-f",
-        &log,
-    ]) {
+    match rustos_rt::process::run(&["wpa_supplicant", "-B", "-i", iface, "-c", &conf, "-f", &log]) {
         Ok(0) => {}
         Ok(rc) => return Err(format!("wpa_supplicant exited with {} (see {})", rc, log)),
         Err(e) => return Err(format!("cannot start wpa_supplicant: {}", e)),

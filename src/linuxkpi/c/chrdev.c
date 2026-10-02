@@ -22,6 +22,9 @@
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/poll.h>
+#include <linux/pseudo_fs.h>
+#include <linux/fs_context.h>
+#include <linux/mount.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include "kpi.h"
@@ -106,7 +109,16 @@ static void kpi_file_release(struct file *file)
 		kfree(e);
 	}
 	if (file->f_op && file->f_op->release)
-		file->f_op->release(&kf->inode, file);
+		file->f_op->release(file->f_inode, file);
+	if (file->f_path.dentry) {
+		/* alloc_file_pseudo(): the dentry and inode go with the file. */
+		struct dentry *d = file->f_path.dentry;
+
+		if (d->d_op && d->d_op->d_release)
+			d->d_op->d_release(d);
+		iput(d->d_inode);
+		kfree(d);
+	}
 	kfree(kf);
 }
 
@@ -316,6 +328,7 @@ struct kpi_vma {
 	pgprot_t prot;
 	bool remapped;
 	bool inserted;
+	void *vmalloc_base;	/* remap_vmalloc_range(): pages looked up on fault */
 };
 
 static struct kpi_vma *to_kv(struct vm_area_struct *vma)
@@ -345,6 +358,17 @@ int remap_pfn_range(struct vm_area_struct *vma, unsigned long addr, unsigned lon
 	kv->pfn = pfn;
 	kv->prot = prot;
 	kv->remapped = true;
+	return 0;
+}
+
+/* vmalloc memory is physically scattered: its pages are mapped as user
+ * space touches them (kpi_vma_fault). */
+int remap_vmalloc_range(struct vm_area_struct *vma, void *addr, unsigned long pgoff)
+{
+	if (!is_vmalloc_addr(addr) || !PAGE_ALIGNED(addr))
+		return -EINVAL;
+	to_kv(vma)->vmalloc_base = addr + (pgoff << PAGE_SHIFT);
+	vm_flags_set(vma, VM_DONTEXPAND | VM_DONTDUMP);
 	return 0;
 }
 
@@ -390,6 +414,15 @@ int vm_insert_page(struct vm_area_struct *vma, unsigned long addr, struct page *
  * *phys, *cache) or 2 (faulting: *handle for kpi_vma_fault/close), or a
  * negative errno.
  */
+/*
+ * The address space every driver-visible vma claims (there is no Linux
+ * mm). Its mmap lock reads as write-held and its lock sequence matches
+ * new vmas', so vm_flags_set() and friends find the vma write-locked.
+ */
+static struct mm_struct kpi_vma_mm = {
+	.mmap_lock = { .count = ATOMIC_LONG_INIT(RWSEM_WRITER_LOCKED) },
+};
+
 int kpi_file_mmap(struct file *file, u64 off, u64 len, u32 prot, int *kind, u64 *phys,
 		  int *cache, void **handle)
 {
@@ -401,6 +434,7 @@ int kpi_file_mmap(struct file *file, u64 off, u64 len, u32 prot, int *kind, u64 
 	kv = kzalloc(sizeof(*kv), GFP_KERNEL);
 	if (!kv)
 		return -ENOMEM;
+	kv->vma.vm_mm = &kpi_vma_mm;
 	kv->vma.vm_start = 0x100000000000UL;	/* a nominal user address */
 	kv->vma.vm_end = kv->vma.vm_start + PAGE_ALIGN(len);
 	kv->vma.vm_pgoff = off >> PAGE_SHIFT;
@@ -424,7 +458,9 @@ int kpi_file_mmap(struct file *file, u64 off, u64 len, u32 prot, int *kind, u64 
 		kfree(kv);
 		return 0;
 	}
-	if (!kv->vma.vm_ops || !kv->vma.vm_ops->fault) {
+	if (!kv->vmalloc_base && (!kv->vma.vm_ops || !kv->vma.vm_ops->fault)) {
+		if (kv->vma.vm_ops && kv->vma.vm_ops->close)
+			kv->vma.vm_ops->close(&kv->vma);
 		fput(file);
 		kfree(kv);
 		return -ENODEV;
@@ -446,6 +482,15 @@ int kpi_vma_fault(void *handle, u64 pgoff, int write, u64 *phys, int *cache)
 	};
 	vm_fault_t r;
 
+	if (kv->vmalloc_base) {
+		u64 off = (pgoff - kv->vma.vm_pgoff) << PAGE_SHIFT;
+
+		if (off >= kv->vma.vm_end - kv->vma.vm_start)
+			return -EFAULT;
+		*phys = rustos_kpi_virt_to_phys((u64)kv->vmalloc_base + off);
+		*cache = 2;
+		return *phys ? 0 : -EFAULT;
+	}
 	kv->inserted = false;
 	r = kv->vma.vm_ops->fault(&vmf);
 	if (r & VM_FAULT_ERROR)
@@ -818,4 +863,112 @@ int simple_attr_open(struct inode *inode, struct file *file, int (*get)(void *, 
 int simple_attr_release(struct inode *inode, struct file *file)
 {
 	return 0;
+}
+
+/* -------------------------------------------- pseudo filesystems (dma-buf) */
+
+struct kpi_pseudo {
+	struct super_block sb;
+	struct vfsmount mnt;
+	struct pseudo_fs_context ctx;
+};
+
+struct pseudo_fs_context *init_pseudo(struct fs_context *fc, unsigned long magic)
+{
+	struct kpi_pseudo *p = fc->fs_private;
+
+	p->ctx.magic = magic;
+	return &p->ctx;
+}
+
+/* An internal filesystem's mount: its superblock carries the default
+ * dentry operations of its files. */
+struct vfsmount *kern_mount(struct file_system_type *type)
+{
+	struct kpi_pseudo *p = kzalloc(sizeof(*p), GFP_KERNEL);
+	struct fs_context fc = { .fs_type = type };
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	fc.fs_private = p;
+	if (type->init_fs_context && type->init_fs_context(&fc)) {
+		kfree(p);
+		return ERR_PTR(-ENOMEM);
+	}
+	p->sb.s_type = type;
+	p->sb.s_magic = p->ctx.magic;
+	p->sb.__s_d_op = p->ctx.dops;
+	p->mnt.mnt_sb = &p->sb;
+	return &p->mnt;
+}
+
+void kill_anon_super(struct super_block *sb)
+{
+}
+
+struct inode *alloc_anon_inode(struct super_block *sb)
+{
+	struct inode *inode = kzalloc(sizeof(*inode), GFP_KERNEL);
+
+	if (!inode)
+		return ERR_PTR(-ENOMEM);
+	inode->i_sb = sb;
+	inode->i_mode = S_IFREG | 0600;
+	atomic_set(&inode->i_count, 1);
+	return inode;
+}
+
+void iput(struct inode *inode)
+{
+	if (inode && atomic_dec_and_test(&inode->i_count))
+		kfree(inode);
+}
+
+void inode_set_bytes(struct inode *inode, loff_t bytes)
+{
+	inode->i_blocks = bytes >> 9;
+	inode->i_bytes = bytes & 511;
+}
+
+/* Takes over the caller's reference to @inode. */
+struct file *alloc_file_pseudo(struct inode *inode, struct vfsmount *mnt, const char *name,
+			       int flags, const struct file_operations *fops)
+{
+	struct kpi_file *kf = kpi_file_alloc(fops, flags, 0);
+	struct dentry *d = kzalloc(sizeof(*d), GFP_KERNEL);
+
+	if (!kf || !d) {
+		kfree(kf);
+		kfree(d);
+		return ERR_PTR(-ENOMEM);
+	}
+	d->d_inode = inode;
+	d->d_sb = mnt->mnt_sb;
+	d->d_op = mnt->mnt_sb->__s_d_op;
+	kf->file.f_inode = inode;
+	kf->file.__f_path.mnt = mnt;
+	kf->file.__f_path.dentry = d;
+	return &kf->file;
+}
+
+char *dynamic_dname(char *buffer, int buflen, const char *fmt, ...)
+{
+	char temp[64];
+	va_list args;
+	int sz;
+
+	va_start(args, fmt);
+	sz = vsnprintf(temp, sizeof(temp), fmt, args) + 1;
+	va_end(args);
+	if (sz > sizeof(temp) || sz > buflen)
+		return ERR_PTR(-ENAMETOOLONG);
+	buffer += buflen - sz;
+	return memcpy(buffer, temp, sz);
+}
+
+struct fd fdget(unsigned int fd)
+{
+	struct file *f = fget(fd);
+
+	return (struct fd){ (unsigned long)f | (f ? FDPUT_FPUT : 0) };
 }

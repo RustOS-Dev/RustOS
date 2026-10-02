@@ -632,9 +632,35 @@ fn wait_for(secs: u64, f: impl Fn() -> bool) -> bool {
 
 /// Sound cards: each one plays a tone (the user confirms hearing it) and
 /// records a second where it can.
+fn webcam_section(c: &mut Check) {
+    c.info(
+        "video devices",
+        "ls -l /dev/video* /dev/media*; dmesg | grep -i -e uvc -e video",
+    );
+    let cams: Vec<String> = (0..8)
+        .map(|i| format!("/dev/video{}", i))
+        .filter(|d| fs::exists(d))
+        .collect();
+    if cams.is_empty() {
+        c.skip("webcam", "no /dev/video* device found");
+        return;
+    }
+    for (i, d) in cams.iter().enumerate() {
+        // UVC cameras also expose metadata nodes, which vgrab refuses.
+        c.step(
+            &format!("{} captures frames", d),
+            &format!("vgrab -d {} -n 10 -o {}/frame{}.raw", d, c.dir, i),
+            |out| out.contains("captured 10 frames") || out.contains("not a streaming capture"),
+        );
+    }
+}
+
 fn audio_section(c: &mut Check) {
     let cards = fs::read_to_string("/proc/asound/cards").unwrap_or_default();
-    c.info("sound cards", "cat /proc/asound/cards; dmesg | grep -e \"\\[sound\\]\" -e \"\\[hda\\]\"");
+    c.info(
+        "sound cards",
+        "cat /proc/asound/cards; dmesg | grep -e \"\\[sound\\]\" -e \"\\[hda\\]\"",
+    );
     let n = (0..8)
         .filter(|i| fs::exists(&format!("/dev/dsp{}", i)))
         .count();
@@ -660,7 +686,12 @@ fn audio_section(c: &mut Check) {
                     c.record(&format!("{} audible", dev), Res::Pass, "", &name);
                 }
                 Some(_) => {
-                    c.record(&format!("{} audible", dev), Res::Fail, "no sound heard", &name);
+                    c.record(
+                        &format!("{} audible", dev),
+                        Res::Fail,
+                        "no sound heard",
+                        &name,
+                    );
                 }
                 None => c.skip(&format!("{} audible", dev), "interactive only"),
             }
@@ -676,7 +707,10 @@ fn audio_section(c: &mut Check) {
 /// Bluetooth: the controller comes up, scans, and (interactively) pairs
 /// with a keyboard or mouse whose input then arrives.
 fn bluetooth_section(c: &mut Check) {
-    c.info("controller", "bt status; dmesg | grep -e \"\\[bt\\]\" -e ibt-");
+    c.info(
+        "controller",
+        "bt status; dmesg | grep -e \"\\[bt\\]\" -e ibt-",
+    );
     let (_, st) = sh("bt status");
     if st.contains("no Bluetooth controller") || st.contains("No such file") {
         c.skip("Bluetooth", "no controller found");
@@ -719,11 +753,9 @@ fn bluetooth_section(c: &mut Check) {
     c.step("disconnect", &format!("bt disconnect {}", addr), |_| true);
     println!("    waiting 15 s for the device to reconnect (press a key if it sleeps)...");
     time::sleep_ms(15000);
-    c.step(
-        "reconnect with the stored key",
-        "bt status",
-        |out| out.contains(&addr.to_uppercase()),
-    );
+    c.step("reconnect with the stored key", "bt status", |out| {
+        out.contains(&addr.to_uppercase())
+    });
 }
 
 fn hotplug(c: &mut Check) {
@@ -762,7 +794,7 @@ fn hotplug(c: &mut Check) {
 
 fn usage() {
     println!("usage: hwcheck [options] [section...]");
-    println!("sections: system ethernet wifi storage usb audio bluetooth (default: all)");
+    println!("sections: system ethernet wifi storage usb audio bluetooth webcam (default: all)");
     println!("  -y, --batch        never prompt (skip interactive steps)");
     println!("  -o DIR             result directory (default /storage/hwcheck-DATE)");
     println!("  --ssid S --pass P  WPA2/WPA3 network for the Wi-Fi steps");
@@ -921,6 +953,10 @@ pub fn hwcheck(args: &[String]) -> i32 {
     if want("bluetooth") {
         c.section("Bluetooth");
         bluetooth_section(&mut c);
+    }
+    if want("webcam") {
+        c.section("Webcam");
+        webcam_section(&mut c);
     }
 
     let count = |r: Res| c.results.iter().filter(|x| x.1 == r).count();

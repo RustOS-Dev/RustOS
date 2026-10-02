@@ -1,0 +1,12 @@
+# USB Video Class webcams (M33), on isochronous or bulk streaming.
+module: uvcvideo
+drivers/media/usb/uvc/uvc_driver.c
+drivers/media/usb/uvc/uvc_queue.c
+drivers/media/usb/uvc/uvc_v4l2.c
+drivers/media/usb/uvc/uvc_video.c
+drivers/media/usb/uvc/uvc_ctrl.c
+drivers/media/usb/uvc/uvc_status.c
+drivers/media/usb/uvc/uvc_isight.c
+drivers/media/usb/uvc/uvc_metadata.c
+drivers/media/usb/uvc/uvc_entity.c
+drivers/media/usb/uvc/uvc_debugfs.c

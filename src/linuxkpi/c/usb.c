@@ -341,7 +341,7 @@ int usb_hcd_submit_urb(struct urb *urb, gfp_t mem_flags)
 		status = -EPERM;
 	else if (udev->state == USB_STATE_NOTATTACHED)
 		status = -ESHUTDOWN;
-	else if (usb_pipeisoc(urb->pipe) || urb->num_sgs)
+	else if (urb->num_sgs)
 		status = -EOPNOTSUPP;
 	else
 		status = 0;
@@ -355,7 +355,10 @@ int usb_hcd_submit_urb(struct urb *urb, gfp_t mem_flags)
 					       urb->transfer_buffer,
 					       urb->transfer_buffer_length,
 					       usb_pipecontrol(urb->pipe) ? urb->setup_packet : NULL,
-					       !!(urb->transfer_flags & URB_ZERO_PACKET), urb);
+					       !!(urb->transfer_flags & URB_ZERO_PACKET),
+					       usb_pipeisoc(urb->pipe) ? urb->iso_frame_desc : NULL,
+					       usb_pipeisoc(urb->pipe) ? urb->number_of_packets : 0,
+					       urb);
 	if (unlikely(status)) {
 		urb->hcpriv = NULL;
 		INIT_LIST_HEAD(&urb->urb_list);
@@ -400,9 +403,15 @@ void kpi_usb_complete(void *ctx, int status, u32 actual)
 
 	spin_lock_irqsave(&kpi_urb_lock, flags);
 	urb->hcpriv = NULL;
+	if (usb_pipeisoc(urb->pipe)) {
+		urb->error_count = 0;
+		for (int i = 0; i < urb->number_of_packets; i++)
+			urb->error_count += urb->iso_frame_desc[i].status != 0;
+		urb->start_frame = 0;
+	}
 	if (urb->unlinked)
 		status = urb->unlinked;
-	else if (!status && (urb->transfer_flags & URB_SHORT_NOT_OK) &&
+	else if (!status && (urb->transfer_flags & URB_SHORT_NOT_OK) && !usb_pipeisoc(urb->pipe) &&
 		 actual < urb->transfer_buffer_length && usb_pipein(urb->pipe))
 		status = -EREMOTEIO;
 	spin_unlock_irqrestore(&kpi_urb_lock, flags);
@@ -437,6 +446,69 @@ void usb_free_coherent(struct usb_device *dev, size_t size, void *addr, dma_addr
 	kfree(addr);
 }
 EXPORT_SYMBOL_GPL(usb_free_coherent);
+
+/* Streaming buffers (uvcvideo): plain memory with a one-entry table; no
+ * IOMMU or cache maintenance is needed on x86. */
+void *usb_alloc_noncoherent(struct usb_device *dev, size_t size, gfp_t mem_flags,
+			    dma_addr_t *dma_handle, enum dma_data_direction dir,
+			    struct sg_table **table)
+{
+	struct sg_table *sgt = kzalloc(sizeof(*sgt), mem_flags);
+	void *p = kmalloc(size, mem_flags);
+
+	if (!sgt || !p || sg_alloc_table(sgt, 1, mem_flags)) {
+		kfree(sgt);
+		kfree(p);
+		return NULL;
+	}
+	sg_set_buf(sgt->sgl, p, size);
+	sg_dma_address(sgt->sgl) = virt_to_phys(p);
+	sg_dma_len(sgt->sgl) = size;
+	sgt->nents = 1;
+	if (dma_handle)
+		*dma_handle = virt_to_phys(p);
+	*table = sgt;
+	return p;
+}
+EXPORT_SYMBOL_GPL(usb_alloc_noncoherent);
+
+void usb_free_noncoherent(struct usb_device *dev, size_t size, void *addr,
+			  enum dma_data_direction dir, struct sg_table *table)
+{
+	if (table) {
+		sg_free_table(table);
+		kfree(table);
+	}
+	kfree(addr);
+}
+EXPORT_SYMBOL_GPL(usb_free_noncoherent);
+
+/* The (micro)frame counter as the bus would show it: milliseconds. */
+int usb_get_current_frame_number(struct usb_device *usb_dev)
+{
+	return jiffies_to_msecs(jiffies) & 0x7ff;
+}
+EXPORT_SYMBOL_GPL(usb_get_current_frame_number);
+
+u32 usb_endpoint_max_periodic_payload(struct usb_device *udev,
+				      const struct usb_host_endpoint *ep)
+{
+	if (!usb_endpoint_xfer_isoc(&ep->desc) && !usb_endpoint_xfer_int(&ep->desc))
+		return 0;
+	switch (udev->speed) {
+	case USB_SPEED_SUPER_PLUS:
+		if (USB_SS_SSP_ISOC_COMP(ep->ss_ep_comp.bmAttributes))
+			return le32_to_cpu(ep->ssp_isoc_ep_comp.dwBytesPerInterval);
+		fallthrough;
+	case USB_SPEED_SUPER:
+		return le16_to_cpu(ep->ss_ep_comp.wBytesPerInterval);
+	default:
+		if (usb_endpoint_is_hs_isoc_double(udev, ep))
+			return le32_to_cpu(ep->eusb2_isoc_ep_comp.dwBytesPerInterval);
+		return usb_endpoint_maxp(&ep->desc) * usb_endpoint_maxp_mult(&ep->desc);
+	}
+}
+EXPORT_SYMBOL_GPL(usb_endpoint_max_periodic_payload);
 
 /* drivers/usb/core/message.c */
 int cdc_parse_cdc_header(struct usb_cdc_parsed_header *hdr, struct usb_interface *intf,

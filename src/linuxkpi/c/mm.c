@@ -716,3 +716,100 @@ int arch_io_reserve_memtype_wc(resource_size_t start, resource_size_t size)
 void arch_io_free_memtype_wc(resource_size_t start, resource_size_t size)
 {
 }
+
+/* ------------------------------------------- vmalloc pages (videobuf2) */
+
+void *vmalloc_user_noprof(unsigned long size)
+{
+	return rustos_kpi_vmalloc(size);	/* zeroed */
+}
+
+struct page *vmalloc_to_page(const void *addr)
+{
+	u64 phys = rustos_kpi_virt_to_phys((u64)addr);
+
+	return phys ? pfn_to_page(phys >> PAGE_SHIFT) : NULL;
+}
+
+unsigned long vmalloc_to_pfn(const void *addr)
+{
+	return rustos_kpi_virt_to_phys((u64)addr) >> PAGE_SHIFT;
+}
+
+static void *kpi_vmap_pages(struct page **pages, unsigned int count)
+{
+	u64 *phys = kmalloc_array(count, sizeof(*phys), GFP_KERNEL);
+	void *v;
+
+	if (!phys)
+		return NULL;
+	for (unsigned int i = 0; i < count; i++)
+		phys[i] = (u64)page_to_pfn(pages[i]) << PAGE_SHIFT;
+	v = rustos_kpi_vmap(phys, count);
+	kfree(phys);
+	return v;
+}
+
+void *vm_map_ram(struct page **pages, unsigned int count, int node)
+{
+	return kpi_vmap_pages(pages, count);
+}
+
+void vm_unmap_ram(const void *mem, unsigned int count)
+{
+	rustos_kpi_vunmap(mem, count);
+}
+
+/* Without SPARSEMEM sections, pfn_valid() is false: user-pointer buffers
+ * (pin_user_pages) are not supported. */
+struct mem_section **mem_section;
+
+int pin_user_pages_fast(unsigned long start, int nr_pages, unsigned int gup_flags,
+			struct page **pages)
+{
+	return -EFAULT;
+}
+
+void unpin_user_pages(struct page **pages, unsigned long npages)
+{
+}
+
+int set_page_dirty_lock(struct page *page)
+{
+	return 0;
+}
+
+/* Per-VMA locks: mappings are set up under the file's own locking. */
+void __vma_start_write(struct vm_area_struct *vma, unsigned int mm_lock_seq)
+{
+}
+
+char *strndup_user(const char __user *s, long n)
+{
+	char *p = kmalloc(n + 1, GFP_KERNEL);
+	long len;
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_user(p, s, n)) {
+		kfree(p);
+		return ERR_PTR(-EFAULT);
+	}
+	p[n] = 0;
+	len = strnlen(p, n);
+	if (len == n) {
+		kfree(p);
+		return ERR_PTR(-EINVAL);
+	}
+	return p;
+}
+
+size_t memweight(const void *ptr, size_t bytes)
+{
+	const u8 *p = ptr;
+	size_t w = 0;
+
+	while (bytes--)
+		w += hweight8(*p++);
+	return w;
+}

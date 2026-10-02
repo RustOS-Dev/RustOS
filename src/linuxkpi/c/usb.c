@@ -1120,6 +1120,29 @@ int usb_register_driver(struct usb_driver *new_driver, struct module *owner,
 }
 EXPORT_SYMBOL_GPL(usb_register_driver);
 
+/* USB is never disabled on the command line; IDs are not added at run
+ * time (no new_id sysfs writes). */
+int usb_disabled(void)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(usb_disabled);
+
+DEFINE_MUTEX(usb_dynids_lock);
+
+ssize_t usb_show_dynids(struct usb_dynids *dynids, char *buf)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(usb_show_dynids);
+
+ssize_t usb_store_new_id(struct usb_dynids *dynids, const struct usb_device_id *id_table,
+			 struct device_driver *driver, const char *buf, size_t count)
+{
+	return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL_GPL(usb_store_new_id);
+
 /* Device-level drivers (r8152's configuration selector) are not run:
  * RustOS selects the configuration (src/usb/mod.rs prefers the vendor one
  * of Realtek adapters in linux-usbnet builds, as r8152's selector does). */

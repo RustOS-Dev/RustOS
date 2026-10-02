@@ -45,6 +45,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Bluetooth controllers (class E0/01/01), Intel AX200/AX210/AX211 and MediaTek MT7921/MT7922/MT7925 firmware | written ([BLUETOOTH.md](BLUETOOTH.md)); MediaTek patch format host-tested |
 | Ethernet: CDC ECM, RNDIS | CI (`usb-net`) |
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
+| Serial adapters: Linux `usb-serial` with `ftdi_sio`, `cp210x`, `ch341`, `pl2303`, `option` (3G/LTE modems), and `cdc_acm` (`/dev/ttyUSB*`, `/dev/ttyACM*`), in release images | CI (`usb-serial`: FTDI on QEMU `usb-serial`, data both ways, `stty`, unplug); others compiled |
 | Linux USB drivers through the LinuxKPI USB core (`linux-usb`) | CI (`usb-net` with Linux usbnet) |
 | Ethernet: Linux `usbnet` with `cdc_ether`, `rndis_host`, `cdc_ncm` (`--features linux-usbnet`, in release images instead of the native CDC ECM/RNDIS driver) | CI (`eth-usb-linux`, `eth-usb-linux-rndis`); NCM compiled |
 

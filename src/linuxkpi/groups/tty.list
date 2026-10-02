@@ -1,0 +1,11 @@
+# Linux tty driver support (M33) on RustOS terminals: c/tty.c has the
+# driver/device registration and tty_struct parts of tty_io.c; Linux's
+# port (open/close/hangup rules), flip buffer and baud rate code are used
+# as is. Line disciplines stay RustOS's.
+cflags: -I@LINUX@/drivers/tty
+kpi:tty.c
+module: tty
+drivers/tty/tty_port.c
+drivers/tty/tty_buffer.c
+drivers/tty/tty_baudrate.c
+lib/kfifo.c

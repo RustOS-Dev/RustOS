@@ -17,6 +17,7 @@
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/refcount.h>
+#include <linux/seq_file.h>
 #include <linux/string.h>
 #include <net/dropreason.h>
 #include "kpi.h"
@@ -422,4 +423,53 @@ void *vmalloc_array_noprof(size_t n, size_t size)
 	if (unlikely(check_mul_overflow(n, size, &bytes)))
 		return NULL;
 	return vmalloc_noprof(bytes);
+}
+
+/* ------------------------------------------------------------- seq_file */
+
+/* Text output into a seq_file's buffer (for driver show functions); the
+ * buffer is the caller's (there is no procfs here). */
+void seq_vprintf(struct seq_file *m, const char *f, va_list args)
+{
+	int len;
+
+	if (m->count < m->size) {
+		len = vsnprintf(m->buf + m->count, m->size - m->count, f, args);
+		if (m->count + len < m->size) {
+			m->count += len;
+			return;
+		}
+	}
+	m->count = m->size;	/* overflow */
+}
+
+void seq_printf(struct seq_file *m, const char *f, ...)
+{
+	va_list args;
+
+	va_start(args, f);
+	seq_vprintf(m, f, args);
+	va_end(args);
+}
+
+void seq_putc(struct seq_file *m, char c)
+{
+	if (m->count < m->size)
+		m->buf[m->count++] = c;
+}
+
+int seq_write(struct seq_file *m, const void *data, size_t len)
+{
+	if (m->count + len < m->size) {
+		memcpy(m->buf + m->count, data, len);
+		m->count += len;
+		return 0;
+	}
+	m->count = m->size;
+	return -1;
+}
+
+void __seq_puts(struct seq_file *m, const char *s)
+{
+	seq_write(m, s, strlen(s));
 }

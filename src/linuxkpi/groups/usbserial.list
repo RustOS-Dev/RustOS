@@ -1,0 +1,20 @@
+# USB serial (M33): the usb-serial core and the common adapter drivers,
+# and CDC ACM (modems, microcontroller boards).
+module: usbserial
+drivers/usb/serial/usb-serial.c
+drivers/usb/serial/generic.c
+drivers/usb/serial/bus.c
+module: ftdi_sio
+drivers/usb/serial/ftdi_sio.c
+module: cp210x
+drivers/usb/serial/cp210x.c
+module: ch341
+drivers/usb/serial/ch341.c
+module: pl2303
+drivers/usb/serial/pl2303.c
+module: usb_wwan
+drivers/usb/serial/usb_wwan.c
+module: option
+drivers/usb/serial/option.c
+module: cdc_acm
+drivers/usb/class/cdc-acm.c

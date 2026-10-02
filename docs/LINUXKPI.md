@@ -25,6 +25,11 @@ M32: Linux `igb` passes the same steps on QEMU's 82576
 r8169, r8152, ASIX and ipheth are compiled into release images and take
 the devices native drivers do not claim. Their firmware ships in the image.
 
+M33: USB serial adapters and CDC ACM devices are RustOS terminals
+(`--features linux-serial`). The `usb-serial` scenario moves data both ways
+over QEMU's FTDI adapter, changes the speed with `stty`, and unplugs the
+adapter while it is open.
+
 M30: the LinuxKPI USB core runs Linux USB drivers on RustOS's xHCI driver
 (`--features linux-usb`). Linux's `usbnet` with `cdc_ether` and
 `rndis_host` drives QEMU's `usb-net` behind `--features linux-usbnet`
@@ -70,7 +75,8 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
 - `linux-usbnet` adds `usbnet` with `linux-phy` (and turns off the native CDC ECM/RNDIS driver);
 - `linux-mt7921` adds `mt7921` and `mt7921u`;
 - `linux-i2c` adds `i2c`, `linux-phy` adds `phy` (phylib, MDIO, phylink), and `linux-eth` adds `eth` (igb, e1000e, igc, alx, tg3, atlantic, r8169) with both;
-- `linux-drivers` is the release set (`linux-mt7921`, `linux-eth`, `linux-usbnet`).
+- `linux-serial` adds `tty` and `usbserial` (usb-serial, ftdi_sio, cp210x, ch341, pl2303, option, cdc-acm);
+- `linux-drivers` is the release set (`linux-mt7921`, `linux-eth`, `linux-usbnet`, `linux-serial`).
 
 ## How the pieces fit
 
@@ -198,6 +204,14 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
   offload, MSI-X (one vector per device; drivers fall back to MSI), PCI VPD
   and the ethtool netlink extras are stubbed in `c/netstubs.c` and
   `c/pci.c`. They report "not supported", so drivers take their plain paths.
+- **tty drivers.** Each registered tty device (`tty_register_device`) is a
+  RustOS terminal (`src/tty.rs`, `Sink::Driver`) with RustOS's line
+  discipline, starting out raw. Opening it installs and opens the Linux tty.
+  Output goes to `ops->write` (waiting on `write_room`), and `TCSETS` reaches
+  `ops->set_termios`. Linux's `tty_port.c`, `tty_buffer.c` and
+  `tty_baudrate.c` are used as is. The port's client operations deliver
+  flip-buffer input to the terminal (`c/tty.c`, `src/linuxkpi/tty.rs`).
+  Unplugging hangs the terminal up: readers get EOF and the node goes away.
 - **Transmit flow control.** A Linux netdev whose queues are all stopped
   reports itself not ready (`NetDevice::tx_ready`). The RustOS stack then holds
   packets instead of dropping them, and `netif_wake_queue` kicks it.

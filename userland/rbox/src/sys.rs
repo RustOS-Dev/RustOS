@@ -756,3 +756,134 @@ pub fn mkfs(args: &[String]) -> i32 {
         }
     }
 }
+
+/// Kernel `struct termios` (the TCGETS/TCSETS layout).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct Termios {
+    iflag: u32,
+    oflag: u32,
+    cflag: u32,
+    lflag: u32,
+    line: u8,
+    cc: [u8; 19],
+}
+
+const BAUDS: [(u32, u32); 21] = [
+    (0, 0o0),
+    (50, 0o1),
+    (75, 0o2),
+    (110, 0o3),
+    (134, 0o4),
+    (150, 0o5),
+    (200, 0o6),
+    (300, 0o7),
+    (600, 0o10),
+    (1200, 0o11),
+    (1800, 0o12),
+    (2400, 0o13),
+    (4800, 0o14),
+    (9600, 0o15),
+    (19200, 0o16),
+    (38400, 0o17),
+    (57600, 0o10001),
+    (115200, 0o10002),
+    (230400, 0o10003),
+    (460800, 0o10004),
+    (921600, 0o10007),
+];
+const CBAUD: u32 = 0o10017;
+
+/// stty [-F DEVICE] [SPEED] [raw|cooked|echo|-echo|cs7|cs8|crtscts|-crtscts]
+/// Print or change a terminal's line settings.
+pub fn stty(args: &[String]) -> i32 {
+    const TCGETS: u64 = 0x5401;
+    const TCSETS: u64 = 0x5402;
+    let mut dev: Option<String> = None;
+    let mut ops = Vec::new();
+    let mut it = args[1..].iter();
+    while let Some(a) = it.next() {
+        if a == "-F" {
+            dev = it.next().cloned();
+        } else if let Some(d) = a.strip_prefix("-F") {
+            dev = Some(d.to_string());
+        } else {
+            ops.push(a.clone());
+        }
+    }
+    let file = match &dev {
+        Some(d) => match fs::File::open_with(d, fs::O_RDWR | fs::O_NONBLOCK, 0) {
+            Ok(f) => Some(f),
+            Err(e) => return err("stty", d, e),
+        },
+        None => None,
+    };
+    let fd = file.as_ref().map_or(0, |f| f.fd());
+    // The descriptor stays owned by `file` (or is stdin).
+    let ioctl = |cmd: u64, arg: usize| {
+        let f = fs::File::from_raw(fd);
+        let r = f.ioctl(cmd, arg);
+        f.into_raw();
+        r
+    };
+    let mut t = Termios::default();
+    if let Err(e) = ioctl(TCGETS, &mut t as *mut Termios as usize) {
+        return err("stty", dev.as_deref().unwrap_or("standard input"), e);
+    }
+    if ops.is_empty() {
+        let speed = BAUDS
+            .iter()
+            .find(|(_, c)| *c == t.cflag & CBAUD)
+            .map_or(0, |(b, _)| *b);
+        let bits = 5 + ((t.cflag >> 4) & 3);
+        println!(
+            "speed {} baud; cs{}{}{}{}",
+            speed,
+            bits,
+            if t.lflag & 0o10 != 0 { " echo" } else { " -echo" },
+            if t.lflag & 0o2 != 0 { " icanon" } else { " -icanon" },
+            if t.cflag & 0o20000000000 != 0 { " crtscts" } else { "" }
+        );
+        return 0;
+    }
+    for op in &ops {
+        if let Ok(speed) = op.parse::<u32>() {
+            match BAUDS.iter().find(|(b, _)| *b == speed) {
+                Some((_, c)) => t.cflag = (t.cflag & !CBAUD) | c,
+                None => {
+                    eprintln!("stty: unsupported speed {}", speed);
+                    return 1;
+                }
+            }
+            continue;
+        }
+        match op.as_str() {
+            "raw" => {
+                t.iflag = 0;
+                t.oflag = 0;
+                t.lflag &= !(0o2 | 0o10 | 0o1 | 0o100000);
+                t.cc[6] = 1; // VMIN
+                t.cc[5] = 0; // VTIME
+            }
+            "cooked" | "sane" => {
+                t.iflag = 0o400; // ICRNL
+                t.oflag = 0o5; // OPOST | ONLCR
+                t.lflag |= 0o2 | 0o10 | 0o1 | 0o20 | 0o40;
+            }
+            "echo" => t.lflag |= 0o10,
+            "-echo" => t.lflag &= !0o10,
+            "cs7" => t.cflag = (t.cflag & !0o60) | 0o40,
+            "cs8" => t.cflag |= 0o60,
+            "crtscts" => t.cflag |= 0o20000000000,
+            "-crtscts" => t.cflag &= !0o20000000000,
+            _ => {
+                eprintln!("stty: unknown setting '{}'", op);
+                return 1;
+            }
+        }
+    }
+    match ioctl(TCSETS, &t as *const Termios as usize) {
+        Ok(_) => 0,
+        Err(e) => err("stty", dev.as_deref().unwrap_or("standard input"), e),
+    }
+}

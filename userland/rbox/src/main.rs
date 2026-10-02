@@ -104,6 +104,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("sleep", sys::sleep),
     ("sort", text::sort),
     ("stat", files::stat),
+    ("stty", sys::stty),
     ("sync", sys::sync),
     ("tac", text::tac),
     ("tail", text::tail),

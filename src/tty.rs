@@ -7,7 +7,9 @@
 //! the first is also COM1 (`/dev/console`, `/dev/ttyS0`). Keyboard input
 //! goes to the visible console, serial input to the first. Pseudo-terminal
 //! slaves (`/dev/pts/N`) send their output to the master side (see
-//! [`pty`]).
+//! [`pty`]). Serial ports of drivers (USB serial adapters through LinuxKPI,
+//! `/dev/ttyUSB*`, `/dev/ttyACM*`) are terminals whose output goes to a
+//! [`TtyDriver`].
 
 use crate::errno::*;
 use crate::process::{self, signal, uaccess};
@@ -82,12 +84,28 @@ impl Termios {
 
 const EOF_MARK: u16 = 0x100;
 
+/// A serial port driver behind a terminal.
+pub trait TtyDriver: Send + Sync {
+    /// Device number for stat (major << 8 | minor).
+    fn rdev(&self) -> u64;
+    /// First open: start the port (fails if the device is gone).
+    fn open(&self) -> KResult<()>;
+    /// Last close.
+    fn close(&self);
+    /// Send bytes; returns how many the driver took (blocking until some).
+    fn write(&self, data: &[u8]) -> KResult<usize>;
+    /// The line settings changed (speed, character size, flow control).
+    fn set_termios(&self, t: &Termios);
+}
+
 /// Where a terminal's output goes.
 enum Sink {
     /// Virtual console `n` (0-based).
     Console(usize),
     /// The master side of a pseudo-terminal.
     Pty(alloc::sync::Weak<pty::Pty>),
+    /// A serial port driver.
+    Driver(Arc<dyn TtyDriver>),
 }
 
 pub struct Tty {
@@ -103,6 +121,8 @@ pub struct Tty {
     wq: WaitQueue,
     fg_pgrp: AtomicU32,
     winsize: Mutex<[u16; 4]>,
+    /// Open files (driver terminals start and stop their port with it).
+    opens: AtomicU32,
 }
 
 pub const NUM_VCS: usize = 4;
@@ -150,16 +170,32 @@ impl Tty {
             wq: WaitQueue::new(),
             fg_pgrp: AtomicU32::new(0),
             winsize: Mutex::new([rows, cols, 0, 0]),
+            opens: AtomicU32::new(0),
         })
+    }
+
+    /// A terminal on a serial port driver, in raw mode as serial devices
+    /// start out (`cfmakeraw` settings with the driver's line settings).
+    pub fn new_driver(driver: Arc<dyn TtyDriver>, cflag: u32) -> Arc<Tty> {
+        let tty = Tty::new(Sink::Driver(driver), 24, 80);
+        {
+            let mut t = tty.termios.lock();
+            t.iflag = 0;
+            t.oflag = 0;
+            t.lflag = 0;
+            t.cflag = cflag;
+        }
+        tty
     }
 
     fn arc(&self) -> Arc<Tty> {
         self.me.upgrade().expect("tty dropped")
     }
 
-    /// The master side closed: wake readers (they see EOF) and send SIGHUP
-    /// to the foreground group.
-    fn hang_up(&self) {
+    /// The other side went away (pty master closed, USB adapter
+    /// unplugged): wake readers (they see EOF) and send SIGHUP to the
+    /// foreground group.
+    pub fn hang_up(&self) {
         self.hung_up.store(true, Ordering::SeqCst);
         self.signal_fg(signal::SIGHUP);
         self.notify();
@@ -288,6 +324,15 @@ impl Tty {
             Sink::Pty(m) => {
                 if let Some(m) = m.upgrade() {
                     m.slave_output(bytes);
+                }
+            }
+            Sink::Driver(d) => {
+                let mut rest = bytes;
+                while !rest.is_empty() && !self.hung_up.load(Ordering::SeqCst) {
+                    match d.write(rest) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => rest = &rest[n.min(rest.len())..],
+                    }
                 }
             }
         }
@@ -551,6 +596,18 @@ impl FileLike for Tty {
             let m = m.upgrade().ok_or(EIO)?;
             m.slave_opened()?;
         }
+        if let Sink::Driver(d) = &self.sink {
+            if self.hung_up.load(Ordering::SeqCst) {
+                return Err(EIO);
+            }
+            if self.opens.fetch_add(1, Ordering::SeqCst) == 0 {
+                if let Err(e) = d.open() {
+                    self.opens.fetch_sub(1, Ordering::SeqCst);
+                    return Err(e);
+                }
+                d.set_termios(&self.termios.lock());
+            }
+        }
         // A session leader without a terminal acquires this one.
         if flags & vfs::O_NOCTTY == 0
             && let Some(p) = process::current()
@@ -567,6 +624,11 @@ impl FileLike for Tty {
             && let Some(m) = m.upgrade()
         {
             m.slave_closed();
+        }
+        if let Sink::Driver(d) = &self.sink
+            && self.opens.fetch_sub(1, Ordering::SeqCst) == 1
+        {
+            d.close();
         }
     }
 
@@ -689,6 +751,9 @@ impl FileLike for Tty {
                     let mut line = self.line.lock();
                     self.ready.lock().extend(line.drain(..).map(|c| c as u16));
                 }
+                if let Sink::Driver(d) = &self.sink {
+                    d.set_termios(&t);
+                }
                 Ok(0)
             }
             TCFLSH => {
@@ -764,6 +829,7 @@ impl FileLike for Tty {
         m.rdev = match &self.sink {
             Sink::Console(n) => (4 << 8) | (*n as u64 + 1),
             Sink::Pty(p) => (136 << 8) | p.upgrade().map_or(0, |p| p.index() as u64),
+            Sink::Driver(d) => d.rdev(),
         };
         Ok(m)
     }
@@ -855,6 +921,16 @@ pub fn debug_dump() {
         }
     }
     dprint!("[sysrq] run queues {:?}", crate::sched::queue_lengths());
+    match crate::sched::timer_summary() {
+        Some((n, next)) => dprint!(
+            "[sysrq] timers: {} pending, next in {} ms; uptime {} ms; ticks {}",
+            n,
+            next,
+            crate::time::nanos() / 1_000_000,
+            crate::time::ticks()
+        ),
+        None => dprint!("[sysrq] timers: list locked"),
+    }
     let Some(procs) = crate::process::try_all() else {
         dprint!("[sysrq] process table <locked>");
         return;
@@ -909,7 +985,23 @@ pub fn debug_dump() {
         );
     }
     for (tid, name, state, user) in crate::sched::try_thread_list() {
-        if !user {
+        // A Ready thread in no run queue never runs again: say where it
+        // was made Ready.
+        let lost = state == crate::sched::State::Ready && !crate::sched::is_queued(tid);
+        let site = || {
+            crate::sched::find_thread(tid)
+                .and_then(|t| t.state_site())
+                .map(|l| alloc::format!(" (state set at {}:{})", l.file(), l.line()))
+                .unwrap_or_default()
+        };
+        if lost {
+            dprint!(
+                "[sysrq] {} {} Ready but in no run queue{}",
+                if user { "thread" } else { "kthread" },
+                tid,
+                site()
+            );
+        } else if !user {
             dprint!("[sysrq] kthread {} {:?} {}", tid, state, name);
         }
     }

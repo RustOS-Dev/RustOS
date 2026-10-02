@@ -1,0 +1,3 @@
+-device qemu-xhci,id=xhci
+-chardev socket,id=ser0,path=/tmp/rustos-usbser.sock,server=on,wait=off
+-device usb-serial,bus=xhci.0,chardev=ser0,id=usbser

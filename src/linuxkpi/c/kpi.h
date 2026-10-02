@@ -148,6 +148,14 @@ int rustos_kpi_usb_claim(u64 handle, u32 ifnum);	/* 1: claimed for Linux */
 void *rustos_kpi_usb_cookie(u64 handle);
 void rustos_kpi_usb_set_cookie(u64 handle, void *cookie);
 
+/* tty devices (src/linuxkpi/tty.rs): RustOS terminals for Linux ttys. */
+struct kpi_tty;
+u64 rustos_kpi_tty_register(const char *name, u32 major, u32 minor, struct kpi_tty *kt,
+			    u32 cflag);
+void rustos_kpi_tty_unregister(u64 handle);
+void rustos_kpi_tty_hangup(u64 handle);
+void rustos_kpi_tty_receive(u64 handle, const u8 *data, size_t len);
+
 /* Credentials of the calling process (src/linuxkpi/sched.rs). */
 u32 rustos_kpi_current_uid(void);
 

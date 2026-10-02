@@ -192,6 +192,10 @@ jobs:
           cargo build --features linux-eth
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
           RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
+      - name: Linux USB serial (usb-serial + ftdi_sio) on RustOS terminals
+        run: |
+          cargo build --features linux-serial
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/usb-serial.txt
       - name: Native drivers keep their devices in the release driver set
         run: |
           cargo build --features linux-drivers

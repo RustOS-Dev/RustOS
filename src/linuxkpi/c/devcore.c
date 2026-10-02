@@ -174,27 +174,98 @@ int request_resource(struct resource *root, struct resource *new)
 	return 0;
 }
 
+/*
+ * Regions are not checked for conflicts (RustOS keeps no resource tree):
+ * the caller gets a resource describing what it asked for. They are kept
+ * on a list so that __release_region() can free them.
+ */
+static LIST_HEAD(kpi_regions);
+static DEFINE_SPINLOCK(kpi_regions_lock);
+
+struct kpi_region {
+	struct list_head link;
+	struct resource res;
+};
+
 struct resource *__request_region(struct resource *parent, resource_size_t start,
 				  resource_size_t n, const char *name, int flags)
 {
-	static struct resource dummy;
+	struct kpi_region *r = kzalloc(sizeof(*r), GFP_KERNEL);
 
-	return &dummy;
+	if (!r)
+		return NULL;
+	r->res.start = start;
+	r->res.end = start + n - 1;
+	r->res.name = name;
+	r->res.flags = (parent ? parent->flags & IORESOURCE_TYPE_BITS : 0) | IORESOURCE_BUSY | flags;
+	spin_lock(&kpi_regions_lock);
+	list_add(&r->link, &kpi_regions);
+	spin_unlock(&kpi_regions_lock);
+	return &r->res;
 }
 
 void __release_region(struct resource *parent, resource_size_t start, resource_size_t n)
 {
+	struct kpi_region *r, *found = NULL;
+
+	spin_lock(&kpi_regions_lock);
+	list_for_each_entry(r, &kpi_regions, link) {
+		if (r->res.start == start && resource_size(&r->res) == n) {
+			list_del(&r->link);
+			found = r;
+			break;
+		}
+	}
+	spin_unlock(&kpi_regions_lock);
+	kfree(found);
+}
+
+struct kpi_devm_region {
+	struct resource *parent;
+	resource_size_t start, n;
+};
+
+static void kpi_devm_region_release(struct device *dev, void *res)
+{
+	struct kpi_devm_region *d = res;
+
+	__release_region(d->parent, d->start, d->n);
+}
+
+static int kpi_devm_region_match(struct device *dev, void *res, void *data)
+{
+	struct kpi_devm_region *a = res, *b = data;
+
+	return a->parent == b->parent && a->start == b->start && a->n == b->n;
 }
 
 struct resource *__devm_request_region(struct device *dev, struct resource *parent,
 				      resource_size_t start, resource_size_t n, const char *name)
 {
-	return __request_region(parent, start, n, name, 0);
+	struct kpi_devm_region *d;
+	struct resource *res;
+
+	d = devres_alloc(kpi_devm_region_release, sizeof(*d), GFP_KERNEL);
+	if (!d)
+		return NULL;
+	res = __request_region(parent, start, n, name, 0);
+	if (!res) {
+		devres_free(d);
+		return NULL;
+	}
+	d->parent = parent;
+	d->start = start;
+	d->n = n;
+	devres_add(dev, d);
+	return res;
 }
 
 void __devm_release_region(struct device *dev, struct resource *parent, resource_size_t start,
 			   resource_size_t n)
 {
+	struct kpi_devm_region match = { parent, start, n };
+
+	WARN_ON(devres_release(dev, kpi_devm_region_release, kpi_devm_region_match, &match));
 }
 
 /* Device coredumps (drivers/base/devcoredump.c): not kept; the driver's

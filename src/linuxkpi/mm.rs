@@ -183,8 +183,67 @@ extern "C" fn rustos_kpi_fb_phys(len: *mut u64) -> u64 {
     }
 }
 
+/// The firmware framebuffer's geometry: size in pixels, line length in
+/// bytes, bytes per pixel, blue in the low byte. 0 if there is none.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_fb_geometry(
+    width: *mut u32,
+    height: *mut u32,
+    pitch: *mut u32,
+    bpp: *mut u32,
+    bgr: *mut i32,
+) -> i32 {
+    crate::drivers::framebuffer::framebuffer_phys()
+        .and(crate::drivers::framebuffer::geometry())
+        .map_or(0, |(w, h, stride, b, is_bgr)| {
+            unsafe {
+                *width = w as u32;
+                *height = h as u32;
+                *pitch = (stride * b) as u32;
+                *bpp = b as u32;
+                *bgr = is_bgr as i32;
+            }
+            1
+        })
+}
+
 /// A Linux display driver took over the firmware framebuffer.
 #[unsafe(no_mangle)]
 extern "C" fn rustos_kpi_fb_release() {
     crate::drivers::framebuffer::release();
+}
+
+/// A Linux DRM client gives the console a buffer to draw on.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_console_attach(
+    ptr: *mut u8,
+    len: u64,
+    width: u32,
+    height: u32,
+    pitch: u32,
+) {
+    unsafe {
+        crate::drivers::framebuffer::attach(
+            ptr,
+            len as usize,
+            width as usize,
+            height as usize,
+            pitch as usize,
+        )
+    };
+}
+
+/// Pixel rows the console drew since the last call; 0 if none.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_console_damage(lo: *mut u32, hi: *mut u32) -> i32 {
+    match crate::drivers::framebuffer::take_damage() {
+        Some((l, h)) => {
+            unsafe {
+                *lo = l as u32;
+                *hi = h as u32;
+            }
+            1
+        }
+        None => 0,
+    }
 }

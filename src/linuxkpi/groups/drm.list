@@ -48,6 +48,10 @@ drivers/gpu/drm/drm_vma_manager.c
 drivers/gpu/drm/drm_writeback.c
 drivers/gpu/drm/drm_panel.c
 drivers/gpu/drm/drm_pci.c
+drivers/gpu/drm/drm_client.c
+drivers/gpu/drm/drm_client_event.c
+drivers/gpu/drm/drm_client_modeset.c
+kpi:drmcon.c
 module: drm_panel_orientation_quirks
 drivers/gpu/drm/drm_panel_orientation_quirks.c
 module: drm_kms_helper

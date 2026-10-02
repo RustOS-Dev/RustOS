@@ -329,6 +329,7 @@ struct kpi_vma {
 	bool remapped;
 	bool inserted;
 	void *vmalloc_base;	/* remap_vmalloc_range(): pages looked up on fault */
+	u64 file_pgoff;		/* the mmap offset asked for (mmap may move vm_pgoff) */
 };
 
 static struct kpi_vma *to_kv(struct vm_area_struct *vma)
@@ -453,6 +454,7 @@ int kpi_file_mmap(struct file *file, u64 off, u64 len, u32 prot, int *kind, u64 
 	kv->vma.vm_start = 0x100000000000UL;	/* a nominal user address */
 	kv->vma.vm_end = kv->vma.vm_start + PAGE_ALIGN(len);
 	kv->vma.vm_pgoff = off >> PAGE_SHIFT;
+	kv->file_pgoff = kv->vma.vm_pgoff;
 	vm_flags_init(&kv->vma, VM_SHARED | VM_MAYSHARE | (prot & PROT_READ ? VM_READ | VM_MAYREAD : 0) |
 			   (prot & PROT_WRITE ? VM_WRITE | VM_MAYWRITE : 0));
 	kv->vma.vm_page_prot = PAGE_SHARED;
@@ -485,10 +487,15 @@ int kpi_file_mmap(struct file *file, u64 off, u64 len, u32 prot, int *kind, u64 
 	return 0;
 }
 
-/* Page @pgoff (file page) of a faulting mapping: 0 and *phys/*cache. */
-int kpi_vma_fault(void *handle, u64 pgoff, int write, u64 *phys, int *cache)
+/*
+ * Page @file_pgoff (file page) of a faulting mapping: 0 and *phys/*cache.
+ * The driver sees it relative to the vma's vm_pgoff, which its mmap may
+ * have changed (drm_gem_prime_mmap() moves it to the GEM fake offset).
+ */
+int kpi_vma_fault(void *handle, u64 file_pgoff, int write, u64 *phys, int *cache)
 {
 	struct kpi_vma *kv = handle;
+	u64 pgoff = file_pgoff - kv->file_pgoff + kv->vma.vm_pgoff;
 	struct vm_fault vmf = {
 		.vma = &kv->vma,
 		.pgoff = pgoff,

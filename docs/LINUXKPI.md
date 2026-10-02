@@ -68,11 +68,23 @@ helper (`--features linux-drm`), with the bochs driver for QEMU's standard
 VGA (`linux-drm-bochs`, in release images): `/dev/dri/card0` with
 modesetting, dumb buffers, page flips and their events. GEM objects live
 in shmem files that `c/drm.c` implements (an xarray of zeroed pages). The
-firmware framebuffer is an aperture owner, as Linux's sysfb devices are:
-when a DRM driver takes the display, RustOS stops drawing its console
-there (text continues on the serial port; M35.3 moves the console onto
-DRM). `drmtest` (rbox) exercises the KMS API; the `drm-bochs` scenario
-checks the result with a QEMU screendump. virtio-gpu runs on Linux's
+firmware framebuffer is a simple-framebuffer platform device, as Linux's
+sysfb makes it with `SYSFB_SIMPLEFB` (`c/sysfb.c`): simpledrm
+(`linux-drm-sysfb`, in release images) binds it, so `/dev/dri/card0` exists
+on any UEFI machine, and a GPU driver evicts it through the aperture
+helpers when it loads. (Without simpledrm, a placeholder device in
+`c/drm.c` holds the aperture.) The text console is a DRM client
+(`c/drmcon.c`, in place of fbdev emulation and drm_log): on the first DRM
+device it sets the preferred mode with a buffer of its own, which
+`src/drivers/framebuffer.rs` draws on (reflowing its text to the new
+size), and flushes what changed 30 times a second. When the device goes
+away the console moves to the next one; when the last user-space DRM
+client closes, the console's mode is restored. `/dev/fb0` stays RustOS's
+own and follows the console's buffer (mapped page by page when it is a
+DRM buffer), so `browse -g` works on any of them. `drmtest` (rbox)
+exercises the KMS API; the `drm-bochs` scenario checks the result with
+QEMU screendumps, including the simpledrm → bochs handover, and
+`drm-simpledrm` is the same test on a display only simpledrm drives. virtio-gpu runs on Linux's
 virtio core and PCI transport (`linux-drm-virtio`, in release images),
 which take only virtio devices without a native RustOS driver; the
 `drm-virtio` scenario is the same test on QEMU's virtio-gpu-pci (2D; no

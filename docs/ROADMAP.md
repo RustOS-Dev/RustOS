@@ -167,9 +167,11 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 - [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
   - [x] ALSA core, OSS emulation, snd-hda-intel + codecs, snd-usb-audio on isochronous URBs (`audio-linux`); in release images
   - [ ] SOF/ACP DSP microphones; Linux virtio-sound (native driver kept)
-- [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
+- [x] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
   - [x] DRM core, KMS helpers, GEM shmem, dma-buf/sync_file, bochs; firmware framebuffer handover; `drmtest` (`drm-bochs`)
   - [x] Linux virtio core and virtio-gpu (`drm-virtio`)
+  - [x] Console as a DRM client, `/dev/fb0` on the console's buffer, simpledrm on the firmware framebuffer (`drm-simpledrm`); efidrm not used (Linux picks simpledrm with `SYSFB_SIMPLEFB`, and efidrm needs `CONFIG_EFI`)
+  - [x] PRIME and sync_file in `drmtest`; `/sys/class/drm` connectors. TTM, the GPU scheduler and `drm/display` are imported with amdgpu (M38): none of the M35 drivers use them
 - [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU
 - [ ] **M37** C++ runtime, Wayland stack, software-rendered Weston desktop
 - [ ] **M38** AMD GPUs (amdgpu): display, rendering, power

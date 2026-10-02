@@ -1,7 +1,9 @@
 //! drmtest: drive a DRM/KMS device (/dev/dri/cardN) the way a display
 //! server does: find a connected connector and its mode, put a dumb
 //! buffer on the screen, then page-flip to a second one and wait for the
-//! flip's event.
+//! flip's event. Then PRIME: export the shown buffer as a dma-buf, import
+//! it back, and read its pixels through a mapping of the dma-buf; and a
+//! sync_file from a signalled syncobj.
 
 use crate::err;
 use rustos_rt::fs;
@@ -36,6 +38,11 @@ fn put_u64(b: &mut [u8], o: usize, v: u64) {
 }
 
 const VERSION: u8 = 0x00;
+const PRIME_HANDLE_TO_FD: u8 = 0x2D;
+const PRIME_FD_TO_HANDLE: u8 = 0x2E;
+const SYNCOBJ_CREATE: u8 = 0xBF;
+const SYNCOBJ_DESTROY: u8 = 0xC0;
+const SYNCOBJ_HANDLE_TO_FD: u8 = 0xC1;
 const GETRESOURCES: u8 = 0xA0;
 const SETCRTC: u8 = 0xA2;
 const GETENCODER: u8 = 0xA6;
@@ -51,6 +58,8 @@ const MODEINFO: usize = 68;
 const CONNECTED: u32 = 1;
 const PAGE_FLIP_EVENT: u32 = 1;
 const EVENT_FLIP_COMPLETE: u32 = 2;
+const DRM_CLOEXEC: u32 = 0o2000000;
+const DRM_RDWR: u32 = 2;
 
 fn ids(n: u32) -> Vec<u32> {
     vec![0u32; n as usize]
@@ -118,6 +127,90 @@ impl Buffer {
         let mut d = self.handle.to_le_bytes();
         let _ = ioctl(f, DESTROY_DUMB, &mut d);
     }
+}
+
+/// Export `b` as a dma-buf, import it back (the same GEM handle), and check
+/// its pixels through a mapping of the dma-buf.
+fn prime(f: &fs::File, b: &Buffer, w: u32, h: u32) -> rustos_rt::Result<()> {
+    let mut p = [0u8; 12];
+    put_u32(&mut p, 0, b.handle);
+    put_u32(&mut p, 4, DRM_CLOEXEC | DRM_RDWR);
+    ioctl(f, PRIME_HANDLE_TO_FD, &mut p)?;
+    let fd = u32_at(&p, 8) as usize;
+    let mut q = [0u8; 12];
+    put_u32(&mut q, 8, fd as u32);
+    ioctl(f, PRIME_FD_TO_HANDLE, &mut q)?;
+    let handle = u32_at(&q, 0);
+    // PROT_READ, MAP_SHARED.
+    let map = check(syscall(nr::MMAP, &[0, b.size, 1, 1, fd, 0]));
+    let px = map.map(|a| {
+        let at = |x: u32, y: u32| unsafe {
+            ((a + (y * b.pitch) as usize) as *const u32)
+                .add(x as usize)
+                .read_volatile()
+        };
+        let v = (at(w / 2, h / 2) & 0xffffff, at(0, 0) & 0xffffff);
+        let _ = syscall(nr::MUNMAP, &[a, b.size]);
+        v
+    });
+    let _ = syscall(nr::CLOSE, &[fd]);
+    let px = px?;
+    println!(
+        "  PRIME: dma-buf fd {}, imported as handle {} ({}), pixels {:06x} {:06x}",
+        fd,
+        handle,
+        if handle == b.handle {
+            "same"
+        } else {
+            "different"
+        },
+        px.0,
+        px.1
+    );
+    if handle != b.handle || px != (0x0000c0, 0xffffff) {
+        return Err(rustos_rt::Error(5));
+    }
+    Ok(())
+}
+
+/// A sync_file from a signalled syncobj polls readable at once.
+fn sync_file(f: &fs::File) -> rustos_rt::Result<()> {
+    let mut c = [0u8; 8];
+    put_u32(&mut c, 4, 1); // DRM_SYNCOBJ_CREATE_SIGNALED
+    match ioctl(f, SYNCOBJ_CREATE, &mut c) {
+        // EOPNOTSUPP: the driver has no syncobjs (no DRIVER_SYNCOBJ).
+        Err(e) if e.0 == 95 => {
+            println!("  sync_file: no syncobjs in this driver");
+            return Ok(());
+        }
+        r => r?,
+    };
+    let obj = u32_at(&c, 0);
+    let mut h = [0u8; 16];
+    put_u32(&mut h, 0, obj);
+    put_u32(&mut h, 4, 1); // EXPORT_SYNC_FILE
+    let r = ioctl(f, SYNCOBJ_HANDLE_TO_FD, &mut h);
+    let mut d = [0u8; 8];
+    put_u32(&mut d, 0, obj);
+    let _ = ioctl(f, SYNCOBJ_DESTROY, &mut d);
+    r?;
+    let fd = u32_at(&h, 8) as i32;
+    let mut pfd = [PollFd {
+        fd,
+        events: 1,
+        revents: 0,
+    }];
+    let ready = matches!(poll(&mut pfd, 0), Ok(1));
+    let _ = syscall(nr::CLOSE, &[fd as usize]);
+    println!(
+        "  sync_file fd {}: {}",
+        fd,
+        if ready { "signalled" } else { "not signalled" }
+    );
+    if !ready {
+        return Err(rustos_rt::Error(5));
+    }
+    Ok(())
 }
 
 pub fn drmtest(args: &[String]) -> i32 {
@@ -287,6 +380,12 @@ pub fn drmtest(args: &[String]) -> i32 {
         return 1;
     }
     println!("  flipped to blue (event for CRTC {})", u32_at(&ev, 28));
+    if let Err(e) = prime(&f, &bufs[1], w, h) {
+        return err("drmtest", "PRIME", e);
+    }
+    if let Err(e) = sync_file(&f) {
+        return err("drmtest", "sync_file", e);
+    }
     if hold > 0 {
         let end = time::millis() + hold * 1000;
         while time::millis() < end {

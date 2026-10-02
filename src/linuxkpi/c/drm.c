@@ -8,7 +8,7 @@
  * - the firmware framebuffer as an aperture owner: a platform device
  *   holds the GOP framebuffer's range, so a DRM driver taking the display
  *   (aperture_remove_conflicting_*) removes it, and RustOS stops drawing
- *   its console there;
+ *   its console there (with simpledrm, sysfb.c's device does this);
  * - small pieces of the VFS, eventfd and x86 memory-type API.
  */
 #include <linux/aperture.h>
@@ -303,12 +303,19 @@ static struct platform_driver kpi_fwfb_driver = {
 	.remove = kpi_fwfb_remove,
 };
 
+/* Overridden by sysfb.c in builds with simpledrm, which describes the
+ * firmware framebuffer to it instead. */
+bool __weak kpi_sysfb_register(void)
+{
+	return false;
+}
+
 static int __init kpi_fwfb_init(void)
 {
 	struct platform_device *pdev;
 	u64 len;
 
-	if (!rustos_kpi_fb_phys(&len))
+	if (!rustos_kpi_fb_phys(&len) || kpi_sysfb_register())
 		return 0;
 	if (platform_driver_register(&kpi_fwfb_driver))
 		return 0;

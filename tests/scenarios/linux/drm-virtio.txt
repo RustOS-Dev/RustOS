@@ -2,12 +2,17 @@
 # (kernel built with --features linux-drm-virtio) on QEMU's virtio-gpu-pci:
 # drmtest sets a mode with a dumb buffer (resources and transfers over the
 # virtqueues), then page-flips to a second one and gets the flip event. A
-# QEMU screendump shows the second buffer.
+# QEMU screendump shows the second buffer. The connector is in sysfs, and
+# drmtest also checks PRIME and sync_file.
 hostrun rm -rf /tmp/rustos-drm && mkdir -p /tmp/rustos-drm
 wait # $ 240
 send ls /dev/dri; dmesg | grep -a -e "\[drm\]" -e virtio | cat
 wait card0
 wait virtio_gpu
+wait # $
+send cat /sys/class/drm/card0-Virtual-1/status /sys/class/drm/card0-Virtual-1/modes | cat
+wait connected
+wait 1024x768
 wait # $
 send drmtest -t 8 > /tmp/drm.txt &
 sleep 5
@@ -17,5 +22,7 @@ hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rusto
 send wait; cat /tmp/drm.txt
 wait virtio_gpu
 wait flipped to blue
+wait PRIME: dma-buf fd \d+, imported as handle \d+ \(same\), pixels 0000c0 ffffff
+wait sync_file fd \d+: signalled
 wait drmtest: ok
 wait # $

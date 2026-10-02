@@ -208,10 +208,10 @@ jobs:
         run: |
           cargo build --features linux-sound
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/audio-linux.txt
-      - name: Linux DRM on QEMU's standard VGA (drm-bochs)
+      - name: Linux DRM on the firmware framebuffer and QEMU's standard VGA (drm-simpledrm, drm-bochs)
         run: |
-          cargo build --features linux-drm-bochs
-          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-bochs.txt
+          cargo build --features linux-drm-sysfb,linux-drm-bochs
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-simpledrm.txt tests/scenarios/linux/drm-bochs.txt
       - name: Linux virtio-gpu (drm-virtio)
         run: |
           cargo build --features linux-drm-virtio

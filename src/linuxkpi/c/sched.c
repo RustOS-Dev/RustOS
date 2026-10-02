@@ -163,12 +163,27 @@ void preempt_schedule_notrace(void)
 
 static void kpi_kthread_start(struct task_struct *p);
 
+/*
+ * The full barriers are try_to_wake_up()'s: the waker's stores (the
+ * condition; a kthread's start flag) must be visible before it reads the
+ * sleeper's state and thread id, as the sleeper's set_current_state()
+ * orders its stores before it reads the condition. Without them x86 may
+ * let both sides read the old values: a new kthread that has not yet
+ * published its id sleeps forever.
+ */
 int wake_up_state(struct task_struct *p, unsigned int state)
 {
+	/*
+	 * A new kthread starts on any wake-up, whatever its state reads: it
+	 * may be between a spurious return from schedule() and setting its
+	 * state again, and must not miss its start.
+	 */
+	kpi_kthread_start(p);
+	smp_mb();
 	if (!(READ_ONCE(p->__state) & state))
 		return 0;
 	WRITE_ONCE(p->__state, TASK_RUNNING);
-	kpi_kthread_start(p);
+	smp_mb();
 	if (READ_ONCE(p->pid))
 		rustos_kpi_wake(p->pid);
 	return 1;
@@ -254,6 +269,7 @@ static void kpi_kthread_main(void *arg)
 	void **slot = rustos_kpi_task_slot();
 
 	*slot = t;
+	/* Ordered before the start flag is read by set_current_state(). */
 	WRITE_ONCE(t->pid, rustos_kpi_thread_id());
 	t->tgid = t->pid;
 	/* Created stopped: run once wake_up_process() was called. */

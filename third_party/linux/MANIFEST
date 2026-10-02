@@ -220,6 +220,9 @@ drivers/gpu/drm/drm_blend.c	GPL-2.0-only (untagged, per Linux COPYING)	a31355304
 drivers/gpu/drm/drm_bridge.c	GPL-2.0-only (untagged, per Linux COPYING)	362d80220269e2a570599271f0c1df52c942152d794c3a30c106ee80615c8220
 drivers/gpu/drm/drm_bridge_helper.c	GPL-2.0-or-later	5a2f78613dc696ef79e27335147e6cef96acc4263613ada49e7162a03fd20b4b
 drivers/gpu/drm/drm_cache.c	GPL-2.0-only (untagged, per Linux COPYING)	510ffa7f075630669f8c011b486c6a3683881dbd10aa6f0e502de9821681d337
+drivers/gpu/drm/drm_client.c	GPL-2.0 or MIT	93e79f96cf75697e912da1cc437ebb16cde45e18220f0a26d1829b591126ae1b
+drivers/gpu/drm/drm_client_event.c	GPL-2.0 or MIT	9bc2c8d5265bf7493e9f220b2e407177835125fcd6cc543e1a639de11ffcf38f
+drivers/gpu/drm/drm_client_modeset.c	MIT	96baa5c525d8de99f9aa5018edf06912c8f8317b58e91d5247729ddf94e3d26b
 drivers/gpu/drm/drm_color_mgmt.c	GPL-2.0-only (untagged, per Linux COPYING)	cec79f2e8d452685b8f11c8df24cb237bd5312d970667c30fee28172ff39e6a9
 drivers/gpu/drm/drm_connector.c	GPL-2.0-only (untagged, per Linux COPYING)	2167b9a6190552a21abcfbba179a78751ae85f16affd4fb22e2eeea4c483636a
 drivers/gpu/drm/drm_crtc.c	GPL-2.0-only (untagged, per Linux COPYING)	4d4171d74e68980f6d2134fff85c8ff418d44994b8a6b3fdf572c596d2757786
@@ -275,6 +278,10 @@ drivers/gpu/drm/drm_vblank_helper.c	MIT	933a617cda827a9b55d84803d2f2cdbcdc2e81c0
 drivers/gpu/drm/drm_vblank_work.c	MIT	8d87eaad8e7a21029c8eee2252978da1c23b2ac58820f0bb9ee86e0a91825671
 drivers/gpu/drm/drm_vma_manager.c	GPL-2.0 OR MIT	01b94890c38f00e71bc6b71536b460fa855c13d8da204e5414f83085c6c6a210
 drivers/gpu/drm/drm_writeback.c	GPL-2.0	304ac9ff130263fae730adfe880b2e5ac9a932e5b5de38b07a35157d8116278f
+drivers/gpu/drm/sysfb/drm_sysfb.c	GPL-2.0-only	287bd8cc816b1f812d7aa7593b9c7914259bf1760dffcebabe3b346abdb4e984
+drivers/gpu/drm/sysfb/drm_sysfb_helper.h	GPL-2.0-only	b2119d883b2f19aa57a1a243118d5ae26332afc8a702d151d385c352d436464b
+drivers/gpu/drm/sysfb/drm_sysfb_modeset.c	GPL-2.0-only	b3c289d182377aed54da664800c50d2072e902c046a37c3dc3d138d5ca041457
+drivers/gpu/drm/sysfb/simpledrm.c	GPL-2.0-only	90a7606caafcc61991c387d7ac652784a15a4db13fc4522e20731bcad6f2251d
 drivers/gpu/drm/tiny/bochs.c	GPL-2.0-or-later	93f5c4bc2811ad1e0961a4e3d5c0410ac4b2336b2bdc96cc2c40802cc439ffe3
 drivers/gpu/drm/virtio/virtgpu_display.c	GPL-2.0-only (untagged, per Linux COPYING)	bbdd93c69e6e40b4de94c40f08d06333adaebeaba8b7ec75ffd87a4cf2623177
 drivers/gpu/drm/virtio/virtgpu_drv.c	GPL-2.0-only (untagged, per Linux COPYING)	0dd024029e411704b4686902fe5bc3d7e3ca70a646acc2f364756929b73830ed
@@ -789,6 +796,7 @@ include/drm/drm_blend.h	GPL-2.0-only (untagged, per Linux COPYING)	46a47b37fcb9d
 include/drm/drm_bridge.h	GPL-2.0-only (untagged, per Linux COPYING)	b89d12dade74a7a9e58869ce35d70037dbec4877f9da665aa81ff81785996f0c
 include/drm/drm_bridge_helper.h	GPL-2.0-or-later	ee9a7fe207e920e69500038d00fb65354cd9b9c09ae14805c6c2f00957f4513d
 include/drm/drm_cache.h	GPL-2.0-only (untagged, per Linux COPYING)	2626120d1dd4222c14779b71a352e239aa80536aeebc1e742cf552abb77598ed
+include/drm/drm_client.h	GPL-2.0 or MIT	7c9a1dc4dfb4d50d73068ad4c9e11df43b36995edb02c1d670c0dbaf996af0bd
 include/drm/drm_client_event.h	GPL-2.0 or MIT	d2ca117b0ff7653d3b796302a6b8ae0063e07d1bb83739e89cd784222e31095a
 include/drm/drm_color_mgmt.h	GPL-2.0-only (untagged, per Linux COPYING)	2d9ef9b280ee72734e9ef65fd6b6c33c636ab481080b7defc411fe0c23aff0c2
 include/drm/drm_connector.h	GPL-2.0-only (untagged, per Linux COPYING)	e5d4137b60b9c9e13e9a37642bc36a81eca00d459cfad059536a0e53ad481d5e
@@ -1244,6 +1252,7 @@ include/linux/of_graph.h	GPL-2.0	57453364daa086db85a6088ee422905c9dedd4af705806d
 include/linux/of_irq.h	GPL-2.0	a892e1628eb1a84a59cce44e59bd290c728cc11cbcdd86789f0d51d9b56485d2
 include/linux/of_mdio.h	GPL-2.0-only	5fb319410fdc84d2f81ad4169e275df061efe254789a06d689180d27a3d85048
 include/linux/of_net.h	GPL-2.0-only	bccc72f8e67f3602282c2736a53db845a0b6c57dea960dd89c21ea6ad6f69e8b
+include/linux/of_reserved_mem.h	GPL-2.0	7e9d6bcb0237ab08412431750bf04830a200267ebd29807e2080eadf268e94e7
 include/linux/once.h	GPL-2.0	6db57d3fb47c31574446ab9fdceeffc197d412ab8e7c37954dde1a2cc0ac2722
 include/linux/once_lite.h	GPL-2.0	708801b7f811230138199c06adb6ae04a7e8ef5c45ec0a8408a343528bc124cf
 include/linux/osq_lock.h	GPL-2.0	33b208bb2c56c99eaf22d98363542595386dcc5197fdaef2b89b849f277ae124
@@ -1977,6 +1986,7 @@ include/video/display_timing.h	GPL-2.0-only	5979cba090aebe352bec6d0b213a8fa46463
 include/video/nomodeset.h	MIT	ea778093d9851de955c6280f2edda634873ca0e11fe9598bdfb1a79a3def6076
 include/video/of_display_timing.h	GPL-2.0-only	89bc46750e0c64f82a6f1d62479747dc9693390252932a0bd29f1ed5ab1744bc
 include/video/of_videomode.h	GPL-2.0-only	3eb1983016a492ce0cc7543eede52e12a93bedd996bc3ccfd15d5a09363396ca
+include/video/pixel_format.h	GPL-2.0	c64600355945e154c81170e873742dcfe9a98dda9dcb310eb2c72f1303693b9d
 include/video/vga.h	GPL-2.0-only (untagged, per Linux COPYING)	5d5aa8b7751ac4a5dddb3e2320a5211727c9c3f9eb827811990f293b3b439311
 include/video/videomode.h	GPL-2.0-only	60aff2497a8fcde06919e44c787a08267894be8444daf28d1256b25c1361a2c1
 include/xen/balloon.h	GPL-2.0	d696e542baa76257444904a41c88a539cd0272cbd2e53b8351dd7d3200de8bde

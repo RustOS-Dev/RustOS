@@ -1,0 +1,31 @@
+# The firmware framebuffer as a DRM device (kernel built with --features
+# linux-drm-sysfb): RustOS describes the UEFI GOP framebuffer as a
+# simple-framebuffer platform device, Linux 6.18's simpledrm binds it as
+# /dev/dri/card0 and the console moves onto its shadow buffer. drmtest
+# sets a mode, page-flips and gets the event; QEMU screendumps show the
+# console, drmtest's buffer, and the console again afterwards.
+hostrun rm -rf /tmp/rustos-sdrm && mkdir -p /tmp/rustos-sdrm
+wait # $ 240
+send ls /dev/dri; dmesg | grep -a -e "\[drm\]" -e "\[fb\]" | cat
+wait card0
+wait simpledrm
+wait console on a \d+x\d+ display buffer
+wait # $
+sleep 1
+monitor screendump /tmp/rustos-sdrm/console.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-sdrm/console.ppm 'count:229,229,229>=5000'
+send drmtest -t 8 > /tmp/drm.txt &
+sleep 5
+monitor screendump /tmp/rustos-sdrm/screen.ppm
+sleep 1
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-sdrm/screen.ppm 'count:0,0,192>=200000' 'count:255,255,255>=1000'
+send wait; cat /tmp/drm.txt
+wait simpledrm \(1 CRTCs
+wait flipped to blue
+wait PRIME: dma-buf fd \d+, imported as handle \d+ \(same\), pixels 0000c0 ffffff
+wait sync_file: no syncobjs
+wait drmtest: ok
+wait # $
+sleep 1
+monitor screendump /tmp/rustos-sdrm/restored.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-sdrm/restored.ppm 'count:229,229,229>=5000' 'count:0,0,192<=100'

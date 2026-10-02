@@ -88,6 +88,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Device | Status |
 |--------|--------|
 | UEFI GOP framebuffer (console, `/dev/fb0`) | CI |
+| UEFI GOP framebuffer through Linux simpledrm (DRM/KMS, `/dev/dri/card0`, console as a DRM client), in release images | CI (`drm-simpledrm`, and handover to bochs in `drm-bochs`); untested on hardware |
 | QEMU standard VGA through Linux bochs (DRM/KMS, `/dev/dri/card0`), in release images | CI (`drm-bochs`) |
 | virtio-gpu through Linux virtio-gpu (2D), in release images | CI (`drm-virtio`) |
 

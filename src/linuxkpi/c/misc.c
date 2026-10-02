@@ -417,6 +417,18 @@ int dmi_check_system(const struct dmi_system_id *list)
 	return 0;
 }
 
+/* No DMI strings: quirk tables keyed on them never match. */
+const char *dmi_get_system_info(int field)
+{
+	return NULL;
+}
+
+void memset_io(volatile void __iomem *dst, int c, size_t count)
+{
+	for (size_t i = 0; i < count; i++)
+		writeb(c, dst + i);
+}
+
 void memcpy_fromio(void *dst, const volatile void __iomem *src, size_t count)
 {
 	u8 *d = dst;

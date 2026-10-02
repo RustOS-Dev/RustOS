@@ -2,13 +2,19 @@
 # with --features linux-drm-bochs) on QEMU's standard VGA: the driver takes
 # the display from the firmware framebuffer, and drmtest sets a mode with
 # a dumb buffer, then page-flips to a second one and gets the flip event.
-# A QEMU screendump shows the second buffer.
+# A QEMU screendump shows the second buffer. The console moves onto a
+# DRM buffer of its own when the driver takes the display, and is shown
+# again when drmtest closes the device.
 hostrun rm -rf /tmp/rustos-drm && mkdir -p /tmp/rustos-drm
 wait # $ 240
 send ls /dev/dri; dmesg | grep -a -e "\[drm\]" -e "\[fb\]" | cat
 wait card0
 wait handed over
+wait console on a \d+x\d+ display buffer
 wait # $
+sleep 1
+monitor screendump /tmp/rustos-drm/console.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-drm/console.ppm 'count:229,229,229>=5000'
 send drmtest -t 8 > /tmp/drm.txt &
 sleep 5
 monitor screendump /tmp/rustos-drm/screen.ppm
@@ -16,5 +22,10 @@ sleep 1
 hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-drm/screen.ppm 'count:0,0,192>=200000' 'count:255,255,255>=1000'
 send wait; cat /tmp/drm.txt
 wait flipped to blue
+wait PRIME: dma-buf fd \d+, imported as handle \d+ \(same\), pixels 0000c0 ffffff
+wait sync_file: no syncobjs
 wait drmtest: ok
 wait # $
+sleep 1
+monitor screendump /tmp/rustos-drm/restored.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-drm/restored.ppm 'count:229,229,229>=5000' 'count:0,0,192<=100'

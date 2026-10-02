@@ -1219,7 +1219,8 @@ int register_netdevice(struct net_device *dev)
 
 	list_add_tail_rcu(&dev->dev_list, &init_net.dev_base_head);
 	dev->reg_state = NETREG_REGISTERED;
-	/* No carrier until opened (dev_open). */
+	/* Down, without carrier, until opened (dev_open). */
+	rustos_kpi_netdev_state(handle, 0);
 	rustos_kpi_netdev_carrier(handle, 0);
 	call_netdevice_notifiers(NETDEV_REGISTER, dev);
 	return 0;
@@ -1261,6 +1262,7 @@ int dev_open(struct net_device *dev, struct netlink_ext_ack *extack)
 	}
 	dev->flags |= IFF_UP;
 	call_netdevice_notifiers(NETDEV_UP, dev);
+	rustos_kpi_netdev_state(kpi_netdev_handle(dev), 1);
 	rustos_kpi_netdev_carrier(kpi_netdev_handle(dev), netif_carrier_ok(dev));
 	return 0;
 }
@@ -1277,6 +1279,7 @@ void dev_close(struct net_device *dev)
 		dev->netdev_ops->ndo_stop(dev);
 	dev->flags &= ~IFF_UP;
 	call_netdevice_notifiers(NETDEV_DOWN, dev);
+	rustos_kpi_netdev_state(kpi_netdev_handle(dev), 0);
 	rustos_kpi_netdev_carrier(kpi_netdev_handle(dev), 0);
 }
 

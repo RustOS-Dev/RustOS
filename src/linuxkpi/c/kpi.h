@@ -77,6 +77,8 @@ u64 rustos_kpi_random_u64(void);
 u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless, int ether,
 			       const char *driver, const char *name);
 int rustos_kpi_netdev_ifindex(u64 handle);
+/* The interface was opened (1) or closed (0) on the Linux side. */
+void rustos_kpi_netdev_state(u64 handle, int up);
 void rustos_kpi_netdev_unregister(u64 handle);
 void rustos_kpi_netdev_set_mac(u64 handle, const u8 *mac);
 int rustos_kpi_ifname_free(const char *name);

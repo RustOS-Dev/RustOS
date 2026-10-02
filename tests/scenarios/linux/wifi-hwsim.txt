@@ -109,6 +109,8 @@ send echo 'sae_pwe=2' >> /tmp/sae.conf
 wait # $ 20
 send echo 'wpa_pairwise_update_count=10' >> /tmp/sae.conf
 wait # $ 20
+send echo 'wpa_group_rekey=5' >> /tmp/sae.conf
+wait # $ 20
 send hostapd -B -f /tmp/hostapd-sae.log /tmp/sae.conf; echo hostapd=$?; grep -iE "fail|error|could not" /tmp/hostapd-sae.log | head
 wait hostapd=0 120
 wait # $ 30
@@ -121,11 +123,11 @@ wait # $ 30
 send sleep 12; grep -c 'Group rekeying completed' /var/log/wpa_supplicant-wlan0.log | sed 's/^/rekeys=/'
 wait rekeys=[1-9] 60
 wait # $ 30
-send wpa_cli -i wlan0 roam 02:00:00:00:01:01; sleep 8; wifi -i wlan0 status | grep bssid
-wait bssid +02:00:00:00:01:01 60
+send wpa_cli -i wlan0 roam 02:00:00:00:01:01; sleep 8; wifi -i wlan0 status | sed -n 's/^ *bssid */bssid=/p'
+wait bssid=02:00:00:00:01:01 60
 wait # $ 30
-send wpa_cli -i wlan0 roam 02:00:00:00:01:00; sleep 8; wifi -i wlan0 status | grep bssid
-wait bssid +02:00:00:00:01:00 60
+send wpa_cli -i wlan0 roam 02:00:00:00:01:00; sleep 8; wifi -i wlan0 status | sed -n 's/^ *bssid */bssid=/p'
+wait bssid=02:00:00:00:01:00 60
 wait # $ 30
 send wifi -i wlan0 disconnect; sleep 2; wifi -i wlan0 status | head -1
 wait wlan0: disconnected 30

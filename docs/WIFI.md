@@ -7,6 +7,19 @@ switching, ACKs, retransmission, rate scaling, CCMP/GCMP encryption) runs in
 the adapter's firmware; authentication, association and the WPA handshakes
 run in the kernel.
 
+Adapters with Linux drivers (MediaTek MT7921 and others, M29 onwards) use
+Linux's 802.11 stack through [LinuxKPI](LINUXKPI.md), with **wpa_supplicant**
+doing the security. `wifi` drives these adapters through wpa_supplicant's
+control socket (`userland/nettools/src/wpa.rs`), starting wpa_supplicant when
+needed. The commands are the same. Linux-driver interfaces also support:
+- WPA2/WPA3-Enterprise:
+  `wifi connect SSID PASSWORD --eap peap|ttls --identity ID [--ca CERT.pem]`;
+- OWE;
+- `hostapd` for access points.
+
+The native AX210 driver stays the default for its cards until Linux iwlwifi
+(M31) has passed `hwcheck` on hardware.
+
 ## Components
 
 | Layer | Location | Role |

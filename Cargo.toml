@@ -81,6 +81,13 @@ default-features = false
 
 # WPA2 key derivation and WPA3-SAE group math are slow unoptimized; keep
 # them fast in debug kernels too.
+# Light optimisation for the kernel itself: unoptimised packet and
+# 802.11 paths are too slow under QEMU's emulation for Wi-Fi handshakes
+# (wifi-hwsim) to meet their timeouts.
+[profile.dev]
+opt-level = 1
+[profile.dev.package.smoltcp]
+opt-level = 3
 [profile.dev.package.wlan]
 opt-level = 3
 [profile.dev.package.sha1]

@@ -133,9 +133,16 @@ Detailed plan: [ROADMAP-ROUND4.md](ROADMAP-ROUND4.md). RustOS is
 GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 (Linux 6.18 LTS) instead of being rewritten.
 
-- [ ] **M27** LinuxKPI foundation: import tooling, C build, shim core (tasks, locking, RCU, timers, workqueues, memory/`struct page`, IRQ, DMA, PCI, firmware, cdev, device model); Linux e1000 in QEMU
-  - [x] import tooling + C build; [x] Linux e1000 in QEMU (`eth-linux-e1000`); [ ] shim remainder (RCU, firmware, cdev, device core, sysfs); [ ] RustOS gaps (§4 of ROADMAP-ROUND4.md)
-- [ ] **M28** Linux networking glue (netdev, skb, NAPI, netlink, AF_PACKET, crypto subset), cfg80211 + mac80211, wpa_supplicant/hostapd, `mac80211_hwsim` CI
+- [x] **M27** LinuxKPI foundation: import tooling, C build, shim core (tasks, locking, RCU, timers, workqueues, memory/`struct page`, IRQ, DMA, PCI, firmware, cdev, device model); Linux e1000 in QEMU
+  - [x] import tooling + C build; [x] Linux e1000 in QEMU (`eth-linux-e1000`); [x] shim remainder (RCU, SRCU, ww_mutex, firmware, cdev/misc/anon fds, device core, sysfs, ACPI); [x] RustOS gaps (PAT/WC, VA allocator, device mmap, IRQ depth, PCI claims); in-kernel self-test instead of host unit tests
+- [x] **M28** Linux networking glue (netdev, skb, NAPI, netlink, AF_PACKET, crypto subset), cfg80211 + mac80211, wpa_supplicant/hostapd, `mac80211_hwsim` CI
+  - `wifi-hwsim`:
+    - WPA2 and DHCP over the air;
+    - WPA3-SAE + PMF on a two-BSS AP;
+    - group rekey, roam, reconnect, wrong password.
+  - `wifi-hwsim-eap`: PEAP-MSCHAPv2.
+  - `wifi` drives wpa_supplicant for Linux-driver interfaces.
+  - Firmware for supported cards ships in the image (`firmware/stock.list`).
 - [ ] **M29** MediaTek MT7921/MT7921K (RZ608)/MT7922 PCIe via Linux mt76
 - [ ] **M30** LinuxKPI USB core, xHCI isochronous IN, Linux usbnet in QEMU, MT7921AU, MediaTek Bluetooth firmware
 - [ ] **M31** Wi-Fi coverage: iwlwifi (all), rtw88, rtw89, mt76 family, mt7601u, ath9k/ath9k_htc, ath10k/11k/12k, brcmfmac

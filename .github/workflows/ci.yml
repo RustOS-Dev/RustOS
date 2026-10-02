@@ -170,5 +170,10 @@ jobs:
       - name: Linux drivers through LinuxKPI (Linux e1000, test driver; 2 and 4 CPUs)
         run: |
           cargo build --features linux-e1000,linux-test
-          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/*.txt
-          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/*.txt
+          S="tests/scenarios/linux/eth-linux-e1000.txt tests/scenarios/linux/linuxkpi-chrdev.txt"
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos $S
+          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos $S
+      - name: Linux 802.11 stack (cfg80211, mac80211, mac80211_hwsim) with hostapd and wpa_supplicant
+        run: |
+          cargo build --features linux-hwsim
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/wifi-hwsim.txt tests/scenarios/linux/wifi-hwsim-eap.txt

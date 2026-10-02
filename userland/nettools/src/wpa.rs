@@ -34,7 +34,7 @@ impl Ctrl {
         let c = Ctrl { sock, local };
         c.sock
             .connect_raw(&net::unix_addr(&format!("{}/{}", CTRL_DIR, iface)))?;
-        c.sock.set_timeout(10_000)?;
+        c.sock.set_timeout(5_000)?;
         Ok(c)
     }
 
@@ -51,6 +51,20 @@ impl Ctrl {
                 return Ok(reply);
             }
         }
+    }
+
+    /// Wait (attached) for an event whose text contains `name`.
+    pub fn wait_event(&self, name: &str, timeout_ms: u64) -> bool {
+        let start = rustos_rt::time::millis();
+        let mut buf = vec![0u8; 4096];
+        while rustos_rt::time::millis() - start < timeout_ms {
+            match self.sock.recv(&mut buf) {
+                Ok(n) if String::from_utf8_lossy(&buf[..n]).contains(name) => return true,
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        }
+        false
     }
 
     /// A command whose reply must be "OK".
@@ -171,6 +185,12 @@ pub fn status(iface: &str) -> String {
         out.push_str(&format!(" channel={}", channel(f)));
     }
     if let Some(k) = kv(&st, "key_mgmt") {
+        // "WPA2/IEEE 802.1X/EAP" -> WPA2-EAP; WPA2-PSK, SAE, OWE, NONE as is.
+        let k = if k.contains("802.1X") {
+            format!("{}-EAP", k.split('/').next().unwrap_or("WPA2"))
+        } else {
+            k.replace(' ', "-")
+        };
         out.push_str(&format!(" security={}", k));
     }
     if state == "connected"
@@ -190,12 +210,16 @@ pub fn status(iface: &str) -> String {
 /// lines.
 pub fn scan(iface: &str) -> Result<String, String> {
     let c = ensure(iface)?;
+    // Hear the scan finish: a full sweep (2.4, 5, 6 GHz) takes seconds.
+    let events = Ctrl::open(iface).map_err(|e| format!("{}", e))?;
+    events.ok("ATTACH")?;
     // FAIL-BUSY: a scan is already running; its results serve.
     match c.request("SCAN").map_err(|e| format!("{}", e))?.trim() {
         "OK" | "FAIL-BUSY" => {}
         r => return Err(format!("scan: {}", r)),
     }
-    rustos_rt::time::sleep_ms(4000);
+    events.wait_event("CTRL-EVENT-SCAN-RESULTS", 30_000);
+    let _ = events.request("DETACH");
     let res = c.request("SCAN_RESULTS").map_err(|e| format!("{}", e))?;
     let mut out = String::new();
     for l in res.lines().skip(1) {

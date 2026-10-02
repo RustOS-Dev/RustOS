@@ -963,6 +963,20 @@ pub fn set_link_up(name: &str, up: bool) -> KResult<()> {
     Ok(())
 }
 
+/// Record that the driver opened or closed an interface (it changed state
+/// on its own, or `set_link_up` asked it to).
+pub fn set_admin_state(index: u32, up: bool) {
+    with(|net| {
+        if let Some(ifc) = net.by_index(index)
+            && ifc.up != up
+        {
+            ifc.up = up;
+            rtnetlink::link_event(ifc);
+        }
+    });
+    kick();
+}
+
 /// Remove the interface with index `index`.
 pub fn unregister_index(index: u32) {
     if let Some(name) = with(|net| {

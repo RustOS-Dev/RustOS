@@ -10,6 +10,16 @@ Status: M27 proof. Linux 6.18.54's `e1000` driver runs in QEMU behind
 `--features linux-e1000`. It gets a DHCP lease, pings, and moves 4 MiB over
 HTTP both ways (`tests/scenarios/linux/eth-linux-e1000.txt`).
 
+M28: Linux's 802.11 stack (cfg80211, mac80211) and `mac80211_hwsim` run
+behind `--features linux-wifi` / `linux-hwsim`. hostapd and wpa_supplicant
+(ports) drive it over nl80211, and `wifi` drives wpa_supplicant.
+`tests/scenarios/linux/wifi-hwsim.txt` covers:
+- WPA2 with DHCP over the air;
+- WPA3-SAE with PMF on a two-BSS AP;
+- group rekeying, roaming, reconnecting, and a wrong password.
+
+`wifi-hwsim-eap.txt` covers PEAP-MSCHAPv2.
+
 ## Building
 
 ```sh
@@ -107,6 +117,27 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
 - **Boot self-test.** Before any Linux driver runs, `kpi_selftest()` checks
   memory, per-CPU data, locks, printf, kthreads, spinlock contention, timers and
   workqueues. LinuxKPI stays off if the test fails.
+
+### Networking and 802.11
+
+- **net_device.** `c/net.c` implements registration as in `net/core/dev.c`,
+  without qdiscs.
+  - It sends the netdevice notifiers (POST_INIT, REGISTER, UP, GOING_DOWN, DOWN, UNREGISTER).
+  - `dev_open`/`dev_close` are tied to RustOS's link up/down (`ip link`, SIOCSIFFLAGS) in both directions.
+  - Freeing is deferred to `rtnl_unlock()`.
+  - Each netdev is a RustOS interface with the same ifindex and name.
+- **Frames.**
+  - Received skbs are copied out as Ethernet frames.
+  - RustOS frames become skbs and go through `__dev_queue_xmit` (with `ndo_select_queue`).
+  - skbs support clones, copies and queues.
+- **Netlink.** User sockets are RustOS's (`src/net/netlink.rs`).
+  - A Linux kernel socket (`c/netlink.c`) gets their datagrams through `cfg->input`.
+  - Its unicasts and multicasts are copied back out.
+  - Dumps run to completion when requested.
+  - Generic netlink, `lib/nlattr.c` and nl80211 are Linux's own.
+- **Namespaces.** A single `init_net`. `pernet_operations` run once, at registration.
+- **Crypto.** `c/crypto.c` implements `ccm(aes)`, `gcm(aes)`, `cmac(aes)` and `ctr(aes)` on `lib/crypto` (AES, AES-GCM, ARC4), behind the AEAD, shash and skcipher APIs mac80211 uses.
+- **Locks shared with Linux.** Rust state that Linux code reaches with preemption off must use `sync::IrqMutex`, as the netlink and packet sockets do.
 
 ## Debugging
 

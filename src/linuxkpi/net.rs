@@ -144,6 +144,13 @@ extern "C" fn rustos_kpi_netdev_ifindex(handle: u64) -> c_int {
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netdev_state(handle: u64, up: c_int) {
+    if let Some(d) = dev(handle) {
+        crate::net::set_admin_state(d.index.load(Ordering::SeqCst), up != 0);
+    }
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rustos_kpi_netdev_unregister(handle: u64) {
     if let Some(d) = without_interrupts(|| DEVS.lock().remove(&handle)) {
         crate::net::unregister_index(d.index.load(Ordering::SeqCst));

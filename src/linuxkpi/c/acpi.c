@@ -519,3 +519,20 @@ int acpi_reconfig_notifier_unregister(struct notifier_block *nb)
 {
 	return 0;
 }
+
+/* ACPI device objects for platform devices are not created yet (M33's
+ * ACPI enumeration): lookups find nothing. */
+const char *acpi_device_hid(struct acpi_device *device)
+{
+	return "device";
+}
+
+struct acpi_device *acpi_find_child_device(struct acpi_device *parent, u64 address,
+					   bool check_children)
+{
+	return NULL;
+}
+
+void acpi_device_fix_up_power_extended(struct acpi_device *adev)
+{
+}

@@ -158,6 +158,7 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [ ] hardware: `hwcheck ethernet` on each family (compiled, untested on hardware)
 - [ ] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware
   - [x] USB serial (usb-serial, ftdi_sio, cp210x, ch341, pl2303, option, cdc-acm) on RustOS terminals (`usb-serial`); `stty`
+  - [x] SD/MMC: Linux MMC core + sdhci-pci/sdhci-acpi, cards as `mmcblkN` (`sdcard`)
 - [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
 - [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
 - [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU

@@ -12,6 +12,8 @@
 #include <linux/pm_qos.h>
 #include <linux/vmalloc.h>
 #include <asm/processor.h>
+#include <asm/cpu_device_id.h>
+#include <asm/iosf_mbi.h>
 #include <linux/kernel.h>
 #include <linux/limits.h>
 #include <linux/moduleparam.h>
@@ -472,4 +474,36 @@ int seq_write(struct seq_file *m, const void *data, size_t len)
 void __seq_puts(struct seq_file *m, const char *s)
 {
 	seq_write(m, s, strlen(s));
+}
+
+/* No per-CPU-model quirks: x86_match_cpu() tables match nothing (the
+ * drivers' Intel SoC workarounds are for Atom-era boards). */
+const struct x86_cpu_id *x86_match_cpu(const struct x86_cpu_id *match)
+{
+	return NULL;
+}
+
+bool dmi_match(enum dmi_field f, const char *str)
+{
+	return false;
+}
+
+/* The Intel SoC sideband bus (IOSF MBI) is not available. */
+bool iosf_mbi_available(void)
+{
+	return false;
+}
+
+int iosf_mbi_read(u8 port, u8 opcode, u32 offset, u32 *mdr)
+{
+	return -ENODEV;
+}
+
+int iosf_mbi_write(u8 port, u8 opcode, u32 offset, u32 mdr)
+{
+	return -ENODEV;
+}
+
+void add_device_randomness(const void *buf, size_t len)
+{
 }

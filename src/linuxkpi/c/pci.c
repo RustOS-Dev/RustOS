@@ -1171,3 +1171,39 @@ int __irq_apply_affinity_hint(unsigned int irq, const struct cpumask *m, bool se
 {
 	return 0;
 }
+
+/* ------------------------------------------------ more DMA (M33 drivers) */
+
+void __dma_sync_sg_for_cpu(struct device *dev, struct scatterlist *sg, int nelems,
+			   enum dma_data_direction dir)
+{
+	mb();
+}
+
+void __dma_sync_sg_for_device(struct device *dev, struct scatterlist *sg, int nelems,
+			      enum dma_data_direction dir)
+{
+	mb();
+}
+
+/* No IOMMU or bounce limits: any size maps. */
+size_t dma_max_mapping_size(struct device *dev)
+{
+	return SIZE_MAX;
+}
+
+static int kpi_dmam_match(struct device *dev, void *res, void *data)
+{
+	return ((struct kpi_dmam *)res)->vaddr == data;
+}
+
+void dmam_free_coherent(struct device *dev, size_t size, void *vaddr, dma_addr_t dma_handle)
+{
+	WARN_ON(devres_release(dev, kpi_dmam_release, kpi_dmam_match, vaddr));
+}
+
+/* Interrupts do not wake the system (no suspend). */
+int irq_set_irq_wake(unsigned int irq, unsigned int on)
+{
+	return 0;
+}

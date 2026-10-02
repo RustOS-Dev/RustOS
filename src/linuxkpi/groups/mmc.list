@@ -1,0 +1,37 @@
+# SD/MMC (M33): Linux's MMC core and the SDHCI host drivers (PCI, with the
+# O2 Micro, Arasan, DWC and GL9750/9755 variants, and ACPI). Cards become
+# RustOS disks through c/mmc.c (Linux's mmc_block needs blk-mq).
+module: mmc_core
+drivers/mmc/core/core.c
+drivers/mmc/core/bus.c
+drivers/mmc/core/host.c
+drivers/mmc/core/mmc.c
+drivers/mmc/core/mmc_ops.c
+drivers/mmc/core/sd.c
+drivers/mmc/core/sd_ops.c
+drivers/mmc/core/sdio.c
+drivers/mmc/core/sdio_ops.c
+drivers/mmc/core/sdio_bus.c
+drivers/mmc/core/sdio_cis.c
+drivers/mmc/core/sdio_io.c
+drivers/mmc/core/sdio_irq.c
+drivers/mmc/core/sd_uhs2.c
+drivers/mmc/core/slot-gpio.c
+drivers/mmc/core/regulator.c
+module: mmcblk
+cflags: -I@LINUX@/drivers/mmc/core
+kpi:mmc.c
+module: sdhci
+drivers/mmc/host/sdhci.c
+module: sdhci_uhs2
+drivers/mmc/host/sdhci-uhs2.c
+module: cqhci
+drivers/mmc/host/cqhci-core.c
+module: sdhci_pci
+drivers/mmc/host/sdhci-pci-core.c
+drivers/mmc/host/sdhci-pci-o2micro.c
+drivers/mmc/host/sdhci-pci-arasan.c
+drivers/mmc/host/sdhci-pci-dwc-mshc.c
+drivers/mmc/host/sdhci-pci-gli.c
+module: sdhci_acpi
+drivers/mmc/host/sdhci-acpi.c

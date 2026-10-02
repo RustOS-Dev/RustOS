@@ -8,6 +8,8 @@ pub mod acpi;
 pub mod chrdev;
 pub mod firmware;
 pub mod mm;
+#[cfg(feature = "linux-mmc")]
+pub mod mmc;
 pub mod net;
 pub mod pci;
 pub mod sched;

@@ -22,6 +22,7 @@
 #include <linux/timer.h>
 #include <linux/hrtimer.h>
 #include <linux/workqueue.h>
+#include <linux/async.h>
 #include "kpi.h"
 
 /* x86_64 Linux makes jiffies an alias of jiffies_64 in its linker script. */
@@ -723,8 +724,12 @@ int kpi_workqueues_init(void)
 	system_freezable_power_efficient_wq = system_percpu_wq;
 	system_bh_wq = system_highpri_wq;
 	system_bh_highpri_wq = system_highpri_wq;
-	return system_percpu_wq && system_highpri_wq && system_long_wq && system_unbound_wq ?
-	       0 : -ENOMEM;
+	if (!system_percpu_wq || !system_highpri_wq || !system_long_wq || !system_unbound_wq)
+		return -ENOMEM;
+	/* kernel/async.c's queue (start_kernel() sets it up in Linux): drivers
+	 * that prefer asynchronous probing (sdhci-pci) use it. */
+	async_init();
+	return 0;
 }
 
 /* -------------------------------------------- jiffies conversions (time.c) */

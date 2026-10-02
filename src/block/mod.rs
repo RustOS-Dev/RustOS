@@ -108,6 +108,8 @@ pub enum DiskKind {
     Virtio,
     /// NVMe namespace: nvme<ctrl>n<ns> (partitions nvme0n1p1)
     Nvme(u32),
+    /// SD/MMC card: mmcblk<n> (partitions mmcblk0p1)
+    Mmc(u32),
 }
 
 /// Allocate an NVMe controller index.
@@ -134,6 +136,7 @@ pub fn register_disk(dev: Arc<dyn BlockDevice>, kind: DiskKind, ns: u32) -> Stri
         DiskKind::Scsi => format!("sd{}", letters(SD_COUNT.fetch_add(1, Ordering::SeqCst))),
         DiskKind::Virtio => format!("vd{}", letters(VD_COUNT.fetch_add(1, Ordering::SeqCst))),
         DiskKind::Nvme(c) => format!("nvme{}n{}", c, ns),
+        DiskKind::Mmc(n) => format!("mmcblk{}", n),
     };
     let cached = cache::CachedDevice::new(dev.clone(), &name);
     let disk = Arc::new(Disk {

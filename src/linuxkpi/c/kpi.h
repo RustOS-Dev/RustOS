@@ -156,6 +156,11 @@ void rustos_kpi_tty_unregister(u64 handle);
 void rustos_kpi_tty_hangup(u64 handle);
 void rustos_kpi_tty_receive(u64 handle, const u8 *data, size_t len);
 
+/* SD/MMC cards (src/linuxkpi/mmc.rs). */
+struct kpi_mmc_disk;
+u64 rustos_kpi_mmc_disk_add(struct kpi_mmc_disk *d, u64 sectors, const char *model, int ro);
+void rustos_kpi_mmc_disk_remove(u64 handle);
+
 /* Credentials of the calling process (src/linuxkpi/sched.rs). */
 u32 rustos_kpi_current_uid(void);
 

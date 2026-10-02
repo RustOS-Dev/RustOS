@@ -24,6 +24,7 @@ not yet run on real hardware; **n/a** = not supported.
 | AHCI (SATA) | BIOS/OS handoff, COMRESET, IDENTIFY, READ/WRITE DMA EXT, FLUSH, NCQ-less; ATAPI detected but unsupported | CI |
 | virtio-blk | modern and transitional devices | CI |
 | USB mass storage | Bulk-only transport, SCSI READ/WRITE(10/16), sense recovery, multi-LUN, hot-plug | CI |
+| SD/MMC on SDHCI readers (PCI, incl. O2 Micro, GL975x, Arasan; ACPI) | Linux MMC core + `sdhci` via LinuxKPI, cards as `mmcblkN`, in release images | CI (`sdcard` on QEMU `sdhci-pci` + `sd-card`) |
 
 Partitions: GPT and MBR. Filesystems: FAT12/16/32 with long names
 (read/write), ext2/ext3/ext4 (read/write, journaled; checked with

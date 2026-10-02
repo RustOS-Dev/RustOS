@@ -30,6 +30,12 @@ M33: USB serial adapters and CDC ACM devices are RustOS terminals
 over QEMU's FTDI adapter, changes the speed with `stty`, and unplugs the
 adapter while it is open.
 
+M33: SD cards on SDHCI readers are RustOS disks (`mmcblkN`,
+`--features linux-mmc`). Linux's MMC core and sdhci-pci/sdhci-acpi find
+the cards. `c/mmc.c` stands in for mmc_block and turns reads and writes into
+single MMC requests. The `sdcard` scenario covers ext4 read and write,
+remount, and FAT formatting.
+
 M30: the LinuxKPI USB core runs Linux USB drivers on RustOS's xHCI driver
 (`--features linux-usb`). Linux's `usbnet` with `cdc_ether` and
 `rndis_host` drives QEMU's `usb-net` behind `--features linux-usbnet`
@@ -76,7 +82,8 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
 - `linux-mt7921` adds `mt7921` and `mt7921u`;
 - `linux-i2c` adds `i2c`, `linux-phy` adds `phy` (phylib, MDIO, phylink), and `linux-eth` adds `eth` (igb, e1000e, igc, alx, tg3, atlantic, r8169) with both;
 - `linux-serial` adds `tty` and `usbserial` (usb-serial, ftdi_sio, cp210x, ch341, pl2303, option, cdc-acm);
-- `linux-drivers` is the release set (`linux-mt7921`, `linux-eth`, `linux-usbnet`, `linux-serial`).
+- `linux-mmc` adds `mmc` (MMC core, SDHCI hosts, the block bridge);
+- `linux-drivers` is the release set (`linux-mt7921`, `linux-eth`, `linux-usbnet`, `linux-serial`, `linux-mmc`).
 
 ## How the pieces fit
 

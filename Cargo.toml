@@ -46,6 +46,9 @@ linux-video = ["linux-usb", "linux-i2c"]
 # of the native HDA and USB audio drivers (M34). USB audio reports to the
 # media controller, hence linux-video.
 linux-sound = ["linux-usb", "linux-video", "linux-hid"]
+# DRM core and KMS helpers (M35); drivers are features of their own.
+linux-drm = ["linuxkpi"]
+linux-drm-bochs = ["linux-drm"]
 # SD/MMC cards on SDHCI hosts (PCI, ACPI) with Linux's MMC core: mmcblkN.
 linux-mmc = ["linuxkpi"]
 # Linux I2C core (adapters, ACPI-enumerated clients, bit-banging).
@@ -59,7 +62,7 @@ linux-eth = ["linux-i2c", "linux-phy"]
 # MT7921AU USB adapters.
 linux-mt7921 = ["linux-wifi", "linux-usb"]
 # The Linux drivers release images ship (write_to_drive.sh builds with it).
-linux-drivers = ["linux-mt7921", "linux-eth", "linux-usbnet", "linux-serial", "linux-mmc", "linux-hid", "linux-platform", "linux-video", "linux-sound"]
+linux-drivers = ["linux-mt7921", "linux-eth", "linux-usbnet", "linux-serial", "linux-mmc", "linux-hid", "linux-platform", "linux-video", "linux-sound", "linux-drm-bochs"]
 
 [dependencies]
 bootloader_api = "0.11"

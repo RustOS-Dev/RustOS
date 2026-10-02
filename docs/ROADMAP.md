@@ -168,6 +168,7 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] ALSA core, OSS emulation, snd-hda-intel + codecs, snd-usb-audio on isochronous URBs (`audio-linux`); in release images
   - [ ] SOF/ACP DSP microphones; Linux virtio-sound (native driver kept)
 - [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
+  - [x] DRM core, KMS helpers, GEM shmem, dma-buf/sync_file, bochs; firmware framebuffer handover; `drmtest` (`drm-bochs`)
 - [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU
 - [ ] **M37** C++ runtime, Wayland stack, software-rendered Weston desktop
 - [ ] **M38** AMD GPUs (amdgpu): display, rendering, power

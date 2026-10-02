@@ -45,6 +45,9 @@ struct kpi_kthread {
 	struct completion parked;	/* the thread reached kthread_parkme() */
 };
 
+/* Shared by all tasks: no Linux pids, signals or rlimits are tracked. */
+static struct signal_struct kpi_signal;
+
 static struct task_struct *kpi_new_task(const char *name)
 {
 	struct task_struct *t = kzalloc(sizeof(*t), GFP_ATOMIC);
@@ -55,6 +58,7 @@ static struct task_struct *kpi_new_task(const char *name)
 	refcount_set(&t->usage, 1);
 	strscpy(t->comm, name ?: "rustos", sizeof(t->comm));
 	t->prio = t->static_prio = t->normal_prio = MAX_RT_PRIO + 20;
+	t->signal = &kpi_signal;
 	return t;
 }
 

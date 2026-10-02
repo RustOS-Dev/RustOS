@@ -1,0 +1,3 @@
+# QEMU's standard VGA (-vga std, 1234:1111) (M35).
+module: bochs
+drivers/gpu/drm/tiny/bochs.c

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * GPIO and pin control for builds without gpiolib (linux-platform): the
- * device core and drivers in other groups call into gpiolib's consumer
- * API, which then finds no GPIOs, as on a system without GPIO
- * controllers. With gpiolib built, its definitions replace these weak
- * ones.
+ * GPIO, pin control and DRM panel calls for builds without gpiolib
+ * (linux-platform) or DRM (linux-drm). The device core and drivers in
+ * other groups call into these APIs, which then find no GPIOs or panels,
+ * as on a system without them. When the subsystem is built, its
+ * definitions replace these weak ones.
  */
 #include <linux/acpi.h>
 #include <linux/device.h>
@@ -12,6 +12,7 @@
 #include <linux/gpio/consumer.h>
 #include <linux/gpio/machine.h>
 #include <linux/pinctrl/devinfo.h>
+#include <drm/drm_panel.h>
 #include "kpi.h"
 
 /* drivers/base/pinctrl.c: devices have no pin control states (ACPI
@@ -104,4 +105,21 @@ struct gpio_desc *__weak devm_gpiod_get_optional(struct device *dev, const char 
 						 enum gpiod_flags flags)
 {
 	return NULL;
+}
+
+/* ------------------------------------- DRM panel followers, without DRM */
+
+bool __weak drm_is_panel_follower(struct device *dev)
+{
+	return false;
+}
+
+int __weak drm_panel_add_follower(struct device *follower_dev,
+				  struct drm_panel_follower *follower)
+{
+	return -ENODEV;
+}
+
+void __weak drm_panel_remove_follower(struct drm_panel_follower *follower)
+{
 }

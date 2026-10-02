@@ -23,6 +23,7 @@
 #include <linux/proc_fs.h>
 #include <linux/string.h>
 #include <net/dropreason.h>
+#include <linux/irq_work.h>
 #include "kpi.h"
 
 enum system_states system_state = SYSTEM_RUNNING;
@@ -700,3 +701,17 @@ void clocks_calc_mult_shift(u32 *mult, u32 *shift, u32 from, u32 to, u32 maxsec)
 	*mult = tmp;
 	*shift = sft;
 }
+
+/* ------------------------------------------------------------ irq_work */
+
+/* Run the work at once, with interrupts off as from an interrupt. */
+bool irq_work_queue(struct irq_work *work)
+{
+	unsigned long flags;
+
+	local_irq_save(flags);
+	work->func(work);
+	local_irq_restore(flags);
+	return true;
+}
+

@@ -23,6 +23,8 @@ int rustos_kpi_is_vmalloc(const void *addr);
 u64 rustos_kpi_virt_to_phys(u64 virt);
 void *rustos_kpi_vmap(const u64 *phys, u64 count);
 void rustos_kpi_vunmap(const void *virt, u64 count);
+u64 rustos_kpi_fb_phys(u64 *len);
+void rustos_kpi_fb_release(void);
 void *rustos_kpi_ioremap(u64 phys, u64 size, int wc);
 void rustos_kpi_iounmap(void *addr);
 

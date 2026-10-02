@@ -59,3 +59,4 @@ drivers/acpi/acpi_platform.c
 drivers/leds/led-core.c
 drivers/leds/led-class.c
 drivers/leds/led-triggers.c
+lib/list_sort.c

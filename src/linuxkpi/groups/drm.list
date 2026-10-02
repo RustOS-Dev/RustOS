@@ -1,0 +1,72 @@
+# Graphics (M35): the DRM core (/dev/dri/*), KMS helpers, the GEM shmem
+# helper, and the video helpers they use (apertures, video= options,
+# HDMI infoframes, sync files).
+kpi:drm.c
+module: video
+drivers/video/aperture.c
+drivers/video/cmdline.c
+drivers/video/nomodeset.c
+drivers/video/hdmi.c
+module: drm
+drivers/gpu/drm/drm_atomic.c
+drivers/gpu/drm/drm_atomic_uapi.c
+drivers/gpu/drm/drm_auth.c
+drivers/gpu/drm/drm_blend.c
+drivers/gpu/drm/drm_bridge.c
+drivers/gpu/drm/drm_cache.c
+drivers/gpu/drm/drm_color_mgmt.c
+drivers/gpu/drm/drm_connector.c
+drivers/gpu/drm/drm_crtc.c
+drivers/gpu/drm/drm_displayid.c
+drivers/gpu/drm/drm_drv.c
+drivers/gpu/drm/drm_dumb_buffers.c
+drivers/gpu/drm/drm_edid.c
+drivers/gpu/drm/drm_eld.c
+drivers/gpu/drm/drm_encoder.c
+drivers/gpu/drm/drm_file.c
+drivers/gpu/drm/drm_fourcc.c
+drivers/gpu/drm/drm_framebuffer.c
+drivers/gpu/drm/drm_gem.c
+drivers/gpu/drm/drm_ioctl.c
+drivers/gpu/drm/drm_lease.c
+drivers/gpu/drm/drm_managed.c
+drivers/gpu/drm/drm_mm.c
+drivers/gpu/drm/drm_mode_config.c
+drivers/gpu/drm/drm_mode_object.c
+drivers/gpu/drm/drm_modes.c
+drivers/gpu/drm/drm_modeset_lock.c
+drivers/gpu/drm/drm_plane.c
+drivers/gpu/drm/drm_prime.c
+drivers/gpu/drm/drm_print.c
+drivers/gpu/drm/drm_property.c
+drivers/gpu/drm/drm_rect.c
+drivers/gpu/drm/drm_syncobj.c
+drivers/gpu/drm/drm_sysfs.c
+drivers/gpu/drm/drm_vblank.c
+drivers/gpu/drm/drm_vblank_work.c
+drivers/gpu/drm/drm_vma_manager.c
+drivers/gpu/drm/drm_writeback.c
+drivers/gpu/drm/drm_panel.c
+drivers/gpu/drm/drm_pci.c
+module: drm_panel_orientation_quirks
+drivers/gpu/drm/drm_panel_orientation_quirks.c
+module: drm_kms_helper
+drivers/gpu/drm/drm_atomic_helper.c
+drivers/gpu/drm/drm_atomic_state_helper.c
+drivers/gpu/drm/drm_bridge_helper.c
+drivers/gpu/drm/drm_crtc_helper.c
+drivers/gpu/drm/drm_damage_helper.c
+drivers/gpu/drm/drm_flip_work.c
+drivers/gpu/drm/drm_format_helper.c
+drivers/gpu/drm/drm_gem_atomic_helper.c
+drivers/gpu/drm/drm_gem_framebuffer_helper.c
+drivers/gpu/drm/drm_kms_helper_common.c
+drivers/gpu/drm/drm_modeset_helper.c
+drivers/gpu/drm/drm_plane_helper.c
+drivers/gpu/drm/drm_probe_helper.c
+drivers/gpu/drm/drm_self_refresh_helper.c
+drivers/gpu/drm/drm_simple_kms_helper.c
+drivers/gpu/drm/drm_vblank_helper.c
+drivers/gpu/drm/bridge/panel.c
+module: drm_shmem_helper
+drivers/gpu/drm/drm_gem_shmem_helper.c

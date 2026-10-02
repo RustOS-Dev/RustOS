@@ -200,8 +200,8 @@ def licence_ok(expr):
         return True
     # e.g. "GPL-2.0 OR MIT", "(GPL-2.0+ WITH Linux-syscall-note) OR BSD-3-Clause"
     expr = expr.replace("(", " ").replace(")", " ")
-    for alt in re.split(r"\s+OR\s+", expr):
-        ids = re.split(r"\s+AND\s+", alt)
+    for alt in re.split(r"\s+OR\s+", expr, flags=re.I):
+        ids = re.split(r"\s+AND\s+", alt, flags=re.I)
         if all(i.split(" WITH ")[0].strip() in ALLOWED for i in ids):
             return True
     return False

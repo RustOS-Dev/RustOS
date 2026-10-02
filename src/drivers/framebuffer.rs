@@ -1005,6 +1005,16 @@ pub fn geometry() -> Option<(usize, usize, usize, usize, bool)> {
     })
 }
 
+/// A display driver took the device (Linux DRM): stop drawing on the
+/// firmware framebuffer. Text output continues on the serial port.
+pub fn release() {
+    let had =
+        x86_64::instructions::interrupts::without_interrupts(|| CONSOLE.lock().take().is_some());
+    if had {
+        crate::println!("[fb] firmware framebuffer handed over to a display driver");
+    }
+}
+
 /// Physical address of the framebuffer (for mmap of /dev/fb0).
 pub fn framebuffer_phys() -> Option<(u64, usize)> {
     x86_64::instructions::interrupts::without_interrupts(|| {

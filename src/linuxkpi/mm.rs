@@ -170,3 +170,21 @@ extern "C" fn rustos_kpi_vunmap(virt: *const u8, count: u64) {
         mm::unmap_frames(virt as u64, count as usize);
     }
 }
+
+/// The firmware framebuffer (physical address and length), or 0.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_fb_phys(len: *mut u64) -> u64 {
+    match crate::drivers::framebuffer::framebuffer_phys() {
+        Some((p, l)) => {
+            unsafe { *len = l as u64 };
+            p
+        }
+        None => 0,
+    }
+}
+
+/// A Linux display driver took over the firmware framebuffer.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_fb_release() {
+    crate::drivers::framebuffer::release();
+}

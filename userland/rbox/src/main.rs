@@ -9,6 +9,7 @@
 extern crate alloc;
 
 mod bluetooth;
+mod drm;
 mod files;
 mod fsutil;
 mod hash;
@@ -52,6 +53,7 @@ const APPLETS: &[(&str, Applet)] = &[
     ("env", sys::env),
     ("evtest", input::evtest),
     ("vgrab", video::vgrab),
+    ("drmtest", drm::drmtest),
     ("fallocate", fsutil::fallocate),
     ("false", |_| 1),
     ("fgconsole", sys::fgconsole),

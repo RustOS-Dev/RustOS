@@ -63,6 +63,17 @@ devices, so the chain is compiled but untested on hardware. The
 `_CRS` conversion and a GPIO-style domain with a one-shot thread. Intel LPSS
 I2C (intel-lpss PCI) and Intel pin controllers are not imported yet.
 
+M35: graphics through Linux's DRM core, KMS helpers and the GEM shmem
+helper (`--features linux-drm`), with the bochs driver for QEMU's standard
+VGA (`linux-drm-bochs`, in release images): `/dev/dri/card0` with
+modesetting, dumb buffers, page flips and their events. GEM objects live
+in shmem files that `c/drm.c` implements (an xarray of zeroed pages). The
+firmware framebuffer is an aperture owner, as Linux's sysfb devices are:
+when a DRM driver takes the display, RustOS stops drawing its console
+there (text continues on the serial port; M35.3 moves the console onto
+DRM). `drmtest` (rbox) exercises the KMS API; the `drm-bochs` scenario
+checks the result with a QEMU screendump.
+
 M34: Linux sound (`--features linux-sound`, in release images in place of
 the native HDA and USB audio drivers): the ALSA core with OSS emulation,
 snd-hda-intel with the codec drivers, and snd-usb-audio on the LinuxKPI

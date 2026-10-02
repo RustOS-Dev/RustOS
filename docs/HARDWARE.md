@@ -83,6 +83,13 @@ devices are cached (write-back buffer cache, `sync`).
 | Bluetooth LE keyboards/mice (HID over GATT) | CI (`tools/fake-hci.py` over H4) |
 | Bluetooth BR/EDR keyboards/mice (HIDP) | written |
 
+## Graphics
+
+| Device | Status |
+|--------|--------|
+| UEFI GOP framebuffer (console, `/dev/fb0`) | CI |
+| QEMU standard VGA through Linux bochs (DRM/KMS, `/dev/dri/card0`), in release images | CI (`drm-bochs`) |
+
 ## Audio
 
 | Device | Status |

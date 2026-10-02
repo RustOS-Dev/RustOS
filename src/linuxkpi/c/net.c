@@ -1074,6 +1074,20 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	return dev;
 }
 
+/* A net_device that is never registered: a NAPI host for drivers whose
+ * NAPI contexts are not tied to one interface (mt76). */
+static void kpi_dummy_setup(struct net_device *dev)
+{
+	dev->reg_state = NETREG_DUMMY;
+	set_bit(__LINK_STATE_PRESENT, &dev->state);
+	set_bit(__LINK_STATE_START, &dev->state);
+}
+
+struct net_device *alloc_netdev_dummy(int sizeof_priv)
+{
+	return alloc_netdev_mqs(sizeof_priv, "dummy#", NET_NAME_UNKNOWN, kpi_dummy_setup, 1, 1);
+}
+
 struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs, unsigned int rxqs)
 {
 	return alloc_netdev_mqs(sizeof_priv, "eth%d", NET_NAME_ENUM, ether_setup, txqs, rxqs);

@@ -806,3 +806,16 @@ int kpi_chrdev_init(void)
 		return err;
 	return __register_chrdev(KPI_MISC_MAJOR, 0, 256, "misc", &kpi_misc_fops) < 0 ? -EBUSY : 0;
 }
+
+/* fs/libfs.c attribute files: only debugfs uses them, and debugfs is off,
+ * so these are never reached through a file. */
+int simple_attr_open(struct inode *inode, struct file *file, int (*get)(void *, u64 *),
+		     int (*set)(void *, u64), const char *fmt)
+{
+	return -ENODEV;
+}
+
+int simple_attr_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}

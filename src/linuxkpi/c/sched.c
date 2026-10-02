@@ -40,6 +40,7 @@ struct kpi_kthread {
 	int should_park;
 	int result;
 	struct completion exited;
+	struct completion parked;	/* the thread reached kthread_parkme() */
 };
 
 static struct task_struct *kpi_new_task(const char *name)
@@ -284,6 +285,7 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data), void *da
 	k->threadfn = threadfn;
 	k->data = data;
 	init_completion(&k->exited);
+	init_completion(&k->parked);
 	rustos_kpi_spawn(kpi_kthread_main, t, name);
 	return t;
 }
@@ -302,10 +304,51 @@ bool kthread_should_park(void)
 	return (current->flags & PF_KTHREAD) && k && READ_ONCE(k->should_park);
 }
 
+/* Park: the thread calls kthread_parkme() when it sees kthread_should_park()
+ * and sleeps there until unparked (or stopped). */
+void kthread_parkme(void)
+{
+	struct kpi_kthread *k = current->worker_private;
+
+	if (!(current->flags & PF_KTHREAD) || !k)
+		return;
+	complete(&k->parked);
+	for (;;) {
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		if (!READ_ONCE(k->should_park) || READ_ONCE(k->should_stop))
+			break;
+		schedule();
+	}
+	__set_current_state(TASK_RUNNING);
+}
+
+int kthread_park(struct task_struct *t)
+{
+	struct kpi_kthread *k = t->worker_private;
+
+	if (READ_ONCE(k->should_park))
+		return -EBUSY;
+	reinit_completion(&k->parked);
+	WRITE_ONCE(k->should_park, 1);
+	WRITE_ONCE(k->started, 1);
+	wake_up_process(t);
+	wait_for_completion(&k->parked);
+	return 0;
+}
+
+void kthread_unpark(struct task_struct *t)
+{
+	struct kpi_kthread *k = t->worker_private;
+
+	WRITE_ONCE(k->should_park, 0);
+	wake_up_process(t);
+}
+
 int kthread_stop(struct task_struct *t)
 {
 	struct kpi_kthread *k = t->worker_private;
 
+	WRITE_ONCE(k->should_park, 0);
 	WRITE_ONCE(k->should_stop, 1);
 	WRITE_ONCE(k->started, 1);
 	wake_up_process(t);

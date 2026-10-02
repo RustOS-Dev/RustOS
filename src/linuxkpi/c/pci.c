@@ -252,6 +252,88 @@ void __iomem *pci_ioremap_bar(struct pci_dev *pdev, int bar)
 	return ioremap(pci_resource_start(pdev, bar), pci_resource_len(pdev, bar));
 }
 
+/* ------------------------------------------------- managed PCI (pcim_*) */
+
+struct kpi_pcim_table {
+	void __iomem *table[PCI_STD_NUM_BARS];
+};
+
+static void kpi_pcim_table_release(struct device *dev, void *res)
+{
+	struct kpi_pcim_table *t = res;
+
+	for (int i = 0; i < PCI_STD_NUM_BARS; i++)
+		if (t->table[i])
+			pci_iounmap(to_pci_dev(dev), t->table[i]);
+}
+
+void __iomem *const *pcim_iomap_table(struct pci_dev *pdev)
+{
+	struct kpi_pcim_table *t = devres_find(&pdev->dev, kpi_pcim_table_release, NULL, NULL);
+
+	if (t)
+		return t->table;
+	t = devres_alloc(kpi_pcim_table_release, sizeof(*t), GFP_KERNEL);
+	if (!t)
+		return NULL;
+	devres_add(&pdev->dev, t);
+	return t->table;
+}
+
+int pcim_iomap_regions(struct pci_dev *pdev, int mask, const char *name)
+{
+	void __iomem **table = (void __iomem **)pcim_iomap_table(pdev);
+
+	if (!table)
+		return -ENOMEM;
+	for (int bar = 0; bar < PCI_STD_NUM_BARS; bar++) {
+		if (!(mask & BIT(bar)) || !pci_resource_len(pdev, bar))
+			continue;
+		table[bar] = pci_iomap(pdev, bar, 0);
+		if (!table[bar])
+			return -ENOMEM;
+	}
+	return 0;
+}
+
+static void kpi_pcim_disable(struct device *dev, void *res)
+{
+	pci_disable_device(to_pci_dev(dev));
+}
+
+int pcim_enable_device(struct pci_dev *pdev)
+{
+	void *res = devres_alloc(kpi_pcim_disable, 0, GFP_KERNEL);
+	int err;
+
+	if (!res)
+		return -ENOMEM;
+	err = pci_enable_device(pdev);
+	if (err) {
+		devres_free(res);
+		return err;
+	}
+	devres_add(&pdev->dev, res);
+	return 0;
+}
+
+/* ASPM: clear the link's L0s/L1 enables (PCI_EXP_LNKCTL). */
+int pci_disable_link_state(struct pci_dev *pdev, int state)
+{
+	u16 clear = 0;
+
+	if (state & PCIE_LINK_STATE_L0S)
+		clear |= PCI_EXP_LNKCTL_ASPM_L0S;
+	if (state & PCIE_LINK_STATE_L1)
+		clear |= PCI_EXP_LNKCTL_ASPM_L1;
+	return pcie_capability_clear_and_set_word_unlocked(pdev, PCI_EXP_LNKCTL, clear, 0);
+}
+
+int pci_disable_link_state_locked(struct pci_dev *pdev, int state)
+{
+	return pci_disable_link_state(pdev, state);
+}
+
 void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long maxlen)
 {
 	unsigned long len = pci_resource_len(dev, bar);
@@ -684,6 +766,53 @@ void synchronize_irq(unsigned int irq)
 		cpu_relax();
 }
 
+struct kpi_devm_irq {
+	unsigned int irq;
+	void *dev_id;
+};
+
+static void kpi_devm_irq_release(struct device *dev, void *res)
+{
+	struct kpi_devm_irq *r = res;
+
+	free_irq(r->irq, r->dev_id);
+}
+
+static int kpi_devm_irq_match(struct device *dev, void *res, void *data)
+{
+	struct kpi_devm_irq *r = res, *m = data;
+
+	return r->irq == m->irq && r->dev_id == m->dev_id;
+}
+
+int devm_request_threaded_irq(struct device *dev, unsigned int irq, irq_handler_t handler,
+			      irq_handler_t thread_fn, unsigned long irqflags,
+			      const char *devname, void *dev_id)
+{
+	struct kpi_devm_irq *r = devres_alloc(kpi_devm_irq_release, sizeof(*r), GFP_KERNEL);
+	int err;
+
+	if (!r)
+		return -ENOMEM;
+	err = request_threaded_irq(irq, handler, thread_fn, irqflags,
+				   devname ?: dev_name(dev), dev_id);
+	if (err) {
+		devres_free(r);
+		return err;
+	}
+	r->irq = irq;
+	r->dev_id = dev_id;
+	devres_add(dev, r);
+	return 0;
+}
+
+void devm_free_irq(struct device *dev, unsigned int irq, void *dev_id)
+{
+	struct kpi_devm_irq m = { .irq = irq, .dev_id = dev_id };
+
+	WARN_ON(devres_release(dev, kpi_devm_irq_release, kpi_devm_irq_match, &m));
+}
+
 const void *free_irq(unsigned int irq, void *dev_id)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
@@ -753,6 +882,49 @@ void dma_free_attrs(struct device *dev, size_t size, void *cpu_addr, dma_addr_t 
 {
 	if (cpu_addr)
 		free_pages((unsigned long)cpu_addr, get_order(size));
+}
+
+struct kpi_dmam {
+	void *vaddr;
+	dma_addr_t dma;
+	size_t size;
+	unsigned long attrs;
+};
+
+static void kpi_dmam_release(struct device *dev, void *res)
+{
+	struct kpi_dmam *d = res;
+
+	dma_free_attrs(dev, d->size, d->vaddr, d->dma, d->attrs);
+}
+
+void *dmam_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle, gfp_t gfp,
+		       unsigned long attrs)
+{
+	struct kpi_dmam *d = devres_alloc(kpi_dmam_release, sizeof(*d), gfp);
+
+	if (!d)
+		return NULL;
+	d->vaddr = dma_alloc_attrs(dev, size, dma_handle, gfp, attrs);
+	if (!d->vaddr) {
+		devres_free(d);
+		return NULL;
+	}
+	d->dma = *dma_handle;
+	d->size = size;
+	d->attrs = attrs;
+	devres_add(dev, d);
+	return d->vaddr;
+}
+
+/* lib/iomap_copy.c */
+void __ioread32_copy(void *to, const void __iomem *from, size_t count)
+{
+	u32 *dst = to;
+	const u32 __iomem *src = from;
+
+	while (count--)
+		*dst++ = __raw_readl(src++);
 }
 
 dma_addr_t dma_map_page_attrs(struct device *dev, struct page *page, size_t offset, size_t size,

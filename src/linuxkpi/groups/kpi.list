@@ -13,6 +13,7 @@ kpi:initcalls.c
 kpi:rcu.c
 kpi:firmware.c
 kpi:acpi.c
+kpi:pagepool.c
 # Linux library code used as-is.
 lib/errname.c
 lib/hexdump.c

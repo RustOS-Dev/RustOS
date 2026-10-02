@@ -2,6 +2,7 @@
 # mt76 core, connac library, mt792x library and mt7921e. Debugfs,
 # tracing, WED and testmode are configured out.
 drivers/net/wireless/mediatek/mt76/mmio.c
+drivers/net/wireless/mediatek/mt76/debugfs.c
 drivers/net/wireless/mediatek/mt76/util.c
 drivers/net/wireless/mediatek/mt76/dma.c
 drivers/net/wireless/mediatek/mt76/mac80211.c
@@ -23,6 +24,7 @@ drivers/net/wireless/mediatek/mt76/mt7921/mac.c
 drivers/net/wireless/mediatek/mt76/mt7921/mcu.c
 drivers/net/wireless/mediatek/mt76/mt7921/main.c
 drivers/net/wireless/mediatek/mt76/mt7921/init.c
+drivers/net/wireless/mediatek/mt76/mt7921/debugfs.c
 drivers/net/wireless/mediatek/mt76/mt7921/pci.c
 drivers/net/wireless/mediatek/mt76/mt7921/pci_mac.c
 drivers/net/wireless/mediatek/mt76/mt7921/pci_mcu.c

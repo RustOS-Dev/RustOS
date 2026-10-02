@@ -144,6 +144,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - `wifi` drives wpa_supplicant for Linux-driver interfaces.
   - Firmware for supported cards ships in the image (`firmware/stock.list`).
 - [ ] **M29** MediaTek MT7921/MT7921K (RZ608)/MT7922 PCIe via Linux mt76
+  - [x] mt76 + mt792x + mt7921e compiled and linked into release images (`linux-drivers`); PCI driver registers; firmware ships in the image; ACPI SAR (`mt792x_acpi_sar`) on the AML interpreter
+  - [ ] hardware: `hwcheck wifi` on the MT7921K laptop (compiled, untested on hardware)
 - [ ] **M30** LinuxKPI USB core, xHCI isochronous IN, Linux usbnet in QEMU, MT7921AU, MediaTek Bluetooth firmware
 - [ ] **M31** Wi-Fi coverage: iwlwifi (all), rtw88, rtw89, mt76 family, mt7601u, ath9k/ath9k_htc, ath10k/11k/12k, brcmfmac
 - [ ] **M32** Ethernet coverage: r8152, usbnet family, igb, alx, tg3, atlantic, Linux r8169/e1000e/igc

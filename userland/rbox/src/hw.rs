@@ -394,7 +394,17 @@ fn net_steps(c: &mut Check, o: &Opts, iface: &str) {
 }
 
 fn wifi_state(iface: &str) -> String {
-    let st = read_trim(&format!("/sys/class/net/{}/wireless/status", iface));
+    let mut st = read_trim(&format!("/sys/class/net/{}/wireless/status", iface));
+    if st.is_empty() {
+        // Linux drivers (LinuxKPI): `wifi` asks wpa_supplicant.
+        let (_, out) = sh(&format!("wifi -i {} status", iface));
+        st = out
+            .lines()
+            .next()
+            .and_then(|l| l.split(": ").nth(1))
+            .map(|s| format!("state={}", s.trim()))
+            .unwrap_or_default();
+    }
     st.split_whitespace()
         .find_map(|kv| kv.strip_prefix("state=").map(String::from))
         .unwrap_or(st)
@@ -404,6 +414,15 @@ fn wifi_section(c: &mut Check, o: &Opts, iface: &str) {
     c.info(
         &format!("{} status", iface),
         &format!("wifi -i {} status", iface),
+    );
+    // Which driver, and what it said while loading (Linux drivers report
+    // firmware versions and missing files in the kernel log).
+    c.info(
+        &format!("{} driver", iface),
+        &format!(
+            "readlink /sys/class/net/{0}/device/driver; dmesg | grep -iE '{0}|mt79|mt76|iwlwifi|firmware' | tail -20",
+            iface
+        ),
     );
     let fw = c.step(
         &format!("{} firmware loaded", iface),
@@ -435,11 +454,19 @@ fn wifi_section(c: &mut Check, o: &Opts, iface: &str) {
             "no 6 GHz network seen (needs a Wi-Fi 6E access point nearby)",
         );
     }
-    c.step(
-        &format!("{} power save status", iface),
-        &format!("wifi -i {} power", iface),
-        |out| out.contains("power"),
-    );
+    let (_, power) = sh(&format!("wifi -i {} power", iface));
+    if power.contains("not available") {
+        c.skip(
+            &format!("{} power save status", iface),
+            "power save control is not available for this driver yet",
+        );
+    } else {
+        c.step(
+            &format!("{} power save status", iface),
+            &format!("wifi -i {} power", iface),
+            |out| out.contains("power") || out.contains("on") || out.contains("off"),
+        );
+    }
     let open = o.open_ssid.clone().or_else(|| {
         c.ask("  SSID of an OPEN network to test (Enter to skip): ")
             .filter(|s| !s.is_empty())

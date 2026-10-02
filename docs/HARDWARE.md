@@ -56,6 +56,9 @@ devices are cached (write-back buffer cache, `sync`).
 | Intel I225/I226 (`igc`) | written |
 | Realtek RTL8111/8168/8125 (`r8169`) | written |
 | Intel AX210 Wi-Fi, AX211/AX201 CNVi (incl. 6 GHz, power save) | written ([WIFI.md](WIFI.md)) |
+| MediaTek MT7921/MT7921K (RZ608)/MT7920/MT7922 PCIe Wi-Fi: Linux `mt7921e` (mt76) via LinuxKPI, in release images (`linux-drivers`) | compiled, untested on hardware: `hwcheck wifi` results wanted |
+| Linux 802.11 stack (cfg80211/mac80211) with wpa_supplicant/hostapd: WPA2, WPA3-SAE, PMF, PEAP | CI (`mac80211_hwsim`: `wifi-hwsim`, `wifi-hwsim-eap`) |
+| Linux `e1000` (82540EM) via LinuxKPI | CI (`eth-linux-e1000`, `--features linux-e1000`) |
 
 ## Input and display
 

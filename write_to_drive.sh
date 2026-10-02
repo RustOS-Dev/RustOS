@@ -448,8 +448,23 @@ main() {
         [[ "${RUSTOS_FIRMWARE:-1}" == "0" ]] || exit 1
     fi
 
-    echo "Building kernel (release)..."
-    as_build_user "${CARGO_CMD[@]}" build --release
+    # Linux drivers (LinuxKPI) are part of the stock image: MediaTek
+    # MT7921/MT7922 Wi-Fi and the Linux 802.11 stack. They are compiled from
+    # C and need clang 15 or newer. RUSTOS_FEATURES overrides the feature set
+    # (empty for a kernel with RustOS's own drivers only).
+    FEATURES="${RUSTOS_FEATURES-linux-drivers}"
+    if [[ -n "$FEATURES" ]]; then
+        clang_major="$( (${RUSTOS_CLANG:-clang} --version 2>/dev/null || true) | sed -n 's/.*version \([0-9]*\).*/\1/p' | head -1)"
+        if [[ -z "$clang_major" || "$clang_major" -lt 15 ]]; then
+            echo "Error: building the stock Linux drivers (MediaTek Wi-Fi) needs clang 15 or newer." >&2
+            echo "Install it (Debian/Ubuntu: sudo apt install clang; Fedora: sudo dnf install clang)," >&2
+            echo "or set RUSTOS_FEATURES= to build without them." >&2
+            exit 1
+        fi
+    fi
+
+    echo "Building kernel (release${FEATURES:+, features: $FEATURES})..."
+    as_build_user "${CARGO_CMD[@]}" build --release ${FEATURES:+--features "$FEATURES"}
 
     KERNEL_ELF=$(find "$SCRIPT_DIR/target" -path "*/release/rustos" -not -name "*.d" | head -1)
     if [[ -z "$KERNEL_ELF" || ! -f "$KERNEL_ELF" ]]; then

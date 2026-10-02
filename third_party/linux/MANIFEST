@@ -177,6 +177,49 @@ drivers/net/ethernet/intel/e1000/e1000_hw.h	GPL-2.0	e3c8b99f42b640c9856034101747
 drivers/net/ethernet/intel/e1000/e1000_main.c	GPL-2.0	dfb1f607e7579057e5215f398c0f5ad7b00f6fa3fc29a67d4a14c32706fbc073
 drivers/net/ethernet/intel/e1000/e1000_osdep.h	GPL-2.0	14ee85dc1070095ded89a137c791082f7dc3b30b036c177de179220f3d1b72a7
 drivers/net/ethernet/intel/e1000/e1000_param.c	GPL-2.0	25a3debe1be12609f76d347043f6e160376d344f54d72e9b5cf17bbd5d2fec7c
+drivers/net/wireless/mediatek/mt76/agg-rx.c	ISC	70266b883150f67cfd04436983b83be34cc7863c6ed252d893c3ed2f38865ad0
+drivers/net/wireless/mediatek/mt76/channel.c	ISC	994b4184f05f40f1a5b27f012416fc9769c11959ab515de934cc6f797c2c00a9
+drivers/net/wireless/mediatek/mt76/debugfs.c	ISC	26230b42b03cec516ff48520a56d1ca0517b83a2c7e45a1cb2054051fdfd2f8b
+drivers/net/wireless/mediatek/mt76/dma.c	ISC	5e985657ce78c48b598fab282283cf8a1e7a90bbeec0ce263409d801af1d9aa4
+drivers/net/wireless/mediatek/mt76/dma.h	ISC	b13b2b5d4ddc4ef05bf9da31cb9ca44887c0106d019b46840ff210172e9b33d7
+drivers/net/wireless/mediatek/mt76/eeprom.c	ISC	1f60ffc50512f7d8ba153499f39c62f0db9786f5b678b8016965b91b9d4cdd5a
+drivers/net/wireless/mediatek/mt76/mac80211.c	ISC	3131a649bbdb5a9cbd166b37496c3b01a58260ffc965fd4341914c50d700b48e
+drivers/net/wireless/mediatek/mt76/mcu.c	ISC	0ec955ee6ff1e9fa817a4736d2885e889122e8de9f43214866710999fb4ec761
+drivers/net/wireless/mediatek/mt76/mmio.c	ISC	628af07c279dd74b1868cb29a546cfd5d64684ae49e1cc8aaa8904a662f4db48
+drivers/net/wireless/mediatek/mt76/mt76.h	ISC	e1db47bf475a1c23f0ca5ae72a2cdd05c825cf02b98469f19a5c4d8fbb6be4e3
+drivers/net/wireless/mediatek/mt76/mt76_connac.h	ISC	f2da056571cdc0562bd49abe553cc34b2fab42547c5f9015fef47c053356e660
+drivers/net/wireless/mediatek/mt76/mt76_connac2_mac.h	ISC	5cbaf0972b9c16312660397af115484e4af7cff55cfca8b7172c954a3e1930be
+drivers/net/wireless/mediatek/mt76/mt76_connac3_mac.c	ISC	e3644056052729f50066263b0e7c1cdcb7a64b01eb99dbfb8ee87e477e652b8d
+drivers/net/wireless/mediatek/mt76/mt76_connac3_mac.h	ISC	3e9f234bb6461923e854bfaccc6c779ba5e03738c90df8846de487140fd5c0a6
+drivers/net/wireless/mediatek/mt76/mt76_connac_mac.c	ISC	10552fe48deba0783aad5cc9c65991196acb49af0ffd58f7a5fe20ecca3c51e0
+drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.c	ISC	1cee30783b44cab7516e434bb845b4fe9d82917ca13aa4843a349022045e1723
+drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.h	ISC	153607fe8b1bf3ea1597f6f4778c4218f31af25dd671a3c4e2415bf711afc7cd
+drivers/net/wireless/mediatek/mt76/mt7921/debugfs.c	ISC	b09f5f4e6c9279fea51df717ac214ff82c6fd4168ff4e9321e2fc97731f87ced
+drivers/net/wireless/mediatek/mt76/mt7921/init.c	ISC	009643275921e0f80cf2f3ffc68d9f410234410b4bf082ca13b35839649b0057
+drivers/net/wireless/mediatek/mt76/mt7921/mac.c	ISC	ce0c74a0ce5a55be6c22cebfd59095e314f6012e750ea7bd8526732b7692902e
+drivers/net/wireless/mediatek/mt76/mt7921/main.c	ISC	024fb37f515f1b7d0f330f0fc730ef61adea1bed70fce4fd4529010e94e8884d
+drivers/net/wireless/mediatek/mt76/mt7921/mcu.c	ISC	26b6cd8f97a01658e5bfa3c225848705b799878b5f896228bba1e0d86118bd2e
+drivers/net/wireless/mediatek/mt76/mt7921/mcu.h	ISC	bd657fcbdee68c76f244b9ffd4ee615857291079acfddc140cfc489205d33eec
+drivers/net/wireless/mediatek/mt76/mt7921/mt7921.h	ISC	a8896f17b04b760e28fa0b9ea216dc438c16c703fe01185463e181ef898184d2
+drivers/net/wireless/mediatek/mt76/mt7921/pci.c	ISC	43f24965e7bc7be29465be40f7ad8ad5ef1cd1470d34dc16eb85198529a12d65
+drivers/net/wireless/mediatek/mt76/mt7921/pci_mac.c	ISC	da39bca2baf36f056fbc448d3d3cd30918b78f97af58eebe8839f035084d6882
+drivers/net/wireless/mediatek/mt76/mt7921/pci_mcu.c	ISC	6d361df7ec163099c1228982c0756ccd44e8d3885825922258c20cf5927105d2
+drivers/net/wireless/mediatek/mt76/mt7921/regs.h	ISC	e699696f832eae9d0810b875658bd4e1de38f4b1fa6bcb28303533a75af21a3c
+drivers/net/wireless/mediatek/mt76/mt792x.h	ISC	e2ec3ad880911c68e304b93d2346138c19e59c67487dcc073d7882f348421ddb
+drivers/net/wireless/mediatek/mt76/mt792x_acpi_sar.c	ISC	7771e925b2ce4d556fe896b02c9b08a5022fd0b492879463aa6d689ee13b99a3
+drivers/net/wireless/mediatek/mt76/mt792x_acpi_sar.h	ISC	cf13c34898668f6074b1b998d5a5e741a72e4f4fbd5dab572c83ea271217d767
+drivers/net/wireless/mediatek/mt76/mt792x_core.c	ISC	a43d623d88168699eebc41e70471c4a2271af88da26c55abaed3a104b813018e
+drivers/net/wireless/mediatek/mt76/mt792x_dma.c	ISC	114d59d6229de1882b3d0674c95a185c8947e36162ddcbfcc4151a0ca1598e1b
+drivers/net/wireless/mediatek/mt76/mt792x_mac.c	ISC	e5b5ec2825c65ea5788d5d5127ff2b2d76ea331657fecf4782ae6b41a81e025f
+drivers/net/wireless/mediatek/mt76/mt792x_regs.h	ISC	ab2d10c4c60fba5a988f822c6fe8f7b84c95808a871884f72bcab8cbe4641015
+drivers/net/wireless/mediatek/mt76/mt792x_trace.h	ISC	2622b663d6af956d6906fb5e9473efe66ff5a266875bcb9de53b60be64137716
+drivers/net/wireless/mediatek/mt76/pci.c	ISC	efa8cd050666fbae6f043808f6e5d95548a667428d2f423933a0fa3ce626f783
+drivers/net/wireless/mediatek/mt76/scan.c	ISC	d8ab53137bba76d236dd83e7083f3a30bfdf7becaa5100e77abf05e375026d0a
+drivers/net/wireless/mediatek/mt76/testmode.h	ISC	80a55f0214b1864f169193a743f8e849fa5c309bf0882e983f6380288525611a
+drivers/net/wireless/mediatek/mt76/trace.h	ISC	1e1172db6bdb04764032fe2ff84a873c9ebb0d953bb9825fc3d46ce34a737964
+drivers/net/wireless/mediatek/mt76/tx.c	ISC	becd49128b67d057ef00ddd980a4f72d9f60dffdcb335dca8f1dad1845028f8a
+drivers/net/wireless/mediatek/mt76/util.c	ISC	0fd49b7732f5c5fe71a416de3c53f82d2dc3e50801d0bc4198ac98cba95a71e5
+drivers/net/wireless/mediatek/mt76/util.h	GPL-2.0-only	90246d52522d72cfe28d810f1cc463e92bacc93a065d660e3cd379ea1604f159
 drivers/net/wireless/virtual/mac80211_hwsim.c	GPL-2.0-only	2cc86986b41d24abd27ec62ad25d24f2773367ffdd7a34a45d70ffe42ba93d5b
 drivers/net/wireless/virtual/mac80211_hwsim.h	GPL-2.0-only	8a048599258fd34474b21a37106bd043dc1e9bdfde5a711040fb5d1f6de4d75d
 include/acpi/acbuffer.h	BSD-3-Clause OR GPL-2.0	35ba604ea76c3efb445c815d14047e3d8fefa549145516ab50559a0ec5d90a60
@@ -368,6 +411,7 @@ include/linux/debugobjects.h	GPL-2.0	6e69f0f903311b6e53f97218e1550f96a9875aace57
 include/linux/delay.h	GPL-2.0	f9149a9b8e6b48317e5cfb2b9100285a25828d8a69e5417fa49cbea7d654ed34
 include/linux/delayed_call.h	GPL-2.0	c139dd95fcefa1d9ff38ab3c8ab232da992295e98d7d7404842003b2f1df18fc
 include/linux/dev_printk.h	GPL-2.0	ba476a7261040b824eedb7d55a97c3f65be10870deb73baf8700c4310c56c769
+include/linux/devcoredump.h	GPL-2.0-only	6171f7efff8957431456467663cdca3b04e701bf20a22dced88378057971e0c2
 include/linux/device.h	GPL-2.0	951d5461d34207c54f4007b7fc9d05f30c0bb601a96c37133d7f09e92376ce4c
 include/linux/device/bus.h	GPL-2.0	ecd13dfdc547c3ea25e9659e89efb7cd79de83cece44cb612bd3894b8e800325
 include/linux/device/class.h	GPL-2.0	f053e3d98422ef129f054be5d825e398e86704cc6c03210d508683775a0b01a3
@@ -414,6 +458,7 @@ include/linux/fwnode.h	GPL-2.0-only	d58b863353cdfdab5031c75d8ff0d85dc786fd05cb99
 include/linux/gcd.h	GPL-2.0	ad6c13ab7fe1a1b7775903806108eec835ae6a49838b58574645058e7e026e93
 include/linux/gfp.h	GPL-2.0	a6fe8c1754daf501a8408cea321557c96e068cbd1636e03cea3c62bc36113b43
 include/linux/gfp_types.h	GPL-2.0	679394be954668ab8e1d104df064495e4a1f1acf637884ea27d53f1f3c97f46b
+include/linux/gpio/consumer.h	GPL-2.0	951171cfeedaa2424bcd16e78a2b11d93e9a5e860598690843c48bb791acf2dc
 include/linux/hardirq.h	GPL-2.0	71537117b656276a3826a93b1b7996b14a7d12c11c02321dc5881b5db5d8560d
 include/linux/hash.h	GPL-2.0-only (untagged, per Linux COPYING)	3619d01cd90fdaa882cccd85e1dfefe200de0578f7e2f5ccccb8cda9add4629c
 include/linux/hashtable.h	GPL-2.0	399a72ba6bf52f6b1a24f5d34b8f487fca8fa68f262ee0dd13d7c0c1f266a48e
@@ -426,6 +471,8 @@ include/linux/hrtimer_defs.h	GPL-2.0	20e88e379907abe980c3e3d43f1f1aac8ee6229580e
 include/linux/hrtimer_types.h	GPL-2.0	a08b4a143625258acdc48820a330c012671a82288c5d9c5ed8b998256e20c155
 include/linux/huge_mm.h	GPL-2.0	358f42b5f38ded9a2d4250286a8d34f52c6e99ab05d2430afbb940f633d6dc58
 include/linux/hugetlb_inline.h	GPL-2.0	33317b640f212c51264a187b939c8f622e7d3909df388b9b506b04b02a5bd13d
+include/linux/hwmon-sysfs.h	GPL-2.0-or-later	59ebe9631e35c06884cea54b135c6ce36dbb48547fb19fa4451e84d15a75690d
+include/linux/hwmon.h	GPL-2.0-only	bb501a99ca716fe8a0a903ff91b675313f229ffa1e80c78210600dde2c497290
 include/linux/icmpv6.h	GPL-2.0	044924b4c63d5c64e088921d5db5170a640d0c18a706d234be79bf75878108b9
 include/linux/idr.h	GPL-2.0-only	8f4de38006634e185c936a8844c49c1e2b75d43305783bcb8bc4000298d9b6ef
 include/linux/ieee80211-eht.h	GPL-2.0-only	36c131e14a1032aaef0e43e27369c2ce69a1c2d131b311615da14db89abc8f2a
@@ -556,6 +603,8 @@ include/linux/moduleparam.h	GPL-2.0	72c963dbbc52f0527de7f7c1ea5c5aac4796dedf38c3
 include/linux/mount.h	GPL-2.0	864b744fa4fea2cc020763d39f99ff58811f8c881310b276a30545a40bcf48b0
 include/linux/mpls.h	GPL-2.0	aea8d94f9865152f7f512ea4f556f78598cf975dbe00f65c60f478954594235a
 include/linux/msi_api.h	GPL-2.0	1d862ce499bc934e0c2e1e72d6bd6eb681c44d5ee30a24387db2f8b7811c570c
+include/linux/mtd/mtd.h	GPL-2.0-or-later	7ffee580bb12556e4074f07e6fdf13d56d9a5ca18d2eb69ebb4d3c0c9896badb
+include/linux/mtd/partitions.h	GPL-2.0-only (untagged, per Linux COPYING)	5f8a73d0f8292aee02c85866a354fb5095b600c24f2be3ddf911c954e0762de4
 include/linux/mutex.h	GPL-2.0	0a2d01622c134acf57bcf8381e44821b5c058b51ea983eaf304f5085cd51b3e9
 include/linux/mutex_types.h	GPL-2.0	c96488bb111b8b470c993b1ee25456c4e0bb81395df0810fe67c24b65f67f5ab
 include/linux/net.h	GPL-2.0-or-later	295efa9a9e601a6b219eec48721e4464d1013d80c103b35a1b96a79674a79c6d
@@ -573,6 +622,8 @@ include/linux/notifier.h	GPL-2.0	b05d41ce3a8bd9e9db094a0c22c0ac97210ced1ef5b38bf
 include/linux/ns_common.h	GPL-2.0	d245e45a582fdf471c966b5e6d23ef97a21033f01ef4e33fd7a8db0626ee568c
 include/linux/nsproxy.h	GPL-2.0	2f66f36134f8981c3a395267dbd4dea33ae691873c257d87d5098663a6592e5f
 include/linux/numa.h	GPL-2.0	d64e28ca042dfe536eb8ac21aa5335e7ec8c3b5d8c4fb1c8a933d4da9f2e4543
+include/linux/nvmem-consumer.h	GPL-2.0	9be70ef564ccbb23474bfdf22a50eb257a095ed993479b0321fc797581e26dad
+include/linux/nvmem-provider.h	GPL-2.0	4539d4d33fd6bd13de69eea9e38b1d3ab7b0af63c4db50b3d88144ee8a6167fc
 include/linux/objpool.h	GPL-2.0	aad7a5b1b4f842e8538ae20075079761131a9ae74562d39a821d9b7ca89164ef
 include/linux/objtool.h	GPL-2.0	6f6ccae7add0adc5dbef427973942dc8691fea9422371a1dc7b41dbd967e1d44
 include/linux/objtool_types.h	GPL-2.0	58e04bf65531968500f437dd0394b8c06f09c42f0744b0d83d374390f722f5af
@@ -580,6 +631,7 @@ include/linux/of.h	GPL-2.0+	9edf35d31f8d6dd14919dd043e73a2eab96238a6f8974d9fcc08
 include/linux/of_address.h	GPL-2.0	ff60c69eb080a6cec8ed7e540ae22ef29876f36f46bedcd7c86d8cba35322a9c
 include/linux/of_device.h	GPL-2.0	454bc87c071d29d9d864cf59296c40537852ea1fcb05a2919de9ecd461e45e68
 include/linux/of_irq.h	GPL-2.0	a892e1628eb1a84a59cce44e59bd290c728cc11cbcdd86789f0d51d9b56485d2
+include/linux/of_net.h	GPL-2.0-only	bccc72f8e67f3602282c2736a53db845a0b6c57dea960dd89c21ea6ad6f69e8b
 include/linux/once.h	GPL-2.0	6db57d3fb47c31574446ab9fdceeffc197d412ab8e7c37954dde1a2cc0ac2722
 include/linux/once_lite.h	GPL-2.0	708801b7f811230138199c06adb6ae04a7e8ef5c45ec0a8408a343528bc124cf
 include/linux/osq_lock.h	GPL-2.0	33b208bb2c56c99eaf22d98363542595386dcc5197fdaef2b89b849f277ae124
@@ -661,6 +713,7 @@ include/linux/reboot.h	GPL-2.0	48cf7704d93c9799a869759587736aa84dfaa671a8a7075ce
 include/linux/ref_tracker.h	GPL-2.0-or-later	8f7b1c18800413e2bdc09c6c78db4cf5a6f40f633b241e8bb5653c5bc90f7dfc
 include/linux/refcount.h	GPL-2.0	138348cedf2dd2ee4bb5defb880c575db997dab0561abdd805534d83750dca80
 include/linux/refcount_types.h	GPL-2.0	1cd15b66e38dc4408329d4bd61ec605222a5c440dde64a0af7e73dcfc1a2472f
+include/linux/regmap.h	GPL-2.0-only	0444ee165f9bfb7cbb2a0abafa982fb415ddf544bb00a9c7bdf70f562fd8d2ef
 include/linux/resource.h	GPL-2.0	3f2fab184ae97b394a899404a7fe35b2282dcfca7a05e3aef48c7585623ef68a
 include/linux/resource_ext.h	GPL-2.0-only	ceb825f3b32b03399f07478fc8d317998bacf7760cd52a4e50506d8efbbd13b4
 include/linux/restart_block.h	GPL-2.0	85f426110ecc3a198a6c3542fdd996b2f6ef9c9218af7f798d5da49fddff26cb
@@ -717,6 +770,8 @@ include/linux/skbuff.h	GPL-2.0-or-later	afac233aa11f133cb7b64f6976d9e384cdf6b93e
 include/linux/slab.h	GPL-2.0	d3a7999286cbba4e0bb51db023dd5926ce13a355a574e4bbe86d638e6183fed1
 include/linux/smp.h	GPL-2.0	dd6b3256853cc4183cf7e94324cdbcc3634502ee4b2c91ff1a1c888cf69bfdb2
 include/linux/smp_types.h	GPL-2.0	10b6d7896fc9aa4ac4e7d41e91a476b4e83aa492e88493866488c6646c9fefcc
+include/linux/soc/airoha/airoha_offload.h	GPL-2.0-only	9c1ca951322c80c37315fddbed579a7505a3f6c99dc3de87660a2b46fb7bd436
+include/linux/soc/mediatek/mtk_wed.h	GPL-2.0-only (untagged, per Linux COPYING)	2c1dca9a90a3f582ebc33ed0527b6e5913ff95e5dc609f247723ff299159d7cc
 include/linux/socket.h	GPL-2.0	be4fced57587c50436643cdcdafc786e4d5628a1dc8992ac0aa552ae6a9bd18e
 include/linux/sockptr.h	GPL-2.0-only	9c134512be6b60a1d66df26135115764672a14a62b0b6f58a49e78ee93e7bbc9
 include/linux/sort.h	GPL-2.0	b86790fb965405059e4baed4d2eeba60774fb0d99e727d5fb8f3a82df5d34d97
@@ -749,6 +804,7 @@ include/linux/sysctl.h	GPL-2.0	68ebc4b5a6c877240729b3358eded048a4bdc525c0a273984
 include/linux/sysfs.h	GPL-2.0	6c508364b156ee9c6b32c562bc57255d5d7b17ae68963dc742c300c3e5ddd474
 include/linux/task_io_accounting.h	GPL-2.0	b7b280bb0a4b6d0373820ac155b104929711238ca6854e844108dd781c035859
 include/linux/tcp.h	GPL-2.0-or-later	3793cca5f76d40ef3bc659fc22abac3b3042d42025998bfb90e5bc6c54bb40f9
+include/linux/thermal.h	GPL-2.0	1d8b43313ec3bdc581ebc976499ec57d7249dd4a66b4445cc9fe9d85668ab99c
 include/linux/thread_info.h	GPL-2.0	73fe213525bc27f67b93958a43f9b916dbf354416998dafefeb7c527a256e396
 include/linux/threads.h	GPL-2.0	ac7161de729d183418eee161e1d0bbc2253839139d20e1d8a278510b6108d130
 include/linux/time.h	GPL-2.0	1632adf829e28c143aa9bd4cfd4a100d57c2b22b7f13e069f6dae545a2dc1c98
@@ -782,6 +838,8 @@ include/linux/unicode.h	GPL-2.0	70f8792e02ed4e64849f1d1d69a0007460007a6fae74c902
 include/linux/units.h	GPL-2.0	2d08078b77e77edc3ba2ef2edea476ccf334f2070550cfff77517af121cc9cd9
 include/linux/unwind_deferred_types.h	GPL-2.0	5163d626060e186a19f6f4b31e41469fcc8b29d57f4375ce431a9f7e24d55aaa
 include/linux/uprobes.h	GPL-2.0-or-later	f59d02ddb377d8fd7d641853305cedd7148eec97e2ddd353fb4fb0dfadf5cf6e
+include/linux/usb.h	GPL-2.0	2ed66ba85dc343e09b8f1320c5017e43c26cbc671c1ea201a429aed92e2bb0c2
+include/linux/usb/ch9.h	GPL-2.0	7df5caf8a59029c9f5df6ad66ef520adb56f6afaa285971dd988783467d7299e
 include/linux/user_namespace.h	GPL-2.0	445489abca4659653f2de0b000c34283fe626e34ff1f262fce84ed927182b800
 include/linux/util_macros.h	GPL-2.0	2c42a9cfb9f6f7b7dc9c339154ee90975745b7080306241acbc1f3f01edba07d
 include/linux/uts_namespace.h	GPL-2.0	02c3c4014b722c31c1b8d9810f7705facdaaeb7ad0b37c0b8105a501975589d1
@@ -884,6 +942,7 @@ include/net/netns/unix.h	GPL-2.0	1a3508bcd5655cd99fdf6fa0f79674f135fee16073ad354
 include/net/netns/xdp.h	GPL-2.0	4822ec8b9da28f80e28d31f5cc7d0e3086c91333b080b6b85fdfa34488212e83
 include/net/netns/xfrm.h	GPL-2.0	44d15a1e142de9414a06cbf4e674a46dbbbacab8b59e5d182171c3786747db93
 include/net/netprio_cgroup.h	GPL-2.0-or-later	93eb67f0cd300356cd427a8001ca11044ce7927d97fbad846510e167116cdd6e
+include/net/page_pool/helpers.h	GPL-2.0	f01cd2ef32b5ff22c3c69e79837854b46ad702e91544b0e0ce9d340afbb6dacf
 include/net/page_pool/types.h	GPL-2.0	cdd26e2260d4de2cced8765de12db812e3837404baa7ca51be46b721efab9e3b
 include/net/pkt_sched.h	GPL-2.0	ce014990cecc15420d5fb448b77d189f31958325c73924ef788b085cdc2ed914
 include/net/regulatory.h	GPL-2.0-only (untagged, per Linux COPYING)	f79e798657c7c688d851fa96d1fb65d8970ee6f866692f411c317f1d6b2ec179
@@ -1031,6 +1090,7 @@ include/uapi/linux/sysctl.h	GPL-2.0 WITH Linux-syscall-note	ac767cf015a1c8bacfd8
 include/uapi/linux/sysinfo.h	GPL-2.0 WITH Linux-syscall-note	b803e9e4c4d3cb43b265d9d046fcce6b731af8bf04e78b5c0708e926a6d8f9e2
 include/uapi/linux/taskstats.h	LGPL-2.1 WITH Linux-syscall-note	0193e07cc8a2dd867438360b569cfb70813b004041e3593d2661c24a72330bc2
 include/uapi/linux/tcp.h	GPL-2.0+ WITH Linux-syscall-note	65488fc212bd72d96fb4dc01fc2787a90aa13d7dc6e747395dd73d5df7be514d
+include/uapi/linux/thermal.h	GPL-2.0 WITH Linux-syscall-note	18c9175c69b467abcba1975e440862665c55984e94446b28e0c6238c87340928
 include/uapi/linux/time.h	GPL-2.0 WITH Linux-syscall-note	b0364314ca37dcaf82d18ed6e7bd201fb658cff80f40637dae192ec8665a9eea
 include/uapi/linux/time_types.h	GPL-2.0 WITH Linux-syscall-note	45f5bd4a2412fe6c1f1415a1e00e8521ad45f37117ab7dd1e9fafd7f922b224a
 include/uapi/linux/timex.h	GPL-2.0-only (untagged, per Linux COPYING)	bb95ba42ac8169c0ddbb4192dac37210cfa883b0200b6db00eabb33a35f6c7ec
@@ -1038,12 +1098,14 @@ include/uapi/linux/types.h	GPL-2.0 WITH Linux-syscall-note	f22c5bf977c0bb939577c
 include/uapi/linux/udp.h	GPL-2.0+ WITH Linux-syscall-note	9b749191394fa846a4c8ab8109290947bd8bb142c59f53b394bc425c1a9c408d
 include/uapi/linux/uio.h	GPL-2.0+ WITH Linux-syscall-note	872db059bdc6e8faa84360aae36ce2d6e90f7372c918e841a7b0c271e481abc7
 include/uapi/linux/unistd.h	GPL-2.0 WITH Linux-syscall-note	01a6f7628ed6f3511eade5891e631c05679e141d031e689a6d028e840032e394
+include/uapi/linux/usb/ch9.h	GPL-2.0 WITH Linux-syscall-note	c319386b75c3748f12980875af6c53ae0933764cb869537b858bed248811538f
 include/uapi/linux/utsname.h	GPL-2.0 WITH Linux-syscall-note	e6a7aeffebf22a2d74b5e671ab5ff8bb99b0655cefb544bfca0acc22aa396c2a
 include/uapi/linux/virtio_config.h	GPL-2.0-only (untagged, per Linux COPYING)	00291a2835f3011b420077c8bddb5bfacfc65b982a8c85e29d5574dee8913ebd
 include/uapi/linux/virtio_ids.h	GPL-2.0-only (untagged, per Linux COPYING)	e9957fd3ce022c978b4d06e6e222e74d9cb4697d17cda4001608b635c9516c0f
 include/uapi/linux/virtio_types.h	GPL-2.0-only (untagged, per Linux COPYING)	3a6bf6debdb7873b234ca57693a61a77b6b43c68b90d60bfc14ae5fcce5d6d09
 include/uapi/linux/wireless.h	GPL-2.0 WITH Linux-syscall-note	e1e430ccbd3be73efc5cd224815606c26ef59a373c269a3a2946de1d1d40f585
 include/uapi/linux/xfrm.h	GPL-2.0 WITH Linux-syscall-note	4f8ef03fccbe1d484aaee21d9c29fee7d940075ebf6af5419bd9cbca100e2cce
+include/uapi/mtd/mtd-abi.h	GPL-2.0+ WITH Linux-syscall-note	21cb435f6b606838c87c4bb183a5e6232fa72bec9f3899b2bb8cd93903000cc7
 include/vdso/align.h	GPL-2.0	8e7ce9486c193d4a46395d4f14d56c01a0f9e06e95fd4d5bdd9b35a236d98ff8
 include/vdso/bits.h	GPL-2.0	ef5190bae70874421bd1cd564885f483787203cb65485af5104d57991238538b
 include/vdso/cache.h	GPL-2.0	7cf987365a5ed2a3cea1ac1afe31d23c5287af54a9b99417e30f545fdc8a2ded

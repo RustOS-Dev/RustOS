@@ -177,3 +177,5 @@ jobs:
         run: |
           cargo build --features linux-hwsim
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/wifi-hwsim.txt tests/scenarios/linux/wifi-hwsim-eap.txt
+      - name: Release driver set (linux-drivers, as write_to_drive.sh builds it)
+        run: cargo build --release --features linux-drivers

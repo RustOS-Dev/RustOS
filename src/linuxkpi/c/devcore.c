@@ -6,6 +6,7 @@
  * RustOS does not have (CPU and container devices, the block class).
  */
 #include <linux/radix-tree.h>
+#include <linux/vmalloc.h>
 #include <linux/acpi.h>
 #include <linux/backing-dev-defs.h>
 #include <linux/blkdev.h>
@@ -195,6 +196,14 @@ struct resource *__devm_request_region(struct device *dev, struct resource *pare
 void __devm_release_region(struct device *dev, struct resource *parent, resource_size_t start,
 			   resource_size_t n)
 {
+}
+
+/* Device coredumps (drivers/base/devcoredump.c): not kept; the driver's
+ * buffer is freed as devcoredump does once read. */
+void dev_coredumpv(struct device *dev, void *data, size_t datalen, gfp_t gfp)
+{
+	dev_info(dev, "firmware coredump (%zu bytes) discarded\n", datalen);
+	vfree(data);
 }
 
 /* --------------------------------------- subsystems driver_init() starts */

@@ -24,6 +24,10 @@ linux-test = ["linuxkpi"]
 linux-wifi = ["linuxkpi"]
 # Simulated radios for testing the Wi-Fi stack.
 linux-hwsim = ["linux-wifi"]
+# MediaTek MT7921/MT7921K/MT7920/MT7922 PCIe Wi-Fi (Linux mt76).
+linux-mt7921 = ["linux-wifi"]
+# The Linux drivers release images ship (write_to_drive.sh builds with it).
+linux-drivers = ["linux-mt7921"]
 
 [dependencies]
 bootloader_api = "0.11"

@@ -36,6 +36,17 @@ the cards. `c/mmc.c` stands in for mmc_block and turns reads and writes into
 single MMC requests. The `sdcard` scenario covers ext4 read and write,
 remount, and FAT formatting.
 
+M33: Linux's input core and HID core (`hid-generic`, `hid-multitouch`, the
+`hid-*` quirk drivers) and `i2c-hid` are in release images
+(`--features linux-hid`). `c/input.c` is an input handler in place of evdev: every
+Linux input device becomes a RustOS `/dev/input/eventN` with the same
+capabilities, keyboards also type on the console, and the console's lock keys
+drive the keyboard LEDs. USB keyboards and mice stay on the native usbhid
+driver in release images; `--features linux-usbhid` hands them to Linux usbhid
+instead, which the `usb-hid-linux` scenario runs (typing on the console,
+tablet buttons and absolute axes through `evtest`). I2C-HID touchpads need the
+ACPI I2C controller and GPIO drivers, which are not imported yet.
+
 M30: the LinuxKPI USB core runs Linux USB drivers on RustOS's xHCI driver
 (`--features linux-usb`). Linux's `usbnet` with `cdc_ether` and
 `rndis_host` drives QEMU's `usb-net` behind `--features linux-usbnet`

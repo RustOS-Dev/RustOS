@@ -1,0 +1,57 @@
+# Linux's HID core with usbhid and hid-generic through LinuxKPI (kernel
+# built with `--features linux-usbhid`): QEMU's USB keyboard types into the
+# console, and the tablet's buttons and axes reach evdev, through Linux's
+# input core and the RustOS input handler.
+wait # $ 240
+send sleep 2; dmesg | grep -i "input:\|hid-generic" | cat
+wait input: QEMU QEMU USB Keyboard
+wait input: QEMU QEMU USB Tablet
+wait # $
+# Keys from the USB keyboard reach the shell.
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey k
+monitor sendkey b
+monitor sendkey d
+monitor sendkey minus
+monitor sendkey o
+monitor sendkey k
+monitor sendkey ret
+wait kbd-ok
+wait # $
+# Shift and caps lock work through the console's keymap.
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey shift-u
+monitor sendkey p
+monitor sendkey ret
+wait Up\r\n
+wait # $
+send evtest -l
+wait QEMU USB Keyboard
+wait # $
+# Tablet: buttons and absolute axes on its event node.
+send evtest -l | grep -i tablet | cut -d: -f1 > /tmp/tab; cat /tmp/tab
+wait /dev/input/event
+wait # $
+# Its absolute axes as hid-input mapped them (QEMU's tablet: 0..32767).
+send evtest -i $(cat /tmp/tab) | grep Axis
+wait 0x0: value 0 min 0 max 32767 30
+wait 0x1: value 0 min 0 max 32767 30
+wait # $
+# (HMP moves only relative pointers, so the buttons are what reach it.)
+send evtest -c 4 $(cat /tmp/tab) > /tmp/ev.txt &
+wait # $
+monitor mouse_button 1
+monitor mouse_button 0
+sleep 2
+send cat /tmp/ev.txt
+wait event KEY code 0x110 value 1\r\n
+wait event KEY code 0x110 value 0\r\n
+wait # $

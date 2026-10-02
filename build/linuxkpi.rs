@@ -22,6 +22,8 @@ const FEATURES: &[(&str, &[&str])] = &[
     ("LINUX_I2C", &["i2c"]),
     ("LINUX_SERIAL", &["tty", "usbserial"]),
     ("LINUX_MMC", &["mmc"]),
+    ("LINUX_HID", &["input", "hid", "i2chid"]),
+    ("LINUX_USBHID", &["usbhid"]),
     ("LINUX_PHY", &["phy"]),
     ("LINUX_ETH", &["eth"]),
     ("LINUX_MT7921", &["mt7921", "mt7921u"]),

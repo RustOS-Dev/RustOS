@@ -536,3 +536,18 @@ struct acpi_device *acpi_find_child_device(struct acpi_device *parent, u64 addre
 void acpi_device_fix_up_power_extended(struct acpi_device *adev)
 {
 }
+
+int acpi_device_fix_up_power(struct acpi_device *device)
+{
+	return 0;
+}
+
+int acpi_device_set_power(struct acpi_device *device, int state)
+{
+	return 0;
+}
+
+int acpi_match_device_ids(struct acpi_device *device, const struct acpi_device_id *ids)
+{
+	return -ENOENT;
+}

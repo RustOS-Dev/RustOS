@@ -1,0 +1,10 @@
+# Linux HID core (M33): report parsing, HID-to-input mapping, quirks,
+# hid-generic and hid-multitouch (touchpads, touchscreens).
+module: hid
+drivers/hid/hid-core.c
+drivers/hid/hid-input.c
+drivers/hid/hid-quirks.c
+module: hid_generic
+drivers/hid/hid-generic.c
+module: hid_multitouch
+drivers/hid/hid-multitouch.c

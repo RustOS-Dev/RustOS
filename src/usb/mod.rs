@@ -376,7 +376,15 @@ fn bind(dev: &Arc<UsbDevice>) {
     for iface in &ifaces {
         let builtin: [(&'static str, DriverProbe); 7] = [
             ("hub", hub::probe),
-            ("usbhid", hid::probe),
+            // Linux usbhid drives HID devices in linux-usbhid builds.
+            (
+                "usbhid",
+                if cfg!(feature = "linux-usbhid") {
+                    |_, _| false
+                } else {
+                    hid::probe
+                },
+            ),
             ("uas", uas::probe),
             ("usb-storage", storage::probe),
             // Linux usbnet drives USB Ethernet in linux-usbnet builds.

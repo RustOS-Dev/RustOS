@@ -1,0 +1,12 @@
+# Linux input core (M33) and the RustOS handler (c/input.c) that turns
+# input devices into RustOS ones.
+module: input_core
+drivers/input/input.c
+drivers/input/input-compat.c
+drivers/input/input-mt.c
+drivers/input/input-poller.c
+drivers/input/ff-core.c
+drivers/input/touchscreen.c
+drivers/input/touch-overlay.c
+module: rustos_input
+kpi:input.c

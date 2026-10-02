@@ -20,6 +20,7 @@
 #include <linux/random.h>
 #include <linux/refcount.h>
 #include <linux/seq_file.h>
+#include <linux/proc_fs.h>
 #include <linux/string.h>
 #include <net/dropreason.h>
 #include "kpi.h"
@@ -506,4 +507,76 @@ int iosf_mbi_write(u8 port, u8 opcode, u32 offset, u32 mdr)
 
 void add_device_randomness(const void *buf, size_t len)
 {
+}
+
+void add_input_randomness(unsigned int type, unsigned int code, unsigned int value)
+{
+}
+
+/* ------------------------------------------------------------- procfs */
+
+/* No /proc for Linux code: entries are created as placeholders so their
+ * users carry on (input's /proc/bus/input files, for one). */
+static struct {
+	char pad[64];
+} kpi_proc_placeholder;
+
+struct proc_dir_entry *proc_mkdir(const char *name, struct proc_dir_entry *parent)
+{
+	return (struct proc_dir_entry *)&kpi_proc_placeholder;
+}
+
+struct proc_dir_entry *proc_create(const char *name, umode_t mode, struct proc_dir_entry *parent,
+				   const struct proc_ops *proc_ops)
+{
+	return (struct proc_dir_entry *)&kpi_proc_placeholder;
+}
+
+void remove_proc_entry(const char *name, struct proc_dir_entry *parent)
+{
+}
+
+/* fs/seq_file.c list helpers, and the file operations /proc files use
+ * (never called here: no procfs). */
+struct list_head *seq_list_start(struct list_head *head, loff_t pos)
+{
+	struct list_head *lh;
+
+	list_for_each(lh, head)
+		if (pos-- == 0)
+			return lh;
+	return NULL;
+}
+
+struct list_head *seq_list_next(void *v, struct list_head *head, loff_t *ppos)
+{
+	struct list_head *lh = ((struct list_head *)v)->next;
+
+	++*ppos;
+	return lh == head ? NULL : lh;
+}
+
+ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+	return -EIO;
+}
+
+loff_t seq_lseek(struct file *file, loff_t offset, int whence)
+{
+	return -ESPIPE;
+}
+
+void *__seq_open_private(struct file *f, const struct seq_operations *ops, int psize)
+{
+	return NULL;
+}
+
+int seq_open_private(struct file *filp, const struct seq_operations *ops, int psize)
+{
+	return -ENOMEM;
+}
+
+int seq_release_private(struct inode *inode, struct file *file)
+{
+	return 0;
 }

@@ -41,5 +41,7 @@ lib/math/gcd.c
 # Byte bit-reversal table, PTP time counters, SHA-256 (M32 drivers).
 lib/bitrev.c
 lib/llist.c
+# Counting semaphores (HID core).
+kernel/locking/semaphore.c
 kernel/time/timecounter.c
 lib/crypto/sha256.c

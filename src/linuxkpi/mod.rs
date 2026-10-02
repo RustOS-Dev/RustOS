@@ -7,6 +7,8 @@
 pub mod acpi;
 pub mod chrdev;
 pub mod firmware;
+#[cfg(feature = "linux-hid")]
+pub mod input;
 pub mod mm;
 #[cfg(feature = "linux-mmc")]
 pub mod mmc;

@@ -1143,6 +1143,27 @@ ssize_t usb_store_new_id(struct usb_dynids *dynids, const struct usb_device_id *
 }
 EXPORT_SYMBOL_GPL(usb_store_new_id);
 
+/* drivers/usb/core/usb.c */
+int __usb_get_extra_descriptor(char *buffer, unsigned size, unsigned char type, void **ptr,
+			       size_t minsize)
+{
+	struct usb_descriptor_header *header;
+
+	while (size >= sizeof(struct usb_descriptor_header)) {
+		header = (struct usb_descriptor_header *)buffer;
+		if (header->bLength < 2 || header->bLength > size)
+			return -1;
+		if (header->bDescriptorType == type && header->bLength >= minsize) {
+			*ptr = header;
+			return 0;
+		}
+		buffer += header->bLength;
+		size -= header->bLength;
+	}
+	return -1;
+}
+EXPORT_SYMBOL_GPL(__usb_get_extra_descriptor);
+
 /* Device-level drivers (r8152's configuration selector) are not run:
  * RustOS selects the configuration (src/usb/mod.rs prefers the vendor one
  * of Realtek adapters in linux-usbnet builds, as r8152's selector does). */

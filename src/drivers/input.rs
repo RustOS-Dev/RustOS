@@ -385,6 +385,23 @@ fn extended_key(c: u16) -> Option<u16> {
     })
 }
 
+/// PS/2 set-1 scancode bytes for Linux key `code` (make, or break with
+/// `down` false), as the console keyboard takes them; None for keys it
+/// has no code for.
+pub fn keycode_scancodes(code: u16, down: bool) -> Option<([u8; 2], usize)> {
+    let brk = if down { 0 } else { 0x80 };
+    let plain = match code {
+        1..=0x53 | 0x56..=0x58 => Some(code as u8),
+        _ => None,
+    };
+    if let Some(sc) = plain {
+        return Some(([sc | brk, 0], 1));
+    }
+    (0x01u16..0x80)
+        .find(|&sc| extended_key(sc) == Some(code))
+        .map(|sc| ([0xE0, sc as u8 | brk], 2))
+}
+
 /// The console's lock keys changed: update every keyboard's LEDs.
 pub fn console_leds(bits: u8) {
     if CONSOLE_LEDS.swap(bits as u32, Ordering::Relaxed) == bits as u32 {

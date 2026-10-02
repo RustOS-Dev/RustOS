@@ -946,3 +946,12 @@ u64 sched_clock(void)
 {
 	return ktime_get_ns();
 }
+
+/* Monotonic time to another clock (offsets of real time; boot and TAI
+ * equal monotonic here: no suspend, no leap second table). */
+ktime_t ktime_mono_to_any(ktime_t tmono, enum tk_offsets offs)
+{
+	if (offs == TK_OFFS_REAL)
+		return ktime_add(tmono, ktime_sub(ktime_get_real(), ktime_get()));
+	return tmono;
+}

@@ -1,0 +1,4 @@
+# Linux USB HID (M33; test builds: RustOS's native USB HID driver is the
+# default).
+module: usbhid
+drivers/hid/usbhid/hid-core.c

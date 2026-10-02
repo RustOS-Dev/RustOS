@@ -25,6 +25,7 @@
 #include <linux/sched/debug.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
+#include <linux/sched/wake_q.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/swait.h>
@@ -1028,4 +1029,15 @@ void rt_mutex_lock(struct rt_mutex *lock)
 void rt_mutex_unlock(struct rt_mutex *lock)
 {
 	smp_store_release(&lock->rtmutex.owner, NULL);
+}
+
+/* Deferred wake-up lists: wake at once (RustOS wake-ups never sleep, so
+ * waking under the caller's lock is fine). */
+void wake_q_add(struct wake_q_head *head, struct task_struct *task)
+{
+	wake_up_process(task);
+}
+
+void wake_up_q(struct wake_q_head *head)
+{
 }

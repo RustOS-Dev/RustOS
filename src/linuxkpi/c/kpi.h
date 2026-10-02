@@ -161,6 +161,14 @@ struct kpi_mmc_disk;
 u64 rustos_kpi_mmc_disk_add(struct kpi_mmc_disk *d, u64 sectors, const char *model, int ro);
 void rustos_kpi_mmc_disk_remove(u64 handle);
 
+/* Input devices (src/linuxkpi/input.rs). */
+struct kpi_input_caps;
+struct input_handle;
+u64 rustos_kpi_input_add(const char *name, const char *phys, const struct kpi_input_caps *caps,
+			 struct input_handle *handle);
+void rustos_kpi_input_remove(u64 rid);
+void rustos_kpi_input_event(u64 rid, u32 type, u32 code, s32 value);
+
 /* Credentials of the calling process (src/linuxkpi/sched.rs). */
 u32 rustos_kpi_current_uid(void);
 

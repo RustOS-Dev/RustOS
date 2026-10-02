@@ -24,8 +24,9 @@ const FEATURES: &[(&str, &[&str])] = &[
     ("LINUX_MMC", &["mmc"]),
     ("LINUX_HID", &["input", "hid", "i2chid"]),
     ("LINUX_USBHID", &["usbhid"]),
-    ("LINUX_PLATFORM", &["gpio", "i2cplat"]),
+    ("LINUX_PLATFORM", &["regmap", "gpio", "i2cplat"]),
     ("LINUX_VIDEO", &["dmabuf", "media", "uvc"]),
+    ("LINUX_SOUND", &["regmap", "sound", "hda", "sndusb"]),
     ("LINUX_PHY", &["phy"]),
     ("LINUX_ETH", &["eth"]),
     ("LINUX_MT7921", &["mt7921", "mt7921u"]),
@@ -35,7 +36,11 @@ pub fn build(root: &Path, out: &Path) {
     let mut groups: Vec<&str> = Vec::new();
     for (feature, gs) in FEATURES {
         if std::env::var_os(format!("CARGO_FEATURE_{feature}")).is_some() {
-            groups.extend(gs.iter().copied());
+            for g in gs.iter() {
+                if !groups.contains(g) {
+                    groups.push(g);
+                }
+            }
         }
     }
     if groups.is_empty() {

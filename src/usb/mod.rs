@@ -396,7 +396,15 @@ fn bind(dev: &Arc<UsbDevice>) {
                     cdc_ether::probe
                 },
             ),
-            ("snd-usb-audio", audio::probe),
+            // Linux snd-usb-audio drives USB audio in linux-sound builds.
+            (
+                "snd-usb-audio",
+                if cfg!(feature = "linux-sound") {
+                    |_, _| false
+                } else {
+                    audio::probe
+                },
+            ),
             ("btusb", btusb::probe),
         ];
         let extra = DRIVERS.lock().clone();

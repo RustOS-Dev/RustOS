@@ -87,9 +87,12 @@ devices are cached (write-back buffer cache, `sync`).
 
 | Device | Status |
 |--------|--------|
-| Intel HD Audio (legacy, non-DSP) codecs | CI (`intel-hda`, `ich9-intel-hda`) |
-| virtio-sound | CI |
-| USB Audio Class 1/2 (playback) | CI (`usb-audio`) |
+| Intel HD Audio (legacy, non-DSP) codecs | native driver in default builds: CI (`intel-hda`, `ich9-intel-hda`) |
+| Intel HD Audio through Linux snd-hda-intel (Intel, AMD, NVIDIA controllers; Realtek, Analog, IDT, VIA, Conexant, HDMI/DP and generic codecs), ALSA `/dev/snd/*` and OSS `/dev/dsp*`, in release images | CI (`audio-linux`: playback and recording on QEMU HDA); codec-specific quirks untested on hardware |
+| virtio-sound | native driver: CI |
+| USB Audio Class 1/2 (playback) | native driver in default builds: CI (`usb-audio`) |
+| USB Audio Class 1/2/3 through Linux snd-usb-audio, in release images | CI (`audio-linux`: playback on QEMU usb-audio); recording (isochronous IN) untested |
+| DSP microphones (Intel SOF, AMD ACP) | not supported |
 
 ## Target machines
 

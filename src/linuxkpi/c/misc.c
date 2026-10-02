@@ -585,3 +585,118 @@ int seq_release_private(struct inode *inode, struct file *file)
 {
 	return 0;
 }
+
+/* ------------------------------------------------ more procfs (M34 sound) */
+
+struct proc_dir_entry *proc_mkdir_mode(const char *name, umode_t mode,
+				       struct proc_dir_entry *parent)
+{
+	return (struct proc_dir_entry *)&kpi_proc_placeholder;
+}
+
+struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
+					struct proc_dir_entry *parent,
+					const struct proc_ops *proc_ops, void *data)
+{
+	return (struct proc_dir_entry *)&kpi_proc_placeholder;
+}
+
+struct proc_dir_entry *proc_symlink(const char *name, struct proc_dir_entry *parent,
+				    const char *dest)
+{
+	return (struct proc_dir_entry *)&kpi_proc_placeholder;
+}
+
+void proc_set_size(struct proc_dir_entry *de, loff_t size)
+{
+}
+
+void proc_remove(struct proc_dir_entry *de)
+{
+}
+
+int single_open(struct file *file, int (*show)(struct seq_file *, void *), void *data)
+{
+	return -ENOENT;
+}
+
+int single_open_size(struct file *file, int (*show)(struct seq_file *, void *), void *data,
+		     size_t size)
+{
+	return -ENOENT;
+}
+
+int single_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+/* --------------------------------------------------- odds (M34 sound) */
+
+/* SIGIO notification is not delivered (O_ASYNC on device files). */
+int fasync_helper(int fd, struct file *filp, int on, struct fasync_struct **fapp)
+{
+	return 0;
+}
+
+void kill_fasync(struct fasync_struct **fp, int sig, int band)
+{
+}
+
+ssize_t memory_read_from_buffer(void *to, size_t count, loff_t *ppos, const void *from,
+				size_t available)
+{
+	loff_t pos = *ppos;
+
+	if (pos < 0)
+		return -EINVAL;
+	if (pos >= available)
+		return 0;
+	if (count > available - pos)
+		count = available - pos;
+	memcpy(to, from + pos, count);
+	*ppos = pos + count;
+	return count;
+}
+
+const struct dmi_device *dmi_find_device(int type, const char *name, const struct dmi_device *from)
+{
+	return NULL;
+}
+
+bool cpu_latency_qos_request_active(struct pm_qos_request *req)
+{
+	return false;
+}
+
+/* Linux pids are not tracked for RustOS threads. */
+pid_t pid_vnr(struct pid *pid)
+{
+	return 0;
+}
+
+void put_pid(struct pid *pid)
+{
+}
+
+/* kernel/time/clocksource.c */
+void clocks_calc_mult_shift(u32 *mult, u32 *shift, u32 from, u32 to, u32 maxsec)
+{
+	u64 tmp;
+	u32 sft, sftacc = 32;
+
+	tmp = ((u64)maxsec * from) >> 32;
+	while (tmp) {
+		tmp >>= 1;
+		sftacc--;
+	}
+	for (sft = 32; sft > 0; sft--) {
+		tmp = (u64)to << sft;
+		tmp += from / 2;
+		do_div(tmp, from);
+		if ((tmp >> sftacc) == 0)
+			break;
+	}
+	*mult = tmp;
+	*shift = sft;
+}

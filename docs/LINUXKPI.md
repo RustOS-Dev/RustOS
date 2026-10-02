@@ -63,6 +63,16 @@ devices, so the chain is compiled but untested on hardware. The
 `_CRS` conversion and a GPIO-style domain with a one-shot thread. Intel LPSS
 I2C (intel-lpss PCI) and Intel pin controllers are not imported yet.
 
+M34: Linux sound (`--features linux-sound`, in release images in place of
+the native HDA and USB audio drivers): the ALSA core with OSS emulation,
+snd-hda-intel with the codec drivers, and snd-usb-audio on the LinuxKPI
+isochronous URBs. `/dev/snd/*` are ALSA's devices, and `/dev/dsp`,
+`/dev/dsp1`, ... and `/dev/mixer*` its OSS emulation, so RustOS's `play`,
+`rec`, `beep` and `mixer` work unchanged. `/proc/asound/cards` lists the
+ALSA cards (`c/sound.c`). The `audio-linux` scenario plays tones on HDA and
+USB audio, which the host checks, and records on a second HDA. virtio-sound
+keeps its native driver. DSP microphones (SOF, AMD ACP) are not imported.
+
 M33: webcams through Linux's media controller, V4L2 core, videobuf2
 (vmalloc buffers) and uvcvideo (`--features linux-video`, in release
 images): `/dev/videoN` and `/dev/mediaN`. Buffers map into user space page

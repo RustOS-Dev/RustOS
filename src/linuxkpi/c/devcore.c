@@ -273,11 +273,18 @@ int get_cmdline(struct task_struct *task, char *buffer, int buflen)
 
 struct kobject *kernel_kobj;
 
-/* What start_kernel() sets up for library code (radix trees back IDRs),
- * driver_init(), and the /sys/kernel kobject (kernel/ksysfs.c). */
+/* lib/maple_tree.c, in builds with regmap. */
+void __weak maple_tree_init(void)
+{
+}
+
+/* What start_kernel() sets up for library code (radix trees back IDRs,
+ * maple trees back regmap caches), driver_init(), and the /sys/kernel
+ * kobject (kernel/ksysfs.c). */
 int kpi_devcore_init(void)
 {
 	radix_tree_init();
+	maple_tree_init();
 	driver_init();
 	kernel_kobj = kobject_create_and_add("kernel", NULL);
 	return kernel_kobj ? 0 : -ENOMEM;

@@ -1,0 +1,9 @@
+# Register maps (regmap) with their caches, used by DesignWare I2C and
+# the HDA core; the maple tree backs one cache type.
+cflags: -I@LINUX@/drivers/base/regmap
+drivers/base/regmap/regmap.c
+drivers/base/regmap/regcache.c
+drivers/base/regmap/regcache-flat.c
+drivers/base/regmap/regcache-rbtree.c
+drivers/base/regmap/regcache-maple.c
+lib/maple_tree.c

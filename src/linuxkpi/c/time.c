@@ -955,3 +955,9 @@ ktime_t ktime_mono_to_any(ktime_t tmono, enum tk_offsets offs)
 		return ktime_add(tmono, ktime_sub(ktime_get_real(), ktime_get()));
 	return tmono;
 }
+
+/* No NTP adjustment: the raw monotonic clock is the monotonic clock. */
+void ktime_get_raw_ts64(struct timespec64 *ts)
+{
+	ktime_get_ts64(ts);
+}

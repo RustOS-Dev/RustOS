@@ -165,6 +165,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] UVC webcams (media controller, V4L2, videobuf2, uvcvideo), isochronous URBs in the LinuxKPI USB core, xHCI isochronous IN; `vgrab`, `hwcheck webcam` (untested on hardware)
   - [x] Realtek (btrtl) and Broadcom (btbcm) Bluetooth firmware loading in btusb; rtl_bt firmware ships (untested on hardware)
 - [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
+  - [x] ALSA core, OSS emulation, snd-hda-intel + codecs, snd-usb-audio on isochronous URBs (`audio-linux`); in release images
+  - [ ] SOF/ACP DSP microphones; Linux virtio-sound (native driver kept)
 - [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
 - [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU
 - [ ] **M37** C++ runtime, Wayland stack, software-rendered Weston desktop

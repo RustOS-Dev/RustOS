@@ -138,6 +138,8 @@ arch/x86/include/asm/user_64.h	GPL-2.0	adbcd49103f151d32046e17222b8eafc30777ad34
 arch/x86/include/asm/vdso.h	GPL-2.0	de233d5a04e388f7bf938e5c3f7ac493e7ef6fa9024377bd937560d844a51e53
 arch/x86/include/asm/vdso/clocksource.h	GPL-2.0	6bb54ee7e0e045ee1973b92f090583f3b6f8f13de6ed04a1d9e85422c373e53b
 arch/x86/include/asm/vdso/processor.h	GPL-2.0-only	684e2abe6d6dc027cccca3bd9503015865500ce54216c85a05f99d9d53c686d1
+arch/x86/include/asm/vga.h	GPL-2.0	ee084608b36f04ecf65cadb4397a079a63801599c447c36de542c639faa76c05
+arch/x86/include/asm/video.h	GPL-2.0	4dee83a9fbc985e4167fdf8d286d3345cd1b6a315a1faf9df5ba4a16ec3a1ecd
 arch/x86/include/asm/vmalloc.h	GPL-2.0-only (untagged, per Linux COPYING)	ded5d5eee94255a94a6e2bc9bcea720b29c668572704ee153c760297828a0173
 arch/x86/include/asm/vmxfeatures.h	GPL-2.0	313eae24276800b3086f193435fc0680907a87458adc66a409b94847358a1e2f
 arch/x86/include/asm/word-at-a-time.h	GPL-2.0	37903b93b4c5ee33f529c2e7e6037d68bbf30e210836c1b8c2600b91afb3046c
@@ -241,6 +243,10 @@ drivers/input/input-poller.h	GPL-2.0-only	026b1a53a639fba0abfee99aa71239ef642de3
 drivers/input/input.c	GPL-2.0-only	556b513c542462bc8cef2c9a94c31bdf7ce5fa3654ebea06b133c9f3adcbf9bf
 drivers/input/touch-overlay.c	GPL-2.0-only	fb994819ebfb574b73a35eec8c699673b3173ca9618bf4191387f0c522df793f
 drivers/input/touchscreen.c	GPL-2.0-only	f8dcfa9d5afd06e6218c6a5edd4634825c64c68695539b07e9151c89187d2563
+drivers/leds/led-class.c	GPL-2.0-only	a6c3abf74fa7bf6a3a3b3d43b37c0358128dcd9c2eaad67054023bc5bd11b475
+drivers/leds/led-core.c	GPL-2.0-only	24606e265aabfda6a28529f3dd84520d4bf010565dc88d42a62af3dddcda79c1
+drivers/leds/led-triggers.c	GPL-2.0-only	1d800ca422b22d47e3208aa21587cc4871b0276c9617999cbf5d729821bdc494
+drivers/leds/leds.h	GPL-2.0-only	0cf74f9b0a1a269fb654b950fbeb3a84eedaa55fad50640b4edb7856c6f89001
 drivers/media/common/uvc.c	GPL-2.0-or-later	9f2c309aa95a78a1ab73f3b93e826e3f4350400d452bd481cf964d012089fe04
 drivers/media/common/videobuf2/frame_vector.c	GPL-2.0	24863103e9aa6362c4b372fea20b17a06aed2b00863330c63d842c183382ea63
 drivers/media/common/videobuf2/videobuf2-core.c	GPL-2.0-only (untagged, per Linux COPYING)	3910403dc6f8e1df11b0d95cfd456635a36f48c7984717e28497a0489de49ad5
@@ -600,6 +606,7 @@ include/acpi/actbl1.h	BSD-3-Clause OR GPL-2.0	8825ed41c1277162605cd40c15f678a8d8
 include/acpi/actbl2.h	BSD-3-Clause OR GPL-2.0	ec1b65fdc4eba8692764f3ab071ee905d069bec7747b4fb143eb05fe8db6cd83
 include/acpi/actbl3.h	BSD-3-Clause OR GPL-2.0	66bcea45aeb4aaec24f81ec242f2a7765ee5c853bef2fec8a50fa56dc5346fbf
 include/acpi/actypes.h	BSD-3-Clause OR GPL-2.0	0c6ef6e7625a635c98e8fe47bb0752342567783b4a9a704c8ad53d189d464b80
+include/acpi/nhlt.h	GPL-2.0-only	25e38dbd6836271ad958ca72d2810e5a9c20a36bb0b48b4b3d2cc9c7aa4d63d3
 include/acpi/platform/acenv.h	BSD-3-Clause OR GPL-2.0	77959b61f3884b16628b9d22314b91085c2f144e4a77b6c150d6bef0b518e583
 include/acpi/platform/acenvex.h	BSD-3-Clause OR GPL-2.0	df944cfbd965da757d5582e39d5a8ecb375b98e15fbad018c227c2e180deb824
 include/acpi/platform/acgcc.h	BSD-3-Clause OR GPL-2.0	b213a97874dc147656912436d5e674512223dd1162bff2c81fcc24fcd82e657c
@@ -654,6 +661,7 @@ include/asm-generic/sections.h	GPL-2.0	b7d898e5c0a6442446d25c3a0c69a0b3e211b1e51
 include/asm-generic/set_memory.h	GPL-2.0	bf52d192a1d561ac43e380f16c5cd3ae88f5d349dc31b96b99c4c18b3e6e1fc8
 include/asm-generic/thread_info_tif.h	GPL-2.0	60e450d7308c84a56fa1cc18520ad7d4fde53650c7b9e0af988f95f0129341f9
 include/asm-generic/topology.h	GPL-2.0-only (untagged, per Linux COPYING)	a1709eadf6f1aa60bd2115d485f20834db67e540b0e5c3af3687a7354e410f5f
+include/asm-generic/video.h	GPL-2.0	5b7a18d275e0d4c78a33f2613fff5d56360f4899c3e00c934c8f2d3999c806d4
 include/crypto/aead.h	GPL-2.0-or-later	20784516a1c3bacb7029754576447770891c943471adf7e2efa7ecaf24c2638f
 include/crypto/aes.h	GPL-2.0	fd078e770383f64ffa20b4e8f95b69b8f55211ae79e42947e9d3f2a82d302420
 include/crypto/algapi.h	GPL-2.0-or-later	17b3463b979d89124fef35067d04dc8368fcf29442208650b26e0f0c3e7dfffe
@@ -673,7 +681,11 @@ include/crypto/sha1.h	GPL-2.0	0499f880e8b9fc18bb6641f4798d7151af6c4a606711f2d24c
 include/crypto/sha2.h	GPL-2.0	4e641bbd195343894bf8f3ba071078c10d375ebbd5503b28bc78bc42618dbb2d
 include/crypto/skcipher.h	GPL-2.0-or-later	a85e03203531ea0f2a18d48f304beea3e966bc4e35a352d74bd232e07a90ca6d
 include/crypto/utils.h	GPL-2.0-or-later	8a06f23cce29f2aa15dc173699c679e888fa762f9aaf39e05f49bb8cfc8515e6
+include/drm/drm_audio_component.h	MIT	6d59e60cbb84b118da265c0250d0f52b5ded63f2c7ff87de61a6023c228b30d6
+include/drm/drm_edid.h	GPL-2.0-only (untagged, per Linux COPYING)	62d60d78c2bbb1f25668fc3af4719f61b88cf8622b3914e91c997b005eccfc20
+include/drm/drm_eld.h	MIT	c727bcb398db53d5f774e39363dc4ffbf8ef7832ef0d1d2570a618e10937b507
 include/drm/drm_panel.h	GPL-2.0-only (untagged, per Linux COPYING)	bdf2a6559ca06d773068f39154cd4d3badc1dfcfeee0151ee97c151a7e8dd6d4
+include/drm/intel/i915_component.h	GPL-2.0-only (untagged, per Linux COPYING)	a2ee471063cbfcee0416c64ef07316112b31c8d3faa8c3387cf0c0b686405bab
 include/dt-bindings/i2c/i2c.h	GPL-2.0-only	ac470f6c6fb0228d29fe299d8fcf7a879c5a672969ccacb19c996df3c9c16038
 include/dt-bindings/leds/common.h	GPL-2.0	d947046ba0607ffb2954dd2d0641add3edeec92752e1dedf95913a81c5956492
 include/keys/asymmetric-type.h	GPL-2.0-or-later	7048cc873545c725cea8fb571a88969ec54039fb6f05bfc5e3cfcb166393de7a
@@ -690,6 +702,7 @@ include/linux/alarmtimer.h	GPL-2.0	56f4ac55d0aefeb2b5f94d758f35f50bbb58da6f23a0b
 include/linux/align.h	GPL-2.0	4da2b94e368dab1745dc81e83bd29f580c6620e4f3fa19c871a77b10c31bee36
 include/linux/alloc_tag.h	GPL-2.0	b8e745b2e706b33a8f0ca24487f8784c3cdf9fdde1fbb61a7d5698785e6198d7
 include/linux/anon_inodes.h	GPL-2.0	56799310505d5f2a348fb94a7b422166d56d461bddc0146ab50471c9e353c397
+include/linux/apple-gmux.h	GPL-2.0-only	05da767a975ced497436fc874467580360a50c19370374180f98dca1d4a51bad
 include/linux/arch_topology.h	GPL-2.0	4bcaf2baff1acddfdd83696544c7ff2c011a6f8d269b9d2a38db414f46652117
 include/linux/args.h	GPL-2.0	bf2270bc92ca719ae469ea793c35d91c66f21c25757a24a64feeb9700e1c2b36
 include/linux/array_size.h	GPL-2.0	f57b8e8f14d930b6884384a048fb97f450d2e6cee7e3da2bf6977e89cc1c97da
@@ -759,6 +772,7 @@ include/linux/compiler_attributes.h	GPL-2.0	860f32920502426b1d840969071dfdabf09e
 include/linux/compiler_types.h	GPL-2.0	aa831d618911d6c222ec7f2bee516e8d1c57f56284a6079d6a3062d305085f34
 include/linux/completion.h	GPL-2.0	db5aac6634fbb92542486d273d93861dfd29061043d461ae494cfa2b2e9f4e4b
 include/linux/component.h	GPL-2.0	f7c1d30b78a2a255fe66f75754929d5524d6394988c4743c8970e75a96d85d2f
+include/linux/console.h	GPL-2.0-only (untagged, per Linux COPYING)	14c47dc7249ee479a6a6cb7b2c379dddb8756e0efe8ba5c33ef78cfda1b1b0b2
 include/linux/const.h	GPL-2.0-only (untagged, per Linux COPYING)	17aaf8663019f1988881952a031fa12aefa9127af9ea1d546202af632b2f0adf
 include/linux/container_of.h	GPL-2.0	28b735d62e73541345c11101e343bb202694226bc22d93a719c3bf9c57648304
 include/linux/context_tracking_irq.h	GPL-2.0	c96be4f34ef8e3082e2bbed00e876e29e88068349fd7c8617a0694111691a467
@@ -820,6 +834,7 @@ include/linux/eventfd.h	GPL-2.0	3e4be8a75902ad79fb7f777a4e7e653850aa9cd592aceaf4
 include/linux/export.h	GPL-2.0-only	4ad93a3c87f955bad3fde700801cc787b9d50b30137e6db5aff45001fe678b9d
 include/linux/fault-inject-usercopy.h	GPL-2.0	f8650a9e615e0680d3f63d955a169f21f623aab860b1f925cf5a9dd3bf7165cb
 include/linux/fault-inject.h	GPL-2.0	2fc069a49ca3aca94e9610a1af7da43694b6c8ad5a1498823039e9a240b35590
+include/linux/fb.h	GPL-2.0	605249b95efd0ce7a57d5769b7f216aa5065191cc8d3aa007ee0b0f0294994e7
 include/linux/fcntl.h	GPL-2.0	3596923a526ffc73d9445e1b7488593a3f3c29c35a05cfe85c6573dae4262078
 include/linux/file.h	GPL-2.0	33a3333977ffcffb0cb22290b9718c4359cf3939e77ea9876341fc5d664d2637
 include/linux/file_ref.h	GPL-2.0-only	6f8d93585a850bfc6205f82a670c266e41fb4c67be943a3bd1a4f88eda8504ae
@@ -838,6 +853,7 @@ include/linux/ftrace_irq.h	GPL-2.0	28666f49ef06b938309751257cf6b2a670770c30a231b
 include/linux/fw_table.h	GPL-2.0-or-later	11efd0ce6ed5b1e76ed135779ae836b856bc03c30e5f65db509c6e431ac42f03
 include/linux/fwnode.h	GPL-2.0-only	d58b863353cdfdab5031c75d8ff0d85dc786fd05cb99993fd28be68b59de86ad
 include/linux/gcd.h	GPL-2.0	ad6c13ab7fe1a1b7775903806108eec835ae6a49838b58574645058e7e026e93
+include/linux/genalloc.h	GPL-2.0-only	a862938cb2fb2b4b30b91fe4aa75c6fe50d744d9212b003c435d6ab1000d39ff
 include/linux/gfp.h	GPL-2.0	a6fe8c1754daf501a8408cea321557c96e068cbd1636e03cea3c62bc36113b43
 include/linux/gfp_types.h	GPL-2.0	679394be954668ab8e1d104df064495e4a1f1acf637884ea27d53f1f3c97f46b
 include/linux/gpio.h	GPL-2.0	f2d044d9d203bdc0ec5045bcb1c9f843f3b6675b2ea1cc689822df25e3c93317
@@ -958,6 +974,7 @@ include/linux/kstrtox.h	GPL-2.0	cde8bd2a9838b4dba345461204fd86c90b0bf4a66eaa23a0
 include/linux/kthread.h	GPL-2.0	9208cb960a53e6aa64f5578c225eb118f649bee407cdb7ab12d684a8c4e1248d
 include/linux/ktime.h	GPL-2.0-only (untagged, per Linux COPYING)	e86942e72ec8a9cf8a72d5956de3fab121691353aea3dd8086b7817c438988d2
 include/linux/latencytop.h	GPL-2.0	72822537bd6fd027403df29fcc36b962befc5b15f115de7a2e0f7ffc9655cb50
+include/linux/led-class-multicolor.h	GPL-2.0	93ace6856c96552cb292a8b2be595d512591d7481c9f40f177f8709dca3b9d38
 include/linux/leds.h	GPL-2.0-only	c53046f1d73a31dcbbebd5b84ee74666afa4a76f03c3f2784175b1bea52ed558
 include/linux/limits.h	GPL-2.0	0ed7dfdba324e0ce1fc732cd580338a2535727cc6a2103af9fbe027601092e33
 include/linux/linear_range.h	GPL-2.0	c3f1a58ffe5fda29e42f79c2771e66c019afdd5454c8a57904cd33968a705dc3
@@ -1069,6 +1086,7 @@ include/linux/pageblock-flags.h	GPL-2.0-only	8a6f37f60046e3c63bc02619546313d8b5d
 include/linux/pagemap.h	GPL-2.0	44f347f4fbd947e1eeb051fd3a8cdc93bd9ddecd2332101187644c0e1c150309
 include/linux/pagevec.h	GPL-2.0	b5ab95c07fdc938aa773b0bf371c03c03aa2fb8f6c6b2f41628ffc6ad6b5abd4
 include/linux/panic.h	GPL-2.0	e4359b990bb3b1454b8c60e2367c4a129a8ab317aca4ff3ccf015478617d2cfd
+include/linux/patchkey.h	GPL-2.0	102365f080b0ce3669c82e0b86cac4ffdbbd13f6135297be4aa7d6847468b7e6
 include/linux/path.h	GPL-2.0	0e8f5c7649ea4f6830871af1ab6257affe5f5e6c5c12b6034bddce7c80848084
 include/linux/pci.h	GPL-2.0	8c9a16833fa406d6a85bc7df93c77a1ffc170315e34f8ddc9684adb249162680
 include/linux/pci_ids.h	GPL-2.0	10405f88f3336b6d2bfa3ae25c94922ac6e21adeb1f079ffa681030cd8175014
@@ -1109,6 +1127,7 @@ include/linux/pm_qos.h	GPL-2.0	0716eaaf099af1d9e6a5ed6e7e18812e1edf9621d221fd614
 include/linux/pm_runtime.h	GPL-2.0-only	57f1a335642757d2a7bab26b7e40a3222cba54bc72ed1c3bf8932938698671f2
 include/linux/pm_wakeirq.h	GPL-2.0-only	0eb93786eb9bfbbafb55b87558ccdc6cb65113685f6809da5e3309915082b88e
 include/linux/pm_wakeup.h	GPL-2.0-or-later	da6e286383312e5ad728c01eb0216e732829080d7df3f113cbd67b73091c8b18
+include/linux/pnp.h	GPL-2.0	42c2f99788c87be8ec7f466080897e67ab445df27519a184c03ea6b514a0ece4
 include/linux/poison.h	GPL-2.0	84adcca301c008e5d070def3eafa152aca2e218d7ef6d6d7d7000dbe01efc0e2
 include/linux/poll.h	GPL-2.0	2e9d66ec3a6ae91ae35d1e2065e90f42116e48081c68456da56594656b6022eb
 include/linux/posix-timers.h	GPL-2.0	5aa804807519b6f26918c7dab72a3e22bd50e898763f434ab51b2c58c275988c
@@ -1226,6 +1245,10 @@ include/linux/soc/mediatek/mtk_wed.h	GPL-2.0-only (untagged, per Linux COPYING)	
 include/linux/socket.h	GPL-2.0	be4fced57587c50436643cdcdafc786e4d5628a1dc8992ac0aa552ae6a9bd18e
 include/linux/sockptr.h	GPL-2.0-only	9c134512be6b60a1d66df26135115764672a14a62b0b6f58a49e78ee93e7bbc9
 include/linux/sort.h	GPL-2.0	b86790fb965405059e4baed4d2eeba60774fb0d99e727d5fb8f3a82df5d34d97
+include/linux/sound.h	GPL-2.0	83c28f51227e4ea8718a37d5fc0a395eddb9aeeacd01335d5bae69b257138ba8
+include/linux/soundcard.h	GPL-2.0-only (untagged, per Linux COPYING)	10bf6dc4c466e28dc05d54fe1ff1bfec6063402f81656893e3bab26c8892f2de
+include/linux/soundwire/sdw.h	(GPL-2.0 OR BSD-3-Clause)	bc7bf9bc5d1e375cfd77c103e1764283ebbce536d9c092f8fdc969ee989810b8
+include/linux/soundwire/sdw_intel.h	(GPL-2.0 OR BSD-3-Clause)	a5613196ff81c802424cca887d7b58685af2250387779b65ec431790f5670ea0
 include/linux/spi/spi.h	GPL-2.0-or-later	ccfaf24327ccda2608af316702672246ea804b2018b787ee09cd154e189cf6ad
 include/linux/spinlock.h	GPL-2.0	84d5174da1ddc48421c9b4c3ba471a15ab1aeba297ee16380e61e133c919eb27
 include/linux/spinlock_api_smp.h	GPL-2.0-only (untagged, per Linux COPYING)	eaf6095a4d707ee64e15a1246cd4ff384acb62b404c83e0a67a07fb78136c7ed
@@ -1310,6 +1333,9 @@ include/linux/units.h	GPL-2.0	2d08078b77e77edc3ba2ef2edea476ccf334f2070550cfff77
 include/linux/unwind_deferred_types.h	GPL-2.0	5163d626060e186a19f6f4b31e41469fcc8b29d57f4375ce431a9f7e24d55aaa
 include/linux/uprobes.h	GPL-2.0-or-later	f59d02ddb377d8fd7d641853305cedd7148eec97e2ddd353fb4fb0dfadf5cf6e
 include/linux/usb.h	GPL-2.0	2ed66ba85dc343e09b8f1320c5017e43c26cbc671c1ea201a429aed92e2bb0c2
+include/linux/usb/audio-v2.h	GPL-2.0	9e5608aa0d1117ce48c0ad573f080a81a57fef767ada6b72606beed30c1612ba
+include/linux/usb/audio-v3.h	GPL-2.0+	ca4967a7d8ad7494fbe9d5237c445018dba1194ac057ad451585799bbb521b95
+include/linux/usb/audio.h	GPL-2.0	c87cd03af9f41ea4f8d06c452bb16a27970b50d675cebcdd6dbe37fe3a8fadb8
 include/linux/usb/cdc.h	GPL-2.0	ed460371a8de23384bfed4ef862229aca3cd26de5a31ba7ac96137a22eb893d4
 include/linux/usb/cdc_ncm.h	(GPL-2.0 OR BSD-2-Clause)	5ca819422a53062e00a957bca1862fdc69302c833e13fa26eb5ba273de6bdb92
 include/linux/usb/ch9.h	GPL-2.0	7df5caf8a59029c9f5df6ad66ef520adb56f6afaa285971dd988783467d7299e
@@ -1328,6 +1354,8 @@ include/linux/utsname.h	GPL-2.0	de8aefc6435da62d999f33402e647398c860b5f7541add14
 include/linux/uuid.h	GPL-2.0-only	a7c5418fa73f15fc23a1c04a1580fbe48559a9394254c8b396ec2df6924e029e
 include/linux/verification.h	GPL-2.0-or-later	fe3003116b0e8cd37f163ebb2392a5df7a533656514624caed0444ae5a836692
 include/linux/vfsdebug.h	GPL-2.0	d63161137a5ceb0c5ffa78a36a54c37b8b603be6a6d07f290d5b228dce128356
+include/linux/vga_switcheroo.h	GPL-2.0-only (untagged, per Linux COPYING)	51f6d3b8df055e7c2afdba1a4c264a9f66cd25f770f56c5a9ce9eccaf86a4400
+include/linux/vgaarb.h	MIT	7d820c1ea71ad35c200f3e84ce69c865302913ba52dd932cdbedb589e639fc60
 include/linux/videodev2.h	GPL-2.0-only (untagged, per Linux COPYING)	d5d0052ac951db02e47536335f9267a34c6fda7998af11f4ff98d41e33b2d53e
 include/linux/virtio.h	GPL-2.0	b755225845717db632e06cdd9a0d7f5c9ac7042f18e66a7c814d78504364d8e7
 include/linux/virtio_byteorder.h	GPL-2.0	985eb2e72ce24ea172ec57614d0548712d508c96b9a180c346c927749e98349c
@@ -1476,6 +1504,50 @@ include/net/xdp_sock.h	GPL-2.0	355e16cb98a6e39438d48582b2b456dc15adb37792d1cacc9
 include/net/xdp_sock_drv.h	GPL-2.0	d10b373ee82838ce6e40c433dae3daff60997470efaa5ef1eeee17d508e9363f
 include/net/xfrm.h	GPL-2.0	ad8946681d7f384d730bfd3069b1f78d87fab231dd0cbae42d0b530b5ea347d5
 include/net/xsk_buff_pool.h	GPL-2.0	f7d6cac25d6978e660cee91530ffc128c7730b51c740e8df3b01751c88ee3d15
+include/sound/ac97/regs.h	GPL-2.0+	d5822ac65587a6fb6ae01c7a952bb54911449d3fdb0c0468fa689ebe64e33825
+include/sound/ac97_codec.h	GPL-2.0+	1e628b003004842b3e53d4820d2c651dca118735bb9d11f799531746bb8fa4e1
+include/sound/asequencer.h	GPL-2.0-or-later	3cafd28021308a0c613d93ba5185967bdcb3bf018bae23101a782680a35789b0
+include/sound/asound.h	GPL-2.0-or-later	43b5440647929bfef4faea610cb366a7b30e4cb842ad6cd7249165c3f5453ee1
+include/sound/asoundef.h	GPL-2.0-or-later	ed697c70fa22435af713f5e743203317429f562723e7d11898bf6dafb15a5ebc
+include/sound/compress_driver.h	GPL-2.0	4debe5db969bbac52bd40b59f8c4908f47496f45ccaf4869b00ada2c5873dd86
+include/sound/control.h	GPL-2.0-or-later	015feca3b3a2a23109f9ddc5287d3c7f69532505403fe6a08acfed34803f419b
+include/sound/core.h	GPL-2.0-or-later	35c8ca2fdbea0d3274cc14e73273169132b05b2f4a3ba82c2edce396d31ef38a
+include/sound/hda_chmap.h	GPL-2.0	df24bcfa62150f5d13ed239baa656d60fb1cd002775b51837e8dd413dd4f5468
+include/sound/hda_codec.h	GPL-2.0-or-later	85c10f4532027d841c86b2704299fb5159adf139b825a98e14f69e4624b4d7cd
+include/sound/hda_component.h	GPL-2.0	ba409a65da742d89a7f96f7d5273fc258f067eab6617d4ce39a3684967753818
+include/sound/hda_hwdep.h	GPL-2.0-or-later	e65f54d42fc40cb838b479a41c309b590ad8772e41d61bec2ce71be9e620e578
+include/sound/hda_i915.h	GPL-2.0	97a3acc7e37ad423122a4cc676855ce0fc39606c03d284613b474c4ece692732
+include/sound/hda_register.h	GPL-2.0	735a864752ce0429bfcfa2917807144e6cdf419810f4db24c19eb7b9bcfdf043
+include/sound/hda_regmap.h	GPL-2.0	331b5d896664e97ad65fb0de38d1e57b8c6eff57ac1fae1f073d0341da894075
+include/sound/hda_verbs.h	GPL-2.0	a0bf24e5e49e911190bcfc8490abfa4744e6362d33ea416abdd053ecfafeeadc
+include/sound/hdaudio.h	GPL-2.0	19cc7f47e215e6699bc479fa81c12a3a4767a2c8daacc095567b013da9e64d6c
+include/sound/hwdep.h	GPL-2.0-or-later	db524d4e99ca72b674afb00477bf232e80047564cf21afff760cb178579f9b17
+include/sound/info.h	GPL-2.0-or-later	68f5c742c7a2f4366f34faec8ed26f339b29147ee92bff60b1767810d6498ad5
+include/sound/initval.h	GPL-2.0-or-later	7493c218975a74a2fdfe3b60106189b4ca39d2dc85c21d3788a5dde309d98c2a
+include/sound/intel-dsp-config.h	GPL-2.0-only	d2ed8941fca7c795b97b52f7ed9f46948d6e96e975cf946c193cf769d59f1fc9
+include/sound/intel-nhlt.h	GPL-2.0-only	a21a948e71a6a93b15adafe9589ed4c8b3dbbcf62f06b57c21b52920537a56f1
+include/sound/jack.h	GPL-2.0-or-later	594d034a9fef3bb98dd74ac65b2d2bc2b8b3aeecb7c39c671589712edab16db0
+include/sound/memalloc.h	GPL-2.0-or-later	e8c91c4fc59544406eb7cbf54edf3768209f6daeabf7eeab6c001599fbca97dc
+include/sound/minors.h	GPL-2.0-or-later	0d72141e8868ba0bfa16647b923846887008b4cb08e62398b97aa62e6321a83b
+include/sound/mixer_oss.h	GPL-2.0-or-later	3b23fb2290ec4d8521df56e12eb10c962e2f508e620fee83501e6bbe304992ca
+include/sound/pcm.h	GPL-2.0-or-later	c5c2197f4dea13eaed7c9f10c83889a1b228c892c8bb918cda077201bb53e889
+include/sound/pcm_drm_eld.h	GPL-2.0	b49b9379eacb20199b7c68748858f5da048f96b86065a2cd25a4a9156b902ab8
+include/sound/pcm_oss.h	GPL-2.0-or-later	de06d2b68b4461666ed430560a0b7270a0d5662a46529888d31e582ee7ec50c9
+include/sound/pcm_params.h	GPL-2.0-or-later	b32f33324a695379a1c419f655f115be4b2ee0ca67b0d35aee767a1b0b619335
+include/sound/rawmidi.h	GPL-2.0-or-later	90ce546ea43817885e7f082f161a2e568a4eabe9b1f0a429715b3dcce873b820
+include/sound/sdca.h	(GPL-2.0-only OR BSD-3-Clause)	7552ffdfbf78f31dcc7e1c74d237456f1ad14d02f2f87bee74c08c67ffd6d8ee
+include/sound/soc-acpi.h	GPL-2.0-only	bcea3bbabbf700b7969d4109a3d5f02e2592929f6d48867c64584ddc62cef2e0
+include/sound/soc-card.h	GPL-2.0	3bcbc4de1cbf3506ac41d18e11708b5b8fbb82256f12a34b596012f7d9d1efca
+include/sound/soc-component.h	GPL-2.0	7b5f84a85f35fe0ee4bb9e6daee9bfd7c9829dea27f38ec8fab7d1344fd4a6be
+include/sound/soc-dai.h	GPL-2.0	f01e96277683cf0eb1b43a5a03e7e10ac39fd02a8b2e58fc7c7d256947e9b0be
+include/sound/soc-dapm.h	GPL-2.0	77fe44feee9b8316bedac9e7f45e2099012aa0839d1b602fa2dde8062822969c
+include/sound/soc-dpcm.h	GPL-2.0	df6b452f6c25092bcbedf63e1a6709c480967fb76ed13520be83fd660f158934
+include/sound/soc-jack.h	GPL-2.0	6c74b76fae91720e12a1a07f88b6effdda4037cf725902275c82b34ce577f75b
+include/sound/soc-topology.h	GPL-2.0	e933da24a36624447feeb0a617240327c671581aa276c9b11d24a2aa91cc4c06
+include/sound/soc.h	GPL-2.0	44d84a86453b214f0dd75ce6b0edfbc9162944706f94a9044d2ee330432a267e
+include/sound/timer.h	GPL-2.0-or-later	b182ed828cf30a69c66ca5b89cf2b9da1aa3b2188b5a398283550c541e653feb
+include/sound/tlv.h	GPL-2.0-or-later	ede004da67a8445ee21ece4bb0fc0ae8d8d297e1218d479db1990832db19d72a
+include/sound/ump.h	GPL-2.0-or-later	65b98ebe0c9ec50c557e92ac6dc356c85f37bc63abf3cbe7d8b80a6c63c087d3
 include/trace/define_trace.h	GPL-2.0	40e1178cf2e1e53952358928814e5960207c5fe6346107ea701a0e1e48630990
 include/trace/events/dma_fence.h	GPL-2.0	52efa22e8d8171f29bc324780d9431a119a15cf08011468c55b15ad1b3991fb5
 include/trace/events/gpio.h	GPL-2.0	fc3b1ef445d184ff76331f548669fc7488c0474eb15e902e258bef9b3bac1d5e
@@ -1539,6 +1611,7 @@ include/uapi/linux/ethtool_netlink_generated.h	((GPL-2.0 WITH Linux-syscall-note
 include/uapi/linux/eventfd.h	GPL-2.0 WITH Linux-syscall-note	d1917ce4c807a11f3cd0492f76c06ccff99483e9c8fa66cc53fdd2a324a03e46
 include/uapi/linux/eventpoll.h	GPL-2.0+ WITH Linux-syscall-note	5550fcd320468d703a56172a35ab6f46dd6b1ca858bf5832df74af693ebd78fd
 include/uapi/linux/fanotify.h	GPL-2.0 WITH Linux-syscall-note	fe9a5ec7502bd11f0f915a00a9bf72618b66f66ae458b1a132cb44a82dcdbf7d
+include/uapi/linux/fb.h	GPL-2.0 WITH Linux-syscall-note	43a7af44c603d279a65ad45b06ed5f927f9ae98a93604259f6d8f51ead8fbb32
 include/uapi/linux/fcntl.h	GPL-2.0 WITH Linux-syscall-note	d58b0d209a572c4351757404252bf0bb398cabf1879b52bdd27497a2eeea87ba
 include/uapi/linux/fib_rules.h	GPL-2.0 WITH Linux-syscall-note	7e54dc4966f96e7f32cf5963462c72964ee69389d07dc1e27da15b1c814b9acc
 include/uapi/linux/filter.h	GPL-2.0 WITH Linux-syscall-note	8b07bc3c8bcaa4b43318c43e588e36258bdc6a80848efce51158a274b664be7b
@@ -1607,6 +1680,7 @@ include/uapi/linux/netlink.h	GPL-2.0 WITH Linux-syscall-note	f2b9dec9eb74c84239d
 include/uapi/linux/nl80211.h	GPL-2.0-only (untagged, per Linux COPYING)	3c6469b3ad716d62a5a4baa8912880a937cecb63e844483e219a58500ef9767b
 include/uapi/linux/openat2.h	GPL-2.0 WITH Linux-syscall-note	1c694c33d2d60cb8767c34bf52e536dc9e30dc78b90cbeaf73ac9c6b2271a23c
 include/uapi/linux/param.h	GPL-2.0 WITH Linux-syscall-note	75c3c810ab5732ae2bca3d5947821db5e61d203ba3b00f658472232295d66849
+include/uapi/linux/patchkey.h	GPL-2.0 WITH Linux-syscall-note	fb02a867b9a7da5fc5172fcc17928242f60b8c53bde74d5bf74924f975a29477
 include/uapi/linux/pci.h	GPL-2.0 WITH Linux-syscall-note	67460035758063ac16dc158590322a1a67a95a53eddba6a93d106e052c6370f7
 include/uapi/linux/pci_regs.h	GPL-2.0 WITH Linux-syscall-note	2c366db9fca301457193d5f2782500243f30cde8ba2f32c1087a21433701f512
 include/uapi/linux/personality.h	GPL-2.0 WITH Linux-syscall-note	5171b16b3b1aed8db98af650868ec69d5347accc9eb7f562fb3492a67554dbb1
@@ -1637,6 +1711,8 @@ include/uapi/linux/signal.h	GPL-2.0 WITH Linux-syscall-note	4744021d82b90e0dd5bb
 include/uapi/linux/snmp.h	GPL-2.0 WITH Linux-syscall-note	4dec78d89ff1f77abf04d1ed7ac31fab7348bd0bcf9c28d0a5682e43ebb8cafb
 include/uapi/linux/socket.h	GPL-2.0 WITH Linux-syscall-note	6658c25f28788d981b271895219981487560cfee6390031682167f18af83a293
 include/uapi/linux/sockios.h	GPL-2.0+ WITH Linux-syscall-note	69c8cd1427d631cd4950536c189ef4737fd9b6dd6c3833c628551dea55f6b240
+include/uapi/linux/sound.h	GPL-2.0 WITH Linux-syscall-note	4afb534377015c3be5d329af5d2b51e7b025e5f47cef369aa03817a63e153dca
+include/uapi/linux/soundcard.h	GPL-2.0-only (untagged, per Linux COPYING)	dd8de1b851b7b6115edb33b1d7f03f8887c05a3dcbac637a4784220a6faeaaa4
 include/uapi/linux/spi/spi.h	GPL-2.0+ WITH Linux-syscall-note	17745572b53f5e5d70366f20114350c6a5afa12ef07f44aff92f7d542698ccbb
 include/uapi/linux/stat.h	GPL-2.0 WITH Linux-syscall-note	c900a05e031d999074db5ac3567f651ce2cf2f9f9e0a686810d6453c9f8b9526
 include/uapi/linux/stddef.h	GPL-2.0 WITH Linux-syscall-note	69910a7b45c6bc74d0a59f0d4404ad9dbd9e1ba47d144461eaed09fb41a6a418
@@ -1656,10 +1732,13 @@ include/uapi/linux/tty_flags.h	GPL-2.0 WITH Linux-syscall-note	c55caade93a4a3a19
 include/uapi/linux/types.h	GPL-2.0 WITH Linux-syscall-note	f22c5bf977c0bb939577ce7aaa3f69c74e2f5cfa4cd42ff6fb768ce119c9c6fd
 include/uapi/linux/udp.h	GPL-2.0+ WITH Linux-syscall-note	9b749191394fa846a4c8ab8109290947bd8bb142c59f53b394bc425c1a9c408d
 include/uapi/linux/uio.h	GPL-2.0+ WITH Linux-syscall-note	872db059bdc6e8faa84360aae36ce2d6e90f7372c918e841a7b0c271e481abc7
+include/uapi/linux/uleds.h	GPL-2.0+ WITH Linux-syscall-note	0ca0581450f6f14e5d7b059c193b40eafd08efca82047d5e5baf44f1bd682d07
 include/uapi/linux/unistd.h	GPL-2.0 WITH Linux-syscall-note	01a6f7628ed6f3511eade5891e631c05679e141d031e689a6d028e840032e394
+include/uapi/linux/usb/audio.h	GPL-2.0 WITH Linux-syscall-note	d00a53ba5f0e75e485d7642bfc9a6a3d355429878804d6818aff217fe9508a2e
 include/uapi/linux/usb/cdc.h	GPL-2.0 WITH Linux-syscall-note	922bd199d3d8163be1027d3b7a8ab679fd8a7fba98f1f67f4f597d5e36adce81
 include/uapi/linux/usb/ch11.h	GPL-2.0 WITH Linux-syscall-note	df7cbd5071e44fd2c9140541e99c00ac471d2f158ecd822273bff300c3c23256
 include/uapi/linux/usb/ch9.h	GPL-2.0 WITH Linux-syscall-note	c319386b75c3748f12980875af6c53ae0933764cb869537b858bed248811538f
+include/uapi/linux/usb/midi.h	GPL-2.0 WITH Linux-syscall-note	297f99383448888072b5dc72e9fbc411a5737a6b7a4869b1c6bfaffed90f6d6d
 include/uapi/linux/usb/video.h	GPL-2.0 WITH Linux-syscall-note	12d79be26de67e86d2bab3712873ba3a5e3a21fb46e375071bfd63d96576176f
 include/uapi/linux/utsname.h	GPL-2.0 WITH Linux-syscall-note	e6a7aeffebf22a2d74b5e671ab5ff8bb99b0655cefb544bfca0acc22aa396c2a
 include/uapi/linux/uvcvideo.h	GPL-2.0 WITH Linux-syscall-note	b436bae689ccd5f238b4fcd3775f2e9d6e132e475fbdaafb285cc9674bab5f15
@@ -1668,6 +1747,7 @@ include/uapi/linux/v4l2-controls.h	((GPL-2.0+ WITH Linux-syscall-note) OR BSD-3-
 include/uapi/linux/v4l2-dv-timings.h	GPL-2.0 WITH Linux-syscall-note	31dacce1c0f28159e0673c72e41cfd8e7a3c06a9e7ca522c79e0f8415e020e4b
 include/uapi/linux/v4l2-mediabus.h	GPL-2.0 WITH Linux-syscall-note	501a2bfcce44891dbff1ec133188c13123b11fbcf440215587fccf8406efee2f
 include/uapi/linux/v4l2-subdev.h	GPL-2.0 WITH Linux-syscall-note	dc48ccfdf583fa46df3ffc1993b2a37e2a5a92086049a96a9f1865fd7cdb0aef
+include/uapi/linux/vesa.h	GPL-2.0 WITH Linux-syscall-note	3f7e96dafaf2c5eebf5b63f2e0e00157ae6817213983056c4006205754d09067
 include/uapi/linux/videodev2.h	((GPL-2.0+ WITH Linux-syscall-note) OR BSD-3-Clause)	1d48da8fa2db7930bff2e6d75c8f32489eabb153ff4ef25a8985453a51158910
 include/uapi/linux/virtio_config.h	GPL-2.0-only (untagged, per Linux COPYING)	00291a2835f3011b420077c8bddb5bfacfc65b982a8c85e29d5574dee8913ebd
 include/uapi/linux/virtio_ids.h	GPL-2.0-only (untagged, per Linux COPYING)	e9957fd3ce022c978b4d06e6e222e74d9cb4697d17cda4001608b635c9516c0f
@@ -1676,6 +1756,14 @@ include/uapi/linux/wireless.h	GPL-2.0 WITH Linux-syscall-note	e1e430ccbd3be73efc
 include/uapi/linux/xfrm.h	GPL-2.0 WITH Linux-syscall-note	4f8ef03fccbe1d484aaee21d9c29fee7d940075ebf6af5419bd9cbca100e2cce
 include/uapi/mtd/mtd-abi.h	GPL-2.0+ WITH Linux-syscall-note	21cb435f6b606838c87c4bb183a5e6232fa72bec9f3899b2bb8cd93903000cc7
 include/uapi/regulator/regulator.h	GPL-2.0 WITH Linux-syscall-note	06f4e0b521ae339fa6c2063ed0296dc1c6a5cc282dfe080550adb59b6472e32a
+include/uapi/sound/asequencer.h	GPL-2.0+ WITH Linux-syscall-note	d9ad50782f92b344278c7834d45f4bbb4c1ce19b835c70c02c12f37c48561115
+include/uapi/sound/asoc.h	GPL-2.0 WITH Linux-syscall-note	1b5d75c9bb94d8050cb09b6fb90b18d082f2ee1e208d40e6724ef24b5c64df48
+include/uapi/sound/asound.h	GPL-2.0+ WITH Linux-syscall-note	385128b181838629772b810045139d62748ed3d8b7e5725806f4f25cf21de59c
+include/uapi/sound/compress_offload.h	GPL-2.0 WITH Linux-syscall-note	f44c1dc4b5aaf197109579ef7ff2c039eeb507f2ebc623481ed2a8d348c5344d
+include/uapi/sound/compress_params.h	((GPL-2.0 WITH Linux-syscall-note) AND MIT)	27faf76245b0043c68cbf002d6361d2df1819e9c4247be2f3ed74467b55f0ffd
+include/uapi/sound/fcp.h	GPL-2.0 WITH Linux-syscall-note	a82199a126cef8db223a53a323b008a304187372adfb4617df86016ec76dac3b
+include/uapi/sound/scarlett2.h	GPL-2.0 WITH Linux-syscall-note	52c9239be7f5deb7e98bd15ab2d50950b29b04207826fc89226ab08a2fcbe21c
+include/uapi/sound/tlv.h	GPL-2.0+ WITH Linux-syscall-note	74b97d2cae70e67fd7bc5750dd46e0b9976d390fb817d98630df6ba9c2d33d61
 include/vdso/align.h	GPL-2.0	8e7ce9486c193d4a46395d4f14d56c01a0f9e06e95fd4d5bdd9b35a236d98ff8
 include/vdso/bits.h	GPL-2.0	ef5190bae70874421bd1cd564885f483787203cb65485af5104d57991238538b
 include/vdso/cache.h	GPL-2.0	7cf987365a5ed2a3cea1ac1afe31d23c5287af54a9b99417e30f545fdc8a2ded
@@ -1690,6 +1778,7 @@ include/vdso/time.h	GPL-2.0	d40b62cfecc09799273dc366662d994698eb00e0917057977794
 include/vdso/time32.h	GPL-2.0	3ba3cd73b09102bae2888f1434057163b2bba8ae7cef49ec7aed840edaae7e23
 include/vdso/time64.h	GPL-2.0	7bea2fb74771207f25d0d7659867388c65b74479e0aa7903c4ad0c7e8fac5834
 include/vdso/unaligned.h	GPL-2.0	05fc4b17cc6db5aae3ab23bed11bd47cae124b2d61eb0cdebf860c976015ae34
+include/video/vga.h	GPL-2.0-only (untagged, per Linux COPYING)	5d5aa8b7751ac4a5dddb3e2320a5211727c9c3f9eb827811990f293b3b439311
 include/xen/balloon.h	GPL-2.0	d696e542baa76257444904a41c88a539cd0272cbd2e53b8351dd7d3200de8bde
 include/xen/interface/hvm/start_info.h	MIT	64d4b9a24ef618adcb0c92f866003b4f326d7c0d83ce69fee8f45456d9893ab6
 include/xen/xen.h	GPL-2.0	2df26b7cf7e170f3e09babaa3aa45578ceabd5e5a42dde382c48e67188ef9cc8
@@ -1844,3 +1933,146 @@ net/wireless/sysfs.h	GPL-2.0	71d4490d3fdbc26e4f04d772d87bab7b69df1af15639c5fdde6
 net/wireless/trace.h	GPL-2.0	d8d3bf5f938ccd50c4687c582e7e4920a2aa26fa68fe47920134fa8eea7a2187
 net/wireless/util.c	GPL-2.0	5b909099044ed61134f435c827a23470771631c5217f55ab255614fb9d0e3cd1
 net/wireless/wext-compat.h	GPL-2.0-only	7334bb4febeb992185218c17f3eefedbd6c6653a188fc43fae681fb9ceca5182
+sound/core/control.c	GPL-2.0-or-later	9136234563b840867c8f0d9dcfe5ebc9b1f64bf2e77aa7e755f15e51b54e5fef
+sound/core/control_led.c	GPL-2.0-or-later	bb50cb9dcbe574541a80204b8d65a476ecce5b48fa0cae95f4f10c7e34dff2bd
+sound/core/ctljack.c	GPL-2.0-or-later	aab859cfc57559ba57b54005b62fffb880e19b242346081c70eb1ec928a8eebf
+sound/core/device.c	GPL-2.0-or-later	78b101de981e86f6279d3983104c7fbfad940a675f8dccb09455a106ed96b5a2
+sound/core/hwdep.c	GPL-2.0-or-later	c729a9a8d3a5f85007d2a1b76182e5325ac68ab49fa195f5ff36e9151e9cf456
+sound/core/info.c	GPL-2.0-or-later	907c6f4813e4f3412b242b406c3f6c6f41e5e1fc71fa51dda0de8cc6bce3f908
+sound/core/info_oss.c	GPL-2.0-or-later	e5d3b9fe8d30b06ae8c0ba4125aa6df13e17d8833258c6b32747e88ba2f1be63
+sound/core/init.c	GPL-2.0-or-later	977b9a73040c4a8db94568d4984288b47992414ff4705f03fc1a38ce5969fc94
+sound/core/jack.c	GPL-2.0-or-later	e507b50f623f28eaecae768e99c95a3c3c0c2fd834a1b281eb129227d8d7859e
+sound/core/memalloc.c	GPL-2.0-or-later	7c7f6c728255586b08c73d2e8d5f533d35f2100ed4009a2b04fbc9279e1394e4
+sound/core/memory.c	GPL-2.0-or-later	754d93328ceea069b659d470f5db0244bdc5d24c1dceaedad973a58496e28246
+sound/core/misc.c	GPL-2.0-or-later	953d9916e272885a643f010747889907dd30ad2dfe3bb7710714fc77c10e0c50
+sound/core/oss/copy.c	GPL-2.0-only (untagged, per Linux COPYING)	5ddfff11f28f88a6c0eacc8adbd369d0995da0437fccc84fe4aca05c2f410dad
+sound/core/oss/io.c	GPL-2.0-only (untagged, per Linux COPYING)	f7043733e59e7f684170eb6c144ca7ce19916ac9c38fa9d8c133317b34c5bfb7
+sound/core/oss/linear.c	GPL-2.0-only (untagged, per Linux COPYING)	44b4abe00e64e981ddb6ef239b3a384613c71164d415827315ed831fbfdb6afc
+sound/core/oss/mixer_oss.c	GPL-2.0-or-later	38c45193c2eb5b88eebd949184774744542627730796e42eb170836b6d07e24c
+sound/core/oss/mulaw.c	GPL-2.0-only (untagged, per Linux COPYING)	1f82a1030f6bfb384552ddd91cf96e3d9070197cb4691e46fedc7a1abf07e4cf
+sound/core/oss/pcm_oss.c	GPL-2.0-or-later	646786abac24b6b4e5efc990f6afc8e6aa45d905d28405487eb8cd6a243bdcfa
+sound/core/oss/pcm_plugin.c	GPL-2.0-only (untagged, per Linux COPYING)	70db4d2ab39e63a0ab633bc16c15fc7ac7f81eb60d1a65c643a8fca6e7e41fdb
+sound/core/oss/pcm_plugin.h	GPL-2.0-or-later	4be43afbab2086148605fbdb78f27724b30fca2834ef03d0b7d53e74fd2143cb
+sound/core/oss/rate.c	GPL-2.0-only (untagged, per Linux COPYING)	f73a0331412969645406a8ae45f860d932155a3f8c77a4cb08a9518f362589d9
+sound/core/oss/route.c	GPL-2.0-only (untagged, per Linux COPYING)	c686e7e2263ef25b784ae566003510b567498a6c29c5199b9ad8345c11e29e01
+sound/core/pcm.c	GPL-2.0-or-later	6c73e09529fe621449a6af588714a8904cc3d89d505fa415066517c41f6cb8ea
+sound/core/pcm_drm_eld.c	GPL-2.0-only	83d8913c128120971a8d946768ac3b63c8f47a2447280b8f6c4137eaaa28f0ba
+sound/core/pcm_lib.c	GPL-2.0-or-later	16cb97ba98e991032fa6f68c85c9b462477ed4f6aa63675196661786f94073e2
+sound/core/pcm_local.h	GPL-2.0-only	4514942e45ff9e346f4fb32f8e248ef904ba980887f60d164269a901492490b3
+sound/core/pcm_memory.c	GPL-2.0-or-later	dfef1409fe10736ad66fb94e43373f06d7757c58f95b27b697a0c125bc4fe25a
+sound/core/pcm_misc.c	GPL-2.0-only (untagged, per Linux COPYING)	d2dfe2c46180b826629b6e4e294dfe1f68465e0d31a569150e39062f2c149c29
+sound/core/pcm_native.c	GPL-2.0-or-later	68d342d8cd251a03328fe451c0bcdb21d884cf3064bcef21315c65987565b258
+sound/core/pcm_timer.c	GPL-2.0-or-later	e3f118879056517de74eeb0b7fa9d3d79fe9c2b41d52d97e91b5f5f572a8fdec
+sound/core/rawmidi.c	GPL-2.0-or-later	eae99212386e74ef88a6194c3298cf872609170f52920c4bb9c4e3c0c91c86f8
+sound/core/sound.c	GPL-2.0-or-later	8ad52480eb6f42f404bea220ea8d37e8a28277e467f5b676e433d1bcfed2d7e7
+sound/core/sound_oss.c	GPL-2.0-or-later	98c2800a2146f3cd6c72b2c2e76bab65f488592807ae5f9abb7503ec5fd03e75
+sound/core/timer.c	GPL-2.0-or-later	c4e13b93da19c46036aec1cd59b7461919a6bffc2b8790336209815daf3ddb33
+sound/core/vmaster.c	GPL-2.0-only	7ca4e7903497614783fee97520fd7c7b0a63e21b1e9dda33999bc1614c5c907b
+sound/hda/codecs/analog.c	GPL-2.0-or-later	91a73cd8e6c68f1aff400a50b702a1fcf47e8e56a3ecc065de2c46f1498ea478
+sound/hda/codecs/conexant.c	GPL-2.0-or-later	330151cd033a9f15243b4a10020b51ee608967167684c6636c4eedcc9e9314a1
+sound/hda/codecs/generic.c	GPL-2.0-or-later	c3917c29c314242663ceae224ae5c45badfc063311eca492107786a99bfb4712
+sound/hda/codecs/generic.h	GPL-2.0-or-later	9175959750d86f715d15eb2e4c063a95861ed7d737418e9f55843b1af04446d6
+sound/hda/codecs/hdmi/atihdmi.c	GPL-2.0-or-later	ff351602e365d26f3c535ccf1307928ed1936456e70e3b6f9a31c731c33fd9cf
+sound/hda/codecs/hdmi/eld.c	GPL-2.0-or-later	58f636d68a7544ee1e1bddf968a2b2700494bed31194f310c1fb56811b43c830
+sound/hda/codecs/hdmi/hdmi.c	GPL-2.0-or-later	79e3b6505d2f88b1d9259021fc949d40226678cfd44249493556f396e5ef5589
+sound/hda/codecs/hdmi/hdmi_local.h	GPL-2.0-or-later	48d64e4923d3f2f89b115e248e63930cdaab4bc5dc984bf05d24d09a5d9c1591
+sound/hda/codecs/hdmi/intelhdmi.c	GPL-2.0-or-later	799766bf64ccb2dd1d2299f60d29274780b201cc4db29f2114f72747dfcaa227
+sound/hda/codecs/hdmi/nvhdmi-mcp.c	GPL-2.0-or-later	ddb4911abb0cd7a65733b7400ef635a5e4919f9925bf6d3131ec9ddb56d1fa1f
+sound/hda/codecs/hdmi/nvhdmi.c	GPL-2.0-or-later	8a6f32ee11f45edfb7ea4bd68e35f1c7ae88a9983acb276bb604fbef298d2743
+sound/hda/codecs/hdmi/simplehdmi.c	GPL-2.0-or-later	882b27a863c05b63ed223f3b3c55271fa8c346c165674dc60a5c09a35538a20f
+sound/hda/codecs/helpers/hp_x360.c	GPL-2.0	c10fd55e7caae781e3c7b28bfe8e34873bd4a33cbdf0e5e3b618903d56df977e
+sound/hda/codecs/helpers/ideapad_hotkey_led.c	GPL-2.0	d9acb8c9ecaccc6b695b8da2441f417467dffc280ec79a02a9eafec8d49c2af3
+sound/hda/codecs/helpers/ideapad_s740.c	GPL-2.0	46cbca36fd49f8cb2b0f5e174d7317c4bbbbce8e33a8a373775e0abc370c9962
+sound/hda/codecs/helpers/thinkpad.c	GPL-2.0	7e2094b1437bff998c1471a4bb5275c01d1b5700cabe569f123d72cf997387c6
+sound/hda/codecs/realtek/alc260.c	GPL-2.0-or-later	07e85264e0bbe573e550e8fb1759d0db86a20fd75b635e3e0fc8be016444c4ca
+sound/hda/codecs/realtek/alc262.c	GPL-2.0-or-later	bd2623ad98145c6df6e90ab686f63cec5a0d2530ef13162f3c31d21d1780c934
+sound/hda/codecs/realtek/alc268.c	GPL-2.0-or-later	4562f62968d88a7d6f60d04df80dc4b9ba66f87059abec9b9dc7a4fc51da79fd
+sound/hda/codecs/realtek/alc269.c	GPL-2.0-or-later	c2d83a2a165526f2c68491c7710881c8baab83881099f892a5026671b7e9e8cb
+sound/hda/codecs/realtek/alc662.c	GPL-2.0-or-later	80eefc6cfd397f191a75cef2ecc6d01aff3eae8b92cd176b19dd8648369c1006
+sound/hda/codecs/realtek/alc680.c	GPL-2.0-or-later	f2da800f1db8e40bb74b6f86ecf4e91d416d5d03eca4323b6872b2aa57ed5fde
+sound/hda/codecs/realtek/alc861.c	GPL-2.0-or-later	b9bfcd4cdeb71cb0f5c56dcfeab6bde7e20ef8fd3c64a66405cd0a6f312c1924
+sound/hda/codecs/realtek/alc861vd.c	GPL-2.0-or-later	6bd0feba1e2150e07f3922e8414587d2cdd4ae3ef99eba39a8ff76d0dbb5782c
+sound/hda/codecs/realtek/alc880.c	GPL-2.0-or-later	37a3fe78e6afc4f96155f7e2f52503a714fbaaeb634f6144ae977f0cb4736d58
+sound/hda/codecs/realtek/alc882.c	GPL-2.0-or-later	6e007ac3c3976c6df3a9181c81bfd3e6afc9ad902d80f3a36f1c9d0340bbcdd4
+sound/hda/codecs/realtek/realtek.c	GPL-2.0-or-later	01e1e516d8f96f2f43ed6d7851d7a54bec05b0eb948d0edfbfa357b8fe98e3a6
+sound/hda/codecs/realtek/realtek.h	GPL-2.0-or-later	2d8490340f08c10dfb968b9254fd96bffe11b0da3884403dcfb4ff43ca7b28cd
+sound/hda/codecs/side-codecs/hda_component.c	GPL-2.0-or-later	23d1a456bc3bac9a64e377afadcd5a5e2241bd1ed5fc68f754e4178ba2665ea3
+sound/hda/codecs/side-codecs/hda_component.h	GPL-2.0-or-later	71559a1d0d50d05e63b593dac96a041791292500dfedd606334804487fbcc8ae
+sound/hda/codecs/sigmatel.c	GPL-2.0-or-later	4b01481943059aa598150817a1c7b4c9c2770a0f5c647bcbbfc0a3ff68eed09f
+sound/hda/codecs/via.c	GPL-2.0-or-later	400945674f007743bd371194a77586891e24afdbad5bbd9a6b07dc39010eff3d
+sound/hda/common/auto_parser.c	GPL-2.0-or-later	ea5fee6080d5a9d571c232b039d2e66748410bab084e2f0972ca52a9f323d4f5
+sound/hda/common/bind.c	GPL-2.0-only	2de3d08a9c976bb554e26f5fcd06afb3aaba51966dffce83f4dffd7203f1ccb5
+sound/hda/common/codec.c	GPL-2.0-or-later	40fdab24d7550e4b860378780f9ae7115de4c682da1bb2123c0d0b26f6b71c45
+sound/hda/common/controller.c	GPL-2.0-or-later	29d5b188ee21203c18c2462de3f9d27511f75245e4d4c9738862141c31c1d888
+sound/hda/common/controller_trace.h	GPL-2.0	a92ffc1a878b17ea4953b76033bf04964643512ca93ec18544df45176828dfc0
+sound/hda/common/hda_auto_parser.h	GPL-2.0-or-later	59c9e34e50f22e36ddc45dc22ca822838104e745884e6841bee73e65876a0716
+sound/hda/common/hda_beep.h	GPL-2.0+	9e943b14f5ab34c3d96474adb9f7ad289e8e413616af4c1ff69c93ad7f7cf4cf
+sound/hda/common/hda_controller.h	GPL-2.0-or-later	bfde4d1166d4593430c48533d3050500d409e44633090a578ebb3b655d112100
+sound/hda/common/hda_jack.h	GPL-2.0-or-later	668b76a1651bf8e363bde6f2f808d183e68d4f21f7188a229f43abf8a2dcb75e
+sound/hda/common/hda_local.h	GPL-2.0-or-later	47f352d10beacc76f10ae3776e148674803982350f5058415afc65bd4288940a
+sound/hda/common/jack.c	GPL-2.0-or-later	5eefd7c8b74995451f156830b4a41733737dfbf55389ebc2ea7747422bdf7abd
+sound/hda/common/proc.c	GPL-2.0-or-later	50e4c6ef56a6ac6eebafd0099c105ba7188bd01c186bea3d23cc9b511a2a08aa
+sound/hda/common/sysfs.c	GPL-2.0-only	9acccd18744a0c27bc8bd66dcec8983fa458c91e7bb411e069247217d44dd8d7
+sound/hda/controllers/intel.c	GPL-2.0-or-later	fe4975f88f24f74137c2b03dce43b4c03b28b465290bb76dca397b818af2c805
+sound/hda/controllers/intel.h	GPL-2.0-or-later	2022df70e27637510ef62a06022eea71750dbdf12c65b77c3356d79ef52ebe80
+sound/hda/controllers/intel_trace.h	GPL-2.0	8dc1dac71407a7214a77ebe85ca5bb1ded16b1bb871047c1ba48698ddbef5e1b
+sound/hda/core/array.c	GPL-2.0-only	15bfa86cbb28790d0dd4ec45e949bbb968f76d4542aa2dda35095dfcaa012e67
+sound/hda/core/bus.c	GPL-2.0-only	b25c416383791fd22dd3529ca553a9a9090f8431111a2cb060bf281979253f0b
+sound/hda/core/controller.c	GPL-2.0-only	194cbf554d0ae8bd6eb78541512852f4d06c3a5c2525db5c7cdc29f190a7a11f
+sound/hda/core/device.c	GPL-2.0-only	104426f76f9c19938093251403260faccf8376d5cc52413eec529eabda247fa3
+sound/hda/core/hda_bus_type.c	GPL-2.0-only	85fbdb567b174dc3d31f02e9ceb8d947164a7b0c8d949c1e6209246ce1b21e51
+sound/hda/core/hdmi_chmap.c	GPL-2.0-only	f9938462fc4709c62d380e99094c851795fa6f3036b93d1fef331e35f25f268f
+sound/hda/core/intel-dsp-config.c	GPL-2.0	c0a6e52dad9a66fb17164300ebce6e36364a6b500e3315f4869bd7d866610bf0
+sound/hda/core/intel-nhlt.c	GPL-2.0-only	7795926ef1e148ac18fcc23e3b95258c5819dd87de796f36b5c836760a37f0ed
+sound/hda/core/intel-sdw-acpi.c	(GPL-2.0 OR BSD-3-Clause)	3cd659ed3c56a9e12b0dbbb57023bc84fa0aebc5a76d80495d38b363d32126b7
+sound/hda/core/local.h	GPL-2.0	a2f91781a601fdbe2142e710caefd649112e285582cd923ce498c76d8fcba638
+sound/hda/core/regmap.c	GPL-2.0-only	bb2f8837866fefef6cb7f817b7fad3edc7cf339f739a2531bbe8f25caff64a06
+sound/hda/core/stream.c	GPL-2.0-only	408f743a30e34509128e4ea7f4f851cc4e4f2ff46ad4f3036b48c72798c47b31
+sound/hda/core/sysfs.c	GPL-2.0	aaac57c6f262ba9c71e9aeb217f5156da07f599b0e35a2dc4b489208272a6150
+sound/hda/core/trace.h	GPL-2.0	7988c841db9bee36f52b68a31d7ac4d60b83299595a418fd3875cd10bd0e53c0
+sound/sound_core.c	GPL-2.0-or-later	28ad7c78c65281f89a0dfc391cbcce288660d35c180e2cb6c4857547a202ff00
+sound/usb/card.c	GPL-2.0-or-later	60c02d3390d647455712dc5d33893befa71a29d9dcefe53149393111942e59d3
+sound/usb/card.h	GPL-2.0	737466cc96bfca7b6fbd7952601373affaeaecde911726512be3e78642102101
+sound/usb/clock.c	GPL-2.0-or-later	91b9bb6c7dbed5445f5284310343125e692cc53238a3490d531c2e612e10ddb1
+sound/usb/clock.h	GPL-2.0	c787481e024edd5b873a101fc0ac9434d02706c262e13e4abe293928ca636740
+sound/usb/endpoint.c	GPL-2.0-or-later	39fc030f35811bc7ff892025ffdecc1b126ee2d12b9cf08070df0cf1b8489541
+sound/usb/endpoint.h	GPL-2.0	4b4d5236e893c4745581779917f3fcc3852483d7494fee672ceb8a086088d7da
+sound/usb/fcp.c	GPL-2.0	8a0ae717cd4a7b33f4a8f2bfa4456539b712394645dbe13488f357f7b10c4251
+sound/usb/fcp.h	GPL-2.0	1142019fadba62cae7ded53c55a0b5a9a2f5381f81bd41a9b3bbe09ff7e5e3ad
+sound/usb/format.c	GPL-2.0-or-later	9c04f63c7f47bcce5c498b55eff45f0800e72cb96f5f58d98df819e0a3fcb09b
+sound/usb/format.h	GPL-2.0	071e9bcd00fe46a984e82371bf4aa774cb1cc89c641527c4d0fccad89a93d267
+sound/usb/helper.c	GPL-2.0-or-later	243a0971aaa91c55dddb9f38f186fc0b067d1be78b1676313428da84ffb82fb2
+sound/usb/helper.h	GPL-2.0	04edf41a5e43fac6cacf8570b53751eb56050fd603672bcade3f3e36a47e0578
+sound/usb/implicit.c	GPL-2.0-or-later	f585bf864da48d32ed4669b4c587c545d00cda16113a61af8fd56bd50a6dd255
+sound/usb/implicit.h	GPL-2.0	e8ee2a16c661973d6d286e8c4eb3bb3a63cd4f721c62507339e28fefa19927e5
+sound/usb/media.c	GPL-2.0	a6e159e59366c34082bbd7a7c96b7ba162367fed1d580ed2b7126d05df70b0e9
+sound/usb/media.h	GPL-2.0+	012f18c5801c67a34f1e4ba25a2273cda2b75f1f3e15e441a02c9fd59339c877
+sound/usb/midi.c	GPL-2.0-only (untagged, per Linux COPYING)	f12106f597c4c1c6421ecb58af040c3b3c37410768f979c124f12ce0f1876e96
+sound/usb/midi.h	GPL-2.0	e792a2368b86db26a905af06f68594ffaadd29ba8af213281c64a872412144cf
+sound/usb/midi2.h	GPL-2.0-or-later	cb929ef1a37d52885b9c45c87092f2c5f332224cb39f1eabfb156a1352fccedd
+sound/usb/mixer.c	GPL-2.0-or-later	190e6deccf463bacc6acc911f33b2682422aa9e5b1511168d5413d1b9c38891d
+sound/usb/mixer.h	GPL-2.0	98123de0ad237a32f7f27697d4f2a406b51588d00fe7f4fb382deee41217ac52
+sound/usb/mixer_maps.c	GPL-2.0-or-later	bc2483931373eb0e428563a4324e5bbf0dcaf73490655ced4776a9d557672fea
+sound/usb/mixer_quirks.c	GPL-2.0-or-later	34fd803ede93d66a342c9e323e4b742b05b02ea5d52fa816c9d70465b6e94921
+sound/usb/mixer_quirks.h	GPL-2.0	53bcf65b0e95eec0f2d5a265e1610ce914d205c1ebe9ae5521895dd71e6236ed
+sound/usb/mixer_s1810c.c	GPL-2.0	c2a743a4e84dc5e39556aff075cfe520294fdda84d1d1ba62a7a8f2e4095c2e4
+sound/usb/mixer_s1810c.h	GPL-2.0	edb29231e2cb9d3b899e697e62d0de1ca1b1b22a60cfad4ce451c2db63da7b59
+sound/usb/mixer_scarlett.c	GPL-2.0-or-later	bcaa61e64479b145efea50119b9236f37bff53da5041ec1cfc72fd3f43b77961
+sound/usb/mixer_scarlett.h	GPL-2.0	812cfc10353696978964b7d251b4cedcf72c66ca8173e738bda8c2d83c6bf4a4
+sound/usb/mixer_scarlett2.c	GPL-2.0	48b3274215d124117b70df25e267981ab85ea08fa35f819fb41e059a47acbab2
+sound/usb/mixer_scarlett2.h	GPL-2.0	7079ced0c7113fa35ca3d7cb0bd4393286de962564ba1e8153cf28dd62b9f969
+sound/usb/mixer_us16x08.c	GPL-2.0-or-later	3f3ed065bea068c00eae56266561a5f1037ad51294bf5c951add1d6ee0187b07
+sound/usb/mixer_us16x08.h	GPL-2.0	f2dc734848666adf9bcd1f2d5670415bb072f7d0d882569c7bb4a9553acb2f1d
+sound/usb/pcm.c	GPL-2.0-or-later	8714248d7e9d7c99167d72698b9376b9efb9d21845d8c30366df7c21c4a1affb
+sound/usb/pcm.h	GPL-2.0	a9794fcd8a5de72f4811b7eacaf0310d1565df3c094666a979f6766733516aff
+sound/usb/power.c	GPL-2.0	6d4cbdbb7d4d40ebddf9b87da54a1727e2b902b0e8bc07ab8910db50278eaa64
+sound/usb/power.h	GPL-2.0	d0dad30f209c6498701d7bde2d4a198c529fc3e86f95993e8e5317f608ab961c
+sound/usb/proc.c	GPL-2.0-or-later	13bb2b6a3cd1e819b5ef72ab65eb4c62d5c45cbb7c63fc3d0d1b6304d765e9d3
+sound/usb/proc.h	GPL-2.0	8a4a31b9b90ed7bde0a5d498b13469802409bf9033768e59e21a672d9b8bf3e8
+sound/usb/quirks-table.h	GPL-2.0-or-later	1221c94df44573098bb83f6fc473753d6173cae6915e23a1afcf8b1af07b076d
+sound/usb/quirks.c	GPL-2.0-or-later	50e349c308ea95ca841ca6a3f1613f424850c61faa25f33f10624ad0ef0d6f1b
+sound/usb/quirks.h	GPL-2.0	cff75d65e6c5ce480fd09b146f1cad409c3f060ed253f53c7bba1a12b320ad2c
+sound/usb/stream.c	GPL-2.0-or-later	ff398c66a8f803d88c681981ebce7f23525cf32106b657cd4bfff733be78c674
+sound/usb/stream.h	GPL-2.0	c2f300db13b5b74e2fade8456b3a42a70cc93046edd39a70360bdad0d8dc7532
+sound/usb/usbaudio.h	GPL-2.0-or-later	9fd27e4786fbbf73a069730d5549422b383d3bf5ebbc33733d32c5d993c823f1
+sound/usb/validate.c	GPL-2.0-or-later	a55549c9a5fe068ab8bd50e9904c848931b98753ec3ae30989b3fc90d1059c21

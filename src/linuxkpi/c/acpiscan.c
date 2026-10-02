@@ -23,6 +23,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/unaligned.h>
+#include <acpi/nhlt.h>
 #include "kpi.h"
 
 static LIST_HEAD(kpi_adevs);	/* linked by acpi_device.del_list, in namespace order */
@@ -1272,4 +1273,33 @@ int acpi_register_wakeup_handler(int wake_irq, bool (*wakeup)(void *context), vo
 
 void acpi_unregister_wakeup_handler(bool (*wakeup)(void *context), void *context)
 {
+}
+
+/* No NHLT (Intel DSP microphone) table parsing: HDA uses the legacy path. */
+acpi_status acpi_nhlt_get_gbl_table(void)
+{
+	return AE_NOT_FOUND;
+}
+
+void acpi_nhlt_put_gbl_table(void)
+{
+}
+
+struct acpi_nhlt_endpoint *acpi_nhlt_find_endpoint(int link_type, int dev_type, int dir,
+						   int bus_id)
+{
+	return NULL;
+}
+
+/* ACPI Notify() events are not delivered to Linux drivers. */
+acpi_status acpi_install_notify_handler(acpi_handle device, u32 handler_type,
+					acpi_notify_handler handler, void *context)
+{
+	return AE_OK;
+}
+
+acpi_status acpi_remove_notify_handler(acpi_handle device, u32 handler_type,
+				       acpi_notify_handler handler)
+{
+	return AE_OK;
 }

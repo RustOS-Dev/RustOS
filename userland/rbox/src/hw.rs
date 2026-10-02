@@ -661,20 +661,31 @@ fn audio_section(c: &mut Check) {
         "sound cards",
         "cat /proc/asound/cards; dmesg | grep -e \"\\[sound\\]\" -e \"\\[hda\\]\"",
     );
-    let n = (0..8)
-        .filter(|i| fs::exists(&format!("/dev/dsp{}", i)))
-        .count();
-    if n == 0 {
+    // Native drivers name cards /dev/dsp0..; ALSA's OSS emulation /dev/dsp,
+    // /dev/dsp1, ...
+    let devs: Vec<(usize, String)> = (0..8)
+        .map(|i| {
+            let n = format!("/dev/dsp{}", i);
+            if i == 0 && !fs::exists(&n) {
+                String::from("/dev/dsp")
+            } else {
+                n
+            }
+        })
+        .enumerate()
+        .filter(|(_, d)| fs::exists(d))
+        .collect();
+    if devs.is_empty() {
         c.skip("audio", "no sound card found");
         return;
     }
-    for i in 0..n {
-        let dev = format!("/dev/dsp{}", i);
+    for (i, dev) in devs {
+        let dev = dev.as_str();
         let name = cards
             .lines()
             .find(|l| l.trim_start().starts_with(&format!("{} ", i)))
             .map(|l| l.trim().to_string())
-            .unwrap_or_else(|| dev.clone());
+            .unwrap_or_else(|| String::from(dev));
         let r = c.step(
             &format!("{} plays", dev),
             &format!("beep -f 440 -l 700 -v 40 -d {}", dev),

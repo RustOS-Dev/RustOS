@@ -372,6 +372,21 @@ int remap_vmalloc_range(struct vm_area_struct *vma, void *addr, unsigned long pg
 	return 0;
 }
 
+/* Pages for a whole vma: physically contiguous runs only (ALSA buffers
+ * are allocated contiguous here). */
+int vm_map_pages(struct vm_area_struct *vma, struct page **pages, unsigned long num)
+{
+	unsigned long count = vma_pages(vma), off = vma->vm_pgoff;
+
+	if (off >= num || count > num - off)
+		return -ENXIO;
+	for (unsigned long i = 1; i < count; i++)
+		if (page_to_pfn(pages[off + i]) != page_to_pfn(pages[off]) + i)
+			return -EINVAL;
+	return remap_pfn_range(vma, vma->vm_start, page_to_pfn(pages[off]),
+			       vma->vm_end - vma->vm_start, vma->vm_page_prot);
+}
+
 int vm_iomap_memory(struct vm_area_struct *vma, phys_addr_t start, unsigned long len)
 {
 	unsigned long off = vma->vm_pgoff << PAGE_SHIFT;
@@ -620,17 +635,19 @@ int __register_chrdev(unsigned int major, unsigned int baseminor, unsigned int c
 		      const char *name, const struct file_operations *fops)
 {
 	struct cdev *cdev = cdev_alloc();
+	bool dynamic = !major;
 	dev_t dev;
 
 	if (!cdev)
 		return -ENOMEM;
-	if (!major) {
+	if (dynamic) {
 		alloc_chrdev_region(&dev, baseminor, count, name);
 		major = MAJOR(dev);
 	}
 	cdev->ops = fops;
 	cdev_add(cdev, MKDEV(major, baseminor), count);
-	return major;
+	/* As Linux: the new major when one was allocated, else 0. */
+	return dynamic ? major : 0;
 }
 
 void __unregister_chrdev(unsigned int major, unsigned int baseminor, unsigned int count,

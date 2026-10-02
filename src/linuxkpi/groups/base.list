@@ -51,5 +51,11 @@ lib/crypto/sha256.c
 kpi:irq.c
 kpi:acpiscan.c
 kpi:gpiostubs.c
+kpi:uaccess.c
+kpi:iov.c
 drivers/acpi/resource.c
 drivers/acpi/acpi_platform.c
+# LED classes and triggers (mt76 Wi-Fi LEDs, HDA mute LEDs).
+drivers/leds/led-core.c
+drivers/leds/led-class.c
+drivers/leds/led-triggers.c

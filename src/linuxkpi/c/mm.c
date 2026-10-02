@@ -813,3 +813,110 @@ size_t memweight(const void *ptr, size_t bytes)
 		w += hweight8(*p++);
 	return w;
 }
+
+/* ----------------------------------------------- more memory (M34 sound) */
+
+void *alloc_pages_exact_noprof(size_t size, gfp_t gfp_mask)
+{
+	struct page *page = alloc_pages(gfp_mask, get_order(size));
+
+	return page ? page_address(page) : NULL;
+}
+
+void free_pages_exact(void *virt, size_t size)
+{
+	if (virt)
+		free_pages((unsigned long)virt, get_order(size));
+}
+
+/* vmap()ed areas and their page counts, for vunmap(). */
+struct kpi_vmap_area {
+	struct list_head list;
+	const void *addr;
+	unsigned int count;
+};
+
+static LIST_HEAD(kpi_vmap_areas);
+static DEFINE_SPINLOCK(kpi_vmap_lock);
+
+void *vmap(struct page **pages, unsigned int count, unsigned long flags, pgprot_t prot)
+{
+	struct kpi_vmap_area *a = kmalloc(sizeof(*a), GFP_KERNEL);
+	void *v;
+
+	if (!a)
+		return NULL;
+	v = kpi_vmap_pages(pages, count);
+	if (!v) {
+		kfree(a);
+		return NULL;
+	}
+	a->addr = v;
+	a->count = count;
+	spin_lock(&kpi_vmap_lock);
+	list_add(&a->list, &kpi_vmap_areas);
+	spin_unlock(&kpi_vmap_lock);
+	return v;
+}
+
+void vunmap(const void *addr)
+{
+	struct kpi_vmap_area *a, *found = NULL;
+
+	spin_lock(&kpi_vmap_lock);
+	list_for_each_entry(a, &kpi_vmap_areas, list) {
+		if (a->addr == addr) {
+			list_del(&a->list);
+			found = a;
+			break;
+		}
+	}
+	spin_unlock(&kpi_vmap_lock);
+	if (found) {
+		rustos_kpi_vunmap(addr, found->count);
+		kfree(found);
+	}
+}
+
+void *vmemdup_user(const void __user *src, size_t len)
+{
+	void *p = kvmalloc(len, GFP_USER);
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_user(p, src, len)) {
+		kvfree(p);
+		return ERR_PTR(-EFAULT);
+	}
+	return p;
+}
+
+pgprot_t vm_get_page_prot(vm_flags_t vm_flags)
+{
+	if (vm_flags & VM_SHARED)
+		return (vm_flags & VM_WRITE) ? PAGE_SHARED : PAGE_READONLY;
+	return (vm_flags & VM_WRITE) ? PAGE_COPY : PAGE_READONLY;
+}
+
+/* RAM stays write-back: page attributes of the direct map are not changed. */
+int set_memory_wb(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+int set_memory_wc(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+pteval_t __default_kernel_pte_mask __read_mostly = ~0;
+
+/* No special SRAM pools (ALSA's "IRAM" buffers fall back to normal pages). */
+void *gen_pool_dma_alloc_align(struct gen_pool *pool, size_t size, dma_addr_t *dma, int align)
+{
+	return NULL;
+}
+
+void gen_pool_free_owner(struct gen_pool *pool, unsigned long addr, size_t size, void **owner)
+{
+}

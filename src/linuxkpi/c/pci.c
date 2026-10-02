@@ -440,6 +440,7 @@ static struct kpi_pci_dev *kpi_pci_create(u32 idx)
 	dev->current_state = PCI_D0;
 	dev->dma_mask = DMA_BIT_MASK(32);
 	dev->dev.dma_mask = &dev->dma_mask;
+	dev->dev.dma_parms = &dev->dma_parms;
 	dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
 	device_initialize(&dev->dev);
 	dev->dev.bus = &pci_bus_type;
@@ -1161,5 +1162,112 @@ void dmam_free_coherent(struct device *dev, size_t size, void *vaddr, dma_addr_t
 /* The resource tree is not kept (c/devcore.c): no parent resources. */
 struct resource *pci_find_resource(struct pci_dev *dev, struct resource *res)
 {
+	return NULL;
+}
+
+/* ------------------------------------------------- more DMA (M34 sound) */
+
+/* No IOMMU and coherent x86 caches: bus addresses are physical, and
+ * "noncontiguous" buffers are allocated contiguous (one-entry tables). */
+bool __dma_need_sync(struct device *dev, dma_addr_t dma_addr)
+{
+	return false;
+}
+
+bool dma_can_mmap(struct device *dev)
+{
+	return true;
+}
+
+int dma_mmap_attrs(struct device *dev, struct vm_area_struct *vma, void *cpu_addr,
+		   dma_addr_t dma_addr, size_t size, unsigned long attrs)
+{
+	unsigned long pages = PAGE_ALIGN(size) >> PAGE_SHIFT;
+
+	if (vma->vm_pgoff >= pages || vma_pages(vma) > pages - vma->vm_pgoff)
+		return -ENXIO;
+	return remap_pfn_range(vma, vma->vm_start, PHYS_PFN(dma_addr) + vma->vm_pgoff,
+			       vma->vm_end - vma->vm_start, vma->vm_page_prot);
+}
+
+struct page *dma_alloc_pages(struct device *dev, size_t size, dma_addr_t *dma_handle,
+			     enum dma_data_direction dir, gfp_t gfp)
+{
+	struct page *page = alloc_pages(gfp | __GFP_ZERO, get_order(size));
+
+	if (page)
+		*dma_handle = page_to_phys(page);
+	return page;
+}
+
+void dma_free_pages(struct device *dev, size_t size, struct page *page, dma_addr_t dma_handle,
+		    enum dma_data_direction dir)
+{
+	__free_pages(page, get_order(size));
+}
+
+int dma_mmap_pages(struct device *dev, struct vm_area_struct *vma, size_t size,
+		   struct page *page)
+{
+	return dma_mmap_attrs(dev, vma, page_address(page), page_to_phys(page), size, 0);
+}
+
+struct sg_table *dma_alloc_noncontiguous(struct device *dev, size_t size,
+					 enum dma_data_direction dir, gfp_t gfp,
+					 unsigned long attrs)
+{
+	struct sg_table *sgt = kzalloc(sizeof(*sgt), gfp & ~__GFP_ZERO);
+	dma_addr_t dma;
+	struct page *page;
+
+	if (!sgt)
+		return NULL;
+	page = dma_alloc_pages(dev, size, &dma, dir, gfp);
+	if (!page || sg_alloc_table(sgt, 1, GFP_KERNEL)) {
+		if (page)
+			dma_free_pages(dev, size, page, dma, dir);
+		kfree(sgt);
+		return NULL;
+	}
+	sg_set_page(sgt->sgl, page, PAGE_ALIGN(size), 0);
+	sg_dma_address(sgt->sgl) = dma;
+	sg_dma_len(sgt->sgl) = PAGE_ALIGN(size);
+	sgt->nents = 1;
+	return sgt;
+}
+
+void dma_free_noncontiguous(struct device *dev, size_t size, struct sg_table *sgt,
+			    enum dma_data_direction dir)
+{
+	dma_free_pages(dev, size, sg_page(sgt->sgl), sg_dma_address(sgt->sgl), dir);
+	sg_free_table(sgt);
+	kfree(sgt);
+}
+
+void *dma_vmap_noncontiguous(struct device *dev, size_t size, struct sg_table *sgt)
+{
+	return page_address(sg_page(sgt->sgl));
+}
+
+void dma_vunmap_noncontiguous(struct device *dev, void *vaddr)
+{
+}
+
+int dma_mmap_noncontiguous(struct device *dev, struct vm_area_struct *vma, size_t size,
+			   struct sg_table *sgt)
+{
+	return dma_mmap_attrs(dev, vma, NULL, sg_dma_address(sgt->sgl), size, 0);
+}
+
+const struct pci_device_id *pci_match_id(const struct pci_device_id *ids, struct pci_dev *dev)
+{
+	for (; ids && (ids->vendor || ids->subvendor || ids->class_mask); ids++) {
+		if ((ids->vendor == PCI_ANY_ID || ids->vendor == dev->vendor) &&
+		    (ids->device == PCI_ANY_ID || ids->device == dev->device) &&
+		    (ids->subvendor == PCI_ANY_ID || ids->subvendor == dev->subsystem_vendor) &&
+		    (ids->subdevice == PCI_ANY_ID || ids->subdevice == dev->subsystem_device) &&
+		    !((ids->class ^ dev->class) & ids->class_mask))
+			return ids;
+	}
 	return NULL;
 }

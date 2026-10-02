@@ -20,6 +20,14 @@ behind `--features linux-wifi` / `linux-hwsim`. hostapd and wpa_supplicant
 
 `wifi-hwsim-eap.txt` covers PEAP-MSCHAPv2.
 
+M30: the LinuxKPI USB core runs Linux USB drivers on RustOS's xHCI driver
+(`--features linux-usb`). Linux's `usbnet` with `cdc_ether` and
+`rndis_host` drives QEMU's `usb-net` behind `--features linux-usbnet`
+(`tests/scenarios/linux/eth-usb-linux.txt` and `eth-usb-linux-rndis.txt`).
+The scenarios cover DHCP, ping, and 4 MiB over HTTP both ways, plus unplugging
+the adapter mid-session and plugging it back in. `cdc_ncm` is compiled with
+them; QEMU has no NCM device to test it on.
+
 ## Building
 
 ```sh
@@ -50,8 +58,13 @@ native e1000 driver still handles the e1000e/I219 families.
 | `build/linuxkpi.rs` | the build step behind `build.rs`: parallel, incremental clang builds, one whole-archive static library per group |
 
 Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
-- `linuxkpi` builds `proof` and `kpi`;
-- `linux-e1000` adds `e1000`.
+- `linuxkpi` builds `proof`, `kpi` and `base`;
+- `linux-e1000` adds `e1000`;
+- `linux-wifi` adds `crypto`, `netlink`, `cfg80211`, `mac80211`, and `linux-hwsim` adds `hwsim`;
+- `linux-usb` adds `usb` (the USB core);
+- `linux-usbnet` adds `usbnet` (and turns off the native CDC ECM/RNDIS driver);
+- `linux-mt7921` adds `mt7921` and `mt7921u`;
+- `linux-drivers` is the release set (`linux-mt7921`).
 
 ## How the pieces fit
 
@@ -138,6 +151,40 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
 - **Namespaces.** A single `init_net`. `pernet_operations` run once, at registration.
 - **Crypto.** `c/crypto.c` implements `ccm(aes)`, `gcm(aes)`, `cmac(aes)` and `ctr(aes)` on `lib/crypto` (AES, AES-GCM, ARC4), behind the AEAD, shash and skcipher APIs mac80211 uses.
 - **Locks shared with Linux.** Rust state that Linux code reaches with preemption off must use `sync::IrqMutex`, as the netlink and packet sockets do.
+
+### USB
+
+- **Devices.** RustOS enumerates USB devices and selects their
+  configuration (`src/usb/mod.rs`).
+  - Interfaces no RustOS driver claims are offered to Linux (`src/linuxkpi/usb.rs`).
+  - On the first offer, `c/usb.c` builds the `struct usb_device` from the device's
+    descriptors (parsed by Linux's `drivers/usb/core/config.c`) and the interfaces
+    of the active configuration.
+  - Each offered interface is added to the device core on the `usb` bus, which
+    matches `usb_driver` ID tables and probes, as `drivers/usb/core/driver.c` does.
+  - `usb_driver_claim_interface` (CDC data interfaces) works on interfaces RustOS
+    has not offered yet.
+- **URBs.** Linux's `drivers/usb/core/urb.c` (submission checks, anchors,
+  kill/poison) is used as is. `usb_hcd_submit_urb`/`usb_hcd_unlink_urb` hand URBs
+  to RustOS.
+  - RustOS runs each endpoint's transfers in order on a worker thread, through
+    bounce buffers, so there are no scatter-gather lists.
+  - Each URB is given back on that thread, with bottom halves disabled, as
+    Linux's HCD giveback does.
+  - Unlinking stops the endpoint (`Xhci::wait_abortable`) and completes the URB
+    with the unlink status.
+  - Isochronous URBs are not supported yet.
+- **Synchronous calls.** `usb_control_msg` goes straight to RustOS's control
+  transfer; `usb_bulk_msg` waits on a URB.
+- **Settings.** `usb_set_interface` re-enables endpoints on the controller (drop
+  and add in one Configure Endpoint command).
+- **Not supported.** `usb_reset_device` (logged, then success), runtime PM
+  (`CONFIG_PM` is off).
+- **Unplug.** The interfaces are removed from the device core, so drivers
+  disconnect; their URBs fail with `-ESHUTDOWN`.
+- **Transmit flow control.** A Linux netdev whose queues are all stopped
+  reports itself not ready (`NetDevice::tx_ready`). The RustOS stack then holds
+  packets instead of dropping them, and `netif_wake_queue` kicks it.
 
 ## Debugging
 

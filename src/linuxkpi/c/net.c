@@ -19,6 +19,7 @@
 #include <linux/skbuff.h>
 #include <linux/slab.h>
 #include <linux/jhash.h>
+#include <linux/scatterlist.h>
 #include <net/netdev_queues.h>
 #include <net/netdev_rx_queue.h>
 #include <net/checksum.h>
@@ -1044,6 +1045,7 @@ struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
 	INIT_LIST_HEAD(&dev->uc.list);
 	INIT_LIST_HEAD(&dev->mc.list);
 	mutex_init(&dev->lock);
+	spin_lock_init(&dev->tx_global_lock);
 	dev->priv_flags = IFF_XMIT_DST_RELEASE | IFF_XMIT_DST_RELEASE_PERM;
 	setup(dev);
 	if (!dev->tx_queue_len) {
@@ -1519,7 +1521,18 @@ void netif_device_attach(struct net_device *dev)
 
 void netif_tx_wake_queue(struct netdev_queue *dev_queue)
 {
-	clear_bit(__QUEUE_STATE_DRV_XOFF, &dev_queue->state);
+	if (test_and_clear_bit(__QUEUE_STATE_DRV_XOFF, &dev_queue->state))
+		rustos_kpi_net_kick();
+}
+
+int kpi_netdev_tx_ready(struct net_device *dev)
+{
+	if (!netif_running(dev) || !netif_carrier_ok(dev))
+		return 1;	/* kpi_netdev_xmit() fails fast */
+	for (unsigned int i = 0; i < dev->real_num_tx_queues; i++)
+		if (!netif_xmit_frozen_or_stopped(netdev_get_tx_queue(dev, i)))
+			return 1;
+	return 0;
 }
 
 void netif_schedule_queue(struct netdev_queue *txq)
@@ -1843,3 +1856,108 @@ __sum16 csum_ipv6_magic(const struct in6_addr *saddr, const struct in6_addr *dad
 	sum = (sum & 0xffffffff) + (sum >> 32);
 	return csum_fold((__force __wsum)(u32)sum);
 }
+
+/* ------------------------------------------- transmit locking, statistics */
+
+/* Hold off every transmit queue (net/core/dev.c netif_tx_lock()). */
+void netif_tx_lock(struct net_device *dev)
+{
+	spin_lock(&dev->tx_global_lock);
+	for (unsigned int i = 0; i < dev->num_tx_queues; i++) {
+		struct netdev_queue *txq = netdev_get_tx_queue(dev, i);
+
+		__netif_tx_lock(txq, smp_processor_id());
+		set_bit(__QUEUE_STATE_FROZEN, &txq->state);
+		__netif_tx_unlock(txq);
+	}
+}
+EXPORT_SYMBOL(netif_tx_lock);
+
+void netif_tx_unlock(struct net_device *dev)
+{
+	for (unsigned int i = 0; i < dev->num_tx_queues; i++)
+		clear_bit(__QUEUE_STATE_FROZEN, &netdev_get_tx_queue(dev, i)->state);
+	spin_unlock(&dev->tx_global_lock);
+}
+EXPORT_SYMBOL(netif_tx_unlock);
+
+void netdev_stats_to_stats64(struct rtnl_link_stats64 *stats64,
+			     const struct net_device_stats *netdev_stats)
+{
+	size_t n = sizeof(*netdev_stats) / sizeof(atomic_long_t);
+	const atomic_long_t *src = (const atomic_long_t *)netdev_stats;
+	u64 *dst = (u64 *)stats64;
+
+	BUILD_BUG_ON(n > sizeof(*stats64) / sizeof(u64));
+	for (size_t i = 0; i < n; i++)
+		dst[i] = (unsigned long)atomic_long_read(&src[i]);
+	memset((char *)stats64 + n * sizeof(u64), 0, sizeof(*stats64) - n * sizeof(u64));
+}
+EXPORT_SYMBOL(netdev_stats_to_stats64);
+
+void dev_fetch_sw_netstats(struct rtnl_link_stats64 *s,
+			   const struct pcpu_sw_netstats __percpu *netstats)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		const struct pcpu_sw_netstats *stats = per_cpu_ptr(netstats, cpu);
+		u64 rx_packets, rx_bytes, tx_packets, tx_bytes;
+		unsigned int start;
+
+		do {
+			start = u64_stats_fetch_begin(&stats->syncp);
+			rx_packets = u64_stats_read(&stats->rx_packets);
+			rx_bytes = u64_stats_read(&stats->rx_bytes);
+			tx_packets = u64_stats_read(&stats->tx_packets);
+			tx_bytes = u64_stats_read(&stats->tx_bytes);
+		} while (u64_stats_fetch_retry(&stats->syncp, start));
+		s->rx_packets += rx_packets;
+		s->rx_bytes += rx_bytes;
+		s->tx_packets += tx_packets;
+		s->tx_bytes += tx_bytes;
+	}
+}
+EXPORT_SYMBOL_GPL(dev_fetch_sw_netstats);
+
+void dev_get_tstats64(struct net_device *dev, struct rtnl_link_stats64 *s)
+{
+	netdev_stats_to_stats64(s, &dev->stats);
+	dev_fetch_sw_netstats(s, dev->tstats);
+}
+EXPORT_SYMBOL_GPL(dev_get_tstats64);
+
+/* Map an skb's data (head and page fragments; frag lists are not used by
+ * the drivers here) into a scatterlist. */
+int skb_to_sgvec(struct sk_buff *skb, struct scatterlist *sg, int offset, int len)
+{
+	int start = skb_headlen(skb), copy = start - offset, elt = 0;
+
+	if (copy > 0) {
+		copy = min(copy, len);
+		sg_set_buf(sg, skb->data + offset, copy);
+		elt++;
+		len -= copy;
+		offset += copy;
+	}
+	for (int i = 0; len && i < skb_shinfo(skb)->nr_frags; i++) {
+		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+		int end = start + skb_frag_size(frag);
+
+		copy = end - offset;
+		if (copy > 0) {
+			copy = min(copy, len);
+			sg_set_page(&sg[elt], skb_frag_page(frag), copy,
+				    skb_frag_off(frag) + offset - start);
+			elt++;
+			len -= copy;
+			offset += copy;
+		}
+		start = end;
+	}
+	if (len || !elt)
+		return -EMSGSIZE;
+	sg_mark_end(&sg[elt - 1]);
+	return elt;
+}
+EXPORT_SYMBOL_GPL(skb_to_sgvec);

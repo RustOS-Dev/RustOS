@@ -1,0 +1,30 @@
+# Linux 6.18's usbnet + rndis_host through the LinuxKPI USB core: the
+# eth-usb steps on QEMU's usb-net in its RNDIS configuration (kernel built
+# with `--features linux-usbnet` and RUSTOS_USB_PREFER_RNDIS=1). Like Linux,
+# rndis_host names the interface usb0.
+wait register 'rndis_host' 240
+# The prompt may come before or after the driver's message.
+send true
+wait # $ 60
+send dhcp -t 30
+wait leased 10\.0\.2\.15/24 40
+wait # $
+send ip -br addr; cat /proc/net/if_addrs | grep usb0
+wait usb0 +UP
+wait # $
+send ping -c 3 -i 0.3 10.0.2.2
+wait 3 received
+wait # $
+hostbg mkdir -p /tmp/rustos-eth && cd /tmp/rustos-eth && head -c 4194304 /dev/urandom > big.bin && sha256sum big.bin | cut -d' ' -f1 > big.sha && exec python3 -m http.server 18091 --bind 127.0.0.1
+sleep 1
+send cd /tmp && wget -q http://10.0.2.2:18091/big.bin && wget -q http://10.0.2.2:18091/big.sha && sha256sum big.bin | cut -d' ' -f1 > got.sha && cmp got.sha big.sha && echo HASH-OK
+wait HASH-OK 180
+wait # $
+send mkdir -p /srv/www && cp /tmp/big.bin /srv/www/ && httpd -p 8080 &
+wait serving /srv/www 60
+hostrun curl -s --retry 5 --retry-connrefused --retry-delay 1 --max-time 60 http://127.0.0.1:18092/big.bin | sha256sum | cut -d' ' -f1 | diff - /tmp/rustos-eth/big.sha
+send cat /proc/net/dev | grep usb0
+wait # $
+send ls /sys/bus/usb/drivers/cdc_ether /sys/bus/usb/drivers/rndis_host
+wait 1-.*:.\..
+wait # $

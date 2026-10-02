@@ -569,8 +569,15 @@ impl Xhci {
                 inc.write::<u32>(s + i * 4, sd.out_ctx.read::<u32>(i * 4));
             }
             let mut add = 1u32;
+            // Endpoints enabled before (a new alternate setting) are
+            // dropped and added again.
+            let mut drop_flags = 0u32;
             let mut max_dci = (sd.out_ctx.read::<u32>(0) >> 27) & 0x1F;
+            let enabled = self.eps.lock();
             for ep in eps {
+                if enabled.contains_key(&(slot, ep.dci)) {
+                    drop_flags |= 1 << ep.dci;
+                }
                 let ring = Ring::new().ok_or(ENOMEM)?;
                 let nstreams = ep.streams.min(self.max_streams);
                 let (streams, stream_ctx) = if nstreams >= 2 && ep.ep_type & 3 == 2 {
@@ -622,6 +629,7 @@ impl Xhci {
                 inc.write::<u32>(o + 16, avg | ((esit & 0xFFFF) << 16));
                 rings.push((ep.dci, ring, streams, stream_ctx));
             }
+            drop(enabled);
             let mut dw0 = inc.read::<u32>(s);
             dw0 = (dw0 & !(0x1F << 27)) | (max_dci << 27);
             if let Some(h) = &hub {
@@ -638,6 +646,7 @@ impl Xhci {
             // Slot state lives in dword 3 of the output context; clear it
             // in the input copy.
             inc.write::<u32>(s + 12, 0);
+            inc.write::<u32>(0, drop_flags);
             inc.write::<u32>(4, add);
             inc.phys()
         };
@@ -743,7 +752,13 @@ impl Xhci {
     }
 
     /// Wait for a queued TD. Returns the bytes moved by its data TRBs.
-    fn wait_td(&self, dev: &UsbDevice, td: &Td, timeout_ms: Option<u64>) -> KResult<usize> {
+    fn wait_td(
+        &self,
+        dev: &UsbDevice,
+        td: &Td,
+        timeout_ms: Option<u64>,
+        abort: &dyn Fn() -> bool,
+    ) -> KResult<usize> {
         let (slot, dci) = (dev.slot, td.dci);
         let trbs = &td.trbs;
         let addrs = &td.addrs;
@@ -809,14 +824,14 @@ impl Xhci {
                 ep.events = keep;
                 finished
             },
-            &|| dev.is_gone(),
+            &|| dev.is_gone() || abort(),
         );
         if !done {
             if dev.is_gone() {
                 return Err(ENODEV);
             }
             self.recover(slot, dci, td.sid, false);
-            return Err(ETIMEDOUT);
+            return Err(if abort() { ECANCELED } else { ETIMEDOUT });
         }
         let (code, n) = result.unwrap();
         match code {
@@ -852,7 +867,7 @@ impl Xhci {
         let lock = self.ep_lock(dev.slot, dci);
         let _g = lock.lock();
         let td = self.queue_td(dev, dci, 0, trbs, true)?;
-        self.wait_td(dev, &td, timeout_ms)
+        self.wait_td(dev, &td, timeout_ms, &|| false)
     }
 
     /// Whether bulk streams are available.
@@ -958,7 +973,18 @@ impl Xhci {
 
     /// Wait for a TD from [`Xhci::submit`].
     pub fn wait(&self, dev: &UsbDevice, td: &Td, timeout_ms: Option<u64>) -> KResult<usize> {
-        self.wait_td(dev, td, timeout_ms)
+        self.wait_td(dev, td, timeout_ms, &|| false)
+    }
+
+    /// [`Xhci::wait`] that gives up (stopping the endpoint and skipping the
+    /// TD) with ECANCELED once `abort` returns true.
+    pub fn wait_abortable(
+        &self,
+        dev: &UsbDevice,
+        td: &Td,
+        abort: &dyn Fn() -> bool,
+    ) -> KResult<usize> {
+        self.wait_td(dev, td, None, abort)
     }
 
     /// Abandon a TD that will not complete (stop the endpoint and skip it).

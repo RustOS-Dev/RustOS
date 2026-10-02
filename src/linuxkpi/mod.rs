@@ -12,6 +12,8 @@ pub mod net;
 pub mod pci;
 pub mod sched;
 pub mod sysfs;
+#[cfg(feature = "linux-usb")]
+pub mod usb;
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -88,6 +90,11 @@ pub fn init() {
         crate::println!("[linuxkpi] PCI bus setup failed; LinuxKPI disabled");
         return;
     }
+    #[cfg(feature = "linux-usb")]
+    if !usb::bus_init() {
+        crate::println!("[linuxkpi] USB bus setup failed; LinuxKPI disabled");
+        return;
+    }
     unsafe { kpi_net_init() };
     READY.store(true, Ordering::SeqCst);
     let failed = unsafe { kpi_selftest() };
@@ -142,6 +149,8 @@ pub fn run_initcalls() {
         }
     }
     unsafe { kpi_netdev_open_pending() };
+    #[cfg(feature = "linux-usb")]
+    usb::init();
 }
 
 /// Shut down Linux devices (reboot and power-off): each bus's shutdown

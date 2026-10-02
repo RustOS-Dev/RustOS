@@ -177,6 +177,11 @@ drivers/net/ethernet/intel/e1000/e1000_hw.h	GPL-2.0	e3c8b99f42b640c9856034101747
 drivers/net/ethernet/intel/e1000/e1000_main.c	GPL-2.0	dfb1f607e7579057e5215f398c0f5ad7b00f6fa3fc29a67d4a14c32706fbc073
 drivers/net/ethernet/intel/e1000/e1000_osdep.h	GPL-2.0	14ee85dc1070095ded89a137c791082f7dc3b30b036c177de179220f3d1b72a7
 drivers/net/ethernet/intel/e1000/e1000_param.c	GPL-2.0	25a3debe1be12609f76d347043f6e160376d344f54d72e9b5cf17bbd5d2fec7c
+drivers/net/mii.c	GPL-2.0-only (untagged, per Linux COPYING)	fd9242860c57e6ec475b95a7184d8b76c473ec7845872cf858b568539fa5f97e
+drivers/net/usb/cdc_ether.c	GPL-2.0-or-later	4e93ab980ea5753cabee3ae61e257cf8fdf7a59a0a6e5572639a4bb4f0e347cb
+drivers/net/usb/cdc_ncm.c	GPL-2.0-only (untagged, per Linux COPYING)	85798315b65c4165c2122dc433e8df758d0daaa29267589f68dab907e1797ab7
+drivers/net/usb/rndis_host.c	GPL-2.0-or-later	1612f1b0f6edf406b5b719429cea0da8b31f023397a1c721194b00f53de746e7
+drivers/net/usb/usbnet.c	GPL-2.0-or-later	ed01f2f6f286844decdf974a2e1ca81f87e8fdc753d64b84d44295e0d36c7220
 drivers/net/wireless/mediatek/mt76/agg-rx.c	ISC	70266b883150f67cfd04436983b83be34cc7863c6ed252d893c3ed2f38865ad0
 drivers/net/wireless/mediatek/mt76/channel.c	ISC	994b4184f05f40f1a5b27f012416fc9769c11959ab515de934cc6f797c2c00a9
 drivers/net/wireless/mediatek/mt76/debugfs.c	ISC	26230b42b03cec516ff48520a56d1ca0517b83a2c7e45a1cb2054051fdfd2f8b
@@ -205,6 +210,7 @@ drivers/net/wireless/mediatek/mt76/mt7921/pci.c	ISC	43f24965e7bc7be29465be40f7ad
 drivers/net/wireless/mediatek/mt76/mt7921/pci_mac.c	ISC	da39bca2baf36f056fbc448d3d3cd30918b78f97af58eebe8839f035084d6882
 drivers/net/wireless/mediatek/mt76/mt7921/pci_mcu.c	ISC	6d361df7ec163099c1228982c0756ccd44e8d3885825922258c20cf5927105d2
 drivers/net/wireless/mediatek/mt76/mt7921/regs.h	ISC	e699696f832eae9d0810b875658bd4e1de38f4b1fa6bcb28303533a75af21a3c
+drivers/net/wireless/mediatek/mt76/mt7921/usb.c	ISC	eb04fceede23f323213fd9f050856866ef2c02de693639ef919b9a3ed4ea9027
 drivers/net/wireless/mediatek/mt76/mt792x.h	ISC	e2ec3ad880911c68e304b93d2346138c19e59c67487dcc073d7882f348421ddb
 drivers/net/wireless/mediatek/mt76/mt792x_acpi_sar.c	ISC	7771e925b2ce4d556fe896b02c9b08a5022fd0b492879463aa6d689ee13b99a3
 drivers/net/wireless/mediatek/mt76/mt792x_acpi_sar.h	ISC	cf13c34898668f6074b1b998d5a5e741a72e4f4fbd5dab572c83ea271217d767
@@ -213,15 +219,21 @@ drivers/net/wireless/mediatek/mt76/mt792x_dma.c	ISC	114d59d6229de1882b3d0674c95a
 drivers/net/wireless/mediatek/mt76/mt792x_mac.c	ISC	e5b5ec2825c65ea5788d5d5127ff2b2d76ea331657fecf4782ae6b41a81e025f
 drivers/net/wireless/mediatek/mt76/mt792x_regs.h	ISC	ab2d10c4c60fba5a988f822c6fe8f7b84c95808a871884f72bcab8cbe4641015
 drivers/net/wireless/mediatek/mt76/mt792x_trace.h	ISC	2622b663d6af956d6906fb5e9473efe66ff5a266875bcb9de53b60be64137716
+drivers/net/wireless/mediatek/mt76/mt792x_usb.c	ISC	99c19eaf396714f41e7f44a28f20deec246181543527826ac942b200d1cb5a46
 drivers/net/wireless/mediatek/mt76/pci.c	ISC	efa8cd050666fbae6f043808f6e5d95548a667428d2f423933a0fa3ce626f783
 drivers/net/wireless/mediatek/mt76/scan.c	ISC	d8ab53137bba76d236dd83e7083f3a30bfdf7becaa5100e77abf05e375026d0a
 drivers/net/wireless/mediatek/mt76/testmode.h	ISC	80a55f0214b1864f169193a743f8e849fa5c309bf0882e983f6380288525611a
 drivers/net/wireless/mediatek/mt76/trace.h	ISC	1e1172db6bdb04764032fe2ff84a873c9ebb0d953bb9825fc3d46ce34a737964
 drivers/net/wireless/mediatek/mt76/tx.c	ISC	becd49128b67d057ef00ddd980a4f72d9f60dffdcb335dca8f1dad1845028f8a
+drivers/net/wireless/mediatek/mt76/usb.c	ISC	ad131123a9489f48eba71c2458e87501bd7e4add17df61de6f91913fcaba4799
+drivers/net/wireless/mediatek/mt76/usb_trace.h	ISC	475fd9c462efb2ba242c316379c874f5f72dad60f51d95a6e7938700fb757492
 drivers/net/wireless/mediatek/mt76/util.c	ISC	0fd49b7732f5c5fe71a416de3c53f82d2dc3e50801d0bc4198ac98cba95a71e5
 drivers/net/wireless/mediatek/mt76/util.h	GPL-2.0-only	90246d52522d72cfe28d810f1cc463e92bacc93a065d660e3cd379ea1604f159
 drivers/net/wireless/virtual/mac80211_hwsim.c	GPL-2.0-only	2cc86986b41d24abd27ec62ad25d24f2773367ffdd7a34a45d70ffe42ba93d5b
 drivers/net/wireless/virtual/mac80211_hwsim.h	GPL-2.0-only	8a048599258fd34474b21a37106bd043dc1e9bdfde5a711040fb5d1f6de4d75d
+drivers/usb/core/config.c	GPL-2.0	ab743458a359f987770a0556242d5080e0d0e33bf5ee4f33d1d5342867cf55f7
+drivers/usb/core/urb.c	GPL-2.0	6b5fbce916aa73103514a0e62089b9bff1d9b4effa19c6f2c8ce857981ffd333
+drivers/usb/core/usb.h	GPL-2.0	1bdb4dbb428996c26ad4a7cfe4b72fa357576500429566c1d910fa459ea7197a
 include/acpi/acbuffer.h	BSD-3-Clause OR GPL-2.0	35ba604ea76c3efb445c815d14047e3d8fefa549145516ab50559a0ec5d90a60
 include/acpi/acconfig.h	BSD-3-Clause OR GPL-2.0	52f9d2ba3e82b6ea809171e47beffcaed79418ea45bf23fdb5060ae43b1460f6
 include/acpi/acexcep.h	BSD-3-Clause OR GPL-2.0	e5d3462825191d92a078d6af1c08be7a501d19498ceb22a24efef4f0dae0785b
@@ -721,6 +733,7 @@ include/linux/rethook.h	GPL-2.0	3b705968074b6b29a48c3590ce49bdaef6523b22256d6a80
 include/linux/rfkill.h	GPL-2.0-only (untagged, per Linux COPYING)	f820c7fd34a9c7efb94a5b561b02f6850f7c2f0f3ef78385d315cb4f911135cb
 include/linux/rhashtable-types.h	GPL-2.0	32fa14be4ab3724a84ba0676de91f25f395d6cb107c4b2cf5d58d54cc1169f05
 include/linux/rhashtable.h	GPL-2.0	8b7bdd1746d3d75c0abd64a0d56c8de2bf61169ae1cde839d0bbc337f6c6681c
+include/linux/rndis.h	GPL-2.0	84f50c1afb0276f7c228addecc52768e69aef7d81275a0c49288e72eca20064b
 include/linux/rtmutex.h	GPL-2.0	a2ea576274cd60e5c5c0abc5824c300289ac5c195ef3187fb3a2521f0409db1d
 include/linux/rtnetlink.h	GPL-2.0	92028447ef7a1bb0e9bce82d733bd855d1b48c5cf992ca43522fce9edcd6fd7a
 include/linux/rv.h	GPL-2.0	adc95c17a7e66cc58ad34cbcfca7bdb90848be320f7cfdabcd453231fc4d8f12
@@ -839,7 +852,13 @@ include/linux/units.h	GPL-2.0	2d08078b77e77edc3ba2ef2edea476ccf334f2070550cfff77
 include/linux/unwind_deferred_types.h	GPL-2.0	5163d626060e186a19f6f4b31e41469fcc8b29d57f4375ce431a9f7e24d55aaa
 include/linux/uprobes.h	GPL-2.0-or-later	f59d02ddb377d8fd7d641853305cedd7148eec97e2ddd353fb4fb0dfadf5cf6e
 include/linux/usb.h	GPL-2.0	2ed66ba85dc343e09b8f1320c5017e43c26cbc671c1ea201a429aed92e2bb0c2
+include/linux/usb/cdc.h	GPL-2.0	ed460371a8de23384bfed4ef862229aca3cd26de5a31ba7ac96137a22eb893d4
+include/linux/usb/cdc_ncm.h	(GPL-2.0 OR BSD-2-Clause)	5ca819422a53062e00a957bca1862fdc69302c833e13fa26eb5ba273de6bdb92
 include/linux/usb/ch9.h	GPL-2.0	7df5caf8a59029c9f5df6ad66ef520adb56f6afaa285971dd988783467d7299e
+include/linux/usb/hcd.h	GPL-2.0+	9a749a7c74b59e29fbd639576c85c267ab4a5c7440c41717ae25e672855b3f41
+include/linux/usb/quirks.h	GPL-2.0	ccc18058a94b51ac605d2c4a0506c2b48f890401a190aa7e99ec8b1dcae0077f
+include/linux/usb/rndis_host.h	GPL-2.0+	3386fe3edfdb7adaa3f4f5466629dab466f6e8295dd6b21cbb5c563b83cea495
+include/linux/usb/usbnet.h	GPL-2.0+	9502dbd06d447d8ac228eafa6dc814db4e98837d6697e51a9d136c820e6ffc6a
 include/linux/user_namespace.h	GPL-2.0	445489abca4659653f2de0b000c34283fe626e34ff1f262fce84ed927182b800
 include/linux/util_macros.h	GPL-2.0	2c42a9cfb9f6f7b7dc9c339154ee90975745b7080306241acbc1f3f01edba07d
 include/linux/uts_namespace.h	GPL-2.0	02c3c4014b722c31c1b8d9810f7705facdaaeb7ad0b37c0b8105a501975589d1
@@ -1098,6 +1117,8 @@ include/uapi/linux/types.h	GPL-2.0 WITH Linux-syscall-note	f22c5bf977c0bb939577c
 include/uapi/linux/udp.h	GPL-2.0+ WITH Linux-syscall-note	9b749191394fa846a4c8ab8109290947bd8bb142c59f53b394bc425c1a9c408d
 include/uapi/linux/uio.h	GPL-2.0+ WITH Linux-syscall-note	872db059bdc6e8faa84360aae36ce2d6e90f7372c918e841a7b0c271e481abc7
 include/uapi/linux/unistd.h	GPL-2.0 WITH Linux-syscall-note	01a6f7628ed6f3511eade5891e631c05679e141d031e689a6d028e840032e394
+include/uapi/linux/usb/cdc.h	GPL-2.0 WITH Linux-syscall-note	922bd199d3d8163be1027d3b7a8ab679fd8a7fba98f1f67f4f597d5e36adce81
+include/uapi/linux/usb/ch11.h	GPL-2.0 WITH Linux-syscall-note	df7cbd5071e44fd2c9140541e99c00ac471d2f158ecd822273bff300c3c23256
 include/uapi/linux/usb/ch9.h	GPL-2.0 WITH Linux-syscall-note	c319386b75c3748f12980875af6c53ae0933764cb869537b858bed248811538f
 include/uapi/linux/utsname.h	GPL-2.0 WITH Linux-syscall-note	e6a7aeffebf22a2d74b5e671ab5ff8bb99b0655cefb544bfca0acc22aa396c2a
 include/uapi/linux/virtio_config.h	GPL-2.0-only (untagged, per Linux COPYING)	00291a2835f3011b420077c8bddb5bfacfc65b982a8c85e29d5574dee8913ebd

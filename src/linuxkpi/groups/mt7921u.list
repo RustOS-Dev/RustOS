@@ -1,0 +1,6 @@
+# MediaTek MT7921AU USB Wi-Fi (M30): mt76 USB transport, mt792x USB
+# helpers and the mt7921u driver (needs the usb group). The usb_trace.c
+# tracepoints are not compiled (tracing is off).
+drivers/net/wireless/mediatek/mt76/usb.c
+drivers/net/wireless/mediatek/mt76/mt792x_usb.c
+drivers/net/wireless/mediatek/mt76/mt7921/usb.c

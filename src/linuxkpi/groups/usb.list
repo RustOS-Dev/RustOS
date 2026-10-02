@@ -1,0 +1,7 @@
+# LinuxKPI USB core (M30): Linux USB drivers on RustOS's xHCI driver.
+kpi:usb.c
+# URB life cycle and anchors; usb_hcd_submit_urb()/usb_hcd_unlink_urb()
+# are in usb.c.
+drivers/usb/core/urb.c
+# Configuration descriptor parsing (struct usb_host_config).
+drivers/usb/core/config.c

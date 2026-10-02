@@ -17,7 +17,9 @@ const FEATURES: &[(&str, &[&str])] = &[
     ("LINUX_TEST", &["testdev"]),
     ("LINUX_WIFI", &["crypto", "netlink", "cfg80211", "mac80211"]),
     ("LINUX_HWSIM", &["hwsim"]),
-    ("LINUX_MT7921", &["mt7921"]),
+    ("LINUX_USB", &["usb"]),
+    ("LINUX_USBNET", &["usbnet"]),
+    ("LINUX_MT7921", &["mt7921", "mt7921u"]),
 ];
 
 pub fn build(root: &Path, out: &Path) {

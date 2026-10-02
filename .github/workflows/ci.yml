@@ -82,7 +82,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: cargo clippy
-        run: cargo clippy -- -D warnings
+        run: |
+          cargo clippy -- -D warnings
+          # Feature builds compile Rust that the default build leaves out.
+          cargo clippy --features linux-hwsim,linux-usbnet,linux-drivers,linux-e1000,linux-test -- -D warnings
 
   host-crates:
     name: Host crate tests
@@ -177,5 +180,12 @@ jobs:
         run: |
           cargo build --features linux-hwsim
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/wifi-hwsim.txt tests/scenarios/linux/wifi-hwsim-eap.txt
+      - name: Linux USB networking (usbnet, cdc_ether, rndis_host) on the LinuxKPI USB core
+        run: |
+          cargo build --features linux-usbnet
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux.txt
+          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux.txt
+          RUSTOS_USB_PREFER_RNDIS=1 cargo build --features linux-usbnet
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux-rndis.txt
       - name: Release driver set (linux-drivers, as write_to_drive.sh builds it)
         run: cargo build --release --features linux-drivers

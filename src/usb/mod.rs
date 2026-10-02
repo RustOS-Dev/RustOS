@@ -291,6 +291,11 @@ impl UsbDevice {
         self.hc.wait(self, td, timeout_ms)
     }
 
+    /// [`UsbDevice::wait`] until done or `abort` (then ECANCELED).
+    pub fn wait_abortable(&self, td: &xhci::Td, abort: &dyn Fn() -> bool) -> KResult<usize> {
+        self.hc.wait_abortable(self, td, abort)
+    }
+
     pub fn cancel(&self, td: &xhci::Td) {
         self.hc.cancel(self, td)
     }
@@ -374,7 +379,15 @@ fn bind(dev: &Arc<UsbDevice>) {
             ("usbhid", hid::probe),
             ("uas", uas::probe),
             ("usb-storage", storage::probe),
-            ("cdc_ether", cdc_ether::probe),
+            // Linux usbnet drives USB Ethernet in linux-usbnet builds.
+            (
+                "cdc_ether",
+                if cfg!(feature = "linux-usbnet") {
+                    |_, _| false
+                } else {
+                    cdc_ether::probe
+                },
+            ),
             ("snd-usb-audio", audio::probe),
             ("btusb", btusb::probe),
         ];

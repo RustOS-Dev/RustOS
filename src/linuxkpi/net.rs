@@ -18,6 +18,8 @@ unsafe extern "C" {
     /// Build an skb from `data` and hand it to the driver. 0 on success.
     fn kpi_netdev_xmit(dev: *mut c_void, data: *const u8, len: u32) -> c_int;
     fn kpi_netdev_stop(dev: *mut c_void);
+    /// 1 if some transmit queue of the device is running.
+    fn kpi_netdev_tx_ready(dev: *mut c_void) -> c_int;
     /// dev_open()/dev_close(); 0 or -errno.
     fn kpi_netdev_set_up(dev: *mut c_void, up: c_int) -> c_int;
     /// ndo_set_mac_address(); 0 or -errno.
@@ -65,6 +67,9 @@ impl NetDevice for LinuxNetDev {
             0 => Ok(()),
             _ => Err(EAGAIN),
         }
+    }
+    fn tx_ready(&self) -> bool {
+        unsafe { kpi_netdev_tx_ready(self.dev as *mut c_void) != 0 }
     }
     fn receive(&self) -> Option<Vec<u8>> {
         without_interrupts(|| self.rx.lock().pop_front())
@@ -165,6 +170,12 @@ extern "C" fn rustos_kpi_netdev_set_mac(handle: u64, mac: *const u8) {
             .copy_from_slice(unsafe { core::slice::from_raw_parts(mac, 6) });
         crate::net::kick();
     }
+}
+
+/// A transmit queue woke up: let the stack send what it held back.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_net_kick() {
+    crate::net::kick();
 }
 
 #[unsafe(no_mangle)]

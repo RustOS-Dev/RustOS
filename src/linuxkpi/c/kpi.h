@@ -79,6 +79,7 @@ u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless, 
 int rustos_kpi_netdev_ifindex(u64 handle);
 /* The interface was opened (1) or closed (0) on the Linux side. */
 void rustos_kpi_netdev_state(u64 handle, int up);
+void rustos_kpi_net_kick(void);	/* a transmit queue has room again */
 void rustos_kpi_netdev_unregister(u64 handle);
 void rustos_kpi_netdev_set_mac(u64 handle, const u8 *mac);
 int rustos_kpi_ifname_free(const char *name);
@@ -132,6 +133,18 @@ int rustos_kpi_netlink_unicast(u32 proto, u32 portid, const void *data, size_t l
 int rustos_kpi_netlink_multicast(u32 proto, u32 group, u32 exclude_portid, const void *data,
 				 size_t len);	/* sockets reached */
 int rustos_kpi_netlink_has_listeners(u32 proto, u32 group);
+
+/* USB (src/linuxkpi/usb.rs). Endpoints are addresses (bit 7: IN); 0 is
+ * the control endpoint, whose URBs carry `setup`. Errors are -errno. */
+int rustos_kpi_usb_control(u64 handle, const u8 *setup, void *data, u32 timeout_ms);
+int rustos_kpi_usb_submit(u64 handle, u8 ep, void *buf, u32 len, const u8 *setup,
+			  int zero_packet, void *urb);	/* completes via kpi_usb_complete() */
+int rustos_kpi_usb_cancel(u64 handle, u8 ep, void *urb);
+int rustos_kpi_usb_clear_halt(u64 handle, u8 ep);
+int rustos_kpi_usb_set_interface(u64 handle, u32 ifnum, u32 alt, int select);
+int rustos_kpi_usb_claim(u64 handle, u32 ifnum);	/* 1: claimed for Linux */
+void *rustos_kpi_usb_cookie(u64 handle);
+void rustos_kpi_usb_set_cookie(u64 handle, void *cookie);
 
 /* Credentials of the calling process (src/linuxkpi/sched.rs). */
 u32 rustos_kpi_current_uid(void);

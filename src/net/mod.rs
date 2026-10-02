@@ -81,6 +81,12 @@ pub trait NetDevice: Send + Sync {
     fn driver(&self) -> &'static str;
     /// Queue an Ethernet frame for transmission.
     fn transmit(&self, frame: &[u8]) -> KResult<()>;
+    /// Whether the driver takes frames now. While it does not, the stack
+    /// keeps its packets (TCP retransmits nothing); the driver calls
+    /// [`kick`] when it has room again.
+    fn tx_ready(&self) -> bool {
+        true
+    }
     /// Take the next received Ethernet frame (called by the network thread).
     fn receive(&self) -> Option<Vec<u8>>;
     /// Driver-specific control (wireless configuration etc.).
@@ -667,6 +673,11 @@ impl Device for Phy<'_> {
         Self: 'a;
 
     fn receive(&mut self, _t: Instant) -> Option<(RxTok, TxTok<'_>)> {
+        // A frame may need an answer (ACK, ARP reply): leave it queued
+        // until the driver can send.
+        if !self.dev.tx_ready() {
+            return None;
+        }
         let frame = self.dev.receive()?;
         if crate::params::NET_DEBUG.load(Ordering::Relaxed) {
             crate::println!("[net] rx {}", frame_summary(&frame));
@@ -711,6 +722,9 @@ impl Device for Phy<'_> {
     }
 
     fn transmit(&mut self, _t: Instant) -> Option<TxTok<'_>> {
+        if !self.dev.tx_ready() {
+            return None;
+        }
         Some(TxTok {
             index: self.index,
             dev: self.dev,

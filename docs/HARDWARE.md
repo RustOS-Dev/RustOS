@@ -45,6 +45,8 @@ devices are cached (write-back buffer cache, `sync`).
 | Bluetooth controllers (class E0/01/01), Intel AX200/AX210/AX211 firmware | written ([BLUETOOTH.md](BLUETOOTH.md)) |
 | Ethernet: CDC ECM, RNDIS | CI (`usb-net`) |
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
+| Linux USB drivers through the LinuxKPI USB core (`linux-usb`) | CI (`usb-net` with Linux usbnet) |
+| Ethernet: Linux `usbnet` with `cdc_ether`, `rndis_host`, `cdc_ncm` (`--features linux-usbnet`) | CI (`eth-usb-linux`, `eth-usb-linux-rndis`); NCM compiled |
 
 ## Network
 

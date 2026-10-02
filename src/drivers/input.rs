@@ -163,6 +163,8 @@ struct Client<T> {
     queue: Mutex<VecDeque<T>>,
     /// EVIOCSCLOCKID: monotonic timestamps instead of wall-clock time.
     monotonic: AtomicBool,
+    /// EVIOCREVOKE: no more events; reads fail with ENODEV.
+    revoked: AtomicBool,
 }
 
 /// Leaves a keyboard's lock LEDs (bit 0 num, 1 caps, 2 scroll).
@@ -197,6 +199,9 @@ fn push_to<T: Copy>(clients: &Mutex<Vec<Weak<Client<T>>>>, e: T) {
         let mut cl = clients.lock();
         cl.retain(|w| w.strong_count() > 0);
         for c in cl.iter().filter_map(|w| w.upgrade()) {
+            if c.revoked.load(Ordering::Relaxed) {
+                continue;
+            }
             let mut q = c.queue.lock();
             if q.len() >= QUEUE_MAX {
                 q.pop_front();
@@ -230,12 +235,30 @@ pub fn register(info: Info) -> Arc<InputDev> {
         (13 << 8) | (64 + dev.idx as u64),
         Arc::new(EventNode(Some(dev.clone()))),
     );
+    input_uevent("add", &dev);
     dev
+}
+
+/// The uevent for an input device's event node (what libinput's udev
+/// monitor waits for).
+fn input_uevent(action: &str, dev: &InputDev) {
+    let name = alloc::format!("input/event{}", dev.idx);
+    crate::net::netlink::uevent(
+        action,
+        &alloc::format!("/devices/virtual/input/input{}/event{}", dev.idx, dev.idx),
+        "input",
+        &[
+            ("MAJOR", "13"),
+            ("MINOR", &alloc::format!("{}", 64 + dev.idx)),
+            ("DEVNAME", &name),
+        ],
+    );
 }
 
 /// Remove a device (unplugged); its open files see no more events.
 pub fn unregister(dev: &Arc<InputDev>) {
     crate::vfs::devfs::unregister(&alloc::format!("input/event{}", dev.idx));
+    input_uevent("remove", dev);
     irqless(|| DEVICES.lock().retain(|d| !Arc::ptr_eq(d, dev)));
 }
 
@@ -464,6 +487,7 @@ impl<T: Copy + Send + 'static> Client<T> {
         let c = Arc::new(Client {
             queue: Mutex::new(VecDeque::new()),
             monotonic: AtomicBool::new(false),
+            revoked: AtomicBool::new(false),
         });
         irqless(|| list.lock().push(Arc::downgrade(&c)));
         c
@@ -482,6 +506,9 @@ impl<T: Copy + Send + 'static> Client<T> {
     ) -> KResult<usize> {
         if buf.len() < size {
             return Err(EINVAL);
+        }
+        if self.revoked.load(Ordering::Relaxed) {
+            return Err(ENODEV);
         }
         let mono = self.monotonic.load(Ordering::Relaxed);
         loop {
@@ -590,6 +617,9 @@ impl EventFile {
             return Err(ENOTTY);
         }
         let nr = (cmd & 0xFF) as u16;
+        if self.client.revoked.load(Ordering::Relaxed) {
+            return Err(ENODEV);
+        }
         let info = match &self.dev {
             Some(d) => d.info(),
             None => merged_info(),
@@ -714,7 +744,28 @@ impl EventFile {
                     }
                 })
             }
-            0x91 => Ok(0), // EVIOCREVOKE
+            0x91 => {
+                // EVIOCREVOKE (a session manager takes a device away from
+                // a client on VT switch): this file gets no more events.
+                if arg != 0 {
+                    return Err(EINVAL);
+                }
+                self.client.revoked.store(true, Ordering::SeqCst);
+                irqless(|| self.client.queue.lock().clear());
+                if let Some(d) = &self.dev {
+                    irqless(|| {
+                        let mut g = d.grab.lock();
+                        if g.as_ref()
+                            .and_then(|w| w.upgrade())
+                            .is_some_and(|c| Arc::ptr_eq(&c, &self.client))
+                        {
+                            *g = None;
+                        }
+                    });
+                }
+                WQ.wake_all();
+                Ok(0)
+            }
             0xA0 => {
                 let mut b = [0u8; 4];
                 uaccess::copy_from_user(&mut b, arg)?;
@@ -765,7 +816,9 @@ impl crate::vfs::FileLike for EventFile {
         &WQ
     }
     fn poll(&self) -> u16 {
-        if self.client.is_empty() {
+        if self.client.revoked.load(Ordering::Relaxed) {
+            crate::vfs::POLLERR | crate::vfs::POLLHUP
+        } else if self.client.is_empty() {
             0
         } else {
             crate::vfs::POLLIN

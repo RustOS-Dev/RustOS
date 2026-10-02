@@ -452,6 +452,7 @@ fn do_exit(p: &Arc<Process>, status: i32) {
         parent.child_wq.wake_all();
     }
     crate::tty::process_exited(p);
+    crate::syscall::fdobj::EXIT_WQ.wake_all();
     itimer::remove(p.pid);
     if p.pid == 1 {
         crate::println!("[init] init exited with status {:#x}", status);

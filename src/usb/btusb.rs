@@ -185,9 +185,9 @@ fn intel_setup(h: &Arc<Hci>) -> KResult<()> {
         let name = intel::firmware_name(&v, "sfi");
         let fw = crate::firmware::load(&name).inspect_err(|_| {
             crate::println!(
-                "[bt] {}: firmware {} not found (install it with write_to_drive.sh --ax210-firmware)",
+                "[bt] {}: firmware not found: {}",
                 h.name(),
-                name
+                crate::firmware::missing_hint(&name)
             );
         })?;
         let (cmds, boot) = intel::secure_send_plan(&fw, v.sbe_type).ok_or(EINVAL)?;
@@ -444,10 +444,10 @@ impl BtUsb {
         let name = mtk::firmware_name(id, version, flavor);
         let fw = crate::firmware::load(&name).inspect_err(|_| {
             crate::println!(
-                "[bt] {}: MT{:04x}: firmware {} not found",
+                "[bt] {}: MT{:04x}: firmware not found: {}",
                 h.name(),
                 id,
-                name
+                crate::firmware::missing_hint(&name)
             );
         })?;
         let sections = mtk::sections(&fw, id).ok_or(EINVAL)?;

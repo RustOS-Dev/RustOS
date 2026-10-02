@@ -502,6 +502,25 @@ pub fn attach(
         }
     );
     bind(&dev);
+    // Devices Linux drivers took get the Linux device model's uevents.
+    if !dev.drivers.lock().contains(&"linux") {
+        crate::net::netlink::uevent(
+            "add",
+            &alloc::format!("/devices/usb/{}", dev.name()),
+            "usb",
+            &[
+                ("DEVTYPE", "usb_device"),
+                (
+                    "PRODUCT",
+                    &alloc::format!("{:x}/{:x}/{:x}", d.vendor, d.product, d.device_version),
+                ),
+                (
+                    "TYPE",
+                    &alloc::format!("{}/{}/{}", d.class, d.subclass, d.protocol),
+                ),
+            ],
+        );
+    }
     Ok(dev)
 }
 
@@ -598,6 +617,14 @@ pub fn detach(dev: &Arc<UsbDevice>) {
     }
     dev.children.lock().clear();
     dev.hc.wq.wake_all();
+    if !dev.drivers.lock().contains(&"linux") {
+        crate::net::netlink::uevent(
+            "remove",
+            &alloc::format!("/devices/usb/{}", dev.name()),
+            "usb",
+            &[("DEVTYPE", "usb_device")],
+        );
+    }
     let hooks: Vec<Box<dyn FnOnce() + Send>> = core::mem::take(&mut *dev.on_detach.lock());
     for h in hooks {
         h();

@@ -26,6 +26,29 @@ pub fn load(name: &str) -> KResult<Vec<u8>> {
     Err(ENOENT)
 }
 
+/// Why this image has no stock firmware (firmware/stock.list), if it was
+/// built without it: then a missing file is the build's fault, not the
+/// user's.
+pub fn stock_missing() -> Option<alloc::string::String> {
+    crate::vfs::read_all("/lib/firmware/.stock-missing")
+        .ok()
+        .map(|d| alloc::string::String::from_utf8_lossy(&d).trim().into())
+}
+
+/// What to tell the user when `name` (a stock firmware file) is missing.
+pub fn missing_hint(name: &str) -> alloc::string::String {
+    match stock_missing() {
+        Some(why) => format!(
+            "this image was built without its firmware ({}); rebuild it with network access, or copy {} into /storage/lib/firmware",
+            why, name
+        ),
+        None => format!(
+            "{} is missing from /lib/firmware (it should ship in the image: please report this); copy it into /storage/lib/firmware",
+            name
+        ),
+    }
+}
+
 /// Load the first available file among `names` (newest API first).
 pub fn load_any(names: &[&str]) -> KResult<(usize, Vec<u8>)> {
     for (i, n) in names.iter().enumerate() {

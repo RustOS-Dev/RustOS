@@ -140,6 +140,24 @@ struct VcDisplay {
     pixels: Option<alloc::vec::Vec<u8>>,
     /// VT_PROCESS mode: (pid, release signal, acquire signal).
     process: Option<(u32, u32, u32)>,
+    /// KDSKBMODE: K_OFF (4) stops keyboard input to the console (a
+    /// compositor reads evdev instead).
+    kbmode: u32,
+}
+
+const K_UNICODE: u32 = 3;
+const K_OFF: u32 = 4;
+
+/// A switch waiting for the VT_PROCESS owner of the visible console to
+/// allow it (VT_RELDISP); usize::MAX if none.
+static PENDING_SWITCH: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(usize::MAX);
+/// Woken when the visible console changes (VT_WAITACTIVE).
+static VT_WQ: WaitQueue = WaitQueue::new();
+
+/// Whether keyboard input should reach the visible console's TTY.
+fn keyboard_to_tty() -> bool {
+    VC_DISPLAY[active_index()].lock().kbmode != K_OFF
 }
 
 static VC_DISPLAY: [Mutex<VcDisplay>; NUM_VCS] = [const {
@@ -147,6 +165,7 @@ static VC_DISPLAY: [Mutex<VcDisplay>; NUM_VCS] = [const {
         graphics: false,
         pixels: None,
         process: None,
+        kbmode: K_UNICODE,
     })
 }; NUM_VCS];
 
@@ -226,25 +245,41 @@ pub fn active_index() -> usize {
 
 /// Show virtual console `n` (0-based): clear the screen and replay its
 /// recent output.
+///
+/// If the visible console is in VT_PROCESS mode, its owner gets its
+/// release signal and the switch waits until it allows it with
+/// VT_RELDISP(1), as in Linux: a compositor first stops drawing and drops
+/// DRM master.
 pub fn switch_vc(n: usize) {
-    if n >= NUM_VCS {
+    if n >= NUM_VCS || n == active_index() {
         return;
     }
+    let release = VC_DISPLAY[active_index()].lock().process;
+    if let Some((pid, rel, _)) = release
+        && rel != 0
+        && crate::process::find(pid as _).is_some()
+    {
+        if PENDING_SWITCH.swap(n, Ordering::SeqCst) == usize::MAX {
+            vc_signal(pid, rel);
+        }
+        return;
+    }
+    complete_switch(n);
+}
+
+/// Show console `n` now.
+fn complete_switch(n: usize) {
+    PENDING_SWITCH.store(usize::MAX, Ordering::SeqCst);
     let old = ACTIVE_VC.swap(n, Ordering::SeqCst);
     if n == old {
         return;
     }
+    VT_WQ.wake_all();
     // Leaving a graphics console: keep its pixels.
-    let (graphics, release) = {
-        let d = VC_DISPLAY[old].lock();
-        (d.graphics, d.process)
-    };
+    let graphics = VC_DISPLAY[old].lock().graphics;
     if graphics {
         let px = crate::drivers::framebuffer::save_pixels();
         VC_DISPLAY[old].lock().pixels = px;
-    }
-    if let Some((pid, rel, _)) = release {
-        vc_signal(pid, rel);
     }
     let (graphics, acquire, pixels) = {
         let mut d = VC_DISPLAY[n].lock();
@@ -687,10 +722,38 @@ impl FileLike for Tty {
                 Ok(0)
             }
             KDGKBMODE => {
-                uaccess::write_user(arg, &1u32)?; // K_XLATE
+                let mode = VC_DISPLAY[vc.unwrap()].lock().kbmode;
+                uaccess::write_user(arg, &mode)?;
                 Ok(0)
             }
-            KDSKBMODE | VT_RELDISP => Ok(0),
+            KDSKBMODE => {
+                // K_RAW, K_XLATE, K_MEDIUMRAW, K_UNICODE, K_OFF. Raw
+                // scancode modes deliver nothing (programs use evdev).
+                if arg > K_OFF as u64 {
+                    return Err(EINVAL);
+                }
+                VC_DISPLAY[vc.unwrap()].lock().kbmode = arg as u32;
+                Ok(0)
+            }
+            VT_RELDISP => {
+                const VT_ACKACQ: u64 = 2;
+                match arg {
+                    VT_ACKACQ => Ok(0),
+                    0 => {
+                        // The owner refuses the switch.
+                        PENDING_SWITCH.store(usize::MAX, Ordering::SeqCst);
+                        Ok(0)
+                    }
+                    _ => {
+                        let n = PENDING_SWITCH.swap(usize::MAX, Ordering::SeqCst);
+                        if n == usize::MAX {
+                            return Err(EINVAL);
+                        }
+                        complete_switch(n);
+                        Ok(0)
+                    }
+                }
+            }
             VT_GETMODE => {
                 // struct vt_mode { char mode, waitv; short relsig, acqsig, frsig; }
                 let d = VC_DISPLAY[vc.unwrap()].lock();
@@ -733,7 +796,16 @@ impl FileLike for Tty {
                 switch_vc(arg as usize - 1);
                 Ok(0)
             }
-            VT_WAITACTIVE => Ok(0),
+            VT_WAITACTIVE => {
+                if arg == 0 || arg as usize > NUM_VCS {
+                    return Err(ENXIO);
+                }
+                let want = arg as usize - 1;
+                if !VT_WQ.wait_interruptible(|| active_index() == want) {
+                    return Err(EINTR);
+                }
+                Ok(0)
+            }
             TCGETS => {
                 uaccess::write_user(arg, &*self.termios.lock())?;
                 Ok(0)
@@ -842,6 +914,27 @@ impl FileLike for Tty {
 /// A process exited: if its group was in the foreground and is now empty,
 /// release the terminal.
 pub fn process_exited(p: &Arc<process::Process>) {
+    // A VT_PROCESS owner died: its console returns to text mode with
+    // keyboard input (as logind resets it), and a waiting switch goes on.
+    for (n, d) in VC_DISPLAY.iter().enumerate() {
+        let mut d = d.lock();
+        if d.process.is_some_and(|(pid, _, _)| pid == p.pid) {
+            d.process = None;
+            d.kbmode = K_UNICODE;
+            let was_graphics = core::mem::replace(&mut d.graphics, false);
+            d.pixels = None;
+            drop(d);
+            if n == active_index() {
+                let pending = PENDING_SWITCH.swap(usize::MAX, Ordering::SeqCst);
+                if pending != usize::MAX {
+                    complete_switch(pending);
+                } else if was_graphics {
+                    crate::drivers::framebuffer::set_graphics(false);
+                    replay_vc(n);
+                }
+            }
+        }
+    }
     let Some(tty) = p.ctty.lock().clone() else {
         return;
     };
@@ -875,7 +968,9 @@ pub fn serial_input(b: u8) {
 
 /// Feed terminal bytes directly (USB keyboards): to the visible console.
 pub fn inject(bytes: &[u8]) {
-    active().receive_bytes(bytes);
+    if keyboard_to_tty() {
+        active().receive_bytes(bytes);
+    }
 }
 
 /// Print scheduler, process and TTY state (serial BREAK, like SysRq).
@@ -1034,8 +1129,9 @@ pub fn start_input_thread() {
             while let Some(ev) = crate::task::keyboard::read_key() {
                 use crate::task::keyboard::Key;
                 match ev {
-                    Key::Bytes(b, n) => active().receive_bytes(&b[..n]),
-                    Key::SwitchVc(n) => switch_vc(n),
+                    Key::Bytes(b, n) if keyboard_to_tty() => active().receive_bytes(&b[..n]),
+                    Key::SwitchVc(n) if keyboard_to_tty() => switch_vc(n),
+                    Key::Bytes(..) | Key::SwitchVc(_) => {}
                     Key::ScrollUp => crate::drivers::console::scroll_view_up(),
                     Key::ScrollDown => crate::drivers::console::scroll_view_down(),
                 }

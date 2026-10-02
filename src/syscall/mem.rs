@@ -84,6 +84,9 @@ pub fn mmap(addr: u64, len: u64, prot: u32, flags: u32, fd: i32, off: u64) -> Sy
     {
         return Err(EACCES);
     }
+    if let Some(m) = file.as_deref().and_then(super::fdobj::as_memfd) {
+        m.check_map(flags & MAP_SHARED != 0 && prot & PROT_WRITE != 0)?;
+    }
     space.add_area(Area {
         start,
         end: start + len,

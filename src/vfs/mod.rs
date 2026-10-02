@@ -10,6 +10,8 @@
 //!   symbolic links.
 
 pub mod devfs;
+pub mod inotify;
+pub mod memfd;
 pub mod pipe;
 pub mod procfs;
 pub mod sysfs;
@@ -436,6 +438,8 @@ impl File {
                 let n = i.write_at(*off, buf)?;
                 crate::mm::pagecache::write_through(i, *off, &buf[..n]);
                 *off += n as u64;
+                drop(off);
+                inotify::file_event(&self.path, Some(i), inotify::IN_MODIFY);
                 Ok(n)
             }
             FileObject::Stream(s) => {
@@ -472,6 +476,7 @@ impl File {
             FileObject::Inode(i) => {
                 let n = i.write_at(off, buf)?;
                 crate::mm::pagecache::write_through(i, off, &buf[..n]);
+                inotify::file_event(&self.path, Some(i), inotify::IN_MODIFY);
                 Ok(n)
             }
             FileObject::Stream(s) => s.write_at(off, buf).unwrap_or(Err(ESPIPE)),
@@ -560,6 +565,14 @@ impl Drop for File {
     fn drop(&mut self) {
         if let FileObject::Stream(s) = &self.object {
             s.close();
+        }
+        if self.inode.is_some() {
+            let mask = if self.writable() {
+                inotify::IN_CLOSE_WRITE
+            } else {
+                inotify::IN_CLOSE_NOWRITE
+            };
+            inotify::file_event(&self.path, self.inode.as_ref(), mask);
         }
     }
 }
@@ -809,7 +822,9 @@ pub fn open(path: &str, flags: u32, mode: u32) -> KResult<Arc<File>> {
         }
         Err(ENOENT) if flags & O_CREAT != 0 => {
             let (dir, name) = lookup_parent(&path)?;
-            dir.create(&name, FileType::Regular, mode & 0o7777)?
+            let i = dir.create(&name, FileType::Regular, mode & 0o7777)?;
+            inotify::created(&path);
+            i
         }
         Err(e) => return Err(e),
     };
@@ -825,7 +840,9 @@ pub fn open(path: &str, flags: u32, mode: u32) -> KResult<Arc<File>> {
     }
     if flags & O_TRUNC != 0 && meta.kind == FileType::Regular && flags & O_ACCMODE != O_RDONLY {
         inode.truncate(0)?;
+        inotify::file_event(&path, Some(&inode), inotify::IN_MODIFY);
     }
+    inotify::file_event(&path, Some(&inode), inotify::IN_OPEN);
     let object = match inode.open(flags)? {
         Some(stream) => FileObject::Stream(stream),
         None => FileObject::Inode(inode.clone()),
@@ -894,7 +911,9 @@ pub fn mkdir(path: &str, mode: u32) -> KResult<()> {
     if dir.lookup(&name).is_ok() {
         return Err(EEXIST);
     }
-    dir.create(&name, FileType::Directory, mode).map(|_| ())
+    dir.create(&name, FileType::Directory, mode)?;
+    inotify::created(&normalize(path));
+    Ok(())
 }
 
 pub fn mkdir_p(path: &str) -> KResult<()> {
@@ -917,7 +936,10 @@ pub fn unlink(path: &str) -> KResult<()> {
     if node.metadata()?.kind == FileType::Directory {
         return Err(EISDIR);
     }
-    dir.unlink(&name)
+    let r = inotify::removing(&normalize(path));
+    dir.unlink(&name)?;
+    inotify::removed(r);
+    Ok(())
 }
 
 pub fn rmdir(path: &str) -> KResult<()> {
@@ -926,7 +948,10 @@ pub fn rmdir(path: &str) -> KResult<()> {
         return Err(EBUSY);
     }
     let (dir, name) = lookup_parent(path)?;
-    dir.rmdir(&name)
+    let r = inotify::removing(&norm);
+    dir.rmdir(&name)?;
+    inotify::removed(r);
+    Ok(())
 }
 
 pub fn rename(old: &str, new: &str) -> KResult<()> {
@@ -940,7 +965,9 @@ pub fn rename(old: &str, new: &str) -> KResult<()> {
     if new_norm.starts_with(&(old_norm.clone() + "/")) {
         return Err(EINVAL);
     }
-    od.rename(&on, &nd, &nn)
+    od.rename(&on, &nd, &nn)?;
+    inotify::renamed(&old_norm, &new_norm);
+    Ok(())
 }
 
 pub fn symlink(target: &str, linkpath: &str) -> KResult<()> {
@@ -948,7 +975,9 @@ pub fn symlink(target: &str, linkpath: &str) -> KResult<()> {
     if dir.lookup(&name).is_ok() {
         return Err(EEXIST);
     }
-    dir.symlink(&name, target)
+    dir.symlink(&name, target)?;
+    inotify::created(&normalize(linkpath));
+    Ok(())
 }
 
 pub fn link(old: &str, new: &str) -> KResult<()> {
@@ -957,7 +986,9 @@ pub fn link(old: &str, new: &str) -> KResult<()> {
     if dir.fs_id() != target.fs_id() {
         return Err(EXDEV);
     }
-    dir.link(&name, &target)
+    dir.link(&name, &target)?;
+    inotify::created(&normalize(new));
+    Ok(())
 }
 
 pub fn readdir(path: &str) -> KResult<Vec<DirEntry>> {
@@ -1008,6 +1039,8 @@ pub fn init() {
         let _ = mkdir_p(d);
     }
     mount("/dev", devfs::DevFs::new(), "devfs").expect("mount devfs");
+    // POSIX shared memory (shm_open) lives in a tmpfs at /dev/shm.
+    mount("/dev/shm", tmpfs::TmpFs::new(), "tmpfs").expect("mount /dev/shm");
     mount("/proc", procfs::ProcFs::new(), "proc").expect("mount procfs");
     mount("/sys", sysfs::SysFs::new(), "sysfs").expect("mount sysfs");
 }

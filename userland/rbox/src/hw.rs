@@ -430,7 +430,12 @@ fn wifi_section(c: &mut Check, o: &Opts, iface: &str) {
         |out| !out.contains("no-firmware") && !out.contains("state=failed"),
     );
     if fw != Res::Pass {
-        println!("    install the firmware into /storage/lib/firmware (docs/WIFI.md)");
+        // The kernel's status message says which file and why (an image
+        // built without its stock firmware, or a missing file).
+        println!(
+            "    see the firmware line above (`wifi -i {} status`) and docs/WIFI.md",
+            iface
+        );
         return;
     }
     c.step(

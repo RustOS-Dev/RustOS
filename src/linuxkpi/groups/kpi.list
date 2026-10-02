@@ -28,3 +28,6 @@ lib/iomap.c
 kernel/locking/spinlock.c
 kernel/locking/qspinlock.c
 kernel/locking/qrwlock.c
+# Floating-point code (only run inside kernel_fpu_begin/end).
+cflags: -msse -msse2
+kpi:fputest.c

@@ -26,6 +26,7 @@
 #include <linux/vmalloc.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+#include <asm/fpu/api.h>
 #include "kpi.h"
 
 static int failures;
@@ -510,6 +511,24 @@ static void test_printf(void)
 		pr_err("linuxkpi self-test: got \"%s\"\n", buf);
 }
 
+int kpi_fpu_compute(int n);
+
+/* Kernel FPU sections: SSE code from an FPU-flagged file (fputest.c). */
+static void test_fpu(void)
+{
+	int r;
+
+	CHECK(irq_fpu_usable(), "FPU usable");
+	kernel_fpu_begin();
+	CHECK(!irq_fpu_usable(), "FPU section not nestable");
+	r = kpi_fpu_compute(1000);
+	kernel_fpu_end();
+	/* sum(1/k^2) for k <= 1000 is 1.6439...: pi^2/6 - 1/1000 roughly. */
+	CHECK(r == 1643, "FPU result");
+	if (r != 1643)
+		pr_err("linuxkpi self-test: FPU result %d, expected 1643\n", r);
+}
+
 int kpi_selftest(void)
 {
 	static const struct { const char *name; void (*fn)(void); } tests[] = {
@@ -525,6 +544,7 @@ int kpi_selftest(void)
 		{ "ACPI", test_acpi },
 		{ "ACPI devices", test_acpi_devices },
 		{ "IRQ domains", test_irq_domain },
+		{ "kernel FPU", test_fpu },
 	};
 
 	failures = 0;

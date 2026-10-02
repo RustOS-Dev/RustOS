@@ -126,3 +126,14 @@ extern "C" fn rustos_kpi_sysfs_remove(p: *const c_char) {
 extern "C" fn rustos_kpi_sysfs_rename(old: *const c_char, new: *const c_char) -> c_int {
     status(sysfs::rename(&path(old), &path(new)))
 }
+
+/// A uevent from the Linux device model (kobject_uevent_env).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_uevent(buf: *const u8, len: usize) {
+    crate::net::netlink::uevent_raw(unsafe { core::slice::from_raw_parts(buf, len) });
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_uevent_seqnum() -> u64 {
+    crate::net::netlink::uevent_seqnum()
+}

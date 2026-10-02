@@ -25,7 +25,7 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   goes through to the filesystem (write-through, then the cached pages
   are updated) rather than dirtying the page cache.
 * No kernel modules; drivers are built in.
-* Missing system calls: `inotify`, `ptrace`, System V IPC,
+* Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).
 

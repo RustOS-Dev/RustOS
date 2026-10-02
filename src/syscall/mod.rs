@@ -5,6 +5,7 @@
 //! returned in rax.
 
 mod event;
+pub mod fdobj;
 mod fs;
 mod mem;
 mod misc;
@@ -198,6 +199,15 @@ pub mod nr {
     pub const RENAMEAT2: u64 = 316;
     pub const GETRANDOM: u64 = 318;
     pub const STATX: u64 = 332;
+    pub const INOTIFY_INIT: u64 = 253;
+    pub const INOTIFY_ADD_WATCH: u64 = 254;
+    pub const INOTIFY_RM_WATCH: u64 = 255;
+    pub const INOTIFY_INIT1: u64 = 294;
+    pub const MEMFD_CREATE: u64 = 319;
+    pub const COPY_FILE_RANGE: u64 = 326;
+    pub const PIDFD_SEND_SIGNAL: u64 = 424;
+    pub const PIDFD_OPEN: u64 = 434;
+    pub const CLOSE_RANGE: u64 = 436;
 }
 
 /// Entry point from both syscall paths.
@@ -368,6 +378,27 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         SENDFILE => v(fs::sendfile(a[0] as i32, a[1] as i32, a[2], a[3])),
         MOUNT => v(fs::mount(a[0], a[1], a[2], a[3], a[4])),
         UMOUNT2 => v(fs::umount(a[0])),
+        MEMFD_CREATE => v(fdobj::memfd_create(a[0], a[1] as u32)),
+        INOTIFY_INIT => v(fdobj::inotify_init1(0)),
+        INOTIFY_INIT1 => v(fdobj::inotify_init1(a[0] as u32)),
+        INOTIFY_ADD_WATCH => v(fdobj::inotify_add_watch(a[0] as i32, a[1], a[2] as u32)),
+        INOTIFY_RM_WATCH => v(fdobj::inotify_rm_watch(a[0] as i32, a[1] as i32)),
+        CLOSE_RANGE => v(fdobj::close_range(a[0] as u32, a[1] as u32, a[2] as u32)),
+        COPY_FILE_RANGE => v(fdobj::copy_file_range(
+            a[0] as i32,
+            a[1],
+            a[2] as i32,
+            a[3],
+            a[4],
+            a[5] as u32,
+        )),
+        PIDFD_OPEN => v(fdobj::pidfd_open(a[0] as i32, a[1] as u32)),
+        PIDFD_SEND_SIGNAL => v(fdobj::pidfd_send_signal(
+            a[0] as i32,
+            a[1] as u32,
+            a[2],
+            a[3] as u32,
+        )),
 
         // Memory
         MMAP => v(mem::mmap(

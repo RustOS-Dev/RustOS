@@ -129,12 +129,23 @@ fn add_default_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
 /// Firmware every image ships (firmware/stock.list) under /lib/firmware,
 /// fetched and checksum-verified by tools/fetch-firmware.sh. Without it
 /// Wi-Fi and Bluetooth on the supported cards do not start, so a failed
-/// fetch is a loud warning (and fails `write_to_drive.sh`, which fetches
-/// first). RUSTOS_FIRMWARE=0 leaves it out.
+/// fetch fails release builds (and `write_to_drive.sh`, which fetches
+/// first) and is a warning for debug builds. RUSTOS_FIRMWARE=0 leaves it
+/// out. An image without it carries lib/firmware/.stock-missing, which the
+/// kernel reports when a driver finds no firmware.
 fn add_stock_firmware(root: &Path, files: &mut Vec<(String, Entry)>) {
     println!("cargo:rerun-if-env-changed=RUSTOS_FIRMWARE");
     println!("cargo:rerun-if-changed=firmware/stock.list");
+    for dir in ["lib", "lib/firmware"] {
+        if !files.iter().any(|(n, _)| n == dir) {
+            files.push((dir.into(), Entry::Dir));
+        }
+    }
     if std::env::var("RUSTOS_FIRMWARE").as_deref() == Ok("0") {
+        files.push((
+            "lib/firmware/.stock-missing".into(),
+            Entry::File(b"built with RUSTOS_FIRMWARE=0\n".to_vec(), 0o644),
+        ));
         return;
     }
     let out = root.join("target/firmware");
@@ -144,15 +155,27 @@ fn add_stock_firmware(root: &Path, files: &mut Vec<(String, Entry)>) {
         .status()
         .is_ok_and(|s| s.success());
     if !ok {
-        println!(
-            "cargo:warning=stock firmware could not be fetched (no network?): Intel and MediaTek Wi-Fi/Bluetooth will need firmware copied to /lib/firmware"
-        );
-        return;
-    }
-    for dir in ["lib", "lib/firmware"] {
-        if !files.iter().any(|(n, _)| n == dir) {
-            files.push((dir.into(), Entry::Dir));
+        // A release image without its firmware looks fine until Wi-Fi
+        // fails on someone's laptop: refuse to build one.
+        if std::env::var("PROFILE").as_deref() == Ok("release") {
+            panic!(
+                "stock firmware (firmware/stock.list) could not be fetched: a release image \
+                 needs it for Intel and MediaTek Wi-Fi/Bluetooth. Build with network access, \
+                 or set RUSTOS_FIRMWARE=0 to build an image without it on purpose."
+            );
         }
+        println!(
+            "cargo:warning=stock firmware could not be fetched (no network?): this image has no Wi-Fi/Bluetooth firmware"
+        );
+        // The kernel reports this when a driver looks for firmware.
+        files.push((
+            "lib/firmware/.stock-missing".into(),
+            Entry::File(
+                b"stock firmware could not be fetched at build time\n".to_vec(),
+                0o644,
+            ),
+        ));
+        return;
     }
     add_tree(&out, "lib/firmware/", files);
 }
@@ -339,7 +362,7 @@ fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
     let src = userland.join("musltest");
     let out = root.join("target").join("musltest");
     let _ = std::fs::create_dir_all(&out);
-    let steps: [(&[&str], &str, &str); 7] = [
+    let steps: [(&[&str], &str, &str); 8] = [
         (&["-O2"], "musl-hello", "hello.c"),
         (&["-O2", "-static"], "musl-hello-static", "hello.c"),
         (&["-O2", "-pthread"], "musl-threads", "threads.c"),
@@ -347,6 +370,7 @@ fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
         (&["-O2"], "musl-dlopen", "dlopen.c"),
         (&["-O2"], "musl-libctest", "libctest.c"),
         (&["-O2"], "musl-kpitest", "kpitest.c"),
+        (&["-O2"], "musl-desktop", "desktop.c"),
     ];
     for (flags, name, file) in steps {
         let status = Command::new("sh")
@@ -381,6 +405,7 @@ fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
         ("musl-dlopen", "bin/musl-dlopen", 0o755),
         ("musl-libctest", "bin/musl-libctest", 0o755),
         ("musl-kpitest", "bin/musl-kpitest", 0o755),
+        ("musl-desktop", "bin/musl-desktop", 0o755),
         ("libplugin.so", "usr/lib/libplugin.so", 0o644),
     ] {
         if let Ok(d) = std::fs::read(out.join(name)) {

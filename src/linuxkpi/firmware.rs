@@ -35,6 +35,11 @@ extern "C" fn rustos_kpi_firmware_load(
             Ok(b) => break b,
             Err(e) => {
                 if storage_mounted() || crate::time::nanos() >= STORAGE_WAIT_NS {
+                    // Drivers whose firmware is optional probe for several
+                    // names: only say why when the image lacks its firmware.
+                    if let Some(why) = crate::firmware::stock_missing() {
+                        crate::println!("[firmware] {name}: not found ({why})");
+                    }
                     return -e.0;
                 }
                 if !waited {

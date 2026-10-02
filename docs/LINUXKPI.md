@@ -219,7 +219,8 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
   - Linux's `drivers/base` runs unmodified, so bus matching, probing, devres, classes and platform devices behave as in Linux.
   - Its sysfs calls go through `c/sysfs.c` into RustOS's `/sys` registry. kobject directories, attributes, groups and links appear in `/sys`, and reads and writes call the Linux `show()`/`store()` methods. Removal waits for running calls.
   - PCI devices are added under `/sys/devices/pci0000:00` and bound through `pci_bus_type`.
-  - Uevents are dropped until netlink uevents arrive (M36).
+  - Uevents are built as `lib/kobject_uevent.c` builds them (the kset's filter, subsystem and `uevent()` callback) and go to `NETLINK_KOBJECT_UEVENT` listeners. Native RustOS USB devices and input nodes send their own (`add@/devices/usb/...`, `/devices/virtual/input/...`).
+- **Kernel FPU.** `kernel_fpu_begin_mask()`/`kernel_fpu_end()` save the user FPU state of the CPU (RustOS's kernel is otherwise soft-float) and hold off preemption; files listed after `cflags: -msse -msse2` are built with SSE, as Linux's `CC_FLAGS_FPU` files are. The boot self-test runs such code.
 - **Initcalls.** Linux `module_init`/`*_initcall` entries are renamed into
   `kpi_initcall_<level>` sections. They run in level order after the native
   drivers have probed (`src/drivers/mod.rs`).

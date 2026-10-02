@@ -40,12 +40,81 @@ void dump_stack(void)
 /* ---------------------------------------------------------------- uevents */
 
 /*
- * Netlink uevents come with M36 (NETLINK_KOBJECT_UEVENT); until then
- * they are dropped, as on a Linux system with no listener.
+ * kobject_uevent_env() as lib/kobject_uevent.c builds it (the kset's
+ * filter, subsystem name and uevent callback, so devices carry MAJOR,
+ * MINOR, DEVNAME, DRIVER, MODALIAS, ...), sent by RustOS to its
+ * NETLINK_KOBJECT_UEVENT listeners. No usermode helper.
  */
+static const char *const kpi_kobject_actions[] = {
+	[KOBJ_ADD] = "add", [KOBJ_REMOVE] = "remove", [KOBJ_CHANGE] = "change",
+	[KOBJ_MOVE] = "move", [KOBJ_ONLINE] = "online", [KOBJ_OFFLINE] = "offline",
+	[KOBJ_BIND] = "bind", [KOBJ_UNBIND] = "unbind",
+};
+
 int kobject_uevent_env(struct kobject *kobj, enum kobject_action action, char *envp_ext[])
 {
-	return 0;
+	const struct kset_uevent_ops *uevent_ops;
+	struct kobj_uevent_env *env;
+	struct kobject *top_kobj;
+	const char *subsystem;
+	struct kset *kset;
+	char *devpath, *msg;
+	size_t len = 0;
+	int i, ret = 0;
+
+	if (action == KOBJ_REMOVE)
+		kobj->state_remove_uevent_sent = 1;
+	top_kobj = kobj;
+	while (!top_kobj->kset && top_kobj->parent)
+		top_kobj = top_kobj->parent;
+	if (!top_kobj->kset)
+		return -EINVAL;
+	kset = top_kobj->kset;
+	uevent_ops = kset->uevent_ops;
+	if (kobj->uevent_suppress)
+		return 0;
+	if (uevent_ops && uevent_ops->filter && !uevent_ops->filter(kobj))
+		return 0;
+	subsystem = uevent_ops && uevent_ops->name ? uevent_ops->name(kobj)
+						   : kobject_name(&kset->kobj);
+	if (!subsystem)
+		return 0;
+	env = kzalloc(sizeof(*env), GFP_KERNEL);
+	if (!env)
+		return -ENOMEM;
+	devpath = kobject_get_path(kobj, GFP_KERNEL);
+	if (!devpath) {
+		ret = -ENOENT;
+		goto out;
+	}
+	ret = add_uevent_var(env, "ACTION=%s", kpi_kobject_actions[action]) ?:
+	      add_uevent_var(env, "DEVPATH=%s", devpath) ?:
+	      add_uevent_var(env, "SUBSYSTEM=%s", subsystem);
+	for (i = 0; !ret && envp_ext && envp_ext[i]; i++)
+		ret = add_uevent_var(env, "%s", envp_ext[i]);
+	if (!ret && uevent_ops && uevent_ops->uevent)
+		ret = uevent_ops->uevent(kobj, env);
+	if (ret)
+		goto out;
+	if (action == KOBJ_ADD)
+		kobj->state_add_uevent_sent = 1;
+	ret = add_uevent_var(env, "SEQNUM=%llu", rustos_kpi_uevent_seqnum());
+	if (ret)
+		goto out;
+	msg = kmalloc(strlen(kpi_kobject_actions[action]) + strlen(devpath) + 2 + env->buflen,
+		      GFP_KERNEL);
+	if (!msg) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	len = sprintf(msg, "%s@%s", kpi_kobject_actions[action], devpath) + 1;
+	memcpy(msg + len, env->buf, env->buflen);
+	rustos_kpi_uevent(msg, len + env->buflen);
+	kfree(msg);
+out:
+	kfree(devpath);
+	kfree(env);
+	return ret;
 }
 
 int kobject_uevent(struct kobject *kobj, enum kobject_action action)

@@ -25,6 +25,8 @@ void *rustos_kpi_vmap(const u64 *phys, u64 count);
 void rustos_kpi_vunmap(const void *virt, u64 count);
 u64 rustos_kpi_fb_phys(u64 *len);
 void rustos_kpi_fb_release(void);
+void rustos_kpi_uevent(const char *buf, size_t len);
+u64 rustos_kpi_uevent_seqnum(void);
 int rustos_kpi_fb_geometry(u32 *width, u32 *height, u32 *pitch, u32 *bpp, int *bgr);
 bool kpi_sysfb_register(void);
 void rustos_kpi_console_attach(void *ptr, u64 len, u32 width, u32 height, u32 pitch);

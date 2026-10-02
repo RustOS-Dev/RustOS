@@ -69,6 +69,13 @@ dynamically linked (`PT_INTERP` → `/lib/ld-rustos.so.1`) ELF64 programs and
 | 285 | `fallocate` (mode 0 and `FALLOC_FL_KEEP_SIZE`; ext4 preallocates uninitialized extents, other filesystems extend the file) |
 | 292 | `dup3` |
 | 293 | `pipe2` |
+| 319 | `memfd_create` (with seals: `F_ADD_SEALS`, `F_GET_SEALS` in `fcntl`) |
+| 326 | `copy_file_range` |
+| 436 | `close_range` (`CLOSE_RANGE_CLOEXEC`) |
+
+memfds live on a private tmpfs; `F_SEAL_WRITE` is refused while a
+writable shared mapping exists, as in Linux. `/dev/shm` is a tmpfs
+(`shm_open`).
 
 ### Events
 
@@ -84,7 +91,19 @@ dynamically linked (`PT_INTERP` → `/lib/ld-rustos.so.1`) ELF64 programs and
 | 287 | `timerfd_gettime` |
 | 290 | `eventfd2` |
 | 291 | `epoll_create1` |
+| 253 | `inotify_init` |
+| 254 | `inotify_add_watch` |
+| 255 | `inotify_rm_watch` |
+| 294 | `inotify_init1` |
+| 424 | `pidfd_send_signal` |
+| 434 | `pidfd_open` |
 | 441 | `epoll_pwait2` |
+
+inotify reports create, delete (and `IN_DELETE_SELF`/`IN_IGNORED`),
+modify, attribute changes, open/close and moves (with cookies) for
+changes made through system calls; changes a filesystem makes on its own
+(none today) would not be seen. pidfds poll readable when the process
+exits.
 
 epoll supports level-triggered, `EPOLLET` (it may report an edge more
 than once, never less) and `EPOLLONESHOT`. timerfd supports
@@ -98,9 +117,13 @@ virtual consoles `/dev/tty1`..`tty4` (`VT_ACTIVATE`, `VT_GETSTATE`,
 `/dev/tty0` is the visible one). Programs that draw on `/dev/fb0` switch
 their console to graphics mode (`KDSETMODE KD_GRAPHICS`, `KDGETMODE`):
 text output to it is no longer drawn, its pixels are kept while another
-console is shown, and `VT_SETMODE VT_PROCESS` sends the chosen release
-and acquire signals on console switches (`VT_RELDISP` is accepted and
-the switch is not delayed). `KDGKBMODE` reports `K_XLATE`.
+console is shown. `VT_SETMODE VT_PROCESS` works as in Linux: a switch
+away sends the release signal and waits for `VT_RELDISP(1)` (or is
+refused with `VT_RELDISP(0)`), the acquire signal follows a switch back,
+`VT_WAITACTIVE` waits, and the console returns to text mode if the owner
+dies. `KDSKBMODE K_OFF` stops keyboard input to the console (other modes
+behave as `K_UNICODE`; there are no raw scancodes). `EVIOCREVOKE` cuts
+an evdev file off.
 
 ### Metadata and directories
 
@@ -300,6 +323,5 @@ These use standard system calls with RustOS-defined requests:
 
 ## Not implemented
 
-Calls outside this list return `-ENOSYS`. Notable gaps: `inotify`,
-`io_uring`, shared-memory IPC (`shmget`, `memfd_create`), `ptrace`,
-namespaces and cgroups.
+Calls outside this list return `-ENOSYS`. Notable gaps: `io_uring`,
+System V IPC (`shmget`), `ptrace`, namespaces and cgroups.

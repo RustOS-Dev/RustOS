@@ -294,3 +294,60 @@ extern "C" fn rustos_kpi_realtime_ns() -> u64 {
 extern "C" fn rustos_kpi_current_uid() -> u32 {
     crate::process::current().map_or(0, |p| p.uid.load(Ordering::Relaxed))
 }
+
+// ---------------------------------------------------------------- kernel FPU
+
+/// FXSAVE area of the user thread whose registers a CPU's kernel FPU
+/// section displaced.
+#[repr(C, align(16))]
+struct FxArea([u8; 512]);
+
+static FPU_AREAS: [crate::sync::Mutex<FxArea>; crate::arch::x86_64::cpu::MAX_CPUS] =
+    [const { crate::sync::Mutex::new(FxArea([0; 512])) }; crate::arch::x86_64::cpu::MAX_CPUS];
+/// Per CPU: 0 idle, 1 in a kernel FPU section, 2 in one that saved user state.
+static FPU_STATE: [core::sync::atomic::AtomicU8; crate::arch::x86_64::cpu::MAX_CPUS] =
+    [const { core::sync::atomic::AtomicU8::new(0) }; crate::arch::x86_64::cpu::MAX_CPUS];
+
+/// kernel_fpu_begin_mask(): SSE (and x87 with KFPU_387) for code built
+/// with FPU flags (amdgpu's display core). RustOS's kernel otherwise never
+/// touches the FPU, whose registers hold the current user thread's state
+/// (saved only at context switch): save them, and keep this CPU's thread
+/// from being switched out until kernel_fpu_end().
+#[unsafe(no_mangle)]
+extern "C" fn kernel_fpu_begin_mask(mask: u32) {
+    const KFPU_387: u32 = 1;
+    core::mem::forget(sched::PreemptGuard::new());
+    let id = crate::arch::x86_64::cpu::this().cpu_id as usize;
+    let user = sched::try_current().is_some_and(|t| t.is_user.load(Ordering::Relaxed));
+    let prev = FPU_STATE[id].swap(if user { 2 } else { 1 }, Ordering::SeqCst);
+    debug_assert_eq!(prev, 0, "nested kernel_fpu_begin");
+    if user {
+        let area = FPU_AREAS[id].lock();
+        unsafe { core::arch::asm!("fxsave64 [{}]", in(reg) area.0.as_ptr(), options(nostack)) };
+    }
+    unsafe {
+        if mask & KFPU_387 != 0 {
+            core::arch::asm!("fninit", options(nostack, nomem));
+        }
+        let mxcsr: u32 = 0x1f80;
+        core::arch::asm!("ldmxcsr [{}]", in(reg) &mxcsr, options(nostack, readonly));
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn kernel_fpu_end() {
+    let id = crate::arch::x86_64::cpu::this().cpu_id as usize;
+    if FPU_STATE[id].swap(0, Ordering::SeqCst) == 2 {
+        let area = FPU_AREAS[id].lock();
+        unsafe { core::arch::asm!("fxrstor64 [{}]", in(reg) area.0.as_ptr(), options(nostack)) };
+    }
+    drop(sched::PreemptGuard);
+}
+
+/// The FPU may be used here: not in interrupt context, not nested.
+#[unsafe(no_mangle)]
+extern "C" fn irq_fpu_usable() -> bool {
+    let c = crate::arch::x86_64::cpu::this();
+    c.preempt_count.load(Ordering::SeqCst) < crate::arch::x86_64::cpu::HARDIRQ_OFFSET
+        && FPU_STATE[c.cpu_id as usize].load(Ordering::SeqCst) == 0
+}

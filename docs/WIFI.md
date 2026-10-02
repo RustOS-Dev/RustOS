@@ -52,6 +52,13 @@ anything. The files come from
 | AX211 (CNVi) | 8086:51F0/51F1/54F0/7A70/7AF0/7F70 | `iwlwifi-so-a0-gf-a0-72.ucode`, `iwlwifi-so-a0-gf-a0.pnvm` |
 | AX201 (CNVi, HR RF) | same IDs, HR radio | `iwlwifi-so-a0-hr-b0-72.ucode` |
 
+A release build (`cargo build --release`, `write_to_drive.sh`) fails if it
+cannot download this firmware, rather than producing an image without it;
+set `RUSTOS_FIRMWARE=0` to build such an image on purpose. If a driver then
+finds no firmware, `wifi status` and the kernel log say the image was built
+without it. Wi-Fi 5 RF modules (9461/9462/9560) on CNVi platforms are not
+supported by the native driver and are reported as such.
+
 The kernel loads them from the first of `/lib/firmware`,
 `/storage/lib/firmware`, `/boot/efi/firmware` and
 `/boot/efi/EFI/rustos/firmware`. Firmware is retried every few seconds

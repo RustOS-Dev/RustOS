@@ -499,3 +499,45 @@ pub fn attrs(data: &[u8]) -> Vec<(u16, &[u8])> {
     }
     out
 }
+
+static UEVENT_SEQNUM: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// Send a kernel uevent ("add@/devices/...", then KEY=value strings) to
+/// NETLINK_KOBJECT_UEVENT listeners (group 1), as udev expects. `env`
+/// are the variables after ACTION, DEVPATH and SUBSYSTEM; SEQNUM is added.
+pub fn uevent(action: &str, devpath: &str, subsystem: &str, env: &[(&str, &str)]) {
+    let seq = UEVENT_SEQNUM.fetch_add(1, Ordering::SeqCst) + 1;
+    if !has_listeners(NETLINK_KOBJECT_UEVENT, 1) {
+        return;
+    }
+    let mut msg = alloc::format!(
+        "{}@{}\0ACTION={}\0DEVPATH={}\0SUBSYSTEM={}\0",
+        action,
+        devpath,
+        action,
+        devpath,
+        subsystem
+    )
+    .into_bytes();
+    for (k, v) in env {
+        msg.extend_from_slice(k.as_bytes());
+        msg.push(b'=');
+        msg.extend_from_slice(v.as_bytes());
+        msg.push(0);
+    }
+    msg.extend_from_slice(alloc::format!("SEQNUM={}\0", seq).as_bytes());
+    multicast(NETLINK_KOBJECT_UEVENT, 1, &msg);
+}
+
+/// A uevent already formatted by Linux code ("action@devpath\0" and the
+/// environment, SEQNUM included).
+pub fn uevent_raw(msg: &[u8]) {
+    if has_listeners(NETLINK_KOBJECT_UEVENT, 1) {
+        multicast(NETLINK_KOBJECT_UEVENT, 1, msg);
+    }
+}
+
+/// The next uevent sequence number (for Linux code).
+pub fn uevent_seqnum() -> u64 {
+    UEVENT_SEQNUM.fetch_add(1, Ordering::SeqCst) + 1
+}

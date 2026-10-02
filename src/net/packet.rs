@@ -7,7 +7,7 @@
 use super::generic::{Ancillary, GenericSocket, Received};
 use crate::errno::*;
 use crate::sched::WaitQueue;
-use crate::sync::Mutex;
+use crate::sync::IrqMutex as Mutex;
 use crate::vfs::{FileLike, FileType, Metadata, POLLIN, POLLOUT};
 use alloc::collections::VecDeque;
 use alloc::sync::{Arc, Weak};
@@ -18,6 +18,9 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicUsize, Ordering};
 pub const AF_PACKET: u16 = 17;
 const SOCK_DGRAM: u32 = 2;
 const SOCK_RAW: u32 = 3;
+/// Obsolete raw type (busybox arping): whole frames, addressed by
+/// interface name (`struct sockaddr_pkt`).
+const SOCK_PACKET: u32 = 10;
 /// Every protocol (host byte order).
 const ETH_P_ALL: u16 = 3;
 const ARPHRD_ETHER: u16 = 1;
@@ -100,8 +103,22 @@ fn sockaddr_ll(ifindex: u32, proto: u16, pkttype: u8, addr: &[u8]) -> Vec<u8> {
     v
 }
 
-/// Parsed `sockaddr_ll`: (protocol, ifindex, address).
+/// Parsed `sockaddr_ll` (or `sockaddr_pkt`: interface name in
+/// sa_data): (protocol, ifindex, address).
 fn parse_ll(raw: &[u8]) -> KResult<(u16, u32, [u8; 6])> {
+    if raw.len() >= 16 && u16::from_ne_bytes([raw[0], raw[1]]) != AF_PACKET {
+        // sockaddr_pkt: family (any), device[14], protocol.
+        let name = &raw[2..16];
+        let n = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+        let name = core::str::from_utf8(&name[..n]).map_err(|_| EINVAL)?;
+        let index = super::with(|net| net.iface(name).map(|i| i.index))
+            .flatten()
+            .ok_or(ENODEV)?;
+        let proto = raw
+            .get(16..18)
+            .map_or(0, |p| u16::from_be_bytes([p[0], p[1]]));
+        return Ok((proto, index, [0; 6]));
+    }
     if raw.len() < 12 || u16::from_ne_bytes([raw[0], raw[1]]) != AF_PACKET {
         return Err(EINVAL);
     }
@@ -116,7 +133,7 @@ fn parse_ll(raw: &[u8]) -> KResult<(u16, u32, [u8; 6])> {
 
 impl PacketSocket {
     pub fn new(ty: u32, protocol: u32) -> KResult<Arc<PacketSocket>> {
-        if ty != SOCK_RAW && ty != SOCK_DGRAM {
+        if ty != SOCK_RAW && ty != SOCK_DGRAM && ty != SOCK_PACKET {
             return Err(ESOCKTNOSUPPORT);
         }
         if crate::process::current().is_some_and(|p| p.uid.load(Ordering::Relaxed) != 0) {
@@ -138,7 +155,7 @@ impl PacketSocket {
     }
 
     fn deliver(&self, index: u32, ethertype: u16, pkttype: u8, frame: &[u8]) {
-        let data = if self.ty == SOCK_RAW {
+        let data = if self.ty != SOCK_DGRAM {
             frame.to_vec()
         } else {
             frame[14..].to_vec()
@@ -226,7 +243,7 @@ impl GenericSocket for PacketSocket {
             return Err(ENXIO);
         }
         let (dev, mac) = Self::device(index)?;
-        let frame = if self.ty == SOCK_RAW {
+        let frame = if self.ty != SOCK_DGRAM {
             if data.len() < 14 {
                 return Err(EINVAL);
             }

@@ -25,7 +25,10 @@ authenticator (`cd crates/wlan && cargo test`).
 
 ## Firmware
 
-The adapter needs Intel's firmware from
+RustOS ships this firmware in every image (`/lib/firmware`, listed in
+[firmware/stock.list](../firmware/stock.list) and fetched at build time from a
+pinned linux-firmware release), so the adapter works without copying
+anything. The files come from
 [linux-firmware](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git)
 (`intel/iwlwifi/`):
 
@@ -41,10 +44,11 @@ The kernel loads them from the first of `/lib/firmware`,
 after boot (the storage partition is mounted after drivers probe) and on
 every `wifi` request, so copying the files in later works without a reboot.
 
-`write_to_drive.sh` provisions them onto the storage partition:
+`write_to_drive.sh` also copies them onto the storage partition, or a
+different set when given one:
 
 ```sh
-./write_to_drive.sh --drive /dev/sdX                          # auto-detect /lib/firmware
+./write_to_drive.sh --drive /dev/sdX                          # stock firmware
 ./write_to_drive.sh --drive /dev/sdX --ax210-firmware ~/linux-firmware/intel/iwlwifi
 RUSTOS_AX210_FIRMWARE=/path/to/iwlwifi-ty-a0-gf-a0-72.ucode ./write_to_drive.sh --drive /dev/sdX
 ```

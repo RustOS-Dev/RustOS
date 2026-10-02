@@ -98,6 +98,11 @@ pub trait NetDevice: Send + Sync {
     fn set_up(&self, _up: bool) -> KResult<()> {
         Ok(())
     }
+    /// Change the hardware address (SIOCSIFHWADDR). Called without the
+    /// network lock held.
+    fn set_mac(&self, _mac: [u8; 6]) -> KResult<()> {
+        Err(EOPNOTSUPP)
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -938,11 +943,13 @@ pub fn set_link_up(name: &str, up: bool) -> KResult<()> {
             .ok_or(ENODEV)
     })
     .ok_or(ENODEV)??;
-    if cur == up {
-        return Ok(());
-    }
+    // Tell the driver even if the stack already agrees: interfaces a Linux
+    // driver adds after boot are up here but not yet opened there.
     if let Some(d) = dev {
         d.set_up(up)?;
+    }
+    if cur == up {
+        return Ok(());
     }
     with(|net| {
         if let Some(ifc) = net.iface_mut(name)

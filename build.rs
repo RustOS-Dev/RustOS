@@ -64,6 +64,9 @@ fn main() {
         add_jsd(&manifest_dir, &mut files);
         add_fonts(&mut files);
     }
+    if !skip {
+        add_stock_firmware(&manifest_dir, &mut files);
+    }
     // Trust store for `wget https://`: the build host's CA bundle, or the
     // file named by RUSTOS_CA_BUNDLE (empty to leave it out).
     println!("cargo:rerun-if-env-changed=RUSTOS_CA_BUNDLE");
@@ -121,6 +124,37 @@ fn add_default_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
             }
         }
     }
+}
+
+/// Firmware every image ships (firmware/stock.list) under /lib/firmware,
+/// fetched and checksum-verified by tools/fetch-firmware.sh. Without it
+/// Wi-Fi and Bluetooth on the supported cards do not start, so a failed
+/// fetch is a loud warning (and fails `write_to_drive.sh`, which fetches
+/// first). RUSTOS_FIRMWARE=0 leaves it out.
+fn add_stock_firmware(root: &Path, files: &mut Vec<(String, Entry)>) {
+    println!("cargo:rerun-if-env-changed=RUSTOS_FIRMWARE");
+    println!("cargo:rerun-if-changed=firmware/stock.list");
+    if std::env::var("RUSTOS_FIRMWARE").as_deref() == Ok("0") {
+        return;
+    }
+    let out = root.join("target/firmware");
+    let ok = Command::new("sh")
+        .arg(root.join("tools/fetch-firmware.sh"))
+        .arg(&out)
+        .status()
+        .is_ok_and(|s| s.success());
+    if !ok {
+        println!(
+            "cargo:warning=stock firmware could not be fetched (no network?): Intel and MediaTek Wi-Fi/Bluetooth will need firmware copied to /lib/firmware"
+        );
+        return;
+    }
+    for dir in ["lib", "lib/firmware"] {
+        if !files.iter().any(|(n, _)| n == dir) {
+            files.push((dir.into(), Entry::Dir));
+        }
+    }
+    add_tree(&out, "lib/firmware/", files);
 }
 
 /// DejaVu fonts for the graphical browser (from the host's

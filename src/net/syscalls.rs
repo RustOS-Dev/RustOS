@@ -294,6 +294,9 @@ fn socket(domain: u16, ty: u32, protocol: u32) -> KResult<i64> {
         (SOCK_RAW, 1 | 58) => Proto::Icmp {
             raw: domain == AF_INET,
         },
+        // IPPROTO_RAW: programs (udhcpd, ifconfig) open one for interface
+        // ioctls; raw IP output itself is not supported.
+        (SOCK_RAW, 255) => Proto::Udp,
         (SOCK_STREAM | SOCK_DGRAM | SOCK_RAW, _) => return Err(EPROTONOSUPPORT),
         _ => return Err(ESOCKTNOSUPPORT),
     };
@@ -608,6 +611,9 @@ fn setsockopt(s: &Socket, level: u32, name: u32, val: u64, len: usize) -> KResul
         (SOL_SOCKET, SO_KEEPALIVE) => s.set_keepalive(read_int(val, len)? != 0),
         (SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT | SO_BROADCAST | SO_SNDBUF | SO_RCVBUF) => {}
         (SOL_SOCKET, 13) => {} // SO_LINGER
+        // SO_BINDTODEVICE: accepted; sockets are not tied to one interface
+        // (routing picks it), which is what DHCP servers need here.
+        (SOL_SOCKET, 25) => {}
         (IPPROTO_TCP, TCP_NODELAY) => s.set_nodelay(read_int(val, len)? != 0),
         (IPPROTO_TCP, _) => {}
         (IPPROTO_IP, IP_TTL) => s.set_ttl(read_int(val, len)?.clamp(1, 255) as u8),
@@ -659,6 +665,7 @@ const SIOCGIFNETMASK: u64 = 0x891B;
 const SIOCSIFNETMASK: u64 = 0x891C;
 const SIOCGIFMTU: u64 = 0x8921;
 const SIOCGIFHWADDR: u64 = 0x8927;
+const SIOCSIFHWADDR: u64 = 0x8924;
 const SIOCGIFINDEX: u64 = 0x8933;
 const SIOCGIFTXQLEN: u64 = 0x8942;
 /// RustOS: int at offset 16: 1 = start DHCP, 0 = stop.
@@ -795,6 +802,19 @@ pub fn if_ioctl(cmd: u64, arg: u64) -> KResult<i64> {
             need_admin()?
         }
         _ => {}
+    }
+    if cmd == SIOCSIFHWADDR {
+        need_admin()?;
+        let mut b = [0u8; 8];
+        uaccess::copy_from_user(&mut b, data)?;
+        let mut mac = [0u8; 6];
+        mac.copy_from_slice(&b[2..8]);
+        let dev = super::with(|net| net.iface(&name).and_then(|i| i.device().cloned()))
+            .flatten()
+            .ok_or(ENODEV)?;
+        dev.set_mac(mac)?;
+        super::kick();
+        return Ok(0);
     }
     if cmd == SIOCSIFFLAGS {
         let f: u16 = uaccess::read_user(data)?;

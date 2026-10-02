@@ -208,7 +208,11 @@ fn connect(
                 return false;
             }
             _ => {
-                if let Some(why) = wpa::failure(iface) {
+                // wpa_supplicant retries a network it disabled after a
+                // failed handshake 10 s later; give up only if that fails too.
+                if rustos_rt::time::millis() - start >= 12_000
+                    && let Some(why) = wpa::failure(iface)
+                {
                     if !quiet {
                         eprintln!("wifi: {}", why);
                     }

@@ -6,7 +6,7 @@
 use super::generic::{Ancillary, GenericSocket, Received};
 use crate::errno::*;
 use crate::sched::WaitQueue;
-use crate::sync::Mutex;
+use crate::sync::IrqMutex as Mutex;
 use crate::vfs::{FileLike, FileType, Metadata, POLLIN, POLLOUT};
 use alloc::collections::{BTreeSet, VecDeque};
 use alloc::sync::{Arc, Weak};

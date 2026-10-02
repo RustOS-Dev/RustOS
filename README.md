@@ -94,9 +94,13 @@ a GPT disk image (`crates/create-image`) and boots it with OVMF.
 
 ```bash
 ./write_to_drive.sh --drive /dev/sdX
-# with Intel Wi-Fi firmware (auto-detected from /lib/firmware otherwise):
-./write_to_drive.sh --drive /dev/sdX --ax210-firmware ~/linux-firmware/intel/iwlwifi
 ```
+
+Wi-Fi and Bluetooth firmware for the supported cards (Intel AX210/AX211/AX201,
+MediaTek MT7921/MT7922) and the wireless regulatory database ship in the
+image ([firmware/stock.list](firmware/stock.list)); nothing needs to be copied
+by hand. To use a different firmware set, pass `--ax210-firmware DIR`.
+
 
 This creates a UEFI boot partition and a FAT32 storage partition
 (`RUSTOS_ROOT`, mounted at `/storage`) for persistent files, network and
@@ -194,6 +198,7 @@ Code from other projects keeps its own licence:
 - Code imported from Linux (see [docs/ROADMAP-ROUND4.md](docs/ROADMAP-ROUND4.md)) keeps its SPDX headers, mostly `GPL-2.0-only`, `GPL-2.0 OR MIT` or `MIT`. A kernel that includes `GPL-2.0-only` files is distributed as a whole under GPLv2.
 - The `rsh` shell submodule is a separate program with its own licence.
 
-Firmware files (Intel, MediaTek, AMD, NVIDIA) are not part of this repository.
-`write_to_drive.sh` copies them from the host's `linux-firmware`
-installation, under their own redistribution terms.
+Firmware files are not part of this repository. The build downloads the
+redistributable ones listed in [firmware/stock.list](firmware/stock.list)
+from pinned linux-firmware and wireless-regdb releases (checked by SHA-256)
+and puts them, with their licences, in every image's `/lib/firmware`.

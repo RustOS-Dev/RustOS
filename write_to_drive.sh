@@ -276,13 +276,18 @@ provision_ax210_firmware() {
     run_as_root mkdir -p "$firmware_dir"
 
     if [[ -z "$source" ]]; then
+        # The image already carries the stock firmware (firmware/stock.list,
+        # in the initramfs); put a copy on the drive too, where updates go.
+        local stock="${SCRIPT_DIR:-.}/target/firmware"
+        if [[ -d "$stock" ]] && [[ -n "$(ls -A "$stock" 2>/dev/null)" ]]; then
+            run_as_root cp -r "$stock/." "$firmware_dir/"
+            echo "Provisioned stock firmware into $firmware_dir"
+            return 0
+        fi
         if source="$(auto_detect_ax210_firmware_source)"; then
             echo "Auto-detected Intel WiFi firmware source: $source"
         else
-            echo "Intel WiFi firmware not provided and no host copy was auto-detected."
-            echo "Copy iwlwifi-ty-a0-gf-a0-72.ucode and iwlwifi-ty-a0-gf-a0.pnvm (from linux-firmware)"
-            echo "into /lib/firmware on the RUSTOS_ROOT partition, or re-run with"
-            echo "--ax210-firmware <file-or-dir> / RUSTOS_AX210_FIRMWARE."
+            echo "Note: no separate firmware copy put on the drive; the image's built-in firmware is used."
             return 0
         fi
     fi
@@ -432,6 +437,16 @@ main() {
 
     echo "Updating submodules to pinned repository commits..."
     as_build_user git submodule update --init --recursive
+
+    # Wi-Fi/Bluetooth firmware ships in the image (firmware/stock.list);
+    # fetch it first so a missing download stops here rather than producing
+    # an image whose wireless cannot start.
+    echo "Fetching stock firmware (linux-firmware, wireless-regdb)..."
+    if ! as_build_user sh "$SCRIPT_DIR/tools/fetch-firmware.sh"; then
+        echo "Error: could not download the stock firmware (see above)." >&2
+        echo "Check network access to git.kernel.org, or set RUSTOS_FIRMWARE=0 to build without it." >&2
+        [[ "${RUSTOS_FIRMWARE:-1}" == "0" ]] || exit 1
+    fi
 
     echo "Building kernel (release)..."
     as_build_user "${CARGO_CMD[@]}" build --release

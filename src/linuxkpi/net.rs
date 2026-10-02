@@ -20,6 +20,8 @@ unsafe extern "C" {
     fn kpi_netdev_stop(dev: *mut c_void);
     /// dev_open()/dev_close(); 0 or -errno.
     fn kpi_netdev_set_up(dev: *mut c_void, up: c_int) -> c_int;
+    /// ndo_set_mac_address(); 0 or -errno.
+    fn kpi_netdev_set_mac(dev: *mut c_void, mac: *const u8) -> c_int;
 }
 
 /// Frames waiting for the network thread, per interface (bounded).
@@ -69,6 +71,12 @@ impl NetDevice for LinuxNetDev {
     }
     fn shutdown(&self) {
         unsafe { kpi_netdev_stop(self.dev as *mut c_void) };
+    }
+    fn set_mac(&self, mac: [u8; 6]) -> KResult<()> {
+        match unsafe { kpi_netdev_set_mac(self.dev as *mut c_void, mac.as_ptr()) } {
+            0 => Ok(()),
+            e => Err(crate::errno::Errno(-e)),
+        }
     }
     fn set_up(&self, up: bool) -> KResult<()> {
         match unsafe { kpi_netdev_set_up(self.dev as *mut c_void, up as c_int) } {

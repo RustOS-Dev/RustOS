@@ -1294,6 +1294,23 @@ int kpi_netdev_set_up(struct net_device *dev, int up)
 	return err;
 }
 
+/* SIOCSIFHWADDR from RustOS (net.rs): dev_set_mac_address(). */
+int kpi_netdev_set_mac(struct net_device *dev, const u8 *mac)
+{
+	struct sockaddr sa = { .sa_family = dev->type };
+	int err;
+
+	if (!dev->netdev_ops->ndo_set_mac_address)
+		return -EOPNOTSUPP;
+	memcpy(sa.sa_data, mac, ETH_ALEN);
+	rtnl_lock();
+	err = dev->netdev_ops->ndo_set_mac_address(dev, &sa);
+	if (!err)
+		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+	rtnl_unlock();
+	return err;
+}
+
 /*
  * RustOS interfaces are up once registered, so open them, but only after
  * the registering probe (or initcall) has returned: drivers still set up

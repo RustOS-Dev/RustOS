@@ -84,9 +84,9 @@ The roadmap's two reference systems are an **Intel AX210 laptop** and a
 xHCI). Everything above that is marked *written* is aimed at them. When
 testing on hardware:
 
-1. Build a USB stick with `./write_to_drive.sh --drive /dev/sdX` (add
-   `--ax210-firmware DIR` for Wi-Fi; without it the script copies the
-   host's `/lib/firmware/iwlwifi-ty-a0-gf-a0*` files if present).
+1. Build a USB stick with `./write_to_drive.sh --drive /dev/sdX`. Wi-Fi and
+   Bluetooth firmware ship in the image (`firmware/stock.list`); the script
+   stops if it cannot download them.
 2. Optional: turn on extra logging before the first boot by creating
    `etc/kernel.conf` on the stick's storage partition (see below).
 3. Boot it in UEFI mode (Secure Boot off) and run **`hwcheck`**.

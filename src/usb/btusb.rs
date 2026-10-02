@@ -6,7 +6,10 @@
 //! here before the standard HCI initialisation. MediaTek controllers
 //! (MT7921/MT7922/MT7925, including the MT7921AU combo adapter) get their
 //! patch (`mediatek/BT_RAM_CODE_*_hdr.bin`) over WMT commands, answered
-//! through a vendor control request.
+//! through a vendor control request. Realtek controllers get their patch
+//! (`rtl_bt/*_fw.bin` and config) and Broadcom ones their patch RAM file
+//! (`brcm/*.hcd`, when installed), recognised by the manufacturer in Read
+//! Local Version.
 
 use super::UsbDevice;
 use crate::bluetooth::{self, Hci, Transport};
@@ -19,6 +22,7 @@ use alloc::vec::Vec;
 use bt::hci::{self, Event};
 use bt::intel;
 use bt::mtk;
+use bt::{bcm, rtl};
 use usb_desc::{Endpoint, Interface, TransferType};
 
 struct BtUsb {
@@ -60,6 +64,8 @@ impl Transport for BtUsb {
             && let Some(id) = mtk_chip(&dev)
         {
             self.mtk_setup(h, &dev, id)?;
+        } else {
+            vendor_setup(h)?;
         }
         Ok(())
     }
@@ -230,6 +236,158 @@ fn intel_setup(h: &Arc<Hci>) -> KResult<()> {
         h.name(),
         v.build_num
     );
+    Ok(())
+}
+
+/// Realtek and Broadcom controllers, recognised by the manufacturer in
+/// HCI Read Local Version.
+fn vendor_setup(h: &Arc<Hci>) -> KResult<()> {
+    let ver = h.command_ok(hci::cmd(hci::op::READ_LOCAL_VERSION, &[]))?;
+    match hci::local_version(&ver).map(|(_, m)| m) {
+        Some(rtl::MANUFACTURER) => rtl_setup(h, ver),
+        Some(bcm::MANUFACTURER) => bcm_setup(h),
+        _ => Ok(()),
+    }
+}
+
+/// (HCI version, HCI revision, LMP subversion) from Read Local Version.
+fn version_ids(ver: &[u8]) -> (u8, u16, u16) {
+    let le = |o: usize| u16::from_le_bytes([ver[o], ver[o + 1]]);
+    if ver.len() < 9 {
+        return (0, 0, 0);
+    }
+    (ver[1], le(2), le(7))
+}
+
+/// Realtek: download the patch for the controller's ROM version (and its
+/// config), as Linux btrtl does.
+fn rtl_setup(h: &Arc<Hci>, mut ver: Vec<u8>) -> KResult<()> {
+    let (mut hv, mut rev, mut sub) = version_ids(&ver);
+    let mut chip = rtl::identify(sub, rev, hv);
+    if chip.is_none() {
+        // Already running firmware (a warm reboot): drop it, look again.
+        h.send_cmd(hci::cmd(rtl::OP_DROP_FW, &[]));
+        crate::time::sleep_ms(200);
+        ver = h.command_ok(hci::cmd(hci::op::READ_LOCAL_VERSION, &[]))?;
+        (hv, rev, sub) = version_ids(&ver);
+        chip = rtl::identify(sub, rev, hv);
+    }
+    let Some(chip) = chip else {
+        crate::println!(
+            "[bt] {}: Realtek {:04x} rev {:x}: no patch known (not needed or unsupported)",
+            h.name(),
+            sub,
+            rev
+        );
+        return Ok(());
+    };
+    let rom = if chip.has_rom_version {
+        let r = h.command_ok(hci::cmd(rtl::OP_READ_ROM_VERSION, &[]))?;
+        r.get(1).copied().ok_or(EIO)?
+    } else {
+        0
+    };
+    let key_id = h
+        .command(hci::cmd(rtl::OP_READ_REG16, &rtl::REG_SEC_PROJ))
+        .ok()
+        .filter(|r| r.len() == 3 && r[0] == 0)
+        .map_or(0, |r| r[1]);
+    let names = rtl::firmware_names(chip);
+    let Some((name, fw)) = names
+        .iter()
+        .find_map(|n| crate::firmware::load(n).ok().map(|f| (n, f)))
+    else {
+        crate::println!(
+            "[bt] {}: firmware {} not found",
+            h.name(),
+            names.join(" or ")
+        );
+        return Err(ENOENT);
+    };
+    let mut image = if chip.has_rom_version {
+        rtl::select_patch(&fw, chip.lmp_subver, rom, key_id).map_err(|e| {
+            crate::println!("[bt] {}: {}: {:?}", h.name(), name, e);
+            EINVAL
+        })?
+    } else {
+        // RTL8723A: the file is the image.
+        fw
+    };
+    if let Some(cfg) = rtl::config_name(chip).filter(|_| key_id == 0) {
+        match crate::firmware::load(&cfg) {
+            Ok(c) => image.extend_from_slice(&c),
+            Err(e) if chip.config_needed => {
+                crate::println!("[bt] {}: config {} not found", h.name(), cfg);
+                return Err(e);
+            }
+            Err(_) => {}
+        }
+    }
+    let cmds = rtl::download_commands(&image);
+    crate::println!(
+        "[bt] {}: Realtek {:04x} ROM {}: downloading {} ({} bytes)",
+        h.name(),
+        sub,
+        rom,
+        name,
+        image.len()
+    );
+    for c in cmds {
+        h.command_ok(hci::cmd(rtl::OP_DOWNLOAD, &c))?;
+    }
+    let ver = h.command_ok(hci::cmd(hci::op::READ_LOCAL_VERSION, &[]))?;
+    let (_, rev, sub) = version_ids(&ver);
+    crate::println!(
+        "[bt] {}: Realtek firmware running (subversion {:04x}, revision {:04x})",
+        h.name(),
+        sub,
+        rev
+    );
+    Ok(())
+}
+
+/// Broadcom: reset, then replay the patch RAM file when one is installed
+/// (controllers work from ROM without it), as Linux btbcm does.
+fn bcm_setup(h: &Arc<Hci>) -> KResult<()> {
+    h.command_ok(hci::cmd(hci::op::RESET, &[]))?;
+    crate::time::sleep_ms(100);
+    let ver = h.command_ok(hci::cmd(hci::op::READ_LOCAL_VERSION, &[]))?;
+    let (_, _, sub) = version_ids(&ver);
+    let prod = h.command_ok(hci::cmd(bcm::OP_READ_USB_PRODUCT, &[]))?;
+    if prod.len() < 5 {
+        return Err(EIO);
+    }
+    let vid = u16::from_le_bytes([prod[1], prod[2]]);
+    let pid = u16::from_le_bytes([prod[3], prod[4]]);
+    let names = bcm::firmware_names(sub, vid, pid);
+    let Some((name, hcd)) = names
+        .iter()
+        .find_map(|n| crate::firmware::load(n).ok().map(|f| (n, f)))
+    else {
+        crate::println!(
+            "[bt] {}: {}: no patch ({}); running the ROM firmware",
+            h.name(),
+            bcm::chip_name(sub).unwrap_or("Broadcom"),
+            names.join(" or ")
+        );
+        return Ok(());
+    };
+    let cmds = bcm::patch_commands(&hcd).ok_or(EINVAL)?;
+    crate::println!(
+        "[bt] {}: downloading {} ({} records)",
+        h.name(),
+        name,
+        cmds.len()
+    );
+    h.command(hci::cmd(bcm::OP_DOWNLOAD_MINIDRV, &[]))?;
+    crate::time::sleep_ms(50);
+    for (op, params) in cmds {
+        h.command(hci::cmd(op, params))?;
+    }
+    // The patch runs after "launch RAM" (the file's last record).
+    crate::time::sleep_ms(250);
+    h.command_ok(hci::cmd(hci::op::RESET, &[]))?;
+    crate::time::sleep_ms(100);
     Ok(())
 }
 

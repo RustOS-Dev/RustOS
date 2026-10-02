@@ -11,7 +11,7 @@ The stack has three parts:
 
 | Transport | Devices | Notes |
 |-----------|---------|-------|
-| USB (class E0/01/01) | Intel AX200/AX210/AX211 Bluetooth (8087:0029/0032/0033), MediaTek MT7921/MT7922/MT7925 (laptop combo cards and the MT7921AU adapter), most USB dongles | Commands on the control pipe, events on interrupt IN, ACL on bulk. SCO (voice) is not used. |
+| USB (class E0/01/01) | Intel AX200/AX210/AX211 Bluetooth (8087:0029/0032/0033), MediaTek MT7921/MT7922/MT7925 (laptop combo cards and the MT7921AU adapter), Realtek RTL8723/8761/8821/8822/8851/8852/8922 (combo cards and dongles), Broadcom BCM20702/4335/4350 family, most USB dongles | Commands on the control pipe, events on interrupt IN, ACL on bulk. SCO (voice) is not used. |
 | H4 UART | any H4 controller on a legacy serial port | `bt attach com2`, or `bt.h4=com2` in `/storage/etc/kernel.conf`. COM2 is interrupt-driven; COM3 and COM4 are polled. |
 
 **Intel controllers** start in a bootloader. The driver:
@@ -20,6 +20,13 @@ The stack has three parts:
 3. Sends the image with Intel secure-send: the CSS header, key and signature, then the command payload in 4-byte-aligned groups.
 4. Boots it with Intel Reset at the address from the image.
 5. Applies `intel/ibt-*.ddc`.
+
+**Realtek controllers** (Bluetooth manufacturer 93 in Read Local Version; as Linux btrtl):
+1. Identifies the chip from the LMP subversion, HCI revision and version (Linux's table of USB parts). If it already runs firmware it is told to drop it (0xFC66) and identified again.
+2. Reads the ROM version (0xFC6D) and security key id, and loads `rtl_bt/<chip>_fw.bin` (RTL8852C: `_fw_v2.bin` first) and its `_config.bin` when there is one.
+3. Picks the patch for that ROM version: one entry of an "epatch" v1 file, or the matching subsections of a v2 ("RTBTCore") file in priority order. Appends the config, then sends it with 0xFC20 in 252-byte fragments.
+
+**Broadcom controllers** (manufacturer 15; as Linux btbcm): after a reset the driver reads the USB ids (0xFC5A). If `brcm/<chip>-<vid>-<pid>.hcd` or `brcm/BCM-<vid>-<pid>.hcd` is installed, it replays the file's HCI records after "download minidriver" (0xFC2E) and resets. Otherwise the controller runs its ROM firmware. linux-firmware has no Broadcom `.hcd` files, so none ship in the image.
 
 **MediaTek controllers** (MT7961 = MT7921, MT7922, MT7925, and MT7902/MT6639 as Linux btmtk handles them). The driver:
 1. Reads the chip ID, firmware version and flavour from chip registers (vendor control requests).
@@ -82,7 +89,7 @@ Answer on the terminal running `bt pair`.
 
 ## Testing
 
-- **Host tests:** `crates/bt` checks the SMP crypto against the Core specification's sample data (AES-CMAC, f4/f5/f6/g2, ah, c1/s1, the debug P-256 key pair). It also runs the pairing state machine against an independent responder in every association model (Just Works, numeric comparison, passkey both ways, legacy), and covers the HCI/L2CAP/ATT/SDP codecs, GATT discovery with long reads, HOGP against an in-memory server, the Intel firmware fragmenting, and the MediaTek patch sections (on the linux-firmware files when they have been fetched).
+- **Host tests:** `crates/bt` checks the SMP crypto against the Core specification's sample data (AES-CMAC, f4/f5/f6/g2, ah, c1/s1, the debug P-256 key pair). It also runs the pairing state machine against an independent responder in every association model (Just Works, numeric comparison, passkey both ways, legacy), and covers the HCI/L2CAP/ATT/SDP codecs, GATT discovery with long reads, HOGP against an in-memory server, the Intel firmware fragmenting, the Realtek patch selection (v1 and v2 files; checked against every `rtl_bt` file of linux-firmware 20260916 during development) and fragment indices, the Broadcom `.hcd` records, and the MediaTek patch sections (on the linux-firmware files when they have been fetched).
 - **`tests/scenarios/bluetooth`:**
   - Runs an H4 controller on COM2, connected to `tools/fake-hci.py`: a scripted LE controller with a BLE HID keyboard, whose own SMP, AES and P-256 code is separate Python.
   - The scenario scans, pairs with LE Secure Connections (the fake checks the LTK the host encrypts with), gets key events on the keyboard's evdev node, and checks the bond file.
@@ -93,4 +100,4 @@ Answer on the terminal running `bt pair`.
 - **Audio:** A2DP and SCO (headsets), so no Bluetooth audio.
 - **Roles and services:** peripheral and advertising roles, a GATT server (requests to ours get "not found"), LE audio, mesh, file transfer and networking profiles.
 - **Legacy PIN pairing** for pre-2.1 BR/EDR devices.
-- **Unverified parts:** BR/EDR HID and the USB transport run only on real hardware and are untested in QEMU. The Intel firmware download follows Linux btintel and has not yet run on an AX210. The MediaTek download follows Linux btmtk and has not yet run on a MediaTek controller.
+- **Unverified parts:** BR/EDR HID and the USB transport run only on real hardware and are untested in QEMU. The Intel firmware download follows Linux btintel and has not yet run on an AX210. The MediaTek download follows Linux btmtk and has not yet run on a MediaTek controller. The Realtek and Broadcom downloads follow btrtl and btbcm and have not run on hardware either.

@@ -43,7 +43,7 @@ devices are cached (write-back buffer cache, `sync`).
 | Mass storage (Bulk-Only) | CI (`usb-storage`) |
 | USB Attached SCSI (bulk streams, 8 commands queued; USB 2 without streams) | CI (`usb-uas` on SuperSpeed and high-speed ports) |
 | USB Audio Class 1/2 playback (isochronous) | CI (`usb-audio`) |
-| Bluetooth controllers (class E0/01/01), Intel AX200/AX210/AX211 and MediaTek MT7921/MT7922/MT7925 firmware | written ([BLUETOOTH.md](BLUETOOTH.md)); MediaTek patch format host-tested |
+| Bluetooth controllers (class E0/01/01), Intel AX200/AX210/AX211, MediaTek MT7921/MT7922/MT7925, Realtek (rtl_bt patches, shipped) and Broadcom (.hcd patch RAM, not shipped) firmware | written ([BLUETOOTH.md](BLUETOOTH.md)); MediaTek and Realtek patch formats host-tested; untested on hardware |
 | Ethernet: CDC ECM, RNDIS | CI (`usb-net`) |
 | Ethernet: CDC NCM | written (NTB encoding host-tested) |
 | Serial adapters: Linux `usb-serial` with `ftdi_sio`, `cp210x`, `ch341`, `pl2303`, `option` (3G/LTE modems), and `cdc_acm` (`/dev/ttyUSB*`, `/dev/ttyACM*`), in release images | CI (`usb-serial`: FTDI on QEMU `usb-serial`, data both ways, `stty`, unplug); others compiled |

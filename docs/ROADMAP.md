@@ -163,7 +163,7 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] ACPI platform devices, IRQ domains, gpiolib + pinctrl-amd, DesignWare I2C, i2c-core-acpi: I2C-HID touchpads on AMD (compiled, untested on hardware; `acpi-platform`)
   - [ ] Intel LPSS I2C and Intel pin controllers
   - [ ] UVC webcams (V4L2, videobuf2, uvcvideo)
-  - [ ] Realtek/Broadcom BT firmware in btusb
+  - [x] Realtek (btrtl) and Broadcom (btbcm) Bluetooth firmware loading in btusb; rtl_bt firmware ships (untested on hardware)
 - [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
 - [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
 - [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU

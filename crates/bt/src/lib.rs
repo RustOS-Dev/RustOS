@@ -13,6 +13,7 @@
 extern crate alloc;
 
 pub mod adv;
+pub mod bcm;
 pub mod att;
 pub mod crypto;
 pub mod gatt;
@@ -21,6 +22,7 @@ pub mod hid;
 pub mod intel;
 pub mod l2cap;
 pub mod mtk;
+pub mod rtl;
 pub mod sdp;
 pub mod smp;
 

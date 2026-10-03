@@ -188,3 +188,34 @@ struct clk *__weak devm_clk_get_optional_enabled(struct device *dev, const char 
 {
 	return NULL;
 }
+
+struct gpio_desc *__weak gpiod_get_optional(struct device *dev, const char *con_id,
+					    enum gpiod_flags flags)
+{
+	return NULL;
+}
+
+/* No chip is ever added (gpiochip_add_data fails above). */
+void *__weak gpiochip_get_data(struct gpio_chip *gc)
+{
+	return NULL;
+}
+
+/* Clocks from the fallback above are NULL, which these accept. */
+int __weak clk_prepare(struct clk *clk)
+{
+	return 0;
+}
+
+void __weak clk_unprepare(struct clk *clk)
+{
+}
+
+int __weak clk_enable(struct clk *clk)
+{
+	return 0;
+}
+
+void __weak clk_disable(struct clk *clk)
+{
+}

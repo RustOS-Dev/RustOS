@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * GPIO, pin control and DRM panel calls for builds without gpiolib
- * (linux-platform) or DRM (linux-drm). The device core and drivers in
+ * GPIO, pin control, clock and DRM panel calls for builds without
+ * gpiolib (linux-platform), the clock glue (linux-platform) or DRM
+ * (linux-drm). The device core and drivers in
  * other groups call into these APIs, which then find no GPIOs or panels,
  * as on a system without them. When the subsystem is built, its
  * definitions replace these weak ones.
@@ -9,7 +10,9 @@
 #include <linux/acpi.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/clk.h>
 #include <linux/gpio/consumer.h>
+#include <linux/gpio/driver.h>
 #include <linux/gpio/machine.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/devinfo.h>
@@ -154,4 +157,34 @@ struct pinctrl_state *__weak pinctrl_lookup_state(struct pinctrl *p, const char 
 int __weak pinctrl_select_state(struct pinctrl *p, struct pinctrl_state *s)
 {
 	return 0;
+}
+
+struct gpio_desc *__weak fwnode_gpiod_get_index(struct fwnode_handle *fwnode,
+						const char *con_id, int index,
+						enum gpiod_flags flags, const char *label)
+{
+	return ERR_PTR(-ENOENT);
+}
+
+void __weak gpiod_put(struct gpio_desc *desc)
+{
+}
+
+/* GPIO controllers on USB serial adapters (ftdi_sio, cp210x) are not
+ * offered without gpiolib; the drivers carry on without them. */
+int __weak gpiochip_add_data_with_key(struct gpio_chip *gc, void *data,
+				      struct lock_class_key *lock_key,
+				      struct lock_class_key *request_key)
+{
+	return -ENODEV;
+}
+
+void __weak gpiochip_remove(struct gpio_chip *gc)
+{
+}
+
+/* No clock framework: an optional clock is absent. */
+struct clk *__weak devm_clk_get_optional_enabled(struct device *dev, const char *id)
+{
+	return NULL;
 }

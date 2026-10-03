@@ -1,5 +1,5 @@
 # GPU driver infrastructure (M38): TTM, the GPU scheduler, DisplayPort/HDMI
-# helpers, memory managers, backlight and hwmon classes. Parts generated
+# helpers, memory managers, the backlight class. Parts generated
 # by tools/kbuild-group.py from their Makefiles.
 kpi:gpu.c
 module: gpu_lib
@@ -43,8 +43,6 @@ drivers/gpu/drm/drm_gem_ttm_helper.c
 drivers/gpu/drm/drm_gpuvm.c
 module: backlight
 drivers/video/backlight/backlight.c
-module: hwmon
-drivers/hwmon/hwmon.c
 module: amdxcp
 # amdgpu's compute-partition helper (a module of its own in Linux).
 drivers/gpu/drm/amd/amdxcp/amdgpu_xcp_drv.c

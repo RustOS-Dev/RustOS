@@ -219,3 +219,8 @@ int __weak clk_enable(struct clk *clk)
 void __weak clk_disable(struct clk *clk)
 {
 }
+
+unsigned long __weak clk_get_rate(struct clk *clk)
+{
+	return 0;
+}

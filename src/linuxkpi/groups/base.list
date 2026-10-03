@@ -60,6 +60,8 @@ drivers/leds/led-core.c
 drivers/leds/led-class.c
 drivers/leds/led-triggers.c
 lib/list_sort.c
+# Maple trees (regmap caches, nouveau's VM_BIND address spaces).
+lib/maple_tree.c
 # The hwmon class (sensors of mt7921, igb, tg3, amdgpu): HWMON is on for amdgpu,
 # so every driver that registers a sensor expects it.
 module: hwmon

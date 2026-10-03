@@ -30,17 +30,17 @@ extern "C" fn rustos_kpi_firmware_load(
         return -crate::errno::EINVAL.0;
     }
     let mut waited = false;
-    let blob = loop {
-        match crate::firmware::load(&name) {
-            Ok(b) => break b,
-            Err(e) => {
+    let path = loop {
+        match crate::firmware::find(&name) {
+            Some(p) => break p,
+            None => {
                 if storage_mounted() || crate::time::nanos() >= STORAGE_WAIT_NS {
                     // Drivers whose firmware is optional probe for several
                     // names: only say why when the image lacks its firmware.
                     if let Some(why) = crate::firmware::stock_missing() {
                         crate::println!("[firmware] {name}: not found ({why})");
                     }
-                    return -e.0;
+                    return -crate::errno::ENOENT.0;
                 }
                 if !waited {
                     crate::println!("[firmware] {name}: waiting for the boot drive to be mounted");
@@ -50,14 +50,33 @@ extern "C" fn rustos_kpi_firmware_load(
             }
         }
     };
-    let p = alloc(blob.len());
+    // Read straight into the driver's (vmalloc) buffer: GPU firmware runs
+    // to tens of megabytes, too much to stage on the kernel heap.
+    let inode = match crate::vfs::lookup(&path) {
+        Ok(i) => i,
+        Err(e) => return -e.0,
+    };
+    let len = match inode.metadata() {
+        Ok(m) => m.size as usize,
+        Err(e) => return -e.0,
+    };
+    let p = alloc(len.max(1));
     if p.is_null() {
         return -crate::errno::ENOMEM.0;
     }
+    let buf = unsafe { core::slice::from_raw_parts_mut(p as *mut u8, len) };
+    let mut done = 0;
+    while done < len {
+        match inode.read_at(done as u64, &mut buf[done..]) {
+            Ok(0) => break,
+            Ok(n) => done += n,
+            Err(e) => return -e.0,
+        }
+    }
+    crate::println!("[firmware] loaded {} ({} bytes)", path, done);
     unsafe {
-        core::ptr::copy_nonoverlapping(blob.as_ptr(), p as *mut u8, blob.len());
         *data = p;
-        *size = blob.len();
+        *size = done;
     }
     0
 }

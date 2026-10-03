@@ -92,6 +92,7 @@ devices are cached (write-back buffer cache, `sync`).
 | QEMU standard VGA through Linux bochs (DRM/KMS, `/dev/dri/card0`), in release images | CI (`drm-bochs`) |
 | virtio-gpu through Linux virtio-gpu (2D), in release images | CI (`drm-virtio`) |
 | AMD GPUs through Linux amdgpu with the display core (DC), RDNA1+ and Vega APUs (`DRM_AMDGPU_SI`/`CIK` off), in release images; firmware for the Raphael iGPU (Ryzen 7000, `1002:164e`) ships | compiled, **untested on hardware**; off by default: binds only with `linux.enable=amdgpu` in `kernel.conf` |
+| NVIDIA GPUs through Linux nouveau with GSP-RM 570.144: Turing, Ampere, Ada and Blackwell GB20x (RTX 5070 = GB205, `10de:2f04`), in release images; GSP firmware (about 90 MB) goes on the storage partition | compiled, **untested on hardware**; off by default: binds only with `linux.enable=nouveau`. For development, `tools/vfio-run.sh` passes the card through to QEMU |
 
 ## Audio
 
@@ -136,7 +137,7 @@ its complete command output:
 | `storage` (continued) | ext4 mounts, journal and quota messages |
 | `usb` | UAS queue depth, audio and Bluetooth devices from the log; stick insertion and removal (interactive) |
 | `audio` | every card plays a tone (asks whether it was heard) and records one second |
-| `display` | DRM devices and their drivers, connectors with status, modes and EDID size, the console's framebuffer; with `linux.enable=amdgpu`, amdgpu's firmware versions and ring tests from the log |
+| `display` | DRM devices and their drivers, connectors with status, modes and EDID size, the console's framebuffer; with `linux.enable=amdgpu` or `nouveau`, the driver's firmware versions and ring tests from the log |
 | `bluetooth` | controller up (firmware loaded), scan, then interactively: pair a keyboard or mouse, see its input, disconnect, and check it reconnects with the stored key |
 
 Results go to `/storage/hwcheck-DATE/` (`summary.txt`, one log per step,
@@ -157,7 +158,7 @@ and is read at boot once the storage partition is mounted;
 | `iwlwifi.debug=1` | log every Wi-Fi firmware command and notification |
 | `net.debug=1` | log a one-line summary of every Ethernet frame sent and received |
 | `bt.h4=com2` | start a Bluetooth H4 (UART) controller on a serial port at boot |
-| `linux.enable=amdgpu` | let drivers that are compiled but untested on hardware bind their devices (comma-separated; today only `amdgpu`). Without it the log names the driver a device could use |
+| `linux.enable=amdgpu,nouveau` | let drivers that are compiled but untested on hardware bind their devices (comma-separated: `amdgpu`, `nouveau`). Without it the log names the driver a device could use |
 | `linux.debug=1` | show Linux drivers' `KERN_DEBUG` messages |
 
 A Wi-Fi firmware crash always dumps the firmware's LMAC/UMAC error tables

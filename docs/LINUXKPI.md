@@ -107,8 +107,23 @@ their VBIOS from the ACPI VFCT table; `pci_map_rom` covers boards with an
 expansion ROM. The Raphael (Ryzen 7000) iGPU firmware ships in
 `firmware/stock.list`.
 
-Drivers that have not run on hardware are opt-in: `amdgpu` binds a device
-only with `linux.enable=amdgpu` in `kernel.conf`. Because `kernel.conf` is
+M39: NVIDIA GPUs through Linux nouveau (`linux-drm-nouveau`, in release
+images through `linux-gpu`; compiled, untested on hardware), generated the
+same way (`groups/nouveau.list`, from nouveau's `Kbuild`). On Turing and
+newer, nouveau boots NVIDIA's GSP-RM firmware (570.144), which runs the
+GPU; for Blackwell GB20x (the RTX 5070 is GB205) the FSP/FMC path boots
+it. The GSP images are 30-63 MB, so they are not in the initramfs:
+`firmware/storage.list` lists them, `write_to_drive.sh` copies them onto
+the storage partition, and the firmware loader follows linux-firmware's
+symlinks through a `.links` file there (FAT32 has no symlinks). LinuxKPI's
+`request_firmware` reads straight into the driver's buffer, so large
+firmware never passes through the kernel heap. There is no IOMMU and no
+WMI bus (MXM data comes from the VBIOS), and SVM is off. To develop
+without rebooting the desktop, `tools/vfio-run.sh` boots RustOS in QEMU
+with the card passed through.
+
+Drivers that have not run on hardware are opt-in: `amdgpu` and `nouveau`
+bind a device only when `kernel.conf` names them (`linux.enable=amdgpu,nouveau`). Because `kernel.conf` is
 read after the first probe pass, opt-in drivers wait, and the PCI bus is
 rescanned once it has been read (`kpi_pci_rescan`); a device left unbound
 gets a log line naming the driver and the switch.

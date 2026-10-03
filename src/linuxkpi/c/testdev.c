@@ -7,8 +7,11 @@
  *  - KPI_TEST_IOC_GET writes 42 + arg through a user pointer;
  *  - poll reports EPOLLIN once KPI_TEST_IOC_ARM's timer fires (50 ms);
  *  - mmap offset 0 maps a page with remap_pfn_range, offset 1 page
- *    through a vm_ops fault handler (vmf_insert_pfn).
+ *    through a vm_ops fault handler (vmf_insert_pfn);
+ *  - KPI_TEST_IOC_FIRMWARE loads the firmware file named in the buffer
+ *    with request_firmware() and returns its size (firmware links).
  */
+#include <linux/firmware.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/mm.h>
@@ -20,6 +23,7 @@
 
 #define KPI_TEST_IOC_GET	_IOWR('k', 1, int)
 #define KPI_TEST_IOC_ARM	_IO('k', 2)
+#define KPI_TEST_IOC_FIRMWARE	_IOW('k', 3, char[64])
 
 static char msg[64] = "linuxkpi\n";
 static size_t msg_len = 9;
@@ -58,6 +62,25 @@ static void kpi_test_timer(struct timer_list *t)
 	wake_up_interruptible(&ready_wq);
 }
 
+static struct miscdevice kpi_test_dev;
+
+static long kpi_test_firmware(char __user *uname)
+{
+	const struct firmware *fw;
+	char name[64];
+	long ret;
+
+	if (strncpy_from_user(name, uname, sizeof(name)) < 0)
+		return -EFAULT;
+	name[sizeof(name) - 1] = 0;
+	ret = request_firmware(&fw, name, kpi_test_dev.this_device);
+	if (ret)
+		return ret;
+	ret = fw->size;
+	release_firmware(fw);
+	return ret;
+}
+
 static long kpi_test_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
 	int v;
@@ -72,6 +95,8 @@ static long kpi_test_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		WRITE_ONCE(ready, false);
 		mod_timer(&ready_timer, jiffies + msecs_to_jiffies(50));
 		return 0;
+	case KPI_TEST_IOC_FIRMWARE:
+		return kpi_test_firmware((char __user *)arg);
 	default:
 		return -ENOTTY;
 	}

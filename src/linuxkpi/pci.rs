@@ -159,7 +159,7 @@ extern "C" fn rustos_kpi_random_u64() -> u64 {
 /// Linux drivers that only bind when `kernel.conf` names them in
 /// `linux.enable=` (comma-separated): compiled, but not yet run on
 /// hardware.
-const OPT_IN: &[&str] = &["amdgpu"];
+const OPT_IN: &[&str] = &["amdgpu", "nouveau"];
 
 /// Set once `kernel.conf` has been read (`super::params_loaded`); opt-in
 /// drivers wait for it.

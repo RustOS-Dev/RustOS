@@ -17,6 +17,11 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   not resized, PCIe atomics are not routed (ROCm-style compute would need
   them; amdkfd is not built), and HDMI CEC and the ACPI video backlight
   interface are absent.
+* NVIDIA GPUs (Linux nouveau) are likewise compiled in, untested on
+  hardware and off unless `kernel.conf` has `linux.enable=nouveau`. Their
+  GSP firmware lives on the storage partition, so a drive written without
+  it (or a full storage partition) leaves nouveau without firmware; SVM
+  and the WMI/MXM interface are absent.
 * ATAPI optical drives are detected but not usable.
 
 ## Kernel

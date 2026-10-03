@@ -447,6 +447,16 @@ main() {
         echo "Check network access to git.kernel.org, or set RUSTOS_FIRMWARE=0 to build without it." >&2
         [[ "${RUSTOS_FIRMWARE:-1}" == "0" ]] || exit 1
     fi
+    # Firmware too large for the image (NVIDIA GSP for nouveau, about
+    # 90 MB) goes on the storage partition instead (firmware/storage.list).
+    if [[ "${RUSTOS_FIRMWARE:-1}" != "0" ]]; then
+        echo "Fetching storage-partition firmware (NVIDIA GSP)..."
+        if ! as_build_user sh "$SCRIPT_DIR/tools/fetch-firmware.sh" "$SCRIPT_DIR/target/firmware-storage" "$SCRIPT_DIR/firmware/storage.list"; then
+            echo "Error: could not download the storage-partition firmware (see above)." >&2
+            echo "Check network access to git.kernel.org, or set RUSTOS_FIRMWARE=0 to build without it." >&2
+            exit 1
+        fi
+    fi
 
     # Linux drivers (LinuxKPI) are part of the stock image: MediaTek
     # MT7921/MT7922 Wi-Fi, the Linux 802.11 stack and AMD amdgpu (which binds
@@ -585,6 +595,11 @@ main() {
     run_as_root mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
     populate_rootfs_skeleton "$MOUNT_TMP"
     provision_ax210_firmware "$MOUNT_TMP" "$AX210_FIRMWARE_SOURCE"
+    if [[ -d "$SCRIPT_DIR/target/firmware-storage" ]]; then
+        run_as_root mkdir -p "$MOUNT_TMP/lib/firmware"
+        run_as_root cp -r "$SCRIPT_DIR/target/firmware-storage/." "$MOUNT_TMP/lib/firmware/"
+        echo "Provisioned storage-partition firmware into $MOUNT_TMP/lib/firmware"
+    fi
     run_as_root umount "$MOUNT_TMP"
     rmdir "$MOUNT_TMP"
 

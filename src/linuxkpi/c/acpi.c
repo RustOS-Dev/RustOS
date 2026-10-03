@@ -18,6 +18,7 @@
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <acpi/button.h>
 #include "kpi.h"
 
 struct kpi_acpi_node {
@@ -615,4 +616,31 @@ int acpi_device_fix_up_power(struct acpi_device *device)
 int acpi_device_set_power(struct acpi_device *device, int state)
 {
 	return 0;
+}
+
+/* Walking a device's ACPI children is not supported: callers (nouveau's
+ * GSP ACPI method table) find none and send what they have. */
+acpi_status acpi_get_next_object(acpi_object_type type, acpi_handle parent,
+				 acpi_handle child, acpi_handle *ret_handle)
+{
+	return AE_NOT_FOUND;
+}
+
+/* The lid switch is not tracked: unknown, which drivers treat as open. */
+int acpi_lid_open(void)
+{
+	return -ENODEV;
+}
+
+/* No WMI bus: no GUID is present (nouveau's MXM tables then come from the
+ * VBIOS). */
+bool wmi_has_guid(const char *guid)
+{
+	return false;
+}
+
+acpi_status wmi_evaluate_method(const char *guid, u8 instance, u32 method_id,
+				const struct acpi_buffer *in, struct acpi_buffer *out)
+{
+	return AE_NOT_FOUND;
 }

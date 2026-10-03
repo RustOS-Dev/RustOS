@@ -24,6 +24,7 @@
 #include <linux/string.h>
 #include <net/dropreason.h>
 #include <linux/irq_work.h>
+#include <linux/iommu.h>
 #include "kpi.h"
 
 enum system_states system_state = SYSTEM_RUNNING;
@@ -728,3 +729,30 @@ bool irq_work_queue(struct irq_work *work)
 	return true;
 }
 
+
+/* There is no IOMMU (DMA addresses are physical): devices use no
+ * translation domain, and nothing can be mapped into one. */
+int iommu_device_use_default_domain(struct device *dev)
+{
+	return 0;
+}
+
+void iommu_device_unuse_default_domain(struct device *dev)
+{
+}
+
+int iommu_map(struct iommu_domain *domain, unsigned long iova, phys_addr_t paddr,
+	      size_t size, int prot, gfp_t gfp)
+{
+	return -ENODEV;
+}
+
+size_t iommu_unmap(struct iommu_domain *domain, unsigned long iova, size_t size)
+{
+	return 0;
+}
+
+struct iommu_domain *iommu_get_domain_for_dev(struct device *dev)
+{
+	return NULL;
+}

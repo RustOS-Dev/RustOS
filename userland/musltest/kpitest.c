@@ -15,6 +15,7 @@
 
 #define KPI_TEST_IOC_GET	_IOWR('k', 1, int)
 #define KPI_TEST_IOC_ARM	_IO('k', 2)
+#define KPI_TEST_IOC_FIRMWARE	_IOW('k', 3, char[64])
 
 static int passed, failed;
 #define CHECK(name, cond) do { if (cond) passed++; else { failed++; printf("FAIL %s (line %d, errno %d)\n", name, __LINE__, errno); } } while (0)
@@ -41,6 +42,28 @@ int main(void)
 	CHECK("ioctl", ioctl(fd, KPI_TEST_IOC_GET, &v) == 0 && v == 43);
 	CHECK("ioctl bad pointer", ioctl(fd, KPI_TEST_IOC_GET, (int *)0x10) < 0 && errno == EFAULT);
 	CHECK("ioctl unknown", ioctl(fd, _IO('k', 9)) < 0 && errno == ENOTTY);
+
+	/* request_firmware(), and firmware links (.links, for linux-firmware's
+	 * symlinks on FAT32): a file under kpitest/real reached through the
+	 * kpitest/alias directory link. */
+	mkdir("/lib/firmware/kpitest", 0755);
+	mkdir("/lib/firmware/kpitest/real", 0755);
+	FILE *fw = fopen("/lib/firmware/kpitest/real/fw.bin", "w");
+	if (fw) {
+		fputs("12345", fw);
+		fclose(fw);
+	}
+	FILE *ln = fopen("/lib/firmware/.links", "a");
+	if (ln) {
+		fputs("kpitest/alias kpitest/real\n", ln);
+		fclose(ln);
+	}
+	char fwname[64] = "kpitest/real/fw.bin";
+	CHECK("request_firmware", ioctl(fd, KPI_TEST_IOC_FIRMWARE, fwname) == 5);
+	strcpy(fwname, "kpitest/alias/fw.bin");
+	CHECK("firmware link", ioctl(fd, KPI_TEST_IOC_FIRMWARE, fwname) == 5);
+	strcpy(fwname, "kpitest/none.bin");
+	CHECK("firmware missing", ioctl(fd, KPI_TEST_IOC_FIRMWARE, fwname) < 0 && errno == ENOENT);
 
 	struct pollfd p = { .fd = fd, .events = POLLIN };
 	CHECK("arm", ioctl(fd, KPI_TEST_IOC_ARM) == 0);

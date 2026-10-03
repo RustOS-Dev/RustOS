@@ -1613,3 +1613,28 @@ void kpi_pci_rescan(void)
 				 o.drv->name, o.drv->name);
 	}
 }
+
+int pci_enable_rom(struct pci_dev *pdev)
+{
+	u32 bar = 0;
+
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	if (!(bar & PCI_ROM_ADDRESS_MASK))
+		return -ENOENT;
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar | PCI_ROM_ADDRESS_ENABLE);
+	return 0;
+}
+
+void pci_disable_rom(struct pci_dev *pdev)
+{
+	u32 bar = 0;
+
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar & ~PCI_ROM_ADDRESS_ENABLE);
+}
+
+/* PCI hotplug is not handled, so there is nothing to ignore. */
+void pci_ignore_hotplug(struct pci_dev *dev)
+{
+	dev->ignore_hotplug = 1;
+}

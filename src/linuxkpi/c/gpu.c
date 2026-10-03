@@ -31,6 +31,9 @@
 #include <linux/wait.h>
 #include <media/cec-notifier.h>
 #include <asm/set_memory.h>
+#include <linux/hrtimer.h>
+#include <linux/seq_file.h>
+#include <linux/dcache.h>
 #include "kpi.h"
 
 /* ------------------------------------------------------- kthread workers */
@@ -545,4 +548,46 @@ int vga_client_register(struct pci_dev *pdev,
 			unsigned int (*set_decode)(struct pci_dev *pdev, bool state))
 {
 	return 0;
+}
+
+bool refcount_dec_and_mutex_lock(refcount_t *r, struct mutex *lock)
+{
+	if (refcount_dec_not_one(r))
+		return false;
+	mutex_lock(lock);
+	if (!refcount_dec_and_test(r)) {
+		mutex_unlock(lock);
+		return false;
+	}
+	return true;
+}
+
+/* Sleep until @expires (absolute or relative, CLOCK_MONOTONIC), with
+ * jiffy resolution; -EINTR if woken early. */
+int schedule_hrtimeout(ktime_t *expires, const enum hrtimer_mode mode)
+{
+	s64 left;
+
+	if (!expires) {
+		schedule();
+		return -EINTR;
+	}
+	left = (mode & HRTIMER_MODE_ABS) ? ktime_to_ns(ktime_sub(*expires, ktime_get()))
+					 : ktime_to_ns(*expires);
+	if (left <= 0) {
+		__set_current_state(TASK_RUNNING);
+		return 0;
+	}
+	return schedule_timeout(nsecs_to_jiffies(left) + 1) ? -EINTR : 0;
+}
+
+/* seq_buf_path(): Linux file paths are not tracked. */
+char *d_path(const struct path *path, char *buf, int buflen)
+{
+	return ERR_PTR(-ENOENT);
+}
+
+char *mangle_path(char *s, const char *p, const char *esc)
+{
+	return NULL;
 }

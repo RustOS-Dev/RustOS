@@ -2555,6 +2555,1195 @@ drivers/gpu/drm/drm_vblank_helper.c	MIT	933a617cda827a9b55d84803d2f2cdbcdc2e81c0
 drivers/gpu/drm/drm_vblank_work.c	MIT	8d87eaad8e7a21029c8eee2252978da1c23b2ac58820f0bb9ee86e0a91825671
 drivers/gpu/drm/drm_vma_manager.c	GPL-2.0 OR MIT	01b94890c38f00e71bc6b71536b460fa855c13d8da204e5414f83085c6c6a210
 drivers/gpu/drm/drm_writeback.c	GPL-2.0	304ac9ff130263fae730adfe880b2e5ac9a932e5b5de38b07a35157d8116278f
+drivers/gpu/drm/nouveau/dispnv04/arb.c	GPL-2.0-only (untagged, per Linux COPYING)	280faaf41927dfb59f9ea8da2c22cb410713028c40ae91e839e1bb7419ffa76a
+drivers/gpu/drm/nouveau/dispnv04/crtc.c	GPL-2.0-only (untagged, per Linux COPYING)	790714358eae38b3013c37443bcae460ad25fcaa14f66a9d560e6016a960fc33
+drivers/gpu/drm/nouveau/dispnv04/cursor.c	MIT	a07d5ea6e7522c3110a0580f83fad437e11324bd9b615b20f9ef9999821834b2
+drivers/gpu/drm/nouveau/dispnv04/dac.c	GPL-2.0-only (untagged, per Linux COPYING)	b1f8da918f9fbec3bbcfe0d4145a28e55ecb8c6874d19ec21b8eb9470dcb2a72
+drivers/gpu/drm/nouveau/dispnv04/dfp.c	GPL-2.0-only (untagged, per Linux COPYING)	8402870363c6f65f40af285fc4db0216bc75e57fd498424a9a91ed9877a06d7a
+drivers/gpu/drm/nouveau/dispnv04/disp.c	GPL-2.0-only (untagged, per Linux COPYING)	bbed85eef4d51711337f9a172dda2d831e3c6fec65897542a6dc84faddc46179
+drivers/gpu/drm/nouveau/dispnv04/disp.h	MIT	e11c5da2e30869948db3726c230b6144c4c61be6bd82a208f5f7588173cf6cf4
+drivers/gpu/drm/nouveau/dispnv04/hw.c	GPL-2.0-only (untagged, per Linux COPYING)	a4e1b4c955a1d43b06c58176d62c540070e459d71faeddd6077b6d7dbe9f0b50
+drivers/gpu/drm/nouveau/dispnv04/hw.h	GPL-2.0-only (untagged, per Linux COPYING)	979d8f95088c592208e018db22df34670a1a2f06b35054112ea95b1d6bbfddd2
+drivers/gpu/drm/nouveau/dispnv04/nouveau_i2c_encoder.c	GPL-2.0-only (untagged, per Linux COPYING)	d20ca6393c9841e7946676191d4ab5736fd2afe77c434332556c43b389293ceb
+drivers/gpu/drm/nouveau/dispnv04/nvreg.h	GPL-2.0-only (untagged, per Linux COPYING)	c2c46c2f5a2d4e1039074d42e32e1354f8388ae17011e7360c95bd9b3ae91921
+drivers/gpu/drm/nouveau/dispnv04/overlay.c	GPL-2.0-only (untagged, per Linux COPYING)	f4641c6a8bc50c716f390c79695bd2a917c7a0c2042fb7d943f557a0c7c59230
+drivers/gpu/drm/nouveau/dispnv04/tvmodesnv17.c	GPL-2.0-only (untagged, per Linux COPYING)	4b13384cb4bd029b2d29110a28edbc80caf3808f12edd4abdc9d14160f5b7537
+drivers/gpu/drm/nouveau/dispnv04/tvnv04.c	GPL-2.0-only (untagged, per Linux COPYING)	0b52367439fa60e458967cf07e1244f0fbf513d598ef6913e8b992a71ce09969
+drivers/gpu/drm/nouveau/dispnv04/tvnv17.c	GPL-2.0-only (untagged, per Linux COPYING)	5ef64e3473d664b8e0ec411d081dc8874a6c1f4bb80d0cf29238138ddddb74e2
+drivers/gpu/drm/nouveau/dispnv04/tvnv17.h	GPL-2.0-only (untagged, per Linux COPYING)	66a7ea1b13539e6eaceea7e12ef1ac7310f8c33228083af9f7c230d09447a0e5
+drivers/gpu/drm/nouveau/dispnv50/atom.h	GPL-2.0-only (untagged, per Linux COPYING)	9c8574b7a241af8868c277af12c7db327f660e3f91497b7af26ef7e350f2ed27
+drivers/gpu/drm/nouveau/dispnv50/base.c	GPL-2.0-only (untagged, per Linux COPYING)	a52ca6360000653fe92a7704289f5d428c4de1178d61a8cc41a378c307cdf834
+drivers/gpu/drm/nouveau/dispnv50/base.h	GPL-2.0-only (untagged, per Linux COPYING)	10b59e19502051fc19878b647422c8a9c5ee04513d85cdb3f2d214a187221a95
+drivers/gpu/drm/nouveau/dispnv50/base507c.c	GPL-2.0-only (untagged, per Linux COPYING)	cf1f300628913f2f6d35fdce4fef059fb7add65ca18579d6507d0a126561bb06
+drivers/gpu/drm/nouveau/dispnv50/base827c.c	GPL-2.0-only (untagged, per Linux COPYING)	ee1dc2c18bca1672d17907f5f7497a3160f2836424af57ab2576cfac775250dd
+drivers/gpu/drm/nouveau/dispnv50/base907c.c	GPL-2.0-only (untagged, per Linux COPYING)	4df7822c2017b027e0ca65b1deb310b0fc6bdb1474961920f2ea0af7c9c6bd52
+drivers/gpu/drm/nouveau/dispnv50/base917c.c	GPL-2.0-only (untagged, per Linux COPYING)	c5f51e9e087337686ea769794747d2c20386288e2534d1e4b0649fb601992d54
+drivers/gpu/drm/nouveau/dispnv50/core.c	GPL-2.0-only (untagged, per Linux COPYING)	ddf2144aa3ea22dd02a2a8823410190be8b44bac57f4bf34322ceff2d3b752be
+drivers/gpu/drm/nouveau/dispnv50/core.h	GPL-2.0-only (untagged, per Linux COPYING)	f0e40ec3804e6d80892ab3e6514da0a750acd23214a9afac5b0ed5f470ce0aaa
+drivers/gpu/drm/nouveau/dispnv50/core507d.c	GPL-2.0-only (untagged, per Linux COPYING)	c93cd6cebd533c091bc44855dc104f69ae9cd8f9c91cb7f9b4d6c4d4ddd4df48
+drivers/gpu/drm/nouveau/dispnv50/core827d.c	GPL-2.0-only (untagged, per Linux COPYING)	8c220e8e0fe3cad98cc0cec8fc75ad033a88a0761de17bf648457e4a72b18fc3
+drivers/gpu/drm/nouveau/dispnv50/core907d.c	GPL-2.0-only (untagged, per Linux COPYING)	18858260615437662a2d59b4bde8f6002ce34914a26f0b4089b239ef94a75941
+drivers/gpu/drm/nouveau/dispnv50/core917d.c	GPL-2.0-only (untagged, per Linux COPYING)	492c2ad6479321a5b3c96de1f4bf4720e5a3790e4c67e8539a3fd864da8ba011
+drivers/gpu/drm/nouveau/dispnv50/corec37d.c	GPL-2.0-only (untagged, per Linux COPYING)	e447a0582ef4a1fee45fc788cfb582ef3b541f4efe228af60f543ab86eb6f66d
+drivers/gpu/drm/nouveau/dispnv50/corec57d.c	GPL-2.0-only (untagged, per Linux COPYING)	ddc2b2d4488e1b7c4145bdc4983b97bc45e52d9d27a6e14680a56c9c7977cff8
+drivers/gpu/drm/nouveau/dispnv50/coreca7d.c	MIT	5ddc2fd573f917d1ae5893c3d4649ba93bbb8b3095e021e8a8ee75a6c066b686
+drivers/gpu/drm/nouveau/dispnv50/crc.h	MIT	26d382288c84fa5d2eb10c51d4fb4e5ec14867e31c7dd62cdd82105d8dd6cfbc
+drivers/gpu/drm/nouveau/dispnv50/curs.c	GPL-2.0-only (untagged, per Linux COPYING)	040dcc3e72436ec274b8cbb938863afc7ee559ae4d278f0fbe2721d893da9c1e
+drivers/gpu/drm/nouveau/dispnv50/curs.h	GPL-2.0-only (untagged, per Linux COPYING)	fc9e45f7ea1cbac8884bd8ed55eb892759fd950d4b9668e2ed62fecd562d7e27
+drivers/gpu/drm/nouveau/dispnv50/curs507a.c	GPL-2.0-only (untagged, per Linux COPYING)	eab60af4db78660dcaf637011b52955a8b5b33f5c448157b5e9b7d545e3ad27b
+drivers/gpu/drm/nouveau/dispnv50/curs907a.c	GPL-2.0-only (untagged, per Linux COPYING)	722bc1c7e2b30ed8f7dc949f980e0d91345b4c550c562781ab33074ced7c6c75
+drivers/gpu/drm/nouveau/dispnv50/cursc37a.c	GPL-2.0-only (untagged, per Linux COPYING)	98a773704e0353427b4e2b37b1dac34a2499e990822408119bffdce6f765b894
+drivers/gpu/drm/nouveau/dispnv50/dac507d.c	GPL-2.0-only (untagged, per Linux COPYING)	c8eecad0eea633333ade293c4c6bc4a8e6cdb0aad7888ece913d90a01b001e9b
+drivers/gpu/drm/nouveau/dispnv50/dac907d.c	GPL-2.0-only (untagged, per Linux COPYING)	c8717be5fb494f07b3bea041677e6a1ddd45d4ed435b70621a5e6fa956bdd3e3
+drivers/gpu/drm/nouveau/dispnv50/disp.c	GPL-2.0-only (untagged, per Linux COPYING)	c8466c003e9bdbfb974a5935640d841c2c7644f08efc018fb7dc642b24dfdbd1
+drivers/gpu/drm/nouveau/dispnv50/disp.h	GPL-2.0-only (untagged, per Linux COPYING)	65a49cdf22a9e1350f3b81742d3e3af789dfba004130908bd0b9c363fa175efc
+drivers/gpu/drm/nouveau/dispnv50/handles.h	MIT	6dc6ee215ea5001c851a0a78dc36989bf326e04f22825ba2b01afaf639a0b5a8
+drivers/gpu/drm/nouveau/dispnv50/head.c	GPL-2.0-only (untagged, per Linux COPYING)	bbe5a3c624a1b394285cc318258169890e973097ae693fb39144db5f3121cb80
+drivers/gpu/drm/nouveau/dispnv50/head.h	GPL-2.0-only (untagged, per Linux COPYING)	b6b4ef04ea61875c9bd241d55e02a33c26c7b91e0fc10ab77c30c474eac63361
+drivers/gpu/drm/nouveau/dispnv50/head507d.c	GPL-2.0-only (untagged, per Linux COPYING)	d7a07d5f683d23bd4031e3648cdc40fbae5cb45f1dec573d7638eaaa4a671384
+drivers/gpu/drm/nouveau/dispnv50/head827d.c	GPL-2.0-only (untagged, per Linux COPYING)	c172110b6f646d56ec819aa9a502bab8c629b8a90cd0537aab45ef2acf2e4582
+drivers/gpu/drm/nouveau/dispnv50/head907d.c	GPL-2.0-only (untagged, per Linux COPYING)	2c8ff5508af5eb1946d1c9a566275a6b15bae06fc812d9997614ebfb8bdb8813
+drivers/gpu/drm/nouveau/dispnv50/head917d.c	GPL-2.0-only (untagged, per Linux COPYING)	6f0645bbf9d8d4fc55f148622204105271b4a3200622aa105e630bc4072f1385
+drivers/gpu/drm/nouveau/dispnv50/headc37d.c	GPL-2.0-only (untagged, per Linux COPYING)	ec91ee50eb67125b512d9f4dd83e99dee66b3671fccb7f6cd0d6574100a16e29
+drivers/gpu/drm/nouveau/dispnv50/headc57d.c	GPL-2.0-only (untagged, per Linux COPYING)	f076a3b8405a57b4f584c797ee7f5146a16074ee3ed2fc5bb6ccbc53ca22415b
+drivers/gpu/drm/nouveau/dispnv50/headca7d.c	MIT	db07f878398371744c2b3d90d5b9db0c0660751665c482b404d4131334c24111
+drivers/gpu/drm/nouveau/dispnv50/lut.c	GPL-2.0-only (untagged, per Linux COPYING)	7ef919874437b3d2f25e31c05941338d4bab78ca512551da231d8745e5729021
+drivers/gpu/drm/nouveau/dispnv50/lut.h	GPL-2.0-only (untagged, per Linux COPYING)	a5740455fd27134cb8523e8276f27cf3ca35caab163767d40d74db14fae93a16
+drivers/gpu/drm/nouveau/dispnv50/oimm.c	GPL-2.0-only (untagged, per Linux COPYING)	3aa9891f078f8157ac8108c2c7bd96de44658d588d694a82922bcaa1adbee6fe
+drivers/gpu/drm/nouveau/dispnv50/oimm.h	GPL-2.0-only (untagged, per Linux COPYING)	84c83bdf82a472dfe0dda9b4b90dd38a518df8a75ef33794f7f068f574ab47da
+drivers/gpu/drm/nouveau/dispnv50/oimm507b.c	GPL-2.0-only (untagged, per Linux COPYING)	e0b1543bc81abe78912d9ff95d54a3350d8680b0f39676e739d5f9a1caa7f10a
+drivers/gpu/drm/nouveau/dispnv50/ovly.c	GPL-2.0-only (untagged, per Linux COPYING)	355a9463007ad93e6ba939e1556989dcaadc2e1c284a17da5982b09c4698e2ed
+drivers/gpu/drm/nouveau/dispnv50/ovly.h	GPL-2.0-only (untagged, per Linux COPYING)	63e0ff1190a91c530ec689d66aaf4a7f7e29d13ae418bb49f2c30ba173ec3b00
+drivers/gpu/drm/nouveau/dispnv50/ovly507e.c	GPL-2.0-only (untagged, per Linux COPYING)	f9a3ce6d97587c7270c5adf68aed55c4d664fd2fe9ba242e6478ea9f10450932
+drivers/gpu/drm/nouveau/dispnv50/ovly827e.c	GPL-2.0-only (untagged, per Linux COPYING)	be428fd3e3a0f3c43a90562174cc56e1485bec5835813a30d4041873587cc086
+drivers/gpu/drm/nouveau/dispnv50/ovly907e.c	GPL-2.0-only (untagged, per Linux COPYING)	b4ae320b3961ae2dbfec9565fbcd681d172d9687e46ad306631154851d682823
+drivers/gpu/drm/nouveau/dispnv50/ovly917e.c	GPL-2.0-only (untagged, per Linux COPYING)	42df4aec04a06df66e01c3497a2359c3785929bd2c7358445dfaa873b44e31f8
+drivers/gpu/drm/nouveau/dispnv50/pior507d.c	GPL-2.0-only (untagged, per Linux COPYING)	687a56a9d631acde43fa4192c7ddd40a579dd766bfeb1404495419d56a4284bd
+drivers/gpu/drm/nouveau/dispnv50/sor507d.c	GPL-2.0-only (untagged, per Linux COPYING)	23f0ffe9afcc48186bb9fb60132c6c3bd86d8006a24680a82de146ba9594ff60
+drivers/gpu/drm/nouveau/dispnv50/sor907d.c	GPL-2.0-only (untagged, per Linux COPYING)	d1c956e443154e1a538ce5f5fe29efea091cb2be6df1cf7ec4dd2ff08ae5c2be
+drivers/gpu/drm/nouveau/dispnv50/sorc37d.c	GPL-2.0-only (untagged, per Linux COPYING)	204b42cee9874102a98bc397c800d226b9d188ce9c466747bbed066b945b2c3a
+drivers/gpu/drm/nouveau/dispnv50/tile.h	MIT	84a94610d75f8087ba7c69ff42e1a671aee7140f6d1a20542596439a07f0c364
+drivers/gpu/drm/nouveau/dispnv50/wimm.c	GPL-2.0-only (untagged, per Linux COPYING)	a0fa8fc27e2806989cdf02847da102b5f8c44fa37b4b625994acd229aed9a125
+drivers/gpu/drm/nouveau/dispnv50/wimm.h	GPL-2.0-only (untagged, per Linux COPYING)	7d277272ca30b50e241c05c102e400185f02180c8634e8b9e74559fd28d9f98d
+drivers/gpu/drm/nouveau/dispnv50/wimmc37b.c	GPL-2.0-only (untagged, per Linux COPYING)	6f736cecb68f1b10cc569ed792b7452f3e35689081c9d6494b73d64ecd1f8b9b
+drivers/gpu/drm/nouveau/dispnv50/wndw.c	GPL-2.0-only (untagged, per Linux COPYING)	342ce2b1e986451165a358ac76c03330712a468ac87ccb74f60c23169d214d39
+drivers/gpu/drm/nouveau/dispnv50/wndw.h	GPL-2.0-only (untagged, per Linux COPYING)	70c53cd9cb07389c0a17d742f635f624aedbdeb4561893a757e7ce911304b9fc
+drivers/gpu/drm/nouveau/dispnv50/wndwc37e.c	GPL-2.0-only (untagged, per Linux COPYING)	333bb4ba1d41c6005c292138d73c7368169b0e908d072897cd1699ad91c1ac4f
+drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c	GPL-2.0-only (untagged, per Linux COPYING)	498f293150e76bc609826eeac37bb9a0dd9d33b541c6bf9884e42e196bb6ff92
+drivers/gpu/drm/nouveau/dispnv50/wndwc67e.c	GPL-2.0-only (untagged, per Linux COPYING)	8ca6aa5ddad890ffc7db6d30d563998de7474a6a6a06d282ebe0920baa907f34
+drivers/gpu/drm/nouveau/dispnv50/wndwca7e.c	MIT	aa199740b7d81d98c61f9cc0fc1ac69313d03bd027618d4389f3c8eaf8b82025
+drivers/gpu/drm/nouveau/gv100_fence.c	MIT	90fd0491398dd6e4e563967a628ef0a7b68d1f61ad9da8765f5ab179b0e1c8b8
+drivers/gpu/drm/nouveau/include/dispnv04/i2c/ch7006.h	GPL-2.0-only (untagged, per Linux COPYING)	b8356c441dcfc4e6f9103e4fd5eb797dcf86d0f61348b116f18376fa772b1b41
+drivers/gpu/drm/nouveau/include/dispnv04/i2c/encoder_i2c.h	GPL-2.0-only (untagged, per Linux COPYING)	81bf0734925f8a7fb70cb8c3d5f2f850842930f48c8c60121f10b661f7eae760
+drivers/gpu/drm/nouveau/include/dispnv04/i2c/sil164.h	GPL-2.0-only (untagged, per Linux COPYING)	b368eee40a39c55c52367463a5aabcb3a47aed6361e6ad6d608f9d9678f7d5e7
+drivers/gpu/drm/nouveau/include/nvfw/acr.h	GPL-2.0-only (untagged, per Linux COPYING)	8673936f9cbff523f125a7fddb1190e186559739fc35fab5e7385ff6d4da62ac
+drivers/gpu/drm/nouveau/include/nvfw/flcn.h	MIT	d3c894670485f624a0efed951e2fe16546c976158b034ada566dcf33eb0273fb
+drivers/gpu/drm/nouveau/include/nvfw/fw.h	MIT	29524e3b1586a674924d5019a2f694b5eb47737032e75c91b4ba2c443cf5e27a
+drivers/gpu/drm/nouveau/include/nvfw/hs.h	MIT	d9d2e5d09de9af6f943a9a7a997a571585c63285a2cc7e43c77c8c41b2449580
+drivers/gpu/drm/nouveau/include/nvfw/ls.h	MIT	f1611627263b9911a57d80efd905c13327c687ba8642c638d66161dfed5b44b2
+drivers/gpu/drm/nouveau/include/nvfw/pmu.h	GPL-2.0-only (untagged, per Linux COPYING)	01da0aa692568a8db7fe158795035c94bc2f5d5d1ac4432a416a28f704296c24
+drivers/gpu/drm/nouveau/include/nvfw/sec2.h	GPL-2.0-only (untagged, per Linux COPYING)	41f0c530875be9a2cd52d456eaddf483c520665d70f9d1bdc02cfd68c9e1e208
+drivers/gpu/drm/nouveau/include/nvhw/class/cl0039.h	GPL-2.0-only (untagged, per Linux COPYING)	b48dbab58fb4a57ff69101ad8b4298878083f9dfcc5165f37ab218cbf60bc0c8
+drivers/gpu/drm/nouveau/include/nvhw/class/cl006c.h	GPL-2.0-only (untagged, per Linux COPYING)	b1ad3ee6536df427d73c4cb66a0122386f97dd4a08e0941850622e7910f8719e
+drivers/gpu/drm/nouveau/include/nvhw/class/cl006e.h	GPL-2.0-only (untagged, per Linux COPYING)	864a062f31c269075043590dcf6caa996dbf3db8e78c0eaf4fb7497e929f0947
+drivers/gpu/drm/nouveau/include/nvhw/class/cl176e.h	MIT	9aa63dfd49c1f7d29eb2f13ed5c54cbedd56fc5464ca35ed775d8fd0a5e95efa
+drivers/gpu/drm/nouveau/include/nvhw/class/cl206e.h	GPL-2.0-only (untagged, per Linux COPYING)	c19092b4c3a65bbbec1d821d1b1bd7fda79f432b226f18385d363376d23eebab
+drivers/gpu/drm/nouveau/include/nvhw/class/cl5039.h	GPL-2.0-only (untagged, per Linux COPYING)	052d35d744f9c4c65622c4a08117c5dfeb5eedaad9781388295e1c842b4e7854
+drivers/gpu/drm/nouveau/include/nvhw/class/cl507a.h	GPL-2.0-only (untagged, per Linux COPYING)	6b01e72636e899c74bf6539c16a3318e11dfd9dd3d898cf97b974cc4918a52fb
+drivers/gpu/drm/nouveau/include/nvhw/class/cl507c.h	GPL-2.0-only (untagged, per Linux COPYING)	dd5abaae462eeac2108b704091d78d0860a86698a9857e23b4bc84b9cafd47c5
+drivers/gpu/drm/nouveau/include/nvhw/class/cl507d.h	GPL-2.0-only (untagged, per Linux COPYING)	e509ad453500ed3abaa118e587d585d2cecb2c98be63dbdb8d6b2ca0def1f5b3
+drivers/gpu/drm/nouveau/include/nvhw/class/cl507e.h	GPL-2.0-only (untagged, per Linux COPYING)	5823dac07d6b6be0590a602b389f10233cd28e83b730de456a8dc08b8a0ff219
+drivers/gpu/drm/nouveau/include/nvhw/class/cl826f.h	GPL-2.0-only (untagged, per Linux COPYING)	903c34b35b70f6155feb7287c74ffc688f340e94a530a2d8c3d61a468631eadd
+drivers/gpu/drm/nouveau/include/nvhw/class/cl827c.h	GPL-2.0-only (untagged, per Linux COPYING)	3ca80d602bd3660e344a86402b7befe6d9225602d3e4a8f57597237e0a078033
+drivers/gpu/drm/nouveau/include/nvhw/class/cl827d.h	GPL-2.0-only (untagged, per Linux COPYING)	1f399e31f44a807af749a9957dfb48f9fd90fa038e3b020bdefece121a6a45e4
+drivers/gpu/drm/nouveau/include/nvhw/class/cl827e.h	GPL-2.0-only (untagged, per Linux COPYING)	c44f4a3a286d5e95f9c4a8e095e97a7cf99f5535f61e3dfc3b40ad592a77b271
+drivers/gpu/drm/nouveau/include/nvhw/class/cl837d.h	GPL-2.0-only (untagged, per Linux COPYING)	ee91d43dc5f2a33545ad2fb0dbd2a5cd7da8ac16b7d81b280f497486990c1958
+drivers/gpu/drm/nouveau/include/nvhw/class/cl887d.h	GPL-2.0-only (untagged, per Linux COPYING)	7507a9ad5b57583e6d096221ed7e8f40e59bbf676bee6fd6e66eb98b9e1c3b11
+drivers/gpu/drm/nouveau/include/nvhw/class/cl9039.h	GPL-2.0-only (untagged, per Linux COPYING)	fbdb4e961d90b6b037e29d661d8bdb36043481e6f22a302e079c224ab5e3e828
+drivers/gpu/drm/nouveau/include/nvhw/class/cl906f.h	GPL-2.0-only (untagged, per Linux COPYING)	1175fcb508625f593c939d68f7fefa12bec22c7b285cfd836ee23c1e4c6cb220
+drivers/gpu/drm/nouveau/include/nvhw/class/cl907c.h	GPL-2.0-only (untagged, per Linux COPYING)	eb45ed47ffb368e7449c65c0a525776f52a66ba09580180694ea4aeeecdb8302
+drivers/gpu/drm/nouveau/include/nvhw/class/cl907d.h	GPL-2.0-only (untagged, per Linux COPYING)	758799576b60d93cefaee681a991516d78b0aa57ef681963b02ab4c68fe9c351
+drivers/gpu/drm/nouveau/include/nvhw/class/cl907e.h	GPL-2.0-only (untagged, per Linux COPYING)	4679266fbab1f4e04113c9d6d30ff3129c1bcc62817135a519a270b4fdd5a27a
+drivers/gpu/drm/nouveau/include/nvhw/class/cl917d.h	GPL-2.0-only (untagged, per Linux COPYING)	7eedbe66dea8e432af2771d4bd7ab321f019602e34e54c6525d73e947e3652ce
+drivers/gpu/drm/nouveau/include/nvhw/class/cla0b5.h	GPL-2.0-only (untagged, per Linux COPYING)	e2549e4c91db4db712df0f4c5d94bf5b788fd20f97474d2a1271f4d00999df39
+drivers/gpu/drm/nouveau/include/nvhw/class/clc36f.h	MIT	a44b9850b627f610c2b7956d37c4b1afc4d47e6f6f0f81fbef8d19adad204b20
+drivers/gpu/drm/nouveau/include/nvhw/class/clc37a.h	GPL-2.0-only (untagged, per Linux COPYING)	2e2e032499fd9ce3f360f22f62d313d6abf5f1cb72768cce75c04df7af87730c
+drivers/gpu/drm/nouveau/include/nvhw/class/clc37b.h	GPL-2.0-only (untagged, per Linux COPYING)	0edcb98beb8e3465722abf7acfb2e64b3a5091f044d56d544f50c261f215e94c
+drivers/gpu/drm/nouveau/include/nvhw/class/clc37d.h	GPL-2.0-only (untagged, per Linux COPYING)	68731fa6048f998c97d0f32381af9b73b35c776fe67d74736dcc9920b393a0e4
+drivers/gpu/drm/nouveau/include/nvhw/class/clc37e.h	GPL-2.0-only (untagged, per Linux COPYING)	656805bbe64ec4b195ffdc321e2f515ce509079af6848511ec2c75e84994548d
+drivers/gpu/drm/nouveau/include/nvhw/class/clc57d.h	GPL-2.0-only (untagged, per Linux COPYING)	3000096def4e707a9e8df16268cfeb991dde284fd2de7e2139b7384daf604cce
+drivers/gpu/drm/nouveau/include/nvhw/class/clc57e.h	GPL-2.0-only (untagged, per Linux COPYING)	c8db68b061526f22d1c12cb0fad26f1852f73ec971f3eadcf4ad3093804246d7
+drivers/gpu/drm/nouveau/include/nvhw/class/clc97b.h	MIT	cb2af390933f16142df924bfe30cc7e6fa2e3cc18fdfb9c235e732e2b80be89c
+drivers/gpu/drm/nouveau/include/nvhw/class/clca7d.h	MIT	d76546d671d8c47c0d6719e75a0c1e301a09efce6f1c0de0857f0971bfc8c897
+drivers/gpu/drm/nouveau/include/nvhw/class/clca7e.h	MIT	8345774684184e225c164dd3e35e157a58ce05fa010b15bc92ab0cce6d60de34
+drivers/gpu/drm/nouveau/include/nvhw/drf.h	GPL-2.0-only (untagged, per Linux COPYING)	0c2187b2824a1fb0d259cc04b9c1458160ec5ef390bc67f4afe9e54f815f4ca4
+drivers/gpu/drm/nouveau/include/nvhw/ref/gb100/dev_hshub_base.h	MIT	8624f1b57976cc0fd401867ad0c7924f78a3a87dc5dce9394ef489d1acb2a9a0
+drivers/gpu/drm/nouveau/include/nvhw/ref/gb10b/dev_fbhub.h	MIT	54cd86cd5c56a4bfbca09021f3b4998676c4ea2afa10b2d27d1d206fc2734947
+drivers/gpu/drm/nouveau/include/nvhw/ref/gb202/dev_ce.h	MIT	3b8b96918531318c5f8f8c6ae0e9a8fff5705e59a67613386a7601bb3251b9f8
+drivers/gpu/drm/nouveau/include/nvhw/ref/gb202/dev_therm.h	MIT	bba9b5f6a7ab246c8a6c72539da64c80713eb4bdd0b7c7759340e5f657a38a92
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/dev_falcon_v4.h	MIT	023018fd29f395b9bcc898eeb8bc68d353c1d44957ff7edf74ef91e11f8c349d
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/dev_fb.h	MIT	853f847f5e3e5606dc960d44449b43ce37340b56ac709f11ed89c6d24af19c99
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/dev_fsp_pri.h	MIT	9064fa44c7cd1f34e5aeb8ba3aa3f609dc18b9df96d2540acc8bb94709c94352
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/dev_mmu.h	MIT	37d2f58ad5e0f820c121ffcb4e36e2640a6227ffb64b7d5e68b198bf000632bc
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/dev_riscv_pri.h	MIT	cb30de71f73700f7a98793d9f1aa18a4d48ff63e3871f68c99671b2c906caed4
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/dev_therm.h	MIT	e75af98970122002594f88ed1e15743430ec8ac90416a05d2d57dc9d93b4e257
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/dev_xtl_ep_pri.h	MIT	591ea1f8e39e731a37e1e8b27424ec0ddf8a5baa9986726397618a48c790ca44
+drivers/gpu/drm/nouveau/include/nvhw/ref/gh100/pri_nv_xal_ep.h	MIT	c1e45551db273d838ea1371c3671c14603cc874d082629302a1df5da1bf18ef6
+drivers/gpu/drm/nouveau/include/nvif/chan.h	MIT	d9514f1a6d728127ca5103415f388ce181ba3054ca9eb8038c2e3d6a96436754
+drivers/gpu/drm/nouveau/include/nvif/cl0002.h	MIT	f1287da965212a5d9aa34feadb55d1db76fb7f48b308d8e06a180cbf97233079
+drivers/gpu/drm/nouveau/include/nvif/cl0046.h	MIT	f8b35695bf811d56ca32422e51142006fcaafdbd63e232559730e95b4fb97579
+drivers/gpu/drm/nouveau/include/nvif/cl0080.h	MIT	379a1c055d22d98d4682e4bec87b06a32ff6f2c9f9b8a8cc7cbdc8def60406fa
+drivers/gpu/drm/nouveau/include/nvif/cl9097.h	MIT	ee95b74d16f0393aeeb675007579d3c917d542c8970fd7dda7d8b66bea375fe3
+drivers/gpu/drm/nouveau/include/nvif/class.h	MIT	accf5976f71d17943dca4b633b5bf5bd3e60bdc5f35fb202c8ea9854d95478d1
+drivers/gpu/drm/nouveau/include/nvif/clb069.h	GPL-2.0-only (untagged, per Linux COPYING)	0e7deaef2929ddab79b6d7cfd78826734c495cf14bb67065393e960715f5c55a
+drivers/gpu/drm/nouveau/include/nvif/client.h	MIT	26362990ece015c29fa8825fa2b770606514ff1791572ac828dca3eb1f1b2e36
+drivers/gpu/drm/nouveau/include/nvif/conn.h	MIT	d9c2919ac5ed90cb8fa55d0072cb640d614b31b9ece3de266ead88f8c0d3239d
+drivers/gpu/drm/nouveau/include/nvif/device.h	MIT	a369da18f065ceafa9aefe3b6d3f21aa09305ff00ca8218d5e6b7eb6d5e8a5be
+drivers/gpu/drm/nouveau/include/nvif/disp.h	GPL-2.0-only (untagged, per Linux COPYING)	985d48a24f332c7647d6a2fbfdcabb112cc878c319a90ff12032d0e8ae69617a
+drivers/gpu/drm/nouveau/include/nvif/driver.h	MIT	cfe6333fa5119d7f29dab7341a8368de4d58b53d1f57e982368a6bf28b26fd0f
+drivers/gpu/drm/nouveau/include/nvif/event.h	MIT	e5b65abd588c0cedbbab2fbd29bc03f1acb27109b62c5c8515981dda3b9a0318
+drivers/gpu/drm/nouveau/include/nvif/fifo.h	GPL-2.0-only (untagged, per Linux COPYING)	14f0639b8756851c33dbd206a00cd2cc4ef7200273fd785c902072b08d721216
+drivers/gpu/drm/nouveau/include/nvif/head.h	MIT	68bedfefb799844c93d8f6911baad955bcd34e5f89f50a0ebc4537cc0ca3b995
+drivers/gpu/drm/nouveau/include/nvif/if0000.h	MIT	012e0a0e01cd1aa16f6600e0171698809e0fe976bdba43404c4d12aea7c4be30
+drivers/gpu/drm/nouveau/include/nvif/if0001.h	MIT	a53e7b33416c7a2b78fb8c97208c595d7ce90db7a315d6bd5921c581af9f50b4
+drivers/gpu/drm/nouveau/include/nvif/if0004.h	MIT	2499bafc062ccc6ba0aabc8aeaab7f6d6669e8a875e2f3d3c4981cc331059927
+drivers/gpu/drm/nouveau/include/nvif/if0008.h	GPL-2.0-only (untagged, per Linux COPYING)	4b8b857fbc52e44e6214354397a5eb00fd26531267630d60083dd5f9c98fd22b
+drivers/gpu/drm/nouveau/include/nvif/if000a.h	GPL-2.0-only (untagged, per Linux COPYING)	b086dddb57077ddafe2abc4c9ff2dbbb5633e48960425a9f7a35a26a2fac781b
+drivers/gpu/drm/nouveau/include/nvif/if000b.h	GPL-2.0-only (untagged, per Linux COPYING)	105e7a54f6ca531d7a3d26522bc03f82616abab1cb6e183419bf76dc5aa803d2
+drivers/gpu/drm/nouveau/include/nvif/if000c.h	GPL-2.0-only (untagged, per Linux COPYING)	c64f3643fd13a686030c5ca2d388f02af4aa10b1ee89a7a5f7ab40f91f9dc9d7
+drivers/gpu/drm/nouveau/include/nvif/if000d.h	GPL-2.0-only (untagged, per Linux COPYING)	d3cd9ef1779fc300ba46c0351ed2697fb0f6bab87e96ff55427c1657a31a1f16
+drivers/gpu/drm/nouveau/include/nvif/if000e.h	MIT	7409f5490a532779dfe6b47721557d87eb7873aeee351db53fadec306e783f35
+drivers/gpu/drm/nouveau/include/nvif/if0010.h	MIT	67309e29072d55811635b014a7c7ae52342a20cf741e9c0bb4ddf44eaa47c3a9
+drivers/gpu/drm/nouveau/include/nvif/if0011.h	MIT	6e96e534b7f5a03a2f94bbd9c4424a3afb54969ba096134e7fdbfcb5cdfc8f42
+drivers/gpu/drm/nouveau/include/nvif/if0012.h	MIT	3fbd43d6b7e1968a99b8679653ab4bb392e4e60272e2c3904862bd703322d50e
+drivers/gpu/drm/nouveau/include/nvif/if0013.h	MIT	ebb612883c266e6519c00d078d929456c132ef01c1a6fe19706d19b619368e82
+drivers/gpu/drm/nouveau/include/nvif/if0014.h	MIT	180f7789d82483c3b92bce23cdb98326354ad6bfde349623a6bf3a345092b796
+drivers/gpu/drm/nouveau/include/nvif/if0020.h	MIT	bd52119521bf1ec03d1ca73efdf3391267aa630e91b28bc8b6d4544345d391f1
+drivers/gpu/drm/nouveau/include/nvif/if0021.h	MIT	53cb12d82811a928d5d95e802a133924e008341de7aab0b5d8f1196aa0b7be87
+drivers/gpu/drm/nouveau/include/nvif/if500b.h	GPL-2.0-only (untagged, per Linux COPYING)	f7633115bfa73b48094389466a343a264fcbecee530c433fcef81a0c8265aff5
+drivers/gpu/drm/nouveau/include/nvif/if500d.h	GPL-2.0-only (untagged, per Linux COPYING)	7a4c21d54e8b6c9d5d18f8235a57eac24899f9b058e30e69949ed1977e69228a
+drivers/gpu/drm/nouveau/include/nvif/if900b.h	GPL-2.0-only (untagged, per Linux COPYING)	b654f82deb872982e6e697ad49c951e3907e464a9e2026cdaec3f16883cb442f
+drivers/gpu/drm/nouveau/include/nvif/if900d.h	GPL-2.0-only (untagged, per Linux COPYING)	4f373df393896cce7929624795430b7b5e075543983dc8758b9b4a39ea507b1b
+drivers/gpu/drm/nouveau/include/nvif/ifb00d.h	GPL-2.0-only (untagged, per Linux COPYING)	1f407239a6fc468613f863e5c3d74f2ab2a99434f4aeab2e8239a09dc66903e1
+drivers/gpu/drm/nouveau/include/nvif/ifc00d.h	GPL-2.0-only (untagged, per Linux COPYING)	d7ac62eb8e6fc61764b52e85a55842c167a0f096f40dcd81251ac857a1dbc7a2
+drivers/gpu/drm/nouveau/include/nvif/ioctl.h	MIT	b1a86c1ab6ae36dc012874647454c3404281b6e84b3292a234d983a3ee1cfc03
+drivers/gpu/drm/nouveau/include/nvif/log.h	MIT	0f4f313f2246fbc734f113a831497389282a27ea230cf565efd0e1f0c27bab6a
+drivers/gpu/drm/nouveau/include/nvif/mem.h	GPL-2.0-only (untagged, per Linux COPYING)	ef3987b92d434be652012757ada5c699e2b72cf841161ef31ae94e75f7b183b1
+drivers/gpu/drm/nouveau/include/nvif/mmu.h	GPL-2.0-only (untagged, per Linux COPYING)	0305db649535f9bf952c7ecbf428880cc0a75466070cc9b5a7f599aca6cb5f4d
+drivers/gpu/drm/nouveau/include/nvif/object.h	MIT	702308b8c6e8a110df07dc1852427153adbf6eeb6c70fadeea8241610df56b31
+drivers/gpu/drm/nouveau/include/nvif/os.h	MIT	fc4b32d441ad5d4217fc8794c785ad2bb9c082ece42d28d45f6bddcd29ccf7d6
+drivers/gpu/drm/nouveau/include/nvif/outp.h	MIT	fab0236f185c9684d94c593dfba0b11f9e39872e487f27c73ce77a39be788aeb
+drivers/gpu/drm/nouveau/include/nvif/parent.h	MIT	253472c8192fa227889a51039a59152f2f640af71fece7c3372c3066ab89ee0d
+drivers/gpu/drm/nouveau/include/nvif/printf.h	MIT	a0e4a2785a48f4160d7724938f2c62a9383801ccf52fe9cba5ab71fdd9d2991e
+drivers/gpu/drm/nouveau/include/nvif/push.h	GPL-2.0-only (untagged, per Linux COPYING)	54d24607e3e64e5a9308a0b3deaf52071c77e1449f3abb090732f6543bbccc7c
+drivers/gpu/drm/nouveau/include/nvif/push006c.h	GPL-2.0-only (untagged, per Linux COPYING)	6a8c5869f1fc99696f7e3aec43e4ca36dc37241e18235427ca03db4fb56f3383
+drivers/gpu/drm/nouveau/include/nvif/push206e.h	GPL-2.0-only (untagged, per Linux COPYING)	7695bb0c828396978af12ae094cfd4b98c6b65d5935cd0e5757bf7b19d5e0f28
+drivers/gpu/drm/nouveau/include/nvif/push507c.h	GPL-2.0-only (untagged, per Linux COPYING)	32552a705b5ccb11cff17c142bca50229ce4fb992dda26c1b7dd6fb79a4427af
+drivers/gpu/drm/nouveau/include/nvif/push906f.h	GPL-2.0-only (untagged, per Linux COPYING)	45e760a06b5835f7ca9621096c2c82b345d7d583cf7879ba123963c2f6ad4710
+drivers/gpu/drm/nouveau/include/nvif/pushc37b.h	GPL-2.0-only (untagged, per Linux COPYING)	fa7c4c67712fb5f88f82e5140b077e77bf1a5077d537aa618a17d68f03d6cf38
+drivers/gpu/drm/nouveau/include/nvif/pushc97b.h	GPL-2.0-only (untagged, per Linux COPYING)	bfd9f4bfc698c13815feb705c8e26b0b3c2d10faf6cd71ea383dde42e6d91a67
+drivers/gpu/drm/nouveau/include/nvif/timer.h	GPL-2.0-only (untagged, per Linux COPYING)	ee151dfa4a198a6765e22319bcdd46c8a09dc00de703d66cf03beef3b2f1bf56
+drivers/gpu/drm/nouveau/include/nvif/unpack.h	MIT	5235c40469b74a8caa60ce8fdabe8790897bae33c0ea3a904aa8a0401050643c
+drivers/gpu/drm/nouveau/include/nvif/user.h	GPL-2.0-only (untagged, per Linux COPYING)	8caf27123c902a5e628858b20a3a20d22d90bea925ec302be26f474586a22b90
+drivers/gpu/drm/nouveau/include/nvif/vmm.h	GPL-2.0-only (untagged, per Linux COPYING)	0a5c42b9bc935de5b1bdbe1f2dcc6f4f8a8170641586588748e04f9be037bfd9
+drivers/gpu/drm/nouveau/include/nvkm/core/client.h	MIT	8c0420f2dae982efe9c2ac69745aa2844a4fa7ad9b033d89af6dc4447d21c37d
+drivers/gpu/drm/nouveau/include/nvkm/core/debug.h	MIT	e5ecca403d4b92ee5706b882e74e67fd25ded5e5ee8fb6b3c6e94625b1f323ef
+drivers/gpu/drm/nouveau/include/nvkm/core/device.h	MIT	3cd980119d41953560de3bf50e1b5f540443c31d0ade15fecdfb7ac42691db47
+drivers/gpu/drm/nouveau/include/nvkm/core/engine.h	MIT	0a70fd71f8a79442ff16a81589887fa66c01a6540a09bd2f4317054b5f4ce899
+drivers/gpu/drm/nouveau/include/nvkm/core/enum.h	MIT	ae75dfd22f73b24773104cc4df954f56af0a4c05d560229e7d823626c3af5495
+drivers/gpu/drm/nouveau/include/nvkm/core/event.h	MIT	6af2bb3a0da94b5cb96a97000784cf86f0145297703a70aa99068360f606d27e
+drivers/gpu/drm/nouveau/include/nvkm/core/falcon.h	GPL-2.0-only (untagged, per Linux COPYING)	b18760e095b51bba3404ffa58493c04d8260efd8f69f10575b298bbed9d2bcdb
+drivers/gpu/drm/nouveau/include/nvkm/core/firmware.h	MIT	6d6c2e117dcdad0bcb1f7e94ec56b8a596a4613b975efed3f841eb497c81bac8
+drivers/gpu/drm/nouveau/include/nvkm/core/gpuobj.h	MIT	c0450df34a4fb831b7f1694d4cb42907953f6c769b0b7fc2e4aaa47cfaa8af57
+drivers/gpu/drm/nouveau/include/nvkm/core/intr.h	MIT	fb67dc932de61e526ddee606fe518b2c0f21083989700583c982c1c8f9ec9ea9
+drivers/gpu/drm/nouveau/include/nvkm/core/ioctl.h	MIT	af9329422a1c9ea7a87e25132ae8bd87fcb868839b954b8f72f80fdaf7470ab6
+drivers/gpu/drm/nouveau/include/nvkm/core/layout.h	MIT	29ba23dec58528d454038c5aa167d5ee3557b87e83ecaf554443ef137725fb89
+drivers/gpu/drm/nouveau/include/nvkm/core/memory.h	MIT	dbf6854812e3a1154f429b7a0d2e9ed628f9e34b4942c090d9953f760631c76c
+drivers/gpu/drm/nouveau/include/nvkm/core/mm.h	MIT	1d387c90046e1605fa6619b0dbb9ca61bdc7bbf839c615dce39a48138eb9a4a7
+drivers/gpu/drm/nouveau/include/nvkm/core/object.h	MIT	26e4cdd63ae004d3f39fabdc44e1aab72759a64acb87dbbcf7ed88b0385731f2
+drivers/gpu/drm/nouveau/include/nvkm/core/oclass.h	GPL-2.0-only (untagged, per Linux COPYING)	43f9215fb56e53ff564ff55419c56359424a2da21f2cc7d15e2722666bb07ab7
+drivers/gpu/drm/nouveau/include/nvkm/core/oproxy.h	MIT	9bf98dd68964a55e3d760580e3a6f997010425bf72074a0aeda189c325978642
+drivers/gpu/drm/nouveau/include/nvkm/core/option.h	MIT	e2d31be8a4336807cb59204271355c5a2c3ffff933a85d1c66a24d843f2a2e39
+drivers/gpu/drm/nouveau/include/nvkm/core/os.h	MIT	188e8870e8132bbfc7591d4de6373b37d8529472ac45ac5ca120b842ed80480f
+drivers/gpu/drm/nouveau/include/nvkm/core/pci.h	MIT	9ded42cf0a3a43a29c7c708673ac19290e00c19da1ce797e6320188e13e9bf68
+drivers/gpu/drm/nouveau/include/nvkm/core/ramht.h	MIT	44c98c32ef3ff1086a70c01658286674517a064b5b80a4c262bc4beaf73ef3e1
+drivers/gpu/drm/nouveau/include/nvkm/core/subdev.h	MIT	eeb883baa6dd4a054c8be88d01a96089e94522a3d2f7326c9f2637d3ac585bf6
+drivers/gpu/drm/nouveau/include/nvkm/core/suspend_state.h	MIT	cefe49cdfb5aba12fff953e27a381ebf9876e19d47d2f0fd2b69ebb0927bdaeb
+drivers/gpu/drm/nouveau/include/nvkm/core/tegra.h	MIT	1814317c28f292d78da344f5b5e50f26210437168776663c3b4f2d2d8c010012
+drivers/gpu/drm/nouveau/include/nvkm/engine/bsp.h	MIT	81b4bd06c013d0dcefd605061fc54b889672e761b9a27bff94d6675594ff147f
+drivers/gpu/drm/nouveau/include/nvkm/engine/ce.h	MIT	deabcdc27dc46f19e392862b48ec9d63d9f034d7229e14578883f4502283780e
+drivers/gpu/drm/nouveau/include/nvkm/engine/cipher.h	MIT	85b4047ff257692d15a7d331b2d206cd769b57fddbc50d25897de145f3ea4fb0
+drivers/gpu/drm/nouveau/include/nvkm/engine/disp.h	MIT	f7c0225260dbf3a6b34d9a01f9b4aa68eb4f66065fa41ba8d660366ad850d789
+drivers/gpu/drm/nouveau/include/nvkm/engine/dma.h	MIT	9f5c43509e890de633ccad40e24bb9ba1d976c660709f24f41a28dfe494f78d5
+drivers/gpu/drm/nouveau/include/nvkm/engine/falcon.h	MIT	f6bc13c54ad465439f6a52fc9960f2aa65a3a6cd24e772e1c612080cb4c1e4bd
+drivers/gpu/drm/nouveau/include/nvkm/engine/fifo.h	MIT	c12085606e451f0893e064dc18ce51eef8687c7e7b4fd0c99b09409ff61f8d14
+drivers/gpu/drm/nouveau/include/nvkm/engine/gr.h	MIT	0d9f689677348c9489d5eef974be859c482bcdbd798a3567a1315644baa8c6c6
+drivers/gpu/drm/nouveau/include/nvkm/engine/mpeg.h	MIT	1643c0f08183cecdc3cec327846879be9066ff85ebf9db1c605282a1ae73e395
+drivers/gpu/drm/nouveau/include/nvkm/engine/mspdec.h	MIT	0577eb0e1f1b613d0bcdeac94c811c892673cb61b80287f15f2a1bc00f06e6d8
+drivers/gpu/drm/nouveau/include/nvkm/engine/msppp.h	MIT	591eaa5a6146911234d20c09c643bc48928d5466db312b31c31f797c4bd82978
+drivers/gpu/drm/nouveau/include/nvkm/engine/msvld.h	MIT	92d5fbbceef64ab44e5f59ddd48183936fe3fc0fbde83c6406d39649a5e36a72
+drivers/gpu/drm/nouveau/include/nvkm/engine/nvdec.h	MIT	3d2cc1e38ebc2957500621a6f4abbfb0ed7de2c819de86cf96d6185dff2236d7
+drivers/gpu/drm/nouveau/include/nvkm/engine/nvenc.h	MIT	0e349e75e250d293d51e5487b704010eaf2135edb077ba25113534d7c7ca1c2f
+drivers/gpu/drm/nouveau/include/nvkm/engine/sec.h	MIT	82fe3cecbad7d6b1ab7c75add58ccb00995caf8d80302461548b0a4dfefdb715
+drivers/gpu/drm/nouveau/include/nvkm/engine/sec2.h	MIT	fd5263188692a6b49a5f4b58efae02f38c17d3aa8586eaaff960f0a3064f3cb9
+drivers/gpu/drm/nouveau/include/nvkm/engine/sw.h	MIT	c624a59268c45839d51c9f09d2bcf1cd1efb9ddcf88d944bb404d290c281bd1a
+drivers/gpu/drm/nouveau/include/nvkm/engine/vic.h	MIT	93da890071790aafa7b7bdca0b8cebb83ee2295db58c4c57b8f7f987d8814224
+drivers/gpu/drm/nouveau/include/nvkm/engine/vp.h	MIT	761260a661eab5dc9e578d3044c18030bc0e59f59c606a0c0af6b7c4cb069f65
+drivers/gpu/drm/nouveau/include/nvkm/engine/xtensa.h	MIT	41cd0b9072c5e6051716226915a1037640538e189edb76cc138aab78e11fb80d
+drivers/gpu/drm/nouveau/include/nvkm/subdev/acr.h	MIT	d14c80e4de3cae0ef3be2b9b233a85149f79d8b9b5b2b0687d45c1aaae637ad0
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bar.h	MIT	6784ad3dc1137866a042fc376b935fd30e26bfd47d3d8aabfeb691d11434b4ac
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios.h	MIT	feb03bc21ff16331d83ae06a86cd811d473ffeda38994af598f7f19223174680
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/M0203.h	MIT	23f32ce2578f0cd2802518fa69cd244c22cd48da8638bfc94af490bdf7a7e208
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/M0205.h	MIT	6331526f7d17984851df0328ad5b121d245277b3af8f3b86cb38f2947718be9f
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/M0209.h	MIT	1fdec20459cc38abe9ad39905f1670262e0a8ecd354506a12a8b8e76fb5e82cc
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/P0260.h	MIT	949c5a57fd5e6e4bdf9affd1842dceef3af10d7ad36da8f628eaeb8cb134b636
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/bit.h	MIT	299f0fceadd0d6a477986bb09d86b9a1e623499b93fd1a3cff278d070044a953
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/bmp.h	MIT	a1868cd927a18af0511eb7a5b71170c137738e86891b21db87628c43b5391d75
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/boost.h	MIT	31e859a4ec2323f5ef445832b7453e2e991a04e561f1a0bde28869bbee62b8cc
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/conn.h	MIT	8efaa609af1872aa703dd2a151f98f0862335c6b40b0b7ac0cde83dbb3ca466c
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/cstep.h	MIT	7f24ffda62be483d5709df9eb4ac81a6dd325f3a87297c4a55a6bad8306504e5
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/dcb.h	MIT	21f79209fdc57aa82367ca9f8b17fb0a3deaa3b10d2baf9f6ed80824d0767c1e
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/disp.h	MIT	3c63bd8cdd3c53af353a2726e442c8ae95725185a15a53054dc2c3722b9e4bf0
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/dp.h	MIT	7f4d2dd161fb326abb6e9d0f1b4947339b9d457a7aac3d5b3bbdb863dbdc978b
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/extdev.h	MIT	80ef3dc056f8acb2e2a686b3e03c205b8fc9c6c4982bf604c47ed0a82efe5b2f
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/fan.h	MIT	76a2ea8739d3cb789e2dcaf3b848bf4fa77ccc1b21b4c45605ab19059dccbf3d
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/gpio.h	MIT	cde7fc5a0b4b3469bd9a0d7967e6dc1cf3b236f96f53d917a53f23f520c8e744
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/i2c.h	MIT	350ed8dacb7b2a182b1f4166c54a7687153002255a0ec55b87f7c01343856ebd
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/iccsense.h	MIT	583aa21fc17e71e86f247cf4ac8fb91441c5b5d63156554af651411443827373
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/image.h	MIT	45a6762602990f6ea2e2dcf5971af9d8c510186243f00e32f76606e08621bfb4
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/init.h	MIT	129a035f991c6a11b8c43f31933ffcbbf2f64e34b1466980115bb19a9fd57a61
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/mxm.h	MIT	459b21b915d8ea32eaf1ebbe759e5b9561e3c5e352851fa01bbd4285c3c37518
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/npde.h	MIT	1b2de1fda0cc2dd807ff5bd40da3132b3ab8ac44d5dbf884408b6bf2c5217502
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/pcir.h	MIT	e6a3201504212417800440b9722f526904d321ea780d5784b09b06003702f80f
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/perf.h	MIT	20f2389cbd06bada6c48bde2622f7832b7816b2514f352a4e561241e2c46376b
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/pll.h	MIT	225cb0b77f61ef603ba5c84b181d23c33ad7494ed79ae3221c140a0b940e1f09
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/pmu.h	MIT	5dd55eee7ce647af50073cf688bd33bfa48b4371e787af322a8ba26bd3850b4a
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/power_budget.h	MIT	c215a6cae179d0297cc21eb78d1870ebea625fa0f688b0f7ba1a43a710c875d8
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/ramcfg.h	MIT	a2cf64ee538b1dfc92c5ce785bcf34c456029a978da02a6e762546f93204dc24
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/rammap.h	MIT	7e890a86cc275785fd56224e20c059ce3e5af8dbdc402b36358f05a47b84f8ef
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/therm.h	MIT	7be73c31b30dc10dbdf570a12e9fe29dca854b1d5f0392eb041c9b38d649251b
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/timing.h	MIT	dbbdf5c28560f5576b7037033243148c8794576710d629b29e8ccb4ebd92226e
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/vmap.h	MIT	b5f7defc1ba000f17ad2f86bc7cbedbc61b47378432ccb9c6ae77cd920884ebe
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/volt.h	MIT	2af9fff6d5686af3144a2a322bbf925dc504b831ac0b15ed0d9f884303a3269e
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/vpstate.h	MIT	b224dda03152f568c01e30249888b99ce023048b564cfd0c377de55f0aac35cb
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bios/xpio.h	MIT	22f077b9485de890124e0d1c18f375795ea17665cab1dba94bc294699b649214
+drivers/gpu/drm/nouveau/include/nvkm/subdev/bus.h	MIT	cc3faad0f5ed45d13c4b3f4082fdbc41bc93291844a3519ef8fe55da792704ee
+drivers/gpu/drm/nouveau/include/nvkm/subdev/clk.h	MIT	62fe0c604ab0ed880fcf928dc489972158f47064af3c51554849a59efa03b97b
+drivers/gpu/drm/nouveau/include/nvkm/subdev/devinit.h	MIT	56495fea0bf6ac5291293a771a1b88d438ba160f66b7cca47c2f8371e76a8cc9
+drivers/gpu/drm/nouveau/include/nvkm/subdev/fault.h	GPL-2.0-only (untagged, per Linux COPYING)	8617f6a504ea2bff4716d561a69450cfd7e5dad5e0f3e0154543d56548541510
+drivers/gpu/drm/nouveau/include/nvkm/subdev/fb.h	MIT	cf4a77bbe177905a50a5f2285bbb7673653ef9842fab25397eb667ad8cc32e7c
+drivers/gpu/drm/nouveau/include/nvkm/subdev/fsp.h	MIT	d76c98102cb4d8505ea735628b897e3ed001ce99b9bb537274dd3a11009473ca
+drivers/gpu/drm/nouveau/include/nvkm/subdev/fuse.h	MIT	767bb42fc67f1a6e6d5f780e9ae834828f707bd352cfa23e2216b845d485c58c
+drivers/gpu/drm/nouveau/include/nvkm/subdev/gpio.h	MIT	13529839289f71f2cdd9964604d3317e5b5dde8be8d7142dff09418fcb83d94d
+drivers/gpu/drm/nouveau/include/nvkm/subdev/gsp.h	GPL-2.0-only (untagged, per Linux COPYING)	3cccc225a53518cb86899d95efb71b2e495fb77f6f56f416a17d77bde0499905
+drivers/gpu/drm/nouveau/include/nvkm/subdev/i2c.h	MIT	371ef5bfcd35da3c6b7d8b14b8e218bf42e63c5731199f665a1412a38fbe7737
+drivers/gpu/drm/nouveau/include/nvkm/subdev/iccsense.h	MIT	571b126f7a5fb3bb9a32b2aeb6c04d5625507dbd106bac071ce50206c3f6db74
+drivers/gpu/drm/nouveau/include/nvkm/subdev/instmem.h	MIT	d503f8540956b6cb09e0311c985cbdca42d0fac5ef644a142bdde1ab84c2d0e3
+drivers/gpu/drm/nouveau/include/nvkm/subdev/ltc.h	MIT	baf12f23f3c2b897b936e38031469811703e86ccf78cd91c82eb5c0ede7fa122
+drivers/gpu/drm/nouveau/include/nvkm/subdev/mc.h	MIT	8e77c0903f461660e79b879d278c3ea8884c0f2eac602fb6e1b40208e89efe38
+drivers/gpu/drm/nouveau/include/nvkm/subdev/mmu.h	MIT	5a7712ae2fc0cbaa16e6bb9e942f5feb4fb40101ada7fd21661be20b8cea85e3
+drivers/gpu/drm/nouveau/include/nvkm/subdev/mxm.h	MIT	746876329bacf51efad027fa5ee389bb2d5578561e1175660428faa7658471b6
+drivers/gpu/drm/nouveau/include/nvkm/subdev/pci.h	MIT	cb7929e5f83793e1244447affeb3af8c897cb9e5c1fdfe0bdd041520a921f4b9
+drivers/gpu/drm/nouveau/include/nvkm/subdev/pmu.h	MIT	065cda93bb40e80bdb0a2ecb64f7783a62b4a8479bf700758042fc2004524f10
+drivers/gpu/drm/nouveau/include/nvkm/subdev/privring.h	MIT	7ccc2bea3b4c6d34f65b9d3476df8f1d54ab91838b1989e849838715498f2d7d
+drivers/gpu/drm/nouveau/include/nvkm/subdev/therm.h	MIT	d2640a336365d0420588ed74378bf5a05546b0096e4b36416ff98d838173bcd8
+drivers/gpu/drm/nouveau/include/nvkm/subdev/timer.h	MIT	e796bba81e12250df51377f50e79da61a97df8d91a2ddaa4e6847db1093008fd
+drivers/gpu/drm/nouveau/include/nvkm/subdev/top.h	MIT	9b2edb63c132ecf91dc778fed8ae4ab6f608ce1453ff07556c75ecf895a06b52
+drivers/gpu/drm/nouveau/include/nvkm/subdev/vfn.h	MIT	b1fa02f6c4cc3d3eadfc7debd7d37f1bcf6902e526ea1a85e0d2540c5cb18cda
+drivers/gpu/drm/nouveau/include/nvkm/subdev/vga.h	MIT	2dc5b1e522bc4c6158cbcf32f039e27a8b28920199345149a7babbf4338a956b
+drivers/gpu/drm/nouveau/include/nvkm/subdev/volt.h	MIT	285f3c2798d64134ab53b3bb2ff9bd34d7be731ed618e7561e8b67ac889fa59c
+drivers/gpu/drm/nouveau/include/nvrm/nvtypes.h	MIT	5b4038da4b9478ab8c00c4c6fef83895f6c32af7c37f890a7fde950e7c9b04c9
+drivers/gpu/drm/nouveau/nouveau_abi16.c	GPL-2.0-only (untagged, per Linux COPYING)	c15e290e989b4d13bb527e53cdf4553ac10ba71935941e4dbe452229273e0e14
+drivers/gpu/drm/nouveau/nouveau_abi16.h	MIT	9bf57132af4ddf328d95bef7d9c8d85d971e149654bac83083e984d221d07649
+drivers/gpu/drm/nouveau/nouveau_acpi.c	MIT	76c18d19eaf98ef0ab4b4feae5316511145a25a2e34d370baac5e018e1f7b362
+drivers/gpu/drm/nouveau/nouveau_acpi.h	MIT	9c701939a8ecce8904d6212d76d0f4fc8e249b2af463e654e66c533b7ecdafa4
+drivers/gpu/drm/nouveau/nouveau_backlight.c	GPL-2.0-only (untagged, per Linux COPYING)	ec0c2adeff9e14edcac38b008dadd2c563f68da8507225ba43bd6cf53917b87a
+drivers/gpu/drm/nouveau/nouveau_bios.c	GPL-2.0-only (untagged, per Linux COPYING)	a963f45d45c3fa174055481ee64e4164b3b7cab47973cacbe594271345b8c805
+drivers/gpu/drm/nouveau/nouveau_bios.h	GPL-2.0-only (untagged, per Linux COPYING)	4acdb6ee4723ab9e3fb8b3c121668d7e9fff798e9b828b7795f0ecd7bf6e75e4
+drivers/gpu/drm/nouveau/nouveau_bo.c	GPL-2.0-only (untagged, per Linux COPYING)	dd446a44a5501176f4ca5e57ca6372816d30aaadbc79b7f041f21815f8cb51dd
+drivers/gpu/drm/nouveau/nouveau_bo.h	MIT	6fa18c03bf18f58b1d8b0013f02e52af6d2b62a4cfa821dcc266ff58a801b1c3
+drivers/gpu/drm/nouveau/nouveau_bo0039.c	GPL-2.0-only (untagged, per Linux COPYING)	01e2595cbf6006c794c829f1aea8539227b022345a9f7dd33729e6163012585a
+drivers/gpu/drm/nouveau/nouveau_bo5039.c	GPL-2.0-only (untagged, per Linux COPYING)	cefeab15d66ffd55452568bbbc5646d6f68d622c30cfd7c886784d1e3c791fcb
+drivers/gpu/drm/nouveau/nouveau_bo74c1.c	GPL-2.0-only (untagged, per Linux COPYING)	534191826727b132bc5b23543f99c4cb1f959ac39d5b3acd7fca2a46064f630a
+drivers/gpu/drm/nouveau/nouveau_bo85b5.c	GPL-2.0-only (untagged, per Linux COPYING)	4c4d5e4eea495659365fc3ab1961ded7d2b34219f5d5949bdbd2975b017cc509
+drivers/gpu/drm/nouveau/nouveau_bo9039.c	GPL-2.0-only (untagged, per Linux COPYING)	6fd9fcf725409a089d0e30a23ab18be3ef2fd3d60dabec2107228c941234e086
+drivers/gpu/drm/nouveau/nouveau_bo90b5.c	GPL-2.0-only (untagged, per Linux COPYING)	1aa218afce8b7c684367ea95125ac50a31a4b78a089ec28da066091d69936aee
+drivers/gpu/drm/nouveau/nouveau_boa0b5.c	GPL-2.0-only (untagged, per Linux COPYING)	c47d569e47c848f190131c4487bfea451c0582a3f43443069920cc577db60500
+drivers/gpu/drm/nouveau/nouveau_chan.c	GPL-2.0-only (untagged, per Linux COPYING)	527199bd40d313022aa05edc1a24c2450d55ce1d01169c587c444db77046d766
+drivers/gpu/drm/nouveau/nouveau_chan.h	MIT	988f7de53d8f57703697cbb3fd1a8aafa8a5e3bc166b5329eac92924ed1902ae
+drivers/gpu/drm/nouveau/nouveau_connector.c	GPL-2.0-only (untagged, per Linux COPYING)	7a4fa8c0d60fe15717577d0c2091b0ad4a23f316055ce81dc28794e99f4b02ba
+drivers/gpu/drm/nouveau/nouveau_connector.h	GPL-2.0-only (untagged, per Linux COPYING)	21bd19ed2b98dc05e121cb23af0653b908cd2cce3cef3cad58fd55f371cbbf6a
+drivers/gpu/drm/nouveau/nouveau_crtc.h	GPL-2.0-only (untagged, per Linux COPYING)	03f2daac9d065adda54a708e5cee21fbbbcdbd70a294249243c113427df1097f
+drivers/gpu/drm/nouveau/nouveau_debugfs.h	MIT	8728a54c82d2b8b25c5e0aaa0bacd7850f28b40ef3244ce3b97eab6b758a1627
+drivers/gpu/drm/nouveau/nouveau_display.c	GPL-2.0-only (untagged, per Linux COPYING)	88dc97127972943f4e425ae863baee54727f5f75dce42ceb6d0bec78c1158742
+drivers/gpu/drm/nouveau/nouveau_display.h	MIT	e5934bbc0c0f04eea465b95d83524b84f698c69750b4ec145879ba8b030ad175
+drivers/gpu/drm/nouveau/nouveau_dma.c	GPL-2.0-only (untagged, per Linux COPYING)	ac80ec3edcdea8be6e8432e76f6c61e5b757746a815419f3cb41e9ba40b07921
+drivers/gpu/drm/nouveau/nouveau_dma.h	GPL-2.0-only (untagged, per Linux COPYING)	2687444b6fa0bcdf77db101b21c1a3c85c48c7a0d43df2b6ee62120e2fc52426
+drivers/gpu/drm/nouveau/nouveau_dmem.h	GPL-2.0-only (untagged, per Linux COPYING)	2a4ee262540fa39821bda8b3c3aa323d6d3a952b85fbd857a1b5b5f271d986e7
+drivers/gpu/drm/nouveau/nouveau_dp.c	GPL-2.0-only (untagged, per Linux COPYING)	3ead9eb097bf0e8f0f5e0b4d18e9f23a336bde724d608cd2f71010693530e8a6
+drivers/gpu/drm/nouveau/nouveau_drm.c	GPL-2.0-only (untagged, per Linux COPYING)	ea4ee36cb4aa0d797e1aec94f5c6a6c87d73c755d3c7650840b8ae59bc370cca
+drivers/gpu/drm/nouveau/nouveau_drv.h	MIT	587bb04b9e41c327cc659540ad7dad0c46cb77f8247280411dd4846b57e932ca
+drivers/gpu/drm/nouveau/nouveau_encoder.h	GPL-2.0-only (untagged, per Linux COPYING)	60dc1212ca8f2ad4b2c8a319242acc48ef34ad932922feaee8d01890c20c6004
+drivers/gpu/drm/nouveau/nouveau_exec.c	MIT	c40f63efa540667fc89ff32a6cf62cc5856d04b60ed90660cb55a81a495c3890
+drivers/gpu/drm/nouveau/nouveau_exec.h	MIT	c3e7ba5423d8d49f40331e1529d9750ed0f24d20c1ddef950631f5bf39de2115
+drivers/gpu/drm/nouveau/nouveau_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	537a4ea14fad343610baf26416f2516717a1e7ff781ae4219636f884894204b2
+drivers/gpu/drm/nouveau/nouveau_fence.h	MIT	b7c2488e72b0153b9cde5c328376ccc47492492c543b66f1efb726cf0d3bf385
+drivers/gpu/drm/nouveau/nouveau_gem.c	GPL-2.0-only (untagged, per Linux COPYING)	8bf855f7f432e17b654c39fb25abb70770f78ca02d31c867d9eff8fc5d2582bc
+drivers/gpu/drm/nouveau/nouveau_gem.h	MIT	603fbe90587e8d5baeb927dc3be76b618ddc64bbca1445966a15184c4c1209e2
+drivers/gpu/drm/nouveau/nouveau_hwmon.c	GPL-2.0-only (untagged, per Linux COPYING)	b814422960408e5ec5a626c1c2ea83121360663e13922b23ea9450a18c753ee4
+drivers/gpu/drm/nouveau/nouveau_hwmon.h	GPL-2.0-only (untagged, per Linux COPYING)	fd2f2efcd7cfbd5aaa05c3ff9dc919e27cbbb2c7f690cf320c49fc0bcce14bb7
+drivers/gpu/drm/nouveau/nouveau_ioctl.h	MIT	fa1e4196af59801d062cd9c5c9775dcd9395079713b028d9ab61c3f2b0bc5fb7
+drivers/gpu/drm/nouveau/nouveau_led.c	GPL-2.0-only (untagged, per Linux COPYING)	947ab8e04e64a41c90f8474768dbc87301c4818c0c0635484a2bd30b81e3f68c
+drivers/gpu/drm/nouveau/nouveau_led.h	GPL-2.0-only (untagged, per Linux COPYING)	8da0827741b921d5a44ec0044e14431e72ddb848ede849693530651c99845a5f
+drivers/gpu/drm/nouveau/nouveau_mem.c	GPL-2.0-only (untagged, per Linux COPYING)	b5f2914dcaa4db939e196a3472b6480c5fa301a59f60e703e20591efd8eb4654
+drivers/gpu/drm/nouveau/nouveau_mem.h	GPL-2.0-only (untagged, per Linux COPYING)	97b081482ee354644afc93939c6559e4087a719382158c45ebb57ef7de2b3c18
+drivers/gpu/drm/nouveau/nouveau_nvif.c	GPL-2.0-only (untagged, per Linux COPYING)	29aaf1ee096a265bcd83fbb543d7db05e0afec551827d97ffb7114b05580275a
+drivers/gpu/drm/nouveau/nouveau_platform.h	GPL-2.0-only (untagged, per Linux COPYING)	a2de6e2ed1e602d2e61f01b5ce4ed46a9af7442b7f6413d7c22b049e142caa29
+drivers/gpu/drm/nouveau/nouveau_prime.c	GPL-2.0-only (untagged, per Linux COPYING)	15a8ed1665acde131a64d1c4608c599f9e407c8af88c96ba6654b496242245c5
+drivers/gpu/drm/nouveau/nouveau_reg.h	MIT	626ee17aee59c24ad59df19a88bc24d7fa13f7895ec51bbbca37b0b7acacd933
+drivers/gpu/drm/nouveau/nouveau_sched.c	MIT	b0536a7e8b405bcb30c381b3cdfdb526166e27e6b6e22ba14ebe3ddd80224157
+drivers/gpu/drm/nouveau/nouveau_sched.h	MIT	a86dac854657d04df453503cc02e99beff641aaeeb73587622639386c4263440
+drivers/gpu/drm/nouveau/nouveau_sgdma.c	MIT	2ba709d313e660869d652f2cf3c366ccc5b69eb5230cab88c82266072811bbbf
+drivers/gpu/drm/nouveau/nouveau_svm.h	GPL-2.0-only (untagged, per Linux COPYING)	ecc33a2fbf3ea368aa73ba79d6f84425e300a3e9f4500b4adf94f3690f1ab1b7
+drivers/gpu/drm/nouveau/nouveau_ttm.c	GPL-2.0 OR MIT	db1411f304b06f5989c2d1919e1063ccfee73d9b4057dba1a5b131d1978f736b
+drivers/gpu/drm/nouveau/nouveau_ttm.h	MIT	f61192e44f8595cdee08da23dc5de1a27ffc0270db3e5e6cddfbcab6c7aa1480
+drivers/gpu/drm/nouveau/nouveau_uvmm.c	MIT	3c988321c8949835e607d0cc30ed2990dc37a3a109361a8218df8bf91a2781ea
+drivers/gpu/drm/nouveau/nouveau_uvmm.h	MIT	b0303bf42ef1857b115cbaf866162e6a8a9b5b25459d0b2cf9fa9da384039ce3
+drivers/gpu/drm/nouveau/nouveau_vga.c	MIT	480a85b8a9a758619f8cebe96e8ecb26b4a6ce0593ca43da8c796d9fd0078e52
+drivers/gpu/drm/nouveau/nouveau_vga.h	MIT	412a4db0cb56259adfc79962ad4f580162154e1930b6f067596b6cb8ab6e2ce2
+drivers/gpu/drm/nouveau/nouveau_vmm.c	GPL-2.0-only (untagged, per Linux COPYING)	a8c0ec5f62464ec3dd8a100cf69f67c9b6f7d9ccce5ba2681db75efda030b9ba
+drivers/gpu/drm/nouveau/nouveau_vmm.h	GPL-2.0-only (untagged, per Linux COPYING)	22363800d63526426dc5b22ef4777c66ed5bb914b2873591beaa73a90ac4d0fd
+drivers/gpu/drm/nouveau/nv04_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	6810765eca878463b22fc002703c70de348a12025b301c24338706c813ad34ae
+drivers/gpu/drm/nouveau/nv10_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	95c07ee4588235f495e0546a2d78701737183416f065502a185b1035126fec4b
+drivers/gpu/drm/nouveau/nv10_fence.h	MIT	7e34b4ea8ef4f6a0e24ce5b723b1ebe0ac3f1be3b36c881a78dc3bdf4c1f8ffd
+drivers/gpu/drm/nouveau/nv17_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	8a184a8445f0a92d11fc9b7c2fc461a4aa3327958d761af8d3cd28bbd0950144
+drivers/gpu/drm/nouveau/nv50_display.h	GPL-2.0-only (untagged, per Linux COPYING)	f0a508d31569a25d812ff6d4ec4c58d4d5e1e776335a67ae30ca190a889879c6
+drivers/gpu/drm/nouveau/nv50_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	f0423e79a5a4055ab8d02ad61f3ee6cb46e6dc0dd4ff839e0f2f71f1563a27b3
+drivers/gpu/drm/nouveau/nv84_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	7550d90eea1822761e6f63b77473b1237940c7baffbfc1218d04170657bf0974
+drivers/gpu/drm/nouveau/nvc0_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	067978f8c29dd9eaa12d8c3f258b657e4f5c789a8a61c4fefa126430b8be0edd
+drivers/gpu/drm/nouveau/nvif/chan.c	MIT	e98905277d7b5d6d8c7efecf76dab79013307a36475f2ec5c34f31498cb459e5
+drivers/gpu/drm/nouveau/nvif/chan506f.c	MIT	b54547fd09b608fe3551dfe6c73d1ea86c20511d2756a7ca478ba06b31d0b429
+drivers/gpu/drm/nouveau/nvif/chan906f.c	MIT	22a6898f0abd328323c2cd6ea61ea3aa77e3ffca5f2cc4a078bc0cd8afeb68c3
+drivers/gpu/drm/nouveau/nvif/chanc36f.c	MIT	db4e75d1b74edb05cbbd0aac2a2bb74c741cc6ae981ed155c3ff769b258dcda9
+drivers/gpu/drm/nouveau/nvif/client.c	GPL-2.0-only (untagged, per Linux COPYING)	b2d88cc2b92b2efc23c8ba29faab6fc3f79d3e280259949ac7e681d0fc47494a
+drivers/gpu/drm/nouveau/nvif/conn.c	GPL-2.0-only (untagged, per Linux COPYING)	9d0ab25627efe9bb7bb348174dc789559bb71736f4c3eefb5d57ba6670b521c0
+drivers/gpu/drm/nouveau/nvif/device.c	GPL-2.0-only (untagged, per Linux COPYING)	44b50bafe876c97a03c06a591dfca1deb216f281e1273c05f74f06d29332ebe4
+drivers/gpu/drm/nouveau/nvif/disp.c	GPL-2.0-only (untagged, per Linux COPYING)	1485f538468f1682940744b1611c0ba80485725d73c4d8e8ab272ccf7e918353
+drivers/gpu/drm/nouveau/nvif/driver.c	GPL-2.0-only (untagged, per Linux COPYING)	ad066b36807700f6355246a3cc2815719e5b52e354a6ce1eda8dfb67d7b9545c
+drivers/gpu/drm/nouveau/nvif/event.c	GPL-2.0-only (untagged, per Linux COPYING)	5efeac6f779dfafeef39870a6c96096e2ee595651b963598e32c33695b54330c
+drivers/gpu/drm/nouveau/nvif/fifo.c	GPL-2.0-only (untagged, per Linux COPYING)	bdffac228ad274081553d3a6902feccccd66d77cb390ddcede3f299de99e589b
+drivers/gpu/drm/nouveau/nvif/head.c	GPL-2.0-only (untagged, per Linux COPYING)	41d470e7b97376336b001754060e9169522423dd16b5de85856650659b4b2f69
+drivers/gpu/drm/nouveau/nvif/mem.c	GPL-2.0-only (untagged, per Linux COPYING)	71ea38d38f3430f55c6bcce6b534a68d84380b30b06d1ed51928619a0536fcad
+drivers/gpu/drm/nouveau/nvif/mmu.c	GPL-2.0-only (untagged, per Linux COPYING)	6c4626689e398073b4b9056a2ed5abc575e6fa79f89745174e280dbb81ce9b07
+drivers/gpu/drm/nouveau/nvif/object.c	GPL-2.0-only (untagged, per Linux COPYING)	25fd0f04866518110aefbb168658e4e4b0bef6588a2280ae66d82d0304c21bda
+drivers/gpu/drm/nouveau/nvif/outp.c	GPL-2.0-only (untagged, per Linux COPYING)	6bc3b32724df78fa7d38756f951b69e38df4be102638d3e081b2934763cc3b01
+drivers/gpu/drm/nouveau/nvif/timer.c	GPL-2.0-only (untagged, per Linux COPYING)	bd6ab4c481c88b8b9c48ac026774de2d5db13fec36c6211626b3e28a11a2c61e
+drivers/gpu/drm/nouveau/nvif/user.c	GPL-2.0-only (untagged, per Linux COPYING)	574f1ed96b3877ff8efbe6a541673fec930de9fd25eb77999f12c20bd8f48fd2
+drivers/gpu/drm/nouveau/nvif/userc361.c	GPL-2.0-only (untagged, per Linux COPYING)	50acac4e13f9f9a1516977c3b5b67e5ea4937104011bf99c81382635ad287d3e
+drivers/gpu/drm/nouveau/nvif/vmm.c	GPL-2.0-only (untagged, per Linux COPYING)	92ccc362f3cbcc4f4ca9d8927c0233f944866b1e20f162c61310ff67adef6875
+drivers/gpu/drm/nouveau/nvkm/core/client.c	GPL-2.0-only (untagged, per Linux COPYING)	7631b25858fae807e040b85395f54ee919503d87af90243d5910862483481fb6
+drivers/gpu/drm/nouveau/nvkm/core/engine.c	GPL-2.0-only (untagged, per Linux COPYING)	fb437bda519270ccd5bc060a6659a6da22129e9d74ccd87732536eaa041c663b
+drivers/gpu/drm/nouveau/nvkm/core/enum.c	GPL-2.0-only (untagged, per Linux COPYING)	e85a4758cd3e265055896688e155c5ac244a150b4a550b25fb1e523dbbb6ee44
+drivers/gpu/drm/nouveau/nvkm/core/event.c	GPL-2.0-only (untagged, per Linux COPYING)	8d81cd673058be1d221bd15aea87d9aa0c30ba7b8d4936564b8eb3707c138ec3
+drivers/gpu/drm/nouveau/nvkm/core/firmware.c	GPL-2.0-only (untagged, per Linux COPYING)	ee0c4a1260716796bffa336655870abe643e11f31a35b8d04c74e8b7f5204bc8
+drivers/gpu/drm/nouveau/nvkm/core/gpuobj.c	GPL-2.0-only (untagged, per Linux COPYING)	7a6107e0424bc5606e2b26e0882b2ec154516a9dc1c24703755fff297b754c0a
+drivers/gpu/drm/nouveau/nvkm/core/intr.c	GPL-2.0-only (untagged, per Linux COPYING)	4d895a728451ca546a05e0ac6f1a6811d17b0011fe5e89ecce50bd2dd33302ef
+drivers/gpu/drm/nouveau/nvkm/core/ioctl.c	GPL-2.0-only (untagged, per Linux COPYING)	2a18013840cee2298edadd19171b083cfed2bb7227a13303ac9afad34a107e18
+drivers/gpu/drm/nouveau/nvkm/core/memory.c	GPL-2.0-only (untagged, per Linux COPYING)	6b9e64de84c6d91a8eac576679dff989a4745304f61e2ebac43bfdf913cc532e
+drivers/gpu/drm/nouveau/nvkm/core/mm.c	GPL-2.0-only (untagged, per Linux COPYING)	42f17e8c36f4a681422af57869dafa2e376a8f8a8212ef3123977b88cc287e33
+drivers/gpu/drm/nouveau/nvkm/core/object.c	GPL-2.0-only (untagged, per Linux COPYING)	20fccdd89e37849790b40836bed6ea833e41e7ded3a8d730600214dfe6146448
+drivers/gpu/drm/nouveau/nvkm/core/oproxy.c	GPL-2.0-only (untagged, per Linux COPYING)	1f2a1978ffc2b43ef2c9d9641266327e6803295838776feb979e6a686e80e546
+drivers/gpu/drm/nouveau/nvkm/core/option.c	GPL-2.0-only (untagged, per Linux COPYING)	641bf408a3287c47580b7847c9ff710a4ccaab63a205d4aed647f71e8556a1a8
+drivers/gpu/drm/nouveau/nvkm/core/ramht.c	GPL-2.0-only (untagged, per Linux COPYING)	b8b4ed50eed3db4d34368ef519f7e21fbde833c778bfde07e5755326d13ab31b
+drivers/gpu/drm/nouveau/nvkm/core/subdev.c	GPL-2.0-only (untagged, per Linux COPYING)	fa10f253d0bb7321c6552408ad5773ada3c3caa7b51f0b2004810f8214508d73
+drivers/gpu/drm/nouveau/nvkm/core/uevent.c	GPL-2.0-only (untagged, per Linux COPYING)	d3294e6d9cab37f29b28f49804f9ab021f04b15c2028f2878fc272e6b00a00a1
+drivers/gpu/drm/nouveau/nvkm/engine/bsp/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	2be07db26a341b3bf2f953b5c94562b6e2292e5a70d4579aaa5aa9b91be2b407
+drivers/gpu/drm/nouveau/nvkm/engine/ce/fuc/gf100.fuc3.h	MIT	07eea83220f46334716a034c043d2032841a574fd1248d20203c67a616c817a1
+drivers/gpu/drm/nouveau/nvkm/engine/ce/fuc/gt215.fuc3.h	MIT	d3735a1e868daacc09dcd5ba2e8caa62328532e539d458d2644cce5cde6510b1
+drivers/gpu/drm/nouveau/nvkm/engine/ce/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	f7583877b4b552e1e1eac7eb8f9ec5e209b6f9cc8fde50dd8e32d9ede6e27cea
+drivers/gpu/drm/nouveau/nvkm/engine/ce/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	c63019ca380bde7bf756dc6ae4952df09afc0556d074a42b595530a4bcdafa88
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gb202.c	MIT	f13826d542c8ebda0139737734452b2a40bc5b54235d77de68a142f6e6740cf6
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	7a795d548e2f13101b899532a129e5ef992551e184f4518e36af0857198b30cf
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	a13c79278f977f79218c2be9de81f029995cbb208153b6f6c5b45e51e3f4a4dd
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	ff1999a48575861b38b68a08c52c1f0cae6a23e7528911eb495c67ffe3192fe8
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	197f623c059c38559d8ea8438996a9ab400a0949db8c05a3de1bdcda3f285d1c
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	26f99df5f53ce89eb597f1878af20cfa4880bb29323fbc9fad8c05e51114745a
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	8d8875cc039b9f71b1f6e2f2e9adad7db178c587cb9b3cf91cff408ae04cce00
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	ec591a6519ab4b453d325996b2a72598d0ef7679f94b010ae0962b88e3c3896a
+drivers/gpu/drm/nouveau/nvkm/engine/ce/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	381201b2076bba6fd616e9250dcb7713114532924fec8c96f3623c910c1fbe8a
+drivers/gpu/drm/nouveau/nvkm/engine/ce/priv.h	MIT	e09274c98f8cf0ddf9edd81881701d9509fbb86e331f45ce0e4f28b07384d4b5
+drivers/gpu/drm/nouveau/nvkm/engine/ce/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	ad451db3f3f049fc2428120d53958a59fce63ebfbae83eb3486e0c759e194dc9
+drivers/gpu/drm/nouveau/nvkm/engine/cipher/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	3cc276b5b1acf8fe2e501d915019c0804439f0068b90ee6b72ed9f5d7937ba14
+drivers/gpu/drm/nouveau/nvkm/engine/device/acpi.c	GPL-2.0-only (untagged, per Linux COPYING)	8e8f752d93c8c91eef765e077f1ac56bc8e71d82672820a943f465f359169201
+drivers/gpu/drm/nouveau/nvkm/engine/device/acpi.h	MIT	db60b408e2d7dbde821d1d367243790e90914bdecde22ec0342f5b42123e4920
+drivers/gpu/drm/nouveau/nvkm/engine/device/base.c	GPL-2.0-only (untagged, per Linux COPYING)	a9a5196b1896106c8f20c8e138bd8d73c556c02844b6672cde256f9d8fc040af
+drivers/gpu/drm/nouveau/nvkm/engine/device/ctrl.c	GPL-2.0-only (untagged, per Linux COPYING)	e0ff9e85bd2840f5bf60327a52dfd14e621b1cd9acc196876b9a455731a30fad
+drivers/gpu/drm/nouveau/nvkm/engine/device/ctrl.h	MIT	ddcbe1bee2c95414786adec7e312d3f9894bb2fd6196e9c187b6bdbdb8d239c0
+drivers/gpu/drm/nouveau/nvkm/engine/device/pci.c	GPL-2.0-only (untagged, per Linux COPYING)	614c54c068c04af104080d57914bd2f703e34114fcb3182b4e94fbfb3cef7e66
+drivers/gpu/drm/nouveau/nvkm/engine/device/priv.h	MIT	f65e512b0da19de306398880e8270ebf66fe8581be4998682615067113e22a7a
+drivers/gpu/drm/nouveau/nvkm/engine/device/tegra.c	GPL-2.0-only (untagged, per Linux COPYING)	d88ae14143d513a668c3283f263cc24cd6840ee7dcb2dc8b2ab65689da9bfdf5
+drivers/gpu/drm/nouveau/nvkm/engine/device/user.c	GPL-2.0-only (untagged, per Linux COPYING)	ee856597c94863b7f0757857ac06ed16a75eef52e336a8cf887253d5b250f0e2
+drivers/gpu/drm/nouveau/nvkm/engine/disp/base.c	GPL-2.0-only (untagged, per Linux COPYING)	13764be7ad70e53ec1836dd5a6a8fddf5b7a6f713f02d1521356e487117a97e5
+drivers/gpu/drm/nouveau/nvkm/engine/disp/chan.c	GPL-2.0-only (untagged, per Linux COPYING)	1cb67743a2d2990bdbf5f324503d8517da201f5f51a9420a82b2a770c623a664
+drivers/gpu/drm/nouveau/nvkm/engine/disp/chan.h	MIT	07e9521afd4c5438f67972d1102af22449e966b6ecc70b2c3b92b0ddcf8513bb
+drivers/gpu/drm/nouveau/nvkm/engine/disp/conn.c	GPL-2.0-only (untagged, per Linux COPYING)	f1089b03af0916029b28852d074823c14b0f45b2605069e4fbbe0e281bce8586
+drivers/gpu/drm/nouveau/nvkm/engine/disp/conn.h	MIT	2348f3c96f7bba4ef15aa5b319e63ec9fc7ea39cc655e959e6ef861f9fb9d2dd
+drivers/gpu/drm/nouveau/nvkm/engine/disp/dp.c	GPL-2.0-only (untagged, per Linux COPYING)	10b6ec784025e92b6a3c16eec525bcf74a422b28771e16f99caf596fde25e2f1
+drivers/gpu/drm/nouveau/nvkm/engine/disp/dp.h	MIT	89bbd5c663b8b467405702831a75c70e837a34b343b7740bf1930e260e2c69d8
+drivers/gpu/drm/nouveau/nvkm/engine/disp/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	601d2de3c54f53b417bf80e37f38b0da2621bbf1517f9848c5df6b0b45139518
+drivers/gpu/drm/nouveau/nvkm/engine/disp/g94.c	GPL-2.0-only (untagged, per Linux COPYING)	0514281c89ddfa823de910f8376a409b6c8829293e467c384b623884d70adf69
+drivers/gpu/drm/nouveau/nvkm/engine/disp/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	1a249a163db90454800bdc6fddaf6fe0b618634637a4a17af84a32be5c637179
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gb202.c	MIT	a9a013b3d44bdf7f37e56d7500a141872003de69ada9bd4640614451cac02c2f
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gf119.c	GPL-2.0-only (untagged, per Linux COPYING)	b00c2a325e0783dd7948694fda03520f46ed9eb656c16b04c6f4c47d32271522
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	9958f5634833d56f662900c3d7788acaf69cd424669a8a79ddc902c6ac018729
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gk110.c	GPL-2.0-only (untagged, per Linux COPYING)	2aa8c079f7532f98b057174d207674ca4872360899e29826b67fd660a07c4b60
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	572bb29283a26d176b80292365945838cb38ae74760a91fb736dabdc56987fd0
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	64775b566fcb1f385dd4e80258655ca19b166892a851ac0c07444d467183ecc5
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	eaaaa30268af18c68210d352cc6daeacf7f78ac664b3e3b5d712d40fdea41c18
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	db4c97d4d67e96af8ea0d1d35c6f9f920d3d55fd6e2a1c99cd1d1e7e894cd1b6
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gt200.c	GPL-2.0-only (untagged, per Linux COPYING)	88897c95e29a6dd54962a3a46638161211b7f819781a39e741e9e2668c306974
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	55d980462f05ac27b7dae62f228e7d5afa6acd84a6bb803a44e524d741131f11
+drivers/gpu/drm/nouveau/nvkm/engine/disp/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	b8e1f48a5f39d853d523dfc73a561bcff717b476c74fc041144911188e9fe1b9
+drivers/gpu/drm/nouveau/nvkm/engine/disp/hdmi.c	MIT	2938dda7b4ddc99e45c90628aeba0c465ff416671f184731990957a492b3e138
+drivers/gpu/drm/nouveau/nvkm/engine/disp/hdmi.h	MIT	0f9ca59f66f6903984fcfacff9e0080242e1a291bd554fc2f843881ac44b9ca7
+drivers/gpu/drm/nouveau/nvkm/engine/disp/head.c	GPL-2.0-only (untagged, per Linux COPYING)	dbba3db01f48bc1ad58597b05a772cf289b7e2841af1aefeac03c58770f8b493
+drivers/gpu/drm/nouveau/nvkm/engine/disp/head.h	MIT	bfd00b9b0d16a4e1a1aec5d770622c573fb901b588c8e2835bdbf93b6dc6bd14
+drivers/gpu/drm/nouveau/nvkm/engine/disp/ior.c	GPL-2.0-only (untagged, per Linux COPYING)	fb97c2ccb29c15eb468396495192db8d6bbfbab1e5f94cd53547a298348fea89
+drivers/gpu/drm/nouveau/nvkm/engine/disp/ior.h	MIT	d111e7164811da69c952f3a3616bd801264b103c1af5116b60770237e0d90279
+drivers/gpu/drm/nouveau/nvkm/engine/disp/mcp77.c	GPL-2.0-only (untagged, per Linux COPYING)	e9852dd6ca6c0fd661c662fa377b189d9b7910819244d49308b2c5f3332053bb
+drivers/gpu/drm/nouveau/nvkm/engine/disp/mcp89.c	GPL-2.0-only (untagged, per Linux COPYING)	23f6f018398eeb21bfe5b269de0ec93e18f8384415c8a19f1fee23edcb027a75
+drivers/gpu/drm/nouveau/nvkm/engine/disp/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	3d76312509b9fc861df875b60ee58bdb4afd7155a96a825e30a33b09ae241ca3
+drivers/gpu/drm/nouveau/nvkm/engine/disp/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	fd20c951fa04189d98f1038a41c5774c7b1b95baf151f92894eab826029cae95
+drivers/gpu/drm/nouveau/nvkm/engine/disp/outp.c	GPL-2.0-only (untagged, per Linux COPYING)	d6b0b8ed515bb91f2491b3a21721894b6a5327d40daf4ff2aa4c84258ef52162
+drivers/gpu/drm/nouveau/nvkm/engine/disp/outp.h	MIT	0f1ddeaba480b7ded8bb8c506a9fd1ac722d44c9a6a924b1797eded4dc2f3c23
+drivers/gpu/drm/nouveau/nvkm/engine/disp/priv.h	MIT	21710a5ec7fde6a6efe2da99e524ce6568f80e65296061d749e5df9eedb39d29
+drivers/gpu/drm/nouveau/nvkm/engine/disp/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	ae6d4d2664e8fe95798ca0cdb75b5415316740d651986999d37b9a47df389076
+drivers/gpu/drm/nouveau/nvkm/engine/disp/uconn.c	GPL-2.0-only (untagged, per Linux COPYING)	0161579e3093622c7858a4b84ae5d2e56f7845fb2f32d7553fb92dcbca5abc63
+drivers/gpu/drm/nouveau/nvkm/engine/disp/udisp.c	GPL-2.0-only (untagged, per Linux COPYING)	8a3263ec09ba9702087edafdf3da253b7d47a4d3ac10badf5ec7aee3981cb792
+drivers/gpu/drm/nouveau/nvkm/engine/disp/uhead.c	GPL-2.0-only (untagged, per Linux COPYING)	674b175546122e3c0df0ce153e06abc60ba895e59b7833e15d43581e181d74c0
+drivers/gpu/drm/nouveau/nvkm/engine/disp/uoutp.c	GPL-2.0-only (untagged, per Linux COPYING)	f3c53933cac888c46d57ebbaf84ed53d433e8a20c3293bf82a7001f4ff361ab8
+drivers/gpu/drm/nouveau/nvkm/engine/disp/vga.c	GPL-2.0-only (untagged, per Linux COPYING)	cb733c8757392b92bb16d3ede8deeb9434d78e03fb452b36d128601c755fa711
+drivers/gpu/drm/nouveau/nvkm/engine/dma/base.c	GPL-2.0-only (untagged, per Linux COPYING)	0010bba3861e3739778f0d39ffa5ff0babd527ac189fa7e8b5537d906a4851dc
+drivers/gpu/drm/nouveau/nvkm/engine/dma/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	ec56507d98e89e2442e396781b8cfbb43238cf3b4ded5e392552c9c9c6e6254c
+drivers/gpu/drm/nouveau/nvkm/engine/dma/gf119.c	GPL-2.0-only (untagged, per Linux COPYING)	956b14254ad39d4d100662a0b3d6a6d3bb9e2dfcdab9f55ca7a9f97f9b521b39
+drivers/gpu/drm/nouveau/nvkm/engine/dma/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	977c7bf51c295e82623e9b7ef538bd1395a3c4676e0f1dc639b5191df76aede0
+drivers/gpu/drm/nouveau/nvkm/engine/dma/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	55fe76da4a0ae2ec7e2c96ed679739efe3ae1fae00257e9b9d870cae5c67cbf1
+drivers/gpu/drm/nouveau/nvkm/engine/dma/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	28b8a23b8f0c84cef676f951fd995a98cfb7a7c9206a9e067b233b48627eee52
+drivers/gpu/drm/nouveau/nvkm/engine/dma/priv.h	MIT	0b1aaa9a37981a4afa82b02cbfde81ae6e1914f5a7e0a9bea1ebe8feb051cc47
+drivers/gpu/drm/nouveau/nvkm/engine/dma/user.c	GPL-2.0-only (untagged, per Linux COPYING)	bb3d4bd107b2b5d554f37e9453240f03afe9363da57347e93bb53882b4f830f3
+drivers/gpu/drm/nouveau/nvkm/engine/dma/user.h	MIT	dc26b8eb805aa977589248729f4360c6c4c784f7459697dee3954c1ea2eb3e7a
+drivers/gpu/drm/nouveau/nvkm/engine/dma/usergf100.c	GPL-2.0-only (untagged, per Linux COPYING)	fbfe880cb332aa7ac389480dbcf91dd4a2645a0a199f42bc54c68f39ed74ab1b
+drivers/gpu/drm/nouveau/nvkm/engine/dma/usergf119.c	GPL-2.0-only (untagged, per Linux COPYING)	fdf14d174d3ef34101912c58c85e3c9043eba42e936b48458104fe28a6234648
+drivers/gpu/drm/nouveau/nvkm/engine/dma/usergv100.c	GPL-2.0-only (untagged, per Linux COPYING)	c8edbc9e2c9f52d435b52a3abdbf202a02e0e90dd7584641b99fbe2820e12539
+drivers/gpu/drm/nouveau/nvkm/engine/dma/usernv04.c	GPL-2.0-only (untagged, per Linux COPYING)	9a688dd7734062617fed3857545abe61b24661714604ba56ff0677d7329c067d
+drivers/gpu/drm/nouveau/nvkm/engine/dma/usernv50.c	GPL-2.0-only (untagged, per Linux COPYING)	1df3db0e50ff3aac6007c42f445d3e20dc9d707cbda579963614f9efa6b4b82e
+drivers/gpu/drm/nouveau/nvkm/engine/falcon.c	GPL-2.0-only (untagged, per Linux COPYING)	e24deff494aa81b0fc36e530ed12c625bab7e0915f3478f38a91a2547f7259de
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/base.c	GPL-2.0-only (untagged, per Linux COPYING)	a06aa5fb1b6b92626cfbf23d0b2d30227034069fdb33479c891873a167a42fd3
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/cgrp.c	GPL-2.0-only (untagged, per Linux COPYING)	75077d8560b3071d5b9242c84f62ae9577698d56d3fccef7fc91b5d2dba7d0e8
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/cgrp.h	MIT	f85bfb6029ff4beb64b4c29cf6553d7c60da58254c0379ac47d67686fb2c0572
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/chan.c	GPL-2.0-only (untagged, per Linux COPYING)	912a0f91c1297c6688c09910abb9c97f8fe4f8dd890ae5a1980981b863e853b4
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/chan.h	MIT	d430ec1fe067ff798260d03541adde5151fa204db1bd3532b1f095202f1ccd5c
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/chid.c	GPL-2.0-only (untagged, per Linux COPYING)	e12a65b763452940c396cacc336c07f07752c33b4266bedb18506e4b4af5895a
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/chid.h	MIT	754f8e9e9b6699c1050c65ac7c50b73a10cdede5019b655aab9ef17ba5295ce0
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	57cc028e617d1971dab40d1f9667c8eba8f8dd83b73f46f157a326b70c0411fd
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/g98.c	GPL-2.0-only (untagged, per Linux COPYING)	85987c2d233593b4786014096f28319bf9e1afdcb39f01260c5c55ece005c2a8
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	b505d7e10d584626d6374d603058d782e5dec7b4128d66f6cf6a3b670c30d300
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	69bce74905411e33f343c40ea0a65b7174f98eafdfcc441bba7da82cd4f0bd64
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gb202.c	MIT	1ffd69db1c7926caba967b7f5fa37b455bbb9ae16821e30563dc4520f67ea1a7
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	0d464ff702ee8121e401e2c27a3120ca4ef7470703fd29fa2b3b16fa3c9116c0
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	228ac19766ae877124f3567c3965cb2c54057a31402354b9c4cda49c4c3ef07e
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gk110.c	GPL-2.0-only (untagged, per Linux COPYING)	581d835a89d4be2a4f1a4383efb56dc02b81f66d055020f744654968b724a9cf
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gk208.c	GPL-2.0-only (untagged, per Linux COPYING)	bcefcc8f6fc1afdb4749b18d22e88d7937ab31da58dc3b96eb1614dc032317d7
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	5771312b641fb4bb75af692d29e61ce05841bad342fae371607431ae5ce0d577
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	5f931394bbf314d65119713936468c5e5d9bd7181f6ea622721014a4ffa4e621
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	3c2a61d966f4c23abc102397d183d9ad7e7733370ff37bc307fa17ee2e96e256
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	ca5530729efbadbfd428c92cd29441946ec566e5b913a1af4fc98c970eec4327
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	0e36822f980a8a8a5c37a56ce8442f5d61a69cbc6af3ad29e5b94b3050deaf8f
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	a90f918ab2a8b500e97381ed075fe0fc51e62706594350db40db7751501197e2
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/nv10.c	GPL-2.0-only (untagged, per Linux COPYING)	877ea4399892860be90980b32e13d45eaad0ec3c05dbe2a5f9b76cf4a051bc27
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/nv17.c	GPL-2.0-only (untagged, per Linux COPYING)	8eb0faf3435e4d7c2ca81cc9675a64c08df49ad8970e4c6b483e98a46e0ca97c
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	8157a6562b5a4577ca3adfa2f282685f27a50289877abf19ea1afc29cab5f894
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	101290efad054707930962750ddd552c4753ae26bd5ff3d0e7614ce5658d97ef
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/priv.h	MIT	91a0e918f9bf3866d734fc1a5ca11f7435c762a0f478598d23d85c5be4587310
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/regsnv04.h	MIT	4fb02eb785d33f033621069601f7ec2298eef9feef5f09a01fe97078fd7cda72
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/runl.c	GPL-2.0-only (untagged, per Linux COPYING)	ff0b89d720769d341363739e0073187bab39635f272f30b4daa3f899163de51b
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/runl.h	GPL-2.0-only (untagged, per Linux COPYING)	3269cfac4bec3e526a8231eaac3106e3945781bca7fc67bc09965af22517aa48
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/runq.c	GPL-2.0-only (untagged, per Linux COPYING)	d40d279031e915e515e49933136caef7a6c43ba70ad2204ac45d25150b355fee
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/runq.h	MIT	0c44820978928eb6feb932eefde7f9bbe770c2613ed62216f4fa769e5cb53b4f
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	5b512476da29c20d89ee1d3506bbdc50c31bf34a03166c2e5b31352f144d491b
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/ucgrp.c	GPL-2.0-only (untagged, per Linux COPYING)	c076f587da2a94ab3dcaaf30830512d16d67ccab14939aeafc6c6a87fd6fbee4
+drivers/gpu/drm/nouveau/nvkm/engine/fifo/uchan.c	GPL-2.0-only (untagged, per Linux COPYING)	8108d7efc60c8fad8b733704f2e4dedce750c38ad6dff4183cdd07979773657d
+drivers/gpu/drm/nouveau/nvkm/engine/gr/base.c	GPL-2.0-only (untagged, per Linux COPYING)	54fbd4e8e78d19c77b8d987a403738e90bb8d67e00b55ccd5f207bd6b4a97415
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxga102.c	GPL-2.0-only (untagged, per Linux COPYING)	85f8197b7beae7fd5e266964b761e2132d622cb8a19cfe19fa7928328fccff97
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgf100.c	GPL-2.0-only (untagged, per Linux COPYING)	f22a88255ddcaf1089965903a172f79dee6103a1650b431c355d402689c71b6f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgf100.h	MIT	c06917126ea1f6c2d910757de7301a3809c641081a3ae7a079537617cee666d2
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgf104.c	GPL-2.0-only (untagged, per Linux COPYING)	ecdd54cd10ca74dfa568f427c32fbb7444b5eefdb396e006a59308f24e83c7a1
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgf108.c	GPL-2.0-only (untagged, per Linux COPYING)	c06cd3ae36dbbe57e44cff12fc513cb7eb5b63f3204126f308aaceebcdd9d989
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgf110.c	GPL-2.0-only (untagged, per Linux COPYING)	5a03337fe84416035594b627b888659bd23e1c32941eda572af5e8dba19a51c1
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgf117.c	GPL-2.0-only (untagged, per Linux COPYING)	f8869c05203618ac55e762d13d31fcd0c93e6bbae600a6898423ce062860033c
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgf119.c	GPL-2.0-only (untagged, per Linux COPYING)	0b101fca41fc239266bb4dd8222fbb0e4f3163c692ae662dfcfe0179cb79fe39
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgk104.c	GPL-2.0-only (untagged, per Linux COPYING)	c2f9b1ff6d1aae759f5d4129ebd588d5e749a580547c296432e249c5e8df04d7
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgk110.c	GPL-2.0-only (untagged, per Linux COPYING)	0d113681135d06ed4e8db876f2d083ca470edf6fa46cb2f335dab826b8058cd6
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgk110b.c	GPL-2.0-only (untagged, per Linux COPYING)	b3a5c224521d8211fc631dbabc5cae1d43aed7a5fea4b9604be491d881a4e14a
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgk208.c	GPL-2.0-only (untagged, per Linux COPYING)	671151b6cda10e1a6590a3776b937caa234fa2113c97613950dba21fb51024f6
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	ada24d7fe1d56044c1a8291d43de9332e7632588ac915f1dc47806790cbc9cba
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgm107.c	GPL-2.0-only (untagged, per Linux COPYING)	fa39406ede888ade53875c9f9cd1388d442d4f5197b9bc6cdab43836097feb7f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgm200.c	GPL-2.0-only (untagged, per Linux COPYING)	e34e03c3ac5ef57c1b2d30deedb9e7106cc0a78df7d4e7f25e05d554da21dbe0
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	8f841e422cc1cf4116201e526d7d297df6059b7370919568e1262106e71513aa
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgp100.c	GPL-2.0-only (untagged, per Linux COPYING)	c76ab47b0ad6862bb87f587908ceacda334737d990a9385833bf369faba44b0b
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgp102.c	GPL-2.0-only (untagged, per Linux COPYING)	7c91270691f0967a691f2166dca0d36d353d987eb915d36366e5f532a9061d4f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgp104.c	GPL-2.0-only (untagged, per Linux COPYING)	fc31ddccb006d204f499ea0bea9ba13ae7493dcc9366ae7baf43e1a0bf38f237
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgp107.c	GPL-2.0-only (untagged, per Linux COPYING)	2224b95f2d4b849fea94ec7406825c82512e5c669bcfa279ee1d5d251ee39c67
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgv100.c	GPL-2.0-only (untagged, per Linux COPYING)	42ea0ad8aadae1fb67852645b843db46bbb9d6a28bf079104efa962d2d8842e3
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxnv40.c	GPL-2.0-only (untagged, per Linux COPYING)	5f9b8044490a0d5c96eb52330000aa1260183505f3e8990602059c6c59dafd15
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxnv40.h	MIT	0143c6024fe279d7c5f4b26ee876a4a697a2f386e79d8bf8df285d3ef50b906f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxnv50.c	GPL-2.0-only (untagged, per Linux COPYING)	c991ac7edb54f342d59915a72b8bd6e0cb0ea623e08ea39e21c22c7198ec74d1
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxtu102.c	GPL-2.0-only (untagged, per Linux COPYING)	ef61ece43f05b21a3b2f976ae5fda0b8f866a101e65126d33798dfc085717006
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/gpcgf100.fuc3.h	MIT	dcc8fbee6ff47da0a413719753033ccaf087cb215de11cf8ce268b4d4f295045
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/gpcgf117.fuc3.h	MIT	d72717a8cccb7f40f6d1eca970f8715027eb8ee858ec7737bf67b872448ea684
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/gpcgk104.fuc3.h	MIT	8474328f1496f51cfb6a7c45ba863b60b3fb7eca74ac4cbcf537d967387b3531
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/gpcgk110.fuc3.h	MIT	6c07071db8ddbc5dd638edcfa389bd4d0b718c87607d7b2e4ca87703e9196c93
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/gpcgk208.fuc5.h	MIT	951f78cfa94e3aee96123d6933ea25b8f3addbe727f235375a0a3eff6d31c8b0
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/gpcgm107.fuc5.h	MIT	9a25b7c9d0bb1c40887e76f2883f4d5d397462603d055124d80960622e062812
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/hubgf100.fuc3.h	MIT	608c7a1c63d12ebeb56839cdab28dfd96eba0170a17f1eb9b509859561f31ec7
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/hubgf117.fuc3.h	MIT	76cfe716b9976d3837553ce4f139704555a3508680ed1bc04fe32614915437f8
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/hubgk104.fuc3.h	MIT	93b6d541e025a5e66079b1307f783313a3e59703eef1bbf7703ec280bc8566e6
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/hubgk110.fuc3.h	MIT	87e615b8b79d9d5f96530fe847aad51dd46cdbbbe39e00c3b3860b6ae802226f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/hubgk208.fuc5.h	MIT	a85e8918462f1f5c1e85d3b0619f80aa3c42af2aec74b809acda2495ae20e32e
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/hubgm107.fuc5.h	MIT	e79f3007e309f078335d8514b4cc5d50a5c23ffa8e6dbb082eae9e0f86f7acc4
+drivers/gpu/drm/nouveau/nvkm/engine/gr/fuc/os.h	MIT	4c69991407e82306dec7364d5fcc67c08bedbaf32b0e80d592c7665588db336a
+drivers/gpu/drm/nouveau/nvkm/engine/gr/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	1f3e4b09260b7e71e22fb10f1bdd0ad43a2c5cc938e25b4b28b1c2f616e5f865
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	6d4feaf42395495f9ded6d9a4b47424f4e108d285f7bd97cddbb836b6974c537
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	5885b57ff1449473aae2238d4c4c37b571762665f8deaf4486e1fa09f27776d7
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gf100.h	GPL-2.0-only (untagged, per Linux COPYING)	9ae3c69cc3d97afc2016da24871a4b951bc742bdbba16f02014dc2e70e063412
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gf104.c	GPL-2.0-only (untagged, per Linux COPYING)	ffb1bf8be90d8cba821c3cc76bca1f1fe1ce0ed258336fa5835af9f0765ab26f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gf108.c	GPL-2.0-only (untagged, per Linux COPYING)	703873852db1ca971049823a1b99c5d5b15e0b328112cf5f292b8a6a353d60a0
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gf110.c	GPL-2.0-only (untagged, per Linux COPYING)	4e4e23c4405c61ae73dc93b80f168c355c0e9f4c448645b1f81d34350cb1af56
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gf117.c	GPL-2.0-only (untagged, per Linux COPYING)	fcf619c5071def99c3ce0011d560117b0ac88430a4fe60841a85e8c176594d33
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gf119.c	GPL-2.0-only (untagged, per Linux COPYING)	a5c30dc78e69a7c72a9e44b3511c3a950267ddcb57aa3a8ce9101657f7836641
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	71b413d2d0a51e364d6b5bd93f3a59df555995ba603b185a4cf0b98a20f3ae34
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gk104.h	GPL-2.0-only (untagged, per Linux COPYING)	27d1f998eaffdcc31e66f03fd58d144a7c7614be85d6fa866b69f8ae4b1a78ff
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gk110.c	GPL-2.0-only (untagged, per Linux COPYING)	3af47fec0c4c2aa379e51b14fe43588734181324b55f20be6d5c6ce816f4d693
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gk110b.c	GPL-2.0-only (untagged, per Linux COPYING)	e194704daa4a9fd44f607d1e9095cb9454ebdf0271e43239be9ebd14cb094a32
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gk208.c	GPL-2.0-only (untagged, per Linux COPYING)	7523dbd732013be07a81da51d3fc367125abe8625dd93caf789d0a88d7569f09
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	ca22a0ae7652fc0de509075401b4f7ac567d7f14aac4638c6aa189b1f966a5fc
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	82e3f794c8a8f4e5b83ce1c8bada71b080126ba9b04dd2da2f10f9f522a48877
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	45e36f384792c84078e47909927b9c77ccc0d48cf2b30b7b6cc936ab06d84e18
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	a44ececd0003e413d68266058e31bf2d2f40a504905689333839bc391f997ca8
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	62fba72abdfb7d7c190436ad753862aa344d832cce31ac2778930fa9420de375
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	772f718646262b11d25ce7dc9f57cd6eca5336d351ff4d15114842a8e2c06dc5
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gp104.c	GPL-2.0-only (untagged, per Linux COPYING)	9465bfed4d64a00d20eb5f27a0b03fa4109256c5a3e07f8f4c1ffa42ec71aa45
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gp107.c	GPL-2.0-only (untagged, per Linux COPYING)	e840b1523fdc2564706552573bf44dbc0ffcb8c00e86628ef3582e6246c0df33
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gp108.c	GPL-2.0-only (untagged, per Linux COPYING)	5f2b8b5a2f3bd75137916d90d7641a073734c3c5795fd3cd77f41ed9681f9134
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	9a84ae0d9a726beb7f3875d8cca85d4a33c6f70e7c0cd42837f449a038c35419
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gt200.c	GPL-2.0-only (untagged, per Linux COPYING)	a29212af90e114b099ba2b5f7ac147854293a95542a0c8f9bcd0b5133fab368e
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	a1e926893b7bcf2a873127041f964e9194b9a1ec30dd98fbc1e211689820a446
+drivers/gpu/drm/nouveau/nvkm/engine/gr/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	9e84bddcb9ca7a0c4f3d2b7e3f4bb7f9ce164230afe274aa45db29b964db920e
+drivers/gpu/drm/nouveau/nvkm/engine/gr/mcp79.c	GPL-2.0-only (untagged, per Linux COPYING)	c1195d82436a43057821680718016a3e055465b7280da51dbb6eae59c3c42843
+drivers/gpu/drm/nouveau/nvkm/engine/gr/mcp89.c	GPL-2.0-only (untagged, per Linux COPYING)	e45c0a714539e67502c3b84a35b4335b27da7d9f19b9e377296366a08788ca09
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	4c866b881d4773675447f0777f7d4f8a0db48c12f8332e0a682d65a3de065dbf
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv10.c	GPL-2.0-only (untagged, per Linux COPYING)	1d48e1aea05bce0fa5212c578e5961173f475d45f771e9e449b552c688a9e7bd
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv10.h	MIT	63779a8748043bd57441cfc362aaa5f0021e719af28033967798cee24c3cca7d
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv15.c	GPL-2.0-only (untagged, per Linux COPYING)	021f6cc3c2aa7eedfe606858ab932aac7cbaa059876ff2eaa51d459aa0e3f94e
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv17.c	GPL-2.0-only (untagged, per Linux COPYING)	e1c664df764d9fbae31621e301eb1a143d9fb7be8f72b6f74fd157aa88ed8c4e
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv20.c	MIT	1a6c28308559a54c7caf8e60fba49f599e69422393ab6981a80de53b054f857b
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv20.h	MIT	56f492f38916c2a57aba69f101ea9b7b562a9d1c2db9faed94a7b000524efd87
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv25.c	MIT	98eefe1154db45ed7ceae4d43bb3dd8a04e1f495dc37326c4e2214f2bd9f703f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv2a.c	MIT	f9a890499b657b43687b1eb0732324d93d5d0b0722d12c67d1059839be8c9a6c
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv30.c	MIT	bd63868e8e48cb2f1901a541f4d3ef4f75f4ee750f7059bec323f50c68836b5f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv34.c	MIT	21da93d5f6350cb90fa243ed682e41e2a22d219f8f877d710c30b0b57e41c653
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv35.c	MIT	53a20167abc86c6e1ad3c5a48de3afb6aec0cc07a0384bcded81703c0c948306
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	80e044059a60382600af77ba25e6ffc363aac30ccc05a0a9655ef1ced48a178f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv40.h	MIT	52dff8b70d85872f5a15cf594f4ac5daac031b16700d6e701d31de4cb355414f
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv44.c	GPL-2.0-only (untagged, per Linux COPYING)	551d1fd5e41bb0d66352d2402abfd7251244c8f9c74615e0a0790b9e12c20569
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	952c1efb3ce07a282b1132a4911a6707c733fcd9bb93e77fac5eee5848bfa2b4
+drivers/gpu/drm/nouveau/nvkm/engine/gr/nv50.h	MIT	39969e2f40c3931a8c63a4f8e781c8554f333b464382568003c67966156872d7
+drivers/gpu/drm/nouveau/nvkm/engine/gr/priv.h	MIT	c7a972a3419e11409a8245e1b5c40871885f4218f00dc58496923b6215cf4dec
+drivers/gpu/drm/nouveau/nvkm/engine/gr/regs.h	MIT	c762742d0c7978327ff356955ce3d185703c2920d147886c4180e2e5586694dd
+drivers/gpu/drm/nouveau/nvkm/engine/gr/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	fbc51944c09550e75d85a3ef134d04d918615bcdcf3525cdffb690f1f0ce7f9e
+drivers/gpu/drm/nouveau/nvkm/engine/mpeg/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	ca9d22903cef0bd03d4a791717b9b3e0f94614f9057800683e7dd7c800d44344
+drivers/gpu/drm/nouveau/nvkm/engine/mpeg/nv31.c	GPL-2.0-only (untagged, per Linux COPYING)	28254c0031779ea9d4e0c3a7f6ff2c0f1229fdbddc53bbfa433d5c35ebcc0b0b
+drivers/gpu/drm/nouveau/nvkm/engine/mpeg/nv31.h	MIT	0b59b1fcc0529f5a125fc713d82b40cfefc085e16acf2dab98d782f18c38226c
+drivers/gpu/drm/nouveau/nvkm/engine/mpeg/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	d85090bd42f9b003fcc65712e08cd48a912612f318d9479a4ccf9ca9b213466c
+drivers/gpu/drm/nouveau/nvkm/engine/mpeg/nv44.c	GPL-2.0-only (untagged, per Linux COPYING)	bcbdfe0caf6cffc0b55384d50219d38e68f3648303ffa314e801686e99c1bb59
+drivers/gpu/drm/nouveau/nvkm/engine/mpeg/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	4568a76e3bbe258b0216d08cc3237fe14b9f4f61c99ab28bb9401cb953dabf48
+drivers/gpu/drm/nouveau/nvkm/engine/mpeg/priv.h	MIT	b4fabf9eb94907b9e9fa983bed3510e0af0a2400570496174502786d195da4ef
+drivers/gpu/drm/nouveau/nvkm/engine/mspdec/base.c	GPL-2.0-only (untagged, per Linux COPYING)	49a34df89db117c055b5ed913a74adefe49fff41ccaccb62a2bae02d44dc375a
+drivers/gpu/drm/nouveau/nvkm/engine/mspdec/g98.c	GPL-2.0-only (untagged, per Linux COPYING)	995039bc1bcb39caa2b6ef54ad10d21ab9eb22758126d2f375904014bcdf4b7f
+drivers/gpu/drm/nouveau/nvkm/engine/mspdec/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	c7fd57b404fefcc80984c912b857972e51a3cfbbd899e81d054a4aa93a9cd61d
+drivers/gpu/drm/nouveau/nvkm/engine/mspdec/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	a3820ba9136b938ed1ce5d896a2ea30810f1bba0f325d7c47cb30f613102e58d
+drivers/gpu/drm/nouveau/nvkm/engine/mspdec/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	da7889f98f1c96efbfc9a361bfc848d5c6920578da88a0a752f623c3f2693655
+drivers/gpu/drm/nouveau/nvkm/engine/mspdec/priv.h	MIT	451c60cd8f6d4cd9be87dc18da9676083f02cec5133ba96575fd1b2e5b53fa27
+drivers/gpu/drm/nouveau/nvkm/engine/msppp/base.c	GPL-2.0-only (untagged, per Linux COPYING)	dc2151991841086830e4db37fa496448647bc06035cc950932450f453f02496a
+drivers/gpu/drm/nouveau/nvkm/engine/msppp/g98.c	GPL-2.0-only (untagged, per Linux COPYING)	239506999549419574200f7f8b0d81d0fa5c027c6cb52fb9b8f00b98586e14d9
+drivers/gpu/drm/nouveau/nvkm/engine/msppp/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	20adfd0d0db1b9c598d8374bb1cdb34aad434bd3862b33122cd046ede830051f
+drivers/gpu/drm/nouveau/nvkm/engine/msppp/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	bcafcc95abe39b26c522a158b4922860774c0516964fbb97fdd2c68ec6d8433c
+drivers/gpu/drm/nouveau/nvkm/engine/msppp/priv.h	MIT	b0214d6d6d9fb24cd82069c59114aef12b25f8427cef7d51b25a332b8a7426ae
+drivers/gpu/drm/nouveau/nvkm/engine/msvld/base.c	GPL-2.0-only (untagged, per Linux COPYING)	133f4bc0625fa91486a520d844edcf355fcfa0ce5fd799578ede82507206bf80
+drivers/gpu/drm/nouveau/nvkm/engine/msvld/g98.c	GPL-2.0-only (untagged, per Linux COPYING)	c7510f3d76de292f64d72a8111721ce03bb6a4c363da133a45d3e19d11b2c621
+drivers/gpu/drm/nouveau/nvkm/engine/msvld/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	f29f99f12007a936d47c4162507d50e932447fc661f7f436aecae826a81bafb3
+drivers/gpu/drm/nouveau/nvkm/engine/msvld/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	00c2455c1b20ce48ea7abcdaddf224398ccd0a347caca47968203e7fbbd885a4
+drivers/gpu/drm/nouveau/nvkm/engine/msvld/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	8da10cefb44082a25f92e327b51fa5266b78c21440ebe9de1dc57c611a412cb5
+drivers/gpu/drm/nouveau/nvkm/engine/msvld/mcp89.c	GPL-2.0-only (untagged, per Linux COPYING)	75cb1ec084b15b1867d074dd3caf6c05dd9f3d62e8d6cc011ab0c43b5be69bc9
+drivers/gpu/drm/nouveau/nvkm/engine/msvld/priv.h	MIT	51ac2c7e583c6efcff80b19e9048a41c11bf7a74fe0366e8443c8a946bc8302a
+drivers/gpu/drm/nouveau/nvkm/engine/nvdec/base.c	GPL-2.0-only (untagged, per Linux COPYING)	295351b4b35a2f68892a7e36e94d9dc6daf3887180bb28c26dd1c074af4d7826
+drivers/gpu/drm/nouveau/nvkm/engine/nvdec/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	86d9a9438cc72026a1ec51016ca57caabb544557ed79a8829618fa64a3d5c3b9
+drivers/gpu/drm/nouveau/nvkm/engine/nvdec/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	ed65c0393474222e04b870cee9c62bcc5df8a88069b000c37a629731b4e442f7
+drivers/gpu/drm/nouveau/nvkm/engine/nvdec/priv.h	MIT	fe63fcdf137e836d5995ff1655d54e4ae3120cba4685cb9e405e067c4e7513ee
+drivers/gpu/drm/nouveau/nvkm/engine/nvdec/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	11753c25e73cba4c414a0d8d5f457362fe1a8da37d640512d6ec218705056367
+drivers/gpu/drm/nouveau/nvkm/engine/nvenc/base.c	GPL-2.0-only (untagged, per Linux COPYING)	003e387d3a52d95814438bd028d2e00514d32d6943d90de5135a00cd6f77a903
+drivers/gpu/drm/nouveau/nvkm/engine/nvenc/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	c844115e054bfee8555b0b031a7c5dc5773704b586b6e4db5f1818bdceb44b40
+drivers/gpu/drm/nouveau/nvkm/engine/nvenc/priv.h	MIT	3fa64cfdefd99d1c92d0f6b5afaa1ca3aa03c94c2ee666af8b3d41aaa58186a9
+drivers/gpu/drm/nouveau/nvkm/engine/nvenc/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	307193f387aeef5e8ace1048fd44c2cf30a131557a5807930a07eddbea7c9f4f
+drivers/gpu/drm/nouveau/nvkm/engine/sec/fuc/g98.fuc0s.h	MIT	c382007248de377ef984fcd6885a69c1eb278189148dbff29a1fb16982a0c49a
+drivers/gpu/drm/nouveau/nvkm/engine/sec/g98.c	GPL-2.0-only (untagged, per Linux COPYING)	e7b16ea88191c42ca6224800e64b8ec6089231370c2259734579adbeb177f2c9
+drivers/gpu/drm/nouveau/nvkm/engine/sec2/base.c	GPL-2.0-only (untagged, per Linux COPYING)	80b25e83dc90495c24c922d05dc0f4c3d5e4d7ed15606ac7070d18a9f4840e6a
+drivers/gpu/drm/nouveau/nvkm/engine/sec2/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	f8c9388cb4bc65cfa7ba6a2a5bcf00753447c58876cf58d2cc4d19e86dc91c07
+drivers/gpu/drm/nouveau/nvkm/engine/sec2/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	f4b92c72ed90e7aa828d271012611f6b83df8555a578756f269a0ad10a378050
+drivers/gpu/drm/nouveau/nvkm/engine/sec2/gp108.c	GPL-2.0-only (untagged, per Linux COPYING)	b289ca1aa4cb731547444277d6838a91df8a847332353bef0fe4f6b3d59f96da
+drivers/gpu/drm/nouveau/nvkm/engine/sec2/priv.h	MIT	f6714f47efcdef169710520257bf76b99b4b55344ef47dd4f1d64d75ccabc394
+drivers/gpu/drm/nouveau/nvkm/engine/sec2/r535.c	GPL-2.0-only (untagged, per Linux COPYING)	ac7c78d1adcdcb41d60ce7b6b13ce3919eb584deae7db696179616e5c4f5b52a
+drivers/gpu/drm/nouveau/nvkm/engine/sec2/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	c9f42fde8bf7a961c98b5b327f8f287056c2d34af21a5d96fc5333e07f529149
+drivers/gpu/drm/nouveau/nvkm/engine/sw/base.c	GPL-2.0-only (untagged, per Linux COPYING)	0f8aa4ef5ce0c95f0f8071f4497871c195e1d1ebbad8278f2e08dd50a385a4c9
+drivers/gpu/drm/nouveau/nvkm/engine/sw/chan.c	GPL-2.0-only (untagged, per Linux COPYING)	8743322690c45bd59913d27f65587b45a09dd107da5acf63c02af503bed032ce
+drivers/gpu/drm/nouveau/nvkm/engine/sw/chan.h	MIT	4314b3bae4261c7fbb6b85a2962f72955cfd3251e593e059e3dcaaab4074bb99
+drivers/gpu/drm/nouveau/nvkm/engine/sw/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	dba714efe0bd7e3a7b2a9c7f5bc11fcf8f42160169ef04a4daa7f11f7cf8b045
+drivers/gpu/drm/nouveau/nvkm/engine/sw/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	c4489db5d0aa50a10cf2e1c73dd55ae2998588a2d6146a42babd7bb56d01be1f
+drivers/gpu/drm/nouveau/nvkm/engine/sw/nv10.c	GPL-2.0-only (untagged, per Linux COPYING)	e25b0cfe440188e4787b4f72eb9bcbfa76e6cc296ee1e3ce4d90ef9b9cef8a06
+drivers/gpu/drm/nouveau/nvkm/engine/sw/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	9eb21854ba308a658e7b1376f1bfbedc916435a414436fbfde0e915a4a5e0c7a
+drivers/gpu/drm/nouveau/nvkm/engine/sw/nv50.h	MIT	92617b768090ee40c6751e042c3461414269d15bd3d1ee4ce0ca8b11d4d14753
+drivers/gpu/drm/nouveau/nvkm/engine/sw/nvsw.c	GPL-2.0-only (untagged, per Linux COPYING)	9a592c36a5b532660d40333488b331b7f6df7f32ca19bbb755eabab8078d9291
+drivers/gpu/drm/nouveau/nvkm/engine/sw/nvsw.h	MIT	8b8098bcde7676507002ea329ed97755bb446cf28b08fc927588a34f7576b7ba
+drivers/gpu/drm/nouveau/nvkm/engine/sw/priv.h	MIT	5f05f88037fa3e435cd5a394cd11dc3bcc213b5e17556bb10eafadfc3553c399
+drivers/gpu/drm/nouveau/nvkm/engine/vp/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	c0c4443fab3cbc90ccb1e66190bc5d382a5e45012ba10adccc05e11162791761
+drivers/gpu/drm/nouveau/nvkm/engine/xtensa.c	GPL-2.0-only (untagged, per Linux COPYING)	418fe7b9010a12d5d0b127b3ab949ec0c02a1f618aef3ee34cab8ecbec94a255
+drivers/gpu/drm/nouveau/nvkm/falcon/base.c	GPL-2.0-only (untagged, per Linux COPYING)	ca82bd574209c1f5c759b9e683e527ff207cd48287ad911e416c844043f66706
+drivers/gpu/drm/nouveau/nvkm/falcon/cmdq.c	GPL-2.0-only (untagged, per Linux COPYING)	33e6d76cc92ab96f9f6ad4f729ae69c98e8644fd2981d5b3f334433881f335f0
+drivers/gpu/drm/nouveau/nvkm/falcon/fw.c	GPL-2.0-only (untagged, per Linux COPYING)	a58616d3dca74703598b89c5911815203876bcd6dc1c4fdb0a579ed91625114c
+drivers/gpu/drm/nouveau/nvkm/falcon/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	208ac31899fd5da07d40e4bfabff29a8a51ff03dd9661e2a019e307e8a977aa5
+drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	de6389b846990c377a9efbf3005f925ba626ae0e7a6bc8c20a26cfc73ce710e4
+drivers/gpu/drm/nouveau/nvkm/falcon/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	48d93b34e737d97655249ecaaa607b4637d77b0e1a1643fe148da873a08cee81
+drivers/gpu/drm/nouveau/nvkm/falcon/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	cb167e631f63d042de874cf621010675719ebdb44176c97e5281ea42a2ef666d
+drivers/gpu/drm/nouveau/nvkm/falcon/msgq.c	GPL-2.0-only (untagged, per Linux COPYING)	9af805320b16975a7ba666db4e0d53d110864190eab7345701f91d43f08b9cc6
+drivers/gpu/drm/nouveau/nvkm/falcon/priv.h	MIT	2ed53cea023672f1c684d922a1691ccfb78aceeaab038ddd7c58283af3a876ce
+drivers/gpu/drm/nouveau/nvkm/falcon/qmgr.c	GPL-2.0-only (untagged, per Linux COPYING)	b91de8cf69367f7044e438ed1955943f9717e16f28f192cb9e789a03754c0577
+drivers/gpu/drm/nouveau/nvkm/falcon/qmgr.h	MIT	76f6266bdffa7e679fd28f1bcba429f677361a93d4687fa327f31e84af49c839
+drivers/gpu/drm/nouveau/nvkm/falcon/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	95aa412aea719267c1a2f83e35e0742232d1268739270c7033ec3b6c3334fb0d
+drivers/gpu/drm/nouveau/nvkm/falcon/v1.c	GPL-2.0-only (untagged, per Linux COPYING)	e70866998b34433a30b7b03a5f614332ac2902cc252bb15aecc3f0cd827bf9c9
+drivers/gpu/drm/nouveau/nvkm/nvfw/acr.c	GPL-2.0-only (untagged, per Linux COPYING)	ef5802facfd0534bdb40a9e47424d2c4b25f62abe84ac0ed4d7deccab544f9e3
+drivers/gpu/drm/nouveau/nvkm/nvfw/flcn.c	GPL-2.0-only (untagged, per Linux COPYING)	23f4215b45d030d7c2a76e390a2a53ffc0633db550e2c49e6fd0e667be556f10
+drivers/gpu/drm/nouveau/nvkm/nvfw/fw.c	GPL-2.0-only (untagged, per Linux COPYING)	73af90046f4634b263a8df9183f7f828af524adaa13365f18e6cbfd244841816
+drivers/gpu/drm/nouveau/nvkm/nvfw/hs.c	GPL-2.0-only (untagged, per Linux COPYING)	81038270ab41abaafc5860f9b66c843e78ce7be7dd93cd6f4b759e1f56bd5a6e
+drivers/gpu/drm/nouveau/nvkm/nvfw/ls.c	GPL-2.0-only (untagged, per Linux COPYING)	da93ae366ae9f422d66e323eb68d949b79a0c7f43814efe402de6f6225bf64ea
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/base.c	GPL-2.0-only (untagged, per Linux COPYING)	0b541e4651f811bf4c695e5eb3e66248779a3f23a2c1f02458add5cf1acb90d8
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	b84741a2f3be6eb3eaac2f94727ef1f949dad81f54f8cad2e5969f38cbe753d8
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	892bfc831e8a5df1b628bc6d891e9f765d3ab3684a6027e1234051ee44fb3277
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	e3eb342d116930173c65db020da642eca92e4953fd012976676b98c19af34c62
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	67c29cf8665d0d2ea1b33cd6928cf158504d6229be28531ed07f7ef83f051aff
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	9f7c39455b8656e99223c736056bbb84bc8bb0691cf87b6053168cd9bf3c5811
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/gp108.c	GPL-2.0-only (untagged, per Linux COPYING)	8cfec4d916d949cb61f121beee2aad6c8d3ce165fff7df821b6dad2d10fd8c8f
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	3768f5986e0f16a4a68e079e62cd138887cada2a20aeaf590370955577e82ac0
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	ea87983f841428baf98765c621fbb76c748f72d5911144edd56bf111f1fae610
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/lsfw.c	GPL-2.0-only (untagged, per Linux COPYING)	6003b059c360f223a726d6ad4d1f525a19d0407ecf812491081d0136f5c1a5ae
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/priv.h	GPL-2.0-only (untagged, per Linux COPYING)	daaf6c9f53bfee3593fa4b65c498e235ceb3389dd2d60dd998fa824fc5a64460
+drivers/gpu/drm/nouveau/nvkm/subdev/acr/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	997deb9c688bd843b7ef200e459e94ed44fd8dfa0648730696fee83f8394c921
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/base.c	GPL-2.0-only (untagged, per Linux COPYING)	e0d5ec84f39c2ca3335489c96303144c41abe88a3bd2276359fa186ba16b6cd8
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	28fb3702c0ab41c1ab4ee5840f57d3c809b93ae9a779b2a57115164426c0f6ae
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	f55718a9e8e53db6f566f3e117efbb348bcfe36b5b1732f2d3c08588c4ac8abf
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/gf100.h	MIT	007893d4f6ea7c9ad6c4c050bc1a2efbba65033b4b99e56dcaf818ea6222676a
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	ddc1a3fb7878908c9424537625304fa88785f22ba656111e076eab94464656b2
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	6e13827f31298f07030aebb74b8fb254ba593c97ffd4fe5d491e02a496f45ede
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	8e2ab6112d322fc725408debf60ee38f5894ad39ded9ce1f7935b73f72d1be31
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	1cebdec401b3e08e434bbdc6b2853818ec0c13e239cb36ebde32b415de1588f8
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/nv50.h	MIT	f5372d87bab5cf29d5eba7edb15e7166fe49d597e443b409255e6f7702ec2e90
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/priv.h	MIT	1a33b6ccccc884358e165a338ef03d10a4216843eba90c7dc34e6faf46b84647
+drivers/gpu/drm/nouveau/nvkm/subdev/bar/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	db825c7127ddd41ce87dafe6eca08b9fadb3c2b158521fbb1175c52ed2b649d0
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/M0203.c	GPL-2.0-only (untagged, per Linux COPYING)	f1138c6ae8616ab554f2390d2ea2e251a0b0c9732a3f1977e74345380c699789
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/M0205.c	GPL-2.0-only (untagged, per Linux COPYING)	d2b47983ef1d80d868699f97253753b8691a3fc1a28a27ce1d7d50061d02c488
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/M0209.c	GPL-2.0-only (untagged, per Linux COPYING)	fab3e4e0d32670272578996c8a427e988592e1da615fa22ea3634a543884968b
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/P0260.c	GPL-2.0-only (untagged, per Linux COPYING)	77431001d0e98d8e578b3759aa201e9c07c14fa8aa819829dbbd61c4ea283d11
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/base.c	GPL-2.0-only (untagged, per Linux COPYING)	46ed30acc887a81f9f7f6e1e13ebaf1eb89f61d4e4f9461b3bf88eb65e722541
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/bit.c	GPL-2.0-only (untagged, per Linux COPYING)	955da1bbd3288f978830d2d713406cbfe2929627a36769354fac8515495a9af8
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/boost.c	GPL-2.0-only (untagged, per Linux COPYING)	bd703c5ea521dcfd66b4b0cb9958713f25cf48f17271ca50c2d313779e25a92c
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/conn.c	GPL-2.0-only (untagged, per Linux COPYING)	8b658d114d554ac9623b5ef59a2d8ff22d87905b7c364f711a6d387634bf625d
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/cstep.c	GPL-2.0-only (untagged, per Linux COPYING)	27c000d772640d3b518d90a08bd0462a02ed53f172a16131b7fcfa7b434198e7
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/dcb.c	GPL-2.0-only (untagged, per Linux COPYING)	328e5f6d7220e4ca45f1ceb2b3d1443d5e41a513673c5411ae199b7939586a0e
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/disp.c	GPL-2.0-only (untagged, per Linux COPYING)	e5694d268bc5129d7c749358f77803ebf459c806083e3d774d61c838d6c3d9c0
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/dp.c	GPL-2.0-only (untagged, per Linux COPYING)	aef6d1636516ec647c9f109eb7915a364169a70e0ac39f1ea988ee12443c06e3
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/extdev.c	GPL-2.0-only (untagged, per Linux COPYING)	3920f74f69fa22c4b0bf534e8d0ef1e8bee91f8e6d24a1219efcae1f6774faf1
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/fan.c	GPL-2.0-only (untagged, per Linux COPYING)	94a4bde55b1b34f2b0939fc46479dcda4bc2ed8a0fa756d63386edf0eb55fb7e
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/gpio.c	GPL-2.0-only (untagged, per Linux COPYING)	00408520241fe398517e2e3f99c8d52bf81f186c992375934dfd8ba684b61260
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/i2c.c	GPL-2.0-only (untagged, per Linux COPYING)	4d51892b5c771f01770ce092071f463422dff53e047e648ee7cca49d828e46aa
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/iccsense.c	GPL-2.0-only (untagged, per Linux COPYING)	fa11336dc07961d37dc43d5ecf1ac2c655e3fc9c10f77f6d75428431e9e36619
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/image.c	GPL-2.0-only (untagged, per Linux COPYING)	52da790d1fe46c8a47cb933558b0991e334fe8dda8a303550e396fded0f5423d
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/init.c	GPL-2.0-only (untagged, per Linux COPYING)	7af9d95f2fc4b61bb6320c7198505b19b2e7f88cbf3952f1770518f863c1811b
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/mxm.c	GPL-2.0-only (untagged, per Linux COPYING)	439081e369f1acd97a1c525dfc997b885200a1e01722c2f026690712efa661ea
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/npde.c	GPL-2.0-only (untagged, per Linux COPYING)	d74ca5ea0b063a378097bf50e41fdc61bcc4966f7aaa8c0f0e7fac8eccfb2e16
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/pcir.c	GPL-2.0-only (untagged, per Linux COPYING)	c588c19ce5a8e2970f0f38afca2e3f730a4da415b4342f6ff02fc829460539cb
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/perf.c	GPL-2.0-only (untagged, per Linux COPYING)	2855a0ad5f6b3fd19616843a128e2d1fbd4d67a567ce34a4acff5521b8f5f197
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/pll.c	GPL-2.0-only (untagged, per Linux COPYING)	31b051120e80bcb546c5b1ab43abf10a05c9c5e029cf316223b828237ad12da4
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/pmu.c	GPL-2.0-only (untagged, per Linux COPYING)	3f55b85a1e01cb1dc4e59b0d8d68bf6c9f2625046c5d251f283b3905ce41df41
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/power_budget.c	GPL-2.0-only (untagged, per Linux COPYING)	5fdd1849bc7128273438ba2b3aa6bbed65856958b29a92922e1e884e021e097f
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/priv.h	MIT	c4337896db4ea2f0f85730463a7d8251e26bc2d5f9401e9b252f8890ffdd988c
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/ramcfg.c	GPL-2.0-only (untagged, per Linux COPYING)	7e727829ac5db539c20d1584b87dafd068be82ea5f769ece0fcb7ff733a35435
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/rammap.c	GPL-2.0-only (untagged, per Linux COPYING)	c44ca2d5f2dede2835593ae8d59b072c5a21bd4aacb540a1cbfbd69bda3aae83
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadow.c	GPL-2.0-only (untagged, per Linux COPYING)	5677d72bb76103162f48bc0436a5ae7af443abeb4408dfb1619631cdf19804e6
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowacpi.c	GPL-2.0-only (untagged, per Linux COPYING)	dee10f98990d157123ba9713972eb9c0724ea93774792baa9bd1ad82c0b60992
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowof.c	GPL-2.0-only (untagged, per Linux COPYING)	57170359acd540848f88d6f67fa73ee7888d70f8d48d302f7ca6c7d5663cd7d8
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowpci.c	GPL-2.0-only (untagged, per Linux COPYING)	e5515f2123afb408338db6a59f82d2d96297afe50a561926c0cc110a1be20743
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowramin.c	GPL-2.0-only (untagged, per Linux COPYING)	a393ed3857c4bbd64f4f8a745c35dbdeb290f54b78736f23e03296111bd57b1b
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowrom.c	GPL-2.0-only (untagged, per Linux COPYING)	8e89498f902d34f46808768c9d24ac0a7fb4617d11a5ba45c58d5ed294c58a20
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/therm.c	GPL-2.0-only (untagged, per Linux COPYING)	a499d4db2544525af0876f1d0715a1ffedec855c7db96043ff1c6393907316cf
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/timing.c	GPL-2.0-only (untagged, per Linux COPYING)	5cae01b85f9c7251d94cf046f075f5624de8b19b91037c328abbd944ac186ce7
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/vmap.c	GPL-2.0-only (untagged, per Linux COPYING)	e50fdd9ebe2df8f34aa4100784909851f8db056f152dfb1143db241cde61703b
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/volt.c	GPL-2.0-only (untagged, per Linux COPYING)	456c0bb7ee58a1bb54bd3ded9fedb2cfd2f96f7a00fc28b025d5e8fff89ed644
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/vpstate.c	GPL-2.0-only (untagged, per Linux COPYING)	2795afaaa6f870a809a40d54cab5feb2c2b07c5cd74cfe4286446bb69354acba
+drivers/gpu/drm/nouveau/nvkm/subdev/bios/xpio.c	GPL-2.0-only (untagged, per Linux COPYING)	db4565fb6e4e3d2dd8e8a106e596df24942eddff9c9b21945c330874a995e16e
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/base.c	GPL-2.0-only (untagged, per Linux COPYING)	378d928ca5541ea67328c3e9b8b4c649429772a1353986009793ddd08c42ab32
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/g94.c	GPL-2.0-only (untagged, per Linux COPYING)	c73c61574277761409f44dffe0f45c01a556c7ed68d80b638a344187f15e43dd
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	da4bead5e1f4c469eed257b8b9e443c15163c2a7d6bbee5ad563745370c2d336
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/hwsq.c	GPL-2.0-only (untagged, per Linux COPYING)	5a6e9ff50e363beadb171b1e436cec2521047fafa67c1d338e5fd7e79f83cdf9
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/hwsq.h	MIT	38aef930dc4dfcf9c739ecb47134aa609161bd7823628da20e6a5ad20591b690
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	6b15e207f9717fa5d47f60b2dfff75702114c9381c5a3da915a9abbc4ff93eff
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/nv31.c	GPL-2.0-only (untagged, per Linux COPYING)	e2354e16c8fa5ffc8ec019571b7c9326e7d6ea92f3beb4b4226df5eb177ec8bc
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	bf887f20d1633e6809d5046bd2edab81a98ce612c5e7331af88b41a68486f9f7
+drivers/gpu/drm/nouveau/nvkm/subdev/bus/priv.h	MIT	01a3c6aec6a1faeff15d5998c63892461f0cd91a7c53960c8269044c2c5a9373
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/base.c	GPL-2.0-only (untagged, per Linux COPYING)	12a5fe0072ad31cae714404bdd3c71b6266a9cbc3e9e7f8fc03517fca55ee08b
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	239cfd4cd0f9900b4b7326ce9134e4a860742634c2a833c886cbe763c01bf1b1
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	9dc3667bcfdc5ddf9c6fa3241271de495775772e9da0cdfb87fe5b7fabb74f9b
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	af9876d0a2f0d3d70212f70def2fc1b4ced8122ff444d70b17610549cf283af7
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	81b4396c452a89f1d786b2faf2f5fe34743ad4dd71d9d6283607b1c07c4b6109
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/gk20a.h	GPL-2.0-only (untagged, per Linux COPYING)	34a061868fdc8921f66f056263f8fbdfaee655fecb587b4507014d04dd1e8494
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	e347f08bd04cf4fa21cc1fa106efccc4d1b01643bbfdd48b678b8225bed58fec
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	9db89679364bbe144eeae54f8a3b74dea741f24ba72f14323b62ee73027bd5f9
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/gt215.h	MIT	100784d9e292b419e94cf2b7f159449de88c971fa4a47538ffd52b8ea4d7751b
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/mcp77.c	GPL-2.0-only (untagged, per Linux COPYING)	a21bbf84b04b6f6e8cf7456f6e70d230c5502cae71ecdc37b0bdeed3f83f3040
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	f5384f4f3ebc12d611379dd5757f67908de2e5b04d8353b9c8222828390247d9
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	d6ee2fd432ad699a8acf2819e715789422ff1adad167bd2f69717fbfd03d9a98
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	9105147364a08277b354378c6b072cfb4234f92d0cb92228b2916975f959de6b
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/nv50.h	MIT	10d1f83b7fbba411ca883a467677b8c2beea5d656dc3161f27c1d0ab36ba3cd2
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/pll.h	MIT	d4959459d743235e59db927a15a3b40b0867424f259d4d06fd2978b1b5c6524a
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/pllgt215.c	GPL-2.0-only (untagged, per Linux COPYING)	71cc116d01df5ca95223afc0c07b634594e412c1bd9aa5b2e4348773ff3b2950
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/pllnv04.c	GPL-2.0-only (untagged, per Linux COPYING)	2e5f1b4105753a16f38b1f708b59d29653891330ad3ec517652a2deda83b55f3
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/priv.h	MIT	0e7a0f4032cb79923b6574ec55571ebff29784ff1b74f037bb82534d32496b9d
+drivers/gpu/drm/nouveau/nvkm/subdev/clk/seq.h	MIT	32cfd8e47b0ab9ad8249c2a819cb1b4fc7a1ee50a114120d187638b4896fa66a
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/base.c	GPL-2.0-only (untagged, per Linux COPYING)	5b3532b800941b5d200bc912d40a65f78d28f965ec0850d233df17ad309d97c6
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/fbmem.h	GPL-2.0-only (untagged, per Linux COPYING)	20d36697b6a6fd5721c1cf6647340f837476ef8e0789f2ba0ec719e5bbfedb66
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	b2d91cb872be0307f713a7bd280d8d262daa461b1b5548cb2eb8aff2cfd780e6
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/g98.c	GPL-2.0-only (untagged, per Linux COPYING)	febfa5717c1faf3bad48f8bd962ac3c48d8d14941131e28e7bd922fa199c8e56
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	1dfcc505c8d12630edcdaf33c7db18134aea2396e5593f95a1eb885282b344c1
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	260e57fd22b56e7f765b26ef014900e8e2e43e0fa9aac750734ffa7e9b0872be
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	b3e922f9b2c6cb720e473303be2c9f74090015b35a0493969c697a93083a0bcc
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	f3104d5d4119d0e6935e688e83396d04e7381d21971af462ca17f9df447bf192
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	18925c2ab67fcd7162b386788ceda34f22f89c90f7939f61be2a4c634ea683f0
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	dcae1e7da333437224132fd457dc1d0b1cd191eefe688065b8957770c5fe08ea
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/mcp89.c	GPL-2.0-only (untagged, per Linux COPYING)	6e1331e067b4d7b569059442c24a2ec70faf5f8d97e789619c887f337634ba12
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	2cc13bb52d29ae20fa922298956084678d6303dd03843f01a8429bea98cb9444
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv04.h	MIT	37812f5605f609c6a847e75db068a8deeefba2257b58d611d2090c2120c879d0
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv05.c	GPL-2.0-only (untagged, per Linux COPYING)	0e783132f8406a935878780be4fded688eb2c1bdfb73e83604b7a01e6fb1249a
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv10.c	GPL-2.0-only (untagged, per Linux COPYING)	ce1eb60542ddebad877b14a36348e5b7a7a08978941975eac90b22f674213663
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv1a.c	GPL-2.0-only (untagged, per Linux COPYING)	4a561ebcbbba3c069ad4ff8c71c4d2ec9bf8309394f8ffe59b8f43ac28add0a8
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv20.c	GPL-2.0-only (untagged, per Linux COPYING)	014e270ff390639118f9b00b66c6c5864f6935e854721c92038b57fb749eef3e
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	cb2fee19959d160d2390bf467476e3ac12f0dc7fb6d25d5699e627d0f2403335
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/nv50.h	MIT	cfd63de80cc2d4f63bd8ce629b8642645816f4d993104465459dc9dd8eccd0d2
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/priv.h	MIT	15a002196bbca73c967d9cce7ff705895ab5693f1042df36cd9608697f9625b6
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/r535.c	GPL-2.0-only (untagged, per Linux COPYING)	0cfbe5d4ff12eb7955fa84f302cb2f1584157f91b09b6bb2ad6b899a8d9f858f
+drivers/gpu/drm/nouveau/nvkm/subdev/devinit/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	4615b4adcfd9d662f362e2fefc14ebc7f06c7719a6110c6d4a42c1a19117993c
+drivers/gpu/drm/nouveau/nvkm/subdev/fault/base.c	GPL-2.0-only (untagged, per Linux COPYING)	ad0de711202f102a22f3123a0539e2837ea163b8741ac07df7f6f1e35dc6e977
+drivers/gpu/drm/nouveau/nvkm/subdev/fault/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	b72440a15e1c17e8267d2f7c2fd55c4897a107a801f572ca64b9f1b6f72eb8ea
+drivers/gpu/drm/nouveau/nvkm/subdev/fault/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	88f1d834353084c5ac5a62263c894919db6284cf6b4ed3f3ae699c4bb8bc5a4a
+drivers/gpu/drm/nouveau/nvkm/subdev/fault/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	10062d3bcb370a39dfa56f4fca675b125de7c03550316813654acdc794febd8d
+drivers/gpu/drm/nouveau/nvkm/subdev/fault/priv.h	GPL-2.0-only (untagged, per Linux COPYING)	cf3717c096f2d5d1294a5984db016d7c9c3f30d4bae04c05a1ef82a3743e0bfd
+drivers/gpu/drm/nouveau/nvkm/subdev/fault/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	40e170ca5767bcd3cb9fc1204979b65e876ad7831d1f450230c9a91acec9e74f
+drivers/gpu/drm/nouveau/nvkm/subdev/fault/user.c	GPL-2.0-only (untagged, per Linux COPYING)	a686e9726c72ee231ab74fa164bd60f66e9f0c80ec1c6b9f07d01c9ee035ceb2
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/base.c	GPL-2.0-only (untagged, per Linux COPYING)	07f5466f090a34a8080c7646121c8e010891edd9135f217084101df874a97c0c
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	83f9dc9766954ca117ef4f9e433339aa77b2ce4fd16b56c3f8f3b681cddd75f0
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	57bb0ab42a876b2cbed4a418de12739ee7c253fde1d98dc26c115d9d902b97df
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	d579e439a8009a031e351178f4d8d469ec9e37eec5c8e5ebb4a8f0792341f13f
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gb100.c	MIT	3c585aad3f329f444f47a444eda9f22f5470a10020f4d8e655609cac4d79c953
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gb202.c	MIT	8d4f9b47b0ad79774805b67811fb4cf2ef165e29279520c0e30b5c107f0d3a3b
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gddr3.c	GPL-2.0-only (untagged, per Linux COPYING)	c5a672f84644e007cb93762ae34c56194d79fda4a4932f970def86eeda9c0a7f
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gddr5.c	GPL-2.0-only (untagged, per Linux COPYING)	c8afce98e206ebe8352f90529b805a9ea157ebdd3e976b7afc3170be8dcd331c
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	b0d9f8d6fa7f6b7b0c86e7c1773c8c4b77fecc4d0c23a68463be488c50dc95cf
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gf100.h	MIT	d6d95e60bf8b566b41651724935f8ef827c9c7e1abc8d74fa4c5143b2b84ddef
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gf108.c	GPL-2.0-only (untagged, per Linux COPYING)	dca0d7fb2bc69bd4b30076706e0a9f94e52babd01bdadd187c6dac1a5b6701da
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gh100.c	MIT	c5fc885deacdfa968171f1600fe45fadac7d581e04274cbfdddae110a01dd003
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	30cfcd859f64e348ad6ec2c639ed06b40e8a13d5b16a25074f1188eb774e8b03
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gk104.h	GPL-2.0-only (untagged, per Linux COPYING)	e407dca6d8879fc6648bbe03d13f65274fe36b6e77ab1aee1a8cc6661aa11ab4
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gk110.c	GPL-2.0-only (untagged, per Linux COPYING)	b63023562a128a6a2e6c641c1b870b2240fd419c7def1f86214a33883b77b3be
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	5debba8052c20a3b7c84348780922ada145b88ded6f3b7f2e1919a61c302ab29
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	a248be31e56789aa24cbd546f4664aa49be4fd625920a2d99e1474764f8d6a9e
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	f538ddc71c8d187de0cefb36d538f9b7324641aa195631bfe658d7063bcab9c0
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	22db4ad83d5af28b47183d5842ec1e0acaa7c53ab6c610fe629c216f50d46119
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	7b1e208cac78d3e78b98fd8434965b534e1453aeea300fc21792afc2ac590545
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	188b2b89134544fe538baa0722daacd5a5a92c23b997b91e100ec31a6e939a59
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	6b348aed9c149d160c218d050e6829ea65c278895e8572b3c856b8c1493d2c1f
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	83351a29760d4d07d27dbbce81d028a410a55418e3b4d2b68d9dcbd84bb79211
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	c44075b58962fd21bcc6edc91d1773d15bf1a523d839bb4911554534be7fe77d
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/mcp77.c	GPL-2.0-only (untagged, per Linux COPYING)	a62d99f825756ed1209f96213de010fb136966b9a2b0c4331f11008b4a2c7adb
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/mcp89.c	GPL-2.0-only (untagged, per Linux COPYING)	d8596a232dc56d0bc637a9c16e6f7f8e0bb6eb9e12a401624086eb27b28dc3f0
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	0f7547fd32c621e794d4b0928aea0c18c1ed9f85c7c7d6ace8ff283436a17633
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv10.c	GPL-2.0-only (untagged, per Linux COPYING)	371aa90b7d8ea58dd2eb0e86712f11b6171585bf33cf2f15701356a26fd63f46
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv1a.c	GPL-2.0-only (untagged, per Linux COPYING)	d0dfaa8a754de7351ab521ecd977fd9004d489f84ffdb410cf033342e4825ab3
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv20.c	GPL-2.0-only (untagged, per Linux COPYING)	2625a23d6c3ae4bbd8ac9b96d1aedb15da385f45dc5e57c5d827c1209a5316e5
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv25.c	GPL-2.0-only (untagged, per Linux COPYING)	406188c4168f6c60da8392e76cc5538417cdca249cc36c97f1e95e5af5035880
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv30.c	GPL-2.0-only (untagged, per Linux COPYING)	3643ce659c8cd23c15c0180b0762788dbd37714eb0e0863f9304887816158e33
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv35.c	GPL-2.0-only (untagged, per Linux COPYING)	93151abed9eed7456ac3375f5fbf6561bd603e87315fcf797499074485e3fa93
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv36.c	GPL-2.0-only (untagged, per Linux COPYING)	d031f27859099c13823fc153119a6a45e07ff79e63382ca90f6e55b0eb01a49c
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	7a44dd7fab1500e0112571783ea8f3192fb29479b7f1f5f809218d99e9d576ad
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv41.c	GPL-2.0-only (untagged, per Linux COPYING)	9b75d29abb5f7749a67631cb0cb3a7d00b76811786ae73cba69ddf2830c0fb0f
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv44.c	GPL-2.0-only (untagged, per Linux COPYING)	a62e7c692ef9c50e776a42377211bc736df5b43f9fd930ab420eabfd0feded0c
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv46.c	GPL-2.0-only (untagged, per Linux COPYING)	5b14e692f228f828ae6c2266f060dd83b9aac3ac5b6cb33524a92f3759cc5a8c
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv47.c	GPL-2.0-only (untagged, per Linux COPYING)	0d486c1eded797f77ed9831ce214757768ec28d4b0ec8667f3321fa3db56450d
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv49.c	GPL-2.0-only (untagged, per Linux COPYING)	d15b1071f373975c63750e24282b2e2c9ea59f90e00b3f88cd58debe32fee432
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv4e.c	GPL-2.0-only (untagged, per Linux COPYING)	2666b69a19f062fb7000979a89d2eaf6370bed2da4d0ff2466a3f9d33ba6e1d6
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	b49687c35287d58407483ac0c8774cd1d1ce5ff965d2ae096ec19d6621224f38
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/nv50.h	MIT	2b5e45f499c465ad1bff5709219626fa0b173f2c741c808a69d79fb4a212bbe3
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/priv.h	MIT	a8d9dfbf448b28fb18fc21589e7e86ef19ca5058aa903ec74a9196ef548e0918
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/r535.c	GPL-2.0-only (untagged, per Linux COPYING)	8d8c31fa93751a2950d1ea7136f04b05527b11864d1cc4ad38dd44e44f947723
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ram.c	GPL-2.0-only (untagged, per Linux COPYING)	a0d8b25ed1e8ed7b731bfb54d1db9fd4de5506750c1fb2274c951a21a4df3a8d
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ram.h	MIT	91e70223a13f09b54be5709f6f87a8be435ac6408fef96d2dfd6557ff85015c3
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramfuc.h	MIT	9ff7f56afbac1741123f70f1c3b4af58aee55dbefc9dabb2b83015baf5aa34c8
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgf100.c	GPL-2.0-only (untagged, per Linux COPYING)	770a57692580c709223bd235dd07ee13899ff1c6ad29751c52dedef42383a57f
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgf108.c	GPL-2.0-only (untagged, per Linux COPYING)	1a59d714e34b6977ba4e551216810721e234f9e0653f9c36563fd022007471d2
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgk104.c	GPL-2.0-only (untagged, per Linux COPYING)	99aa20855f0029918873fe0e598b341a91ad5049834df4b98033f34012fffa45
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgm107.c	GPL-2.0-only (untagged, per Linux COPYING)	0a35f6ceaa6d61f8215447e580234b6e01ef8ab079853d93532eb572404ddd35
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgm200.c	GPL-2.0-only (untagged, per Linux COPYING)	da8f6b4debc67f7414d0830b4fc6244dae63dc63270f2e7fe49e8d27839309dd
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgp100.c	GPL-2.0-only (untagged, per Linux COPYING)	2ba623f4498ce023dd69a8801bcf694c35b7ac22c3a4b965805a8096fc4b396a
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgp102.c	MIT	f97378987e3a15d2db7752396c2e5713f156303bb7f6bde08d5d83a5ad3d7918
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramgt215.c	GPL-2.0-only (untagged, per Linux COPYING)	93fd9ff367fadde53a97342485ebf65ddcc3ff7760874806c7459fef83b384f8
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/rammcp77.c	GPL-2.0-only (untagged, per Linux COPYING)	23abfb24da52ec2cb18faf7e292d932cbbe09ede6ce67867418878cfeec75908
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv04.c	GPL-2.0-only (untagged, per Linux COPYING)	a460003d80efe37d615b83c53a24235288bb045803018235dc2bff31246a0776
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv10.c	GPL-2.0-only (untagged, per Linux COPYING)	818b06e5dd87f2915f2eafa1ee3ae9549fb1135ac3c2ed410acb20197bc4e812
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv1a.c	GPL-2.0-only (untagged, per Linux COPYING)	18bc38592868449a7d13bf86260bc8f66489a3240a8b0ecd4600374c85fa3a24
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv20.c	GPL-2.0-only (untagged, per Linux COPYING)	f01952de9405054486646b2116adf2999e5daf5b8ffc3800ffc05b5269f584fd
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv40.c	GPL-2.0-only (untagged, per Linux COPYING)	8ada5ec66ac3fddd2c8412fde095c49279b7cc974fb7d6ec9b25e00c7726963c
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv40.h	MIT	ce615b1c515d3d3edfb773aba18b6142c1dc760a8466e87322677bce320e11e2
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv41.c	GPL-2.0-only (untagged, per Linux COPYING)	3cee54c49fcc414434611bea21150e579aec0ac0ba4f27a04263ed523eeee176
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv44.c	GPL-2.0-only (untagged, per Linux COPYING)	c56434b81d13fa320f9fcd75ce793928bc818e8ea589bc5796f7a9d632bee58f
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv49.c	GPL-2.0-only (untagged, per Linux COPYING)	9564ff0dd6cec55d8473c27627663c0d79777c83c9c55fdb60a8e8c74c12f9f9
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv4e.c	GPL-2.0-only (untagged, per Linux COPYING)	8ba3e983d1e0df0d411f146c54fce4380ff354fc63eff832803a65eb386b75f6
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramnv50.c	GPL-2.0-only (untagged, per Linux COPYING)	913fd8deeae9eff46f7f58367adee225c9a656c22232589baf2932de8c3282e5
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/ramseq.h	MIT	3eadd4869784281a91eafdd4b550fccab07a036b791a3caae742df6a20406b21
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/regsnv04.h	MIT	47ae5d5dec8a4d634ce6b2e81b0ba722177d514bcb03f7e18d31fd6989d4690f
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/sddr2.c	GPL-2.0-only (untagged, per Linux COPYING)	f6d55ff63808f7a3b2181e23097f3f47603f466d595fc8d4a5380b5f37d69f37
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/sddr3.c	GPL-2.0-only (untagged, per Linux COPYING)	84de61ab6a6af2d66683f0797cc9228760f117f107d5add352c2c6839d94b8e9
+drivers/gpu/drm/nouveau/nvkm/subdev/fb/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	7853313980448891be82ce13c6dcb438e78f052dda64be69ae354944146ab161
+drivers/gpu/drm/nouveau/nvkm/subdev/fsp/base.c	MIT	412865f33ea763e8fe50b8defa4f5845af8b9d85365c49e552676acc1e40cce3
+drivers/gpu/drm/nouveau/nvkm/subdev/fsp/gb100.c	MIT	45d3a55be7c7573a31eb61db3a8b9e61a1b385087c3b443df8f27edc79a3a96e
+drivers/gpu/drm/nouveau/nvkm/subdev/fsp/gb202.c	MIT	67f97d1f3d93342ccfc362a1c4c552740c00c9bf6be9711920adaf556713eb45
+drivers/gpu/drm/nouveau/nvkm/subdev/fsp/gh100.c	MIT	06177209f1af0fa88247a4a0bf199c9103c9fdb989c29f2ba2e197a2a24dec0d
+drivers/gpu/drm/nouveau/nvkm/subdev/fsp/priv.h	MIT	8c0e887f88f302abda1a93c2aeb62f87c003660b4f075d2e2dea07afa84f4f10
+drivers/gpu/drm/nouveau/nvkm/subdev/fuse/base.c	GPL-2.0-only (untagged, per Linux COPYING)	f94ee76d41d8f4faf616d38af909779269ed84b7a71738481d3421c5c786ec43
+drivers/gpu/drm/nouveau/nvkm/subdev/fuse/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	1ef5395be6d65aebe99cb35c6850de814df178713cee8bfcf21e57cdfd05b0d7
+drivers/gpu/drm/nouveau/nvkm/subdev/fuse/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	d8f5389ac73f4433457b13784011edd66c2ad6eabb98a2c06fe17fb7c0ec4a5a
+drivers/gpu/drm/nouveau/nvkm/subdev/fuse/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	4507e9acbef5e8419ed11e44e4aa781b1f5470c7fd9e3774f63a160c7703c08f
+drivers/gpu/drm/nouveau/nvkm/subdev/fuse/priv.h	MIT	2f0382f25f8c2b6b1fa8bd91028eb4ff3bfa167499c2214f76d3eeaa4f6e253a
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/base.c	GPL-2.0-only (untagged, per Linux COPYING)	4d2fdd175fdfc5d2d140aec5479ff2e2dcfcfcfd82d6c9241288a8aa67fa8f29
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/g94.c	GPL-2.0-only (untagged, per Linux COPYING)	7f1a5ece832e0c24fa9b1b31322ee6e0a5d3a47753bc8be98f0ff0fd2f5603ad
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	85a8e7f51d53514a6d83a6fa7a9cbb847e8924301efe4f01674435260eaa321d
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/gf119.c	GPL-2.0-only (untagged, per Linux COPYING)	8c82fe870d0c38c2b741b6b009c9b7f6bf7b47321bd9d53edbe9c4b6908d7ae9
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	a10922b3f25de92b49c38dc299c031bab92b683161dfde852ad19d396e29bf91
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/nv10.c	GPL-2.0-only (untagged, per Linux COPYING)	547c203d548bcc705ea0df50bef2844e84faf6df4a369ba83b8793740f97b4a7
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	76b3adab2e632b65ae75d00fdda2630c1964677caffd8d122d2590d2d100698a
+drivers/gpu/drm/nouveau/nvkm/subdev/gpio/priv.h	MIT	b478e04ef6485eb30c5f8a4a0bb6c05e7b1faa040601ee972fd01611c7ef78d1
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ad102.c	GPL-2.0-only (untagged, per Linux COPYING)	dd5017e35174d267faeae228c2ab1f5da06bcae65eba38cdd53469f968adf8c9
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/base.c	GPL-2.0-only (untagged, per Linux COPYING)	211acfe67e349ae0f699c1263e0ef0a1ba9b1fef32a2f7c2c4b393b2c0636d38
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c	GPL-2.0-only (untagged, per Linux COPYING)	86cf199a6be0a1a48eedfbe079ee23526ccb66f2aec1de8f53b4ec52358504f2
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	e77812a0e2b6684218d12777ad744da210b7ec3456a96bd93820d4b2610841f4
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	b5cc57963d9e73c0031c1f6ae97481d2a2b3e3cdc4dfd66d0c2deb862db4ebdd
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/gb100.c	MIT	e0ead5089b8cd251776aa0f08371bfe6275b4524270b527349878b7db0df908e
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/gb202.c	MIT	fe5e20bd699c103eeba47d55e21c5218b9fc3f435e8bab996edf296e12f3cc18
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/gh100.c	MIT	31b6e4551bb5963bf6e85cd006fa6f78ae8a60d13660dc1942b5337e423ce222
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	cd1bd0e8076c13269e97322bfd01308febc7dedcd3ff99c1dffdde8f38e00959
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/priv.h	MIT	f812a149a208564adee5500712a41afda6bd47a446b6fb8237cb2c6705409cff
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/ad10x.c	MIT	928d56a37d77fde25dbee17e4a6b9322ca643db68a258b81d2bcf09e2eb3c8c9
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/client.c	MIT	51fc056df3f2aa1e94f53cb1ad5cab6d2e577307f6332cefa264a40e0868f2e4
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/engine.c	MIT	accf12d2029a47b7ab3620146f8b00b8a9e47db8b911ccd4cc11adab57c76285
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/engine.h	MIT	b73cd0e908f2896f05998163bf512acd448de8ad0b79423bb5c4be239091f999
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/ga100.c	MIT	fc3f6e924657889298a152f50b2a0c82e51fc1ec5c9594ba560f7285c4580e63
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/ga1xx.c	MIT	6b0346f745d86233021ce0c97cc1f9a6b3140a281df838f529492917a1386049
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/gb10x.c	MIT	c15214a74bef25258a6aa14e71c3a2ca1e7ddc78b08ca520ee0d66d2f269bdb6
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/gb20x.c	MIT	a60d597e802bca7b4a916d9ee6c7a18865a4708438f0a1ae4845e0b0a6d4427d
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/gh100.c	MIT	6308b60ef7a9d2360bc9050339f5f6f4eaa9610a24c2b32419b881372d9df827
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/gpu.h	MIT	d9b548b73fa70da157ff33173531ad7d06b870d3f2fdeffb72682e6e72833011
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/gr.c	MIT	ae46c70a4c0f692f692447649e8f0a5d7b28ca68f9f061bd3edea7fc82e9ff1a
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/gr.h	MIT	e20b8f3d80dc82917eb425718ed5959da630e7193e18f086ca3b3fc1fc0cc6f4
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/handles.h	MIT	f0f5564157cb0d44fd5c70f258f8bb3a4412b1dd735a5faa872c71dc7644cc86
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/nvdec.c	MIT	f5ca2694d6efa17b338c20a9afa1732f02ad4435fdf0423e812387bcaa2a80ce
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/nvenc.c	MIT	26d52655e94e0591e929a840da86031a00d43e0036b5edc84277d372da3d9729
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c	GPL-2.0-only (untagged, per Linux COPYING)	df817dcd85bf4d8fa1c2c653bad55a28ca974bbfe62d3d8ec3cf56c362c4767f
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/bar.c	GPL-2.0-only (untagged, per Linux COPYING)	8c1733dd49e5b721522fa9377dacb5f6285b49463b35bb3bb704a955c5e5aa49
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/ce.c	GPL-2.0-only (untagged, per Linux COPYING)	addbad035a26265424cd6ce1bfb0faebd816d886fc38d7e598f54650e93b0b9d
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/client.c	GPL-2.0-only (untagged, per Linux COPYING)	b2a9e9e6454a59ec81411f05cdeea0d70965362bfe8f6d4bf676760c1df7ac12
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/ctrl.c	GPL-2.0-only (untagged, per Linux COPYING)	5dfb6d2bf7dea23f5789ef9f94b62bd0f760e9a3fa0189a9b287f203801efe13
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/device.c	GPL-2.0-only (untagged, per Linux COPYING)	857111d9d39419cfbd72646d01331aabbec46a9f700058593e24eb74d51c0e22
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c	GPL-2.0-only (untagged, per Linux COPYING)	08db4ff27faef2f7b04df15714c4e9fa0dc22425633a45f23fedd4f9f129b5ff
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fbsr.c	GPL-2.0-only (untagged, per Linux COPYING)	f3927116321c2fc1ffc39c4b715bfcfab9a922a350d5ea0dacf49e539667e96e
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c	GPL-2.0-only (untagged, per Linux COPYING)	2fb17d5491a0c026f3542d66a2f4f90f6aa65226db99039277233dc854e10d9c
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gr.c	GPL-2.0-only (untagged, per Linux COPYING)	68872d9abdacc39754bbb878af03fcae81e744ce85c6babd88182ac8af5192f5
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c	GPL-2.0-only (untagged, per Linux COPYING)	61dd0c3f4fe3a75695c1deba96baa1eb03d8b023871237cf7a734e5b5c154f76
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvdec.c	GPL-2.0-only (untagged, per Linux COPYING)	09d00e74d58f5d0f0c0ffe703c446af5fb4d4f5eaa7d7d5a37e2021590a4a189
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvenc.c	GPL-2.0-only (untagged, per Linux COPYING)	6642f34a75fe943c6ebdea05d4f53eca51d2ce46b0c08d7e6c63ca36f27fa6cd
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvjpg.c	GPL-2.0-only (untagged, per Linux COPYING)	483e551115bcac2584ab5fa2503591f368bc9bcbc9ae113cc8061ffb9d8aaf79
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/alloc.h	MIT	062ddea5ecd41309b68a4e123c18e2476b9251088650f3e81cec1ff0631ebb76
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/bar.h	MIT	9596fb75665934c92fca0d08658f4db45f5b6e5ea8f3728cfa19576bfadb740e
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/ce.h	MIT	e998667d730bb75183cdc2990ec2a2cba74f2dced45a7e594d26d35c2baa18a3
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/client.h	MIT	edbbe07e5db61a43e7626b619eebdeceb9aba294dd96319a54dd17a1d745c7e3
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/ctrl.h	MIT	adeb3d9bb879117d9723208740c4238f413b77737d4c31963151fd71ef612850
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/device.h	MIT	8dbaa91693678d30aa9cddead8405e322aa5e39865b734d11330115fbd200b83
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/disp.h	MIT	4fb59fc1744a4d42b5e12f2fc2f6866d2582196ec79357bcca29048c3864c6a0
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/engine.h	MIT	493f419dfcc95192197a1fdd7bfbb760fda6cb7023430611e6faf956dd1078ce
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/event.h	MIT	0f0b10dc2c2c3e0ddd714c37269f33271a6a8c46f7acd8fb7f4eceb384b9e9b2
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/fbsr.h	MIT	19e84ce92fbcfa9de4ace4c97b2180659c4095e411b1a27e5b9296d523fb5d7c
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/fifo.h	MIT	9ed8b89522d88772d59a0da64da40e0285fefa62c02a00f36458cd3da08c1150
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gr.h	MIT	7023309e4068c7a2aaeeb2115a698fe82d4ee78ee49f49ae508acb36ea6551d2
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gsp.h	MIT	5cd27171015fbfa5c0d23cb5fd9b9f72c6c15f30ee65cc3094ae770ef2b43b28
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/msgfn.h	MIT	3b569a693416c6a8cf5dc5583e6c7619a00be012611b5af732b23a4871691137
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/nvdec.h	MIT	44b9fa56d342c88c33491445a275e82d20c0185dfa1103e87932d2b491fa7846
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/nvenc.h	MIT	fecf233ac482e18b52a3c8c0b5ea072b78ff8e567ed97ee4965cf3225fea2f34
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/nvjpg.h	MIT	04daac4f819da9a9414311dd7923cd756126cd49355da89dfb728df2f3c6ecc1
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/ofa.h	MIT	047638bea57d6a6cdab95b32378e5cd0e9e2f34e100c09465a033d4bd7a5b37c
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/rpcfn.h	MIT	844ba52fb3dde1ac25887fa4dcf4cfebc0e7f6261e5df4c1c850462690a29b39
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/vmm.h	MIT	b80036a21410ee48e86ef3ce0fa646fcb08f46d11167142135004e26037fd675
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/ofa.c	GPL-2.0-only (untagged, per Linux COPYING)	b8ce543cc552a78d84942f22f3882dd095491b7e34284acbc6a1591bc0271a82
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rm.c	MIT	75eebf471528ac3958a22032ba025ff7dd293d9b5f3a4ae8fdd790ffc3d0b263
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c	GPL-2.0-only (untagged, per Linux COPYING)	6ab6fa460a1d9926b5f533237068cd34208750077442b02f73b753cf34ee2ddd
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/vmm.c	GPL-2.0-only (untagged, per Linux COPYING)	a394728b5e729f082c77988ab30675dd705677f77397559f204ee3ee67e4c1ad
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/client.c	MIT	ab23dd6a5801609706bdaed7f0049a62176004fe9683ce8269642a3f8622ae92
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/disp.c	MIT	c54da00b0b5311d738ebc70ec21ae62f532f3d1342bc947ab68f91260648fe5e
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/fbsr.c	MIT	5d6bf5ba9fe04e919895ae9af46148b31a2e7a834feca633ae18f84273a62508
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/fifo.c	MIT	78f774431d1d9436fab61ae37ebd407baedd5a90eb790577b87108a498691dfe
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/gr.c	MIT	76a52cf79df09b40997de3d107de38ef084d5c4993d69835eaf8384a75a7fb93
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/gsp.c	MIT	11d75c012e19f76f73db5d236079a60fbd12e415ef05576fa1d5b676545b9fd2
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/client.h	MIT	3714e1436ffda34cf75f304f0fdbb084eff17183c2fec31efb7b4930c246da9f
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/disp.h	MIT	e0b78bfbd02168a06f13b55af55337b5390c953cf70e9acd6fecd6e360413e08
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/engine.h	MIT	2bfe19d8e77c12d0e827c6c85424939130e82d0192f5e85d24ebdbcaf474fff7
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/fbsr.h	MIT	7b3f884a15dae3c83205517009eeb998991180af284f6667534917e26af7686c
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/fifo.h	MIT	8fd8404bcb00527b7f6268fc074d5cdd7d45275f0a85978399f78fd67835a7bf
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gr.h	MIT	31f31695e9e204e4fdf23aebe8bac75c3916bd8d78e34b4a5c53a38ffe217101
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gsp.h	MIT	dc21423593fb5cb192b420269c552d701ea3fed0530458bcdcedc3e0674851ca
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/msgfn.h	MIT	e65988fb1dae4e17ed73b210c89dd2a91182e1a3fb87ab9fcbce7f1d15232569
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/ofa.h	MIT	9d84f64e2e33d22fb9a174721ca9b30e0d7283f8ba6df063ec32912eff74e36c
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/rpcfn.h	MIT	fa11dfa19d920673822ee9fd509e855b87a3f929238503e6d291532439d818cc
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/ofa.c	MIT	5830adf9ce51f4539fce675f07584cd2caa03cb01534857df41a6dea29dc0a8d
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/rm.c	MIT	7820633e527a66c21d5485149acc4166a8f6c1d5fa2a49f2caee8bc051fe4fc1
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/rm.h	MIT	91af7e1172e0df54534f4a63f1aa8f9c15f022ca3de5c0d47cf33ec76d49395b
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/rpc.h	MIT	9cfc0d951bfef6b97419ec5cabe8e81c0157470ffb64b7d9e9cfa6f488d27d4e
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/tu1xx.c	MIT	133b6b725c6395f75ad53b229e22146746c6294dfc18b3be942f1f61c6b25d16
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	6ec714fdcd541bba6c471ddb8fd6082b6dbc8623bdb04c5d58f2ddbb74bca540
+drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu116.c	GPL-2.0-only (untagged, per Linux COPYING)	3e280f44490c559150daaef52ba2b5e19013d6cc45737578016868daca2218a8
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/anx9805.c	GPL-2.0-only (untagged, per Linux COPYING)	dbdafcf4c8e9e281c1ab25f7f51fae3e5de5bfefc97e6b1481a9aff2920ce6ea
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/auxch.c	GPL-2.0-only (untagged, per Linux COPYING)	84b00c32e0d03503a40437a067173b96391c8746713e4821fca9ca26aa74e41c
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/auxch.h	MIT	2ef9c73c695bd389fe66047686310f2678ec4e20b42f97609f278f56ccf52859
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/auxg94.c	GPL-2.0-only (untagged, per Linux COPYING)	febd9dd9aea203c69afb10ea4ab3e4b90ebdde9ff874815e4416cc90345790e6
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/auxgf119.c	GPL-2.0-only (untagged, per Linux COPYING)	b1c42cd35519f45b70f7ab302875453fb8d76173e8d8e3af5c3c6899260e92ec
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/auxgm200.c	GPL-2.0-only (untagged, per Linux COPYING)	77a9f3fecce6f8d97d2e150eeed5079f73115a8775113a55269c536d3ca810c4
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/base.c	GPL-2.0-only (untagged, per Linux COPYING)	a2df7c4bb68988d94ba1257a994cb9ab47cb729bb27b5ae665e318fe3f3eb6e6
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/bit.c	GPL-2.0-only (untagged, per Linux COPYING)	b7086513e88715c1c629fecbdf3387836860527663039c7146fdbf5cd255944e
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/bus.c	GPL-2.0-only (untagged, per Linux COPYING)	a4c6250334178c953fe77c951ee25199b8e652af584bd24f800738d5e8a9614f
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/bus.h	MIT	5a41e4e51d233830d0833cb2fb7b94ea0fe3b3b15c8878a8ba16eab9a1c96a69
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/busgf119.c	GPL-2.0-only (untagged, per Linux COPYING)	24cdf28deab20486c48b4702c473375b6d91e4e6a0286475e5f9f48ca88a17f7
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/busnv04.c	GPL-2.0-only (untagged, per Linux COPYING)	444af053b15a0ee0d6d73b1c508ecbe024c544a6d61d2ec2fd2cb473c242ec1f
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/busnv4e.c	GPL-2.0-only (untagged, per Linux COPYING)	c16f64768ddc9755e3452f076fe6060f89ebe8ee03751b6f4ae197aa642f0999
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/busnv50.c	GPL-2.0-only (untagged, per Linux COPYING)	252efd46c3f029780952f3415ea5682a4a4bc7a3f90fce4e313dbe0133d3f932
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/g94.c	GPL-2.0-only (untagged, per Linux COPYING)	1d19c8f0415f7ec287a14e0539d0a9bc7e16f7fc51f19a98ceeb06a0d23a4f9e
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/gf117.c	GPL-2.0-only (untagged, per Linux COPYING)	0bbcbf02f296a940b798cce1c47de3df47daef10b2391e3b553cbcef8ee8e543
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/gf119.c	GPL-2.0-only (untagged, per Linux COPYING)	302a19a01bb1c16c57f2e9de82794c85f1a5af8c3a639ea30a8440444472e294
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	eef05ffd3972d31e5291d97262bca66685c16d2e0dad6b1f58b875a1c3903901
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/gk110.c	GPL-2.0-only (untagged, per Linux COPYING)	a43c7562119b983791781dbb2be51314e9586633260350f1d50c660a88e40c06
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	d18de441a9c3e5a35b667acb4071c317d299567b153169e3d7909ee896cb584c
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	3284f779e06a11957d6a46c8c8cf9acfe861ffb3c9c019d7e9d722bd43e48bd0
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/nv4e.c	GPL-2.0-only (untagged, per Linux COPYING)	2293e50e57c92684b1e2a214d2bbeed22d1dc069564b089cf8a110a04339ccba
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	9617d3429ae08ebcdaf178ac295e19573deaf160b51105ab415bf9463b38a57b
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/pad.c	GPL-2.0-only (untagged, per Linux COPYING)	1eb962cf9488f29e051ff4c86c697731d07c9e5b3e90b2b4a1f7a641721bfdd3
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/pad.h	MIT	369cc265195b6e695d3460aa4f279229985ea79b689d0017d6b6f8177417ed37
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/padg94.c	GPL-2.0-only (untagged, per Linux COPYING)	1f4c3c05ae5712029ded6e4a4fd19785da462fe8df087de53f9458c334ace034
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/padgf119.c	GPL-2.0-only (untagged, per Linux COPYING)	98189f6fbba269c725dce1733b2dc9efe7ff401faf7825b49fd3de7f996d5b03
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/padgm200.c	GPL-2.0-only (untagged, per Linux COPYING)	80b9902ec4e23da9d1706ce471e13e562f179fc77018a742f04864bf067eb5d8
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/padnv04.c	GPL-2.0-only (untagged, per Linux COPYING)	970a2c48db69c7e1e425dca324cb833df0578ec61a40abc2d1fcee1f98247097
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/padnv4e.c	GPL-2.0-only (untagged, per Linux COPYING)	54eab5f31d7079d8c21afb4e15920bb16cdfa7ec8ddd2bca4886557208cb1ea0
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/padnv50.c	GPL-2.0-only (untagged, per Linux COPYING)	95171b9e9abea7bbe98396a7c7b4017e4d7601702fd80b274b34ecd02cd020b8
+drivers/gpu/drm/nouveau/nvkm/subdev/i2c/priv.h	MIT	4a124bd3842ea8b44489b6dbeb482a969c522f7c531446f8ff68fd36d5b0465f
+drivers/gpu/drm/nouveau/nvkm/subdev/iccsense/base.c	GPL-2.0-only (untagged, per Linux COPYING)	16e8e6af7bb3025491a7898039392a590d80a1a94ae3e6f0ec816236920e1567
+drivers/gpu/drm/nouveau/nvkm/subdev/iccsense/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	e97f47df06581302d2cdd0c26fa641e8c738b9ae302447a4ad3321e90b4b528d
+drivers/gpu/drm/nouveau/nvkm/subdev/iccsense/priv.h	MIT	a43a66656e6567634489e35e314ef70451c8ab6ec7609b77d1c445e148c81e6f
+drivers/gpu/drm/nouveau/nvkm/subdev/instmem/base.c	GPL-2.0-only (untagged, per Linux COPYING)	8a7175e054103347a48fbf44d40e87c42a552ed54f4eb22e92f708b48f98f57f
+drivers/gpu/drm/nouveau/nvkm/subdev/instmem/gh100.c	MIT	d5e00f30db591a6fe3d948ca7efe4c9d74f1c7ee9164bd8c39154754a356d68f
+drivers/gpu/drm/nouveau/nvkm/subdev/instmem/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	d61bee557fddda679108cb4e7bd94b80e836be6b9de4895ef245fdab72183705
+drivers/gpu/drm/nouveau/nvkm/subdev/instmem/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	38ac11e45b1ff94b83fafeec6e4dc46b863b8b094ce36485e2ddd9a9a3e0fe9a
+drivers/gpu/drm/nouveau/nvkm/subdev/instmem/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	8adeb92264d6ca8658bea0b9d627e9443790b06e7b60ba95032c2c99397395b4
+drivers/gpu/drm/nouveau/nvkm/subdev/instmem/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	06a3e093d2c31711dde708b72c5618c303dc47fc82b5a22405b05887f5cacbf6
+drivers/gpu/drm/nouveau/nvkm/subdev/instmem/priv.h	MIT	acc8c2c1fd997d53e82fe7264f169b5d83027992b7b922bec6d21345804e0a17
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/base.c	GPL-2.0-only (untagged, per Linux COPYING)	480d714348f3bc9333b8c8aae55ececa86ab29461ec32740d3f711cba3579e9d
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/ga102.c	GPL-2.0-only (untagged, per Linux COPYING)	b3fbeb7cc57a683fc65937446b54be9936cc72afd5a961f4b43dfd44301bcccd
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	09eccba3486989365feed0198043f165b944bcb98ca465386047f428d34714e8
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	b3dc805cce31b0fde5b332119bc4061052bacaa708d6c0b46f90053ef296a2ab
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	bf7d9f46ec6aeb4db27cba9084ee1c5424a98858d55e912bb0721dc9e3e68ec1
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	7bdb624d795e547f4342316164e22bb737a65c2d8b1b50f56bf8d182f875b709
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	1e3e1d8d7948bb009e218e32a7385bbbae4f274906eb0830f8c8d7cddf5515a9
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	40ba329254891ae8b6518a547e51b45343f22123f6a388a156e4816e34b96051
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	29880aca05a4c16298de67c64b548392640fe4bb3de896e9f97676c425f5952d
+drivers/gpu/drm/nouveau/nvkm/subdev/ltc/priv.h	MIT	410f5ae2e47a49601097ba8dbec9ccf3975fd1faf2350567f639e725fa7a5413
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/base.c	GPL-2.0-only (untagged, per Linux COPYING)	aca570e3b6d297b7d0bf7997aac8c6766c09d531da47f066d814540088a81171
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	af1ff0565c47ab7f3488155760968311dd777af889367e208e9e47f6bd5f4d8c
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/g98.c	GPL-2.0-only (untagged, per Linux COPYING)	c080c0841b414cb2e867a5592d65ed2ddf4e44fe251b09c7fbabfa834484fa89
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	c82aa33e7143d372cbcf0c7910b808d1080b91165da3df304765bedee567a36b
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	12d9ff2c6f66691fff27c17eb4f9c41b0ad8ed1d30ca7409c8d62d2e88f851f6
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	15dd9fd27d86890a2d5cb9278903a3f95267b3d2743c626e59f6351c95ea8d7a
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	4e6012ed7ae8983ef8bb9aac34356a8a11890d9a4968d59ada49d77c7477c52a
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	0d5aca122ac4aecea77c668924bbaf491b642e7c103ce4b1d33d00e0289ab626
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	f72356336b937c8302a27d319ac329c16c730ff9a6313cb992fb95e4318d6217
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	e6633cba4d87a451a6a6bf836b154d777cc972ad0f8d2ea4113e02ddda8a1f76
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	bdf95057dc095b6e0f09fee47ab8d461b0b60b3af153edd4c3325955a5fc84e2
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/nv11.c	GPL-2.0-only (untagged, per Linux COPYING)	773b29846a692aa8f583f672d890f1d76a27e25356c8ec00b85e8ee19416a931
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/nv17.c	GPL-2.0-only (untagged, per Linux COPYING)	a901efced2b0a503ed035e5299cfd3540035e39d95f1d3d64179fdf7784de053
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/nv44.c	GPL-2.0-only (untagged, per Linux COPYING)	cb12851ad96bf002bd029544d99773b35765bd49f245082d34bc7f7e1f893fe3
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	d79576548c511b3aee29139e80562974007c179db370499b4a0221d2eff37576
+drivers/gpu/drm/nouveau/nvkm/subdev/mc/priv.h	MIT	60852055ac3415eea4be4d7285a10e6b3eca96f6f8c0b30f954be1df334df0f2
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/base.c	GPL-2.0-only (untagged, per Linux COPYING)	b65738d4e444562a73546405b7107d5bd3a9b48bdbf798fa28660fce39d0381d
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	0403cbe2fe904fc20b7e4cb7cbf4ffcbcfaaa59888195b615e7650971305ddc4
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	ef1bf1d79658302c6e16e1f0a71e6c7f2e944fd25487a68d5477717dce8e7439
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gh100.c	MIT	1179276e233689c9dcc4e7d34c38aa1f08d29c1fceb037a062f13a4935d1620b
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	0a00f096c8a9f95a6f72a87d72d3868f31b22284823b842e57b83845da88492d
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	8b45e88b96c39eb371f4738757e59bc3833e851395d8527cb5da21798632f9d5
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	a77b631bca671989bf2ed6182f7b29545aa95fe8cab384488c3c8406a871d02f
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	d8135fbf664afc158c7b4931fd5f4aeaffa68f4130ec95b73d7af75b59fcc7f6
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	89c06c0b692d89ac2efe280148aa317d017ce915ab47267dab02f7a2d7dee909
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	12c3978b307eacccf7e54d418aad964cc2af8d865f022946af088672fd643a70
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	0f6eb608eba59a5140e5b2af7a52c90a50a292e81cb3587e0fc13c8ab97ce9fb
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/mcp77.c	GPL-2.0-only (untagged, per Linux COPYING)	fd3902cd1ece9034d0c43ee238a49ffe3e4fe0652e4e8a63d79fbdc395e37340
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/mem.c	GPL-2.0-only (untagged, per Linux COPYING)	c6b92c9ffaa85c999df2e3c8a8218a510bd0c94eee935c59266eccdc2947423f
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/mem.h	GPL-2.0-only (untagged, per Linux COPYING)	2c223524bd1c7740ef0d522bbf1dfbdc1fb4be45cf6f5c313cde984c8af4f667
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/memgf100.c	GPL-2.0-only (untagged, per Linux COPYING)	b8cc34567e777e353f1cc392a5eee47d29b0bfcb1d79e78148b80e88ab11d1a7
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/memnv04.c	GPL-2.0-only (untagged, per Linux COPYING)	5114acec7930f15ffef4027001d7373c64cf2d02ae35951e1dd8f819366b2329
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/memnv50.c	GPL-2.0-only (untagged, per Linux COPYING)	7945dc6441da19ec173bed167a63ff5cf0fe0c129ffd10b680b8c385c28d0f6d
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	6db6972afa4d7cd228792858ea15b58e823c55726d69abdeb993fe8d7d795d78
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/nv41.c	GPL-2.0-only (untagged, per Linux COPYING)	25f1b0cde7325eb78bced6fd1dd2c0ecdbb09c976b43eb51e480e6524198d6ed
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/nv44.c	GPL-2.0-only (untagged, per Linux COPYING)	5af288b6e1bae28a0597c3ab4eff6b98c2c202ba30b168b04afbc57cd876fed5
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	17519ac3a232a8472761d5a70ab3bd5875f00aa833e839925794c0ec5aff103f
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/priv.h	MIT	9ce2d33a41b4999ce82a8438efd6d6055a88c84d68d2c0e5812e644f0f9ee493
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	4fc1ff72d8b01784b3545d3d94f962557fca4f65f14418d1c10a42f6c46dccc1
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/umem.c	GPL-2.0-only (untagged, per Linux COPYING)	413f3a2065acdce0eeeba52e52c459099f333037c1fece05c0aab3a945f15be1
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/umem.h	GPL-2.0-only (untagged, per Linux COPYING)	67ca051f0a9862b2f6fb6290f7b86ddaa74c5d78742827735470313d7041ca36
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/ummu.c	GPL-2.0-only (untagged, per Linux COPYING)	50e227c0b6a401217125d5ebccfafdd930e86af58c6ae657c949424e7a2121dc
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/ummu.h	GPL-2.0-only (untagged, per Linux COPYING)	a09ef1956531ee663454399fc27335ca535e0eff4df5c48797b186f2d2d38d2b
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/uvmm.c	GPL-2.0-only (untagged, per Linux COPYING)	43c6a9fb52906ab67d0b582d4501152b74e6ed1cce6587d692ae9b066fd13e67
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/uvmm.h	GPL-2.0-only (untagged, per Linux COPYING)	112cb7a77c97e5713c73df9f548667a2bdddbe19049d7c263aba04d8b990b9c5
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmm.c	GPL-2.0-only (untagged, per Linux COPYING)	4f4e37b4ecdbf68d5337c811b7130e5ddd90e732ba3a3a50f447ba6674b0b0b8
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmm.h	GPL-2.0-only (untagged, per Linux COPYING)	ec2dcd854dea306db88c4227fd9fc66ea5911a20f0911fea65aecdbd831c74b9
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgf100.c	GPL-2.0-only (untagged, per Linux COPYING)	8485236819c37bfcbfae9824c4b03b767314b6e07156c3ed2e203f2447ad89ea
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgh100.c	MIT	990bd01b571d770606b6036bb7a6c0eed6a8c463be1833efdce5c0db20e7eeb8
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgk104.c	GPL-2.0-only (untagged, per Linux COPYING)	3f77d94f4f08546da6361e474c94fe13af23d41758ad5a1fd48b0e5a50ccdd97
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	16c59ddd6734a76553060ab23d2b701ab01d89837e40ebecac5504473b685358
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgm200.c	GPL-2.0-only (untagged, per Linux COPYING)	22196cff4fdcb57458b568f2b2b20fe13db6bf1bd097413551c31b23ed6e0361
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	42eed7c86eb0e489046235127399e3e036deb23ece8f4b976c646281b5e9d661
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgp100.c	GPL-2.0-only (untagged, per Linux COPYING)	10dc0d5ee2fe91a0af24c7fc2f3531b27b44f713733ca08a05e3eff9b3a3e5a3
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	86c4a3ccb0274269264fec8a9ccb5210fe9bee0e397fd275ac209e97417d279f
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgv100.c	GPL-2.0-only (untagged, per Linux COPYING)	ddf0be77a946cf03c0cab7b9414aa65860f5aef4e6be36d65fac551651a3147d
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmmcp77.c	GPL-2.0-only (untagged, per Linux COPYING)	cf7565b1f4703030147b10a9ba06e1fd64a75358aa37da57f43d53e21b8c9527
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmnv04.c	GPL-2.0-only (untagged, per Linux COPYING)	070fe9862006cfb39a07ff168331b9fd0d11413a0ef3f09c0da8248f24898ae6
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmnv41.c	GPL-2.0-only (untagged, per Linux COPYING)	12353191968f7feba35db9cb76d9fd75f0d185e4701a3eb214b52ebf335218fd
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmnv44.c	GPL-2.0-only (untagged, per Linux COPYING)	f34f463667c362beafab1ea0237ae6278babbd64f4d4e52a995273b6a0cdf30b
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmnv50.c	GPL-2.0-only (untagged, per Linux COPYING)	1147adb832085666cf12ef312f716fb467f86292fa1fe168acc49261db21aac4
+drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c	GPL-2.0-only (untagged, per Linux COPYING)	8aca422a4cec48cf1d9cf9cf5f39e475da7bad6f5cffb45ad71d4f729cf35d65
+drivers/gpu/drm/nouveau/nvkm/subdev/mxm/base.c	GPL-2.0-only (untagged, per Linux COPYING)	d2176323ae59824da62dcd883c0c4169a6178c609b579c2c43b7efe32abc361a
+drivers/gpu/drm/nouveau/nvkm/subdev/mxm/mxms.c	GPL-2.0-only (untagged, per Linux COPYING)	b93075feffa3386bd93102ff00bc9c605b26c959aa8dffd201becd7c55b4fc29
+drivers/gpu/drm/nouveau/nvkm/subdev/mxm/mxms.h	MIT	832e61e3c64b5c8829d6185500957111a837113acb7c2d48be0abfd1fd223cd5
+drivers/gpu/drm/nouveau/nvkm/subdev/mxm/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	d4f96fa3b735fdb70b50022274fd2889af74225773fa31deecabd12c6354628d
+drivers/gpu/drm/nouveau/nvkm/subdev/mxm/priv.h	MIT	a8882d246f3c637ba3f13cdfe07cb722a2d292b7df9287e3714612d255220e90
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/agp.c	GPL-2.0-only (untagged, per Linux COPYING)	cfb2a2baa5576031c8229fa3f6b03e69519a62e0a349e9c31dd643e140c493b0
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/agp.h	MIT	459bae6f1764fdd7e98ad38568c76e9fd681fd74eb3d9046edc4107c092f9ed8
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/base.c	GPL-2.0-only (untagged, per Linux COPYING)	a70e35a16d0ce6d60dc3d6e637f4d8a5e5b2b9ab1fa1bd689d043d09dc64fc2a
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	d3f646f4757f129dcdf4204fd184331e6bfa5b48051776478dd8ba5e502fba36
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/g92.c	GPL-2.0-only (untagged, per Linux COPYING)	6f8987d6672a22e9f16b3ceb779a32e90e8cfbbaff0926cd017093d78d0dc499
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/g94.c	GPL-2.0-only (untagged, per Linux COPYING)	d521ec60bbcac3dd3415cab2395ff4a72c7fb8264b80da2527a0d4ff0058fa99
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	3f370ad42fb04fe2edd6da59b82c527c12c57f2bc7144a14a9d790ba4aa85048
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/gf106.c	GPL-2.0-only (untagged, per Linux COPYING)	72c8dc125948685d78656ada8d87b17920c2288d713f5fcc7b998c510fdd0175
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/gh100.c	MIT	a5a4a89cb542b21160305087329906a6220e30a31a684d1c136993eb96cdef6a
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	8132a09fc2963210f486a590f2d376b9ba0bb765fc5ddc67befd516d540381e8
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	40abc2e7c6f20fcbc23eedf6328ed98c977bc9261320dd06ccd5657b386be958
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	ff4606f16e42183085449a5f864c581f5d0bd25f996c0e716930494d06e3ec60
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	88d8587b98fef0a3021b32bc1aecd2560dafef30626ef56530b3e95fdd18a143
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/nv46.c	GPL-2.0-only (untagged, per Linux COPYING)	39bd7fd2dd1e242c9deafbaef36ff6d3f2f38aa5e665151ee27e88ce42cf4a6e
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/nv4c.c	GPL-2.0-only (untagged, per Linux COPYING)	401e5b2cc1aeeb81be4901c98e0088561f53a9018c53bdb6ac6a018ff59afc97
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/pcie.c	GPL-2.0-only (untagged, per Linux COPYING)	062deb6de1ca199d2c90343291d7e1e940b758da998b403fde69c8c049c93d56
+drivers/gpu/drm/nouveau/nvkm/subdev/pci/priv.h	MIT	74824788c1ae4239496296a3c2356889100548ec658740a0e86df033e1139388
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/base.c	GPL-2.0-only (untagged, per Linux COPYING)	5f39cec4c98fa2e09c76353bc2f6b965185594f6d9a1c1d892ae08d02f766f15
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/fuc/gf100.fuc3.h	MIT	bebce7a910d7fdb8c04df0cfd9e8c4c3f7f8a8ca356540324a869e45fd08263b
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/fuc/gf119.fuc4.h	MIT	ee3c298ed99d665fc251528597c6f8bfb978d529f478ed063e123209cf1b9c2b
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/fuc/gk208.fuc5.h	MIT	a1ad178778e0646d5b3d9ada27a275fddcc0da39f1636c3aefdb39cf84383d81
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/fuc/gt215.fuc3.h	MIT	a90747e3c30fb4ae2b8865a2c0057f3541aa00d0d9798c14311cee013e1bdd46
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/fuc/os.h	MIT	c58ed3cc2c45673796d8bf56720da082e8772750de0ba585859d221568561fed
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	459bcd9a396dbc27b0c6a9bcc9cae6cd5cc158ed17cac7dce1ec9ca0bb413baa
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gf119.c	GPL-2.0-only (untagged, per Linux COPYING)	f0b635efd3c0d7bca9f854a71fc635a8ace683f5a598cbeab7a674e4db09147e
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	b7c4db6d40c76db816c4d9d35ba24fbb0a8fad60beaadeda9e40e2963e88c3e6
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gk110.c	GPL-2.0-only (untagged, per Linux COPYING)	55ce3a1aa3468664da5ddf1eb8e86cdb975147d3d074e58a40281e1ff27dc4f6
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gk208.c	GPL-2.0-only (untagged, per Linux COPYING)	a28cccfaa35ed74eddc961173b9ca34f43eb4a5029849d281e1a4302e6e501ae
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	c27610182c07bf0d8c1333e6bff9900b07e33e754efcd2719be2ea889019bea7
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	c36835b18bf48fc1c8a26c4e96c6fa45627e9e86f593982e6fa74a4e78e29b4e
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	809b96eadd579890043fe01cd2d6d7b246dbadf1c681f22dc68ac84b04baeb92
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	c8ddfc8cefea78d1cae86f7b7b6e1f21a2c8a83936b62dd910908b4d96491832
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gp102.c	GPL-2.0-only (untagged, per Linux COPYING)	d66ce8bc6e2e0cc337d0ed52dbf3484d840422ce0e75e167394bad00a299a2a1
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	b44c936f0942c4ebae59da4b2a54d26505b7e2996a0d7cd6c2e2efedcf1cdea2
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	6f89bca71e1059afbc4c852443ff679bb38e974461b505c6fb2cf254635ea455
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/memx.c	MIT	70822223f442a6c1e8bdfbcef5507cf0870adbda9fafd871b2332fdaa90b79e9
+drivers/gpu/drm/nouveau/nvkm/subdev/pmu/priv.h	MIT	7a2bbfe0084327de53740a7fb2b739aa9c0fdd582d5f3e07d0304021887412e5
+drivers/gpu/drm/nouveau/nvkm/subdev/privring/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	67158162179d09474b2fedcc57b3e19bd9dd6fa150fe8d2a89313fd2a07aade6
+drivers/gpu/drm/nouveau/nvkm/subdev/privring/gf117.c	GPL-2.0-only (untagged, per Linux COPYING)	336c2492f8384bce0c07e4af07d0bc52c3201423ee09e639cea7cf5c9860fdea
+drivers/gpu/drm/nouveau/nvkm/subdev/privring/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	31a036910540e89008201ac25ae18895b406236f5e704aba5ddc138482aa8735
+drivers/gpu/drm/nouveau/nvkm/subdev/privring/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	6ce673d4d5a712d43e22b594e069539b72bdcc8dcef66fb1884295c5366c4a74
+drivers/gpu/drm/nouveau/nvkm/subdev/privring/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	57f62bf7ad85f06e2b9db357b6f806162efbc3b4ce96331aaac4e8aa7220a67c
+drivers/gpu/drm/nouveau/nvkm/subdev/privring/gp10b.c	GPL-2.0-only (untagged, per Linux COPYING)	b95837002088916e2ff90f28e653d0a6df1e8e0854acb4bec2b4df3bde92467a
+drivers/gpu/drm/nouveau/nvkm/subdev/privring/priv.h	MIT	a942d9b2434a6a5f25198c7a05969d35bc8e3cda2af57cdb472739f58414cf51
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/base.c	GPL-2.0-only (untagged, per Linux COPYING)	61f43e16d00f1eac207f1724a7543e314c605942aa9c9d1ddcc35df86862fb80
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/fan.c	GPL-2.0-only (untagged, per Linux COPYING)	d7e2f1718dd33cbd2fe294d6d963fa1574366fd4a39709aa24a140bae9559333
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/fannil.c	GPL-2.0-only (untagged, per Linux COPYING)	3dc47ca7911b5b4556df24629e2703517851d6d859622700a0d48d2878fdc9b1
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/fanpwm.c	GPL-2.0-only (untagged, per Linux COPYING)	9df9c976a873d69f73582a3e51a3fe2e580dfc4eeaa7b05a0228e4764ab8f4cb
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/fantog.c	GPL-2.0-only (untagged, per Linux COPYING)	0c831e1a66415267b34c72a5227757cb4d0f91cee72b61f4ca25049a22e847de
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/g84.c	GPL-2.0-only (untagged, per Linux COPYING)	168e720d9badadb4432ae7cae2675e243939f0ff4a8b0543f164fe02b3fe3fa7
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	9c881603c600e46b318fa9c6112ed7d6241e00eb031e75f94b349b8aa60c0691
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gf100.h	GPL-2.0-only (untagged, per Linux COPYING)	48cc217843f6ef3e74699f85bbe020ce398034f1b81f07cdb281c79d3df56d7d
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gf119.c	GPL-2.0-only (untagged, per Linux COPYING)	64661aad08413eed48b00d877d6b815093a5d420043a8a3071a9a24edb439901
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	7b4a9f82d3f89ee71c634eb6bd3dce292a8d8daa72eb0358e32898e072912d3d
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gk104.h	GPL-2.0-only (untagged, per Linux COPYING)	7de2916d24012edc295848ac204badbd0a6c2a1cf39e5f9509cb1c950b525158
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gm107.c	GPL-2.0-only (untagged, per Linux COPYING)	e177d06ff87fb989831aadf8121bfed77ce774eae32f6b61267a6b7184f494f2
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gm200.c	GPL-2.0-only (untagged, per Linux COPYING)	6f5a0abb69049b99435923fab6e77389b333f2f948a6bdfdd19ba566ca2929ed
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gp100.c	GPL-2.0-only (untagged, per Linux COPYING)	971670e9cbd72c70b4b43056360a276cd81d171c6aa179af71bcb342e0d7bff0
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/gt215.c	GPL-2.0-only (untagged, per Linux COPYING)	5bcf298f06091c7d8aeb98a7f39e8f49e0d9b425696a836d8e10ebcd0369a5ca
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/ic.c	GPL-2.0-only (untagged, per Linux COPYING)	24ad2a794c28e4655f27241a3a9ba79fb564b04fcdfef918ec6d6fd2f593cf66
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	e72db8574c6808788a532c365e40d0316016837f0702c1291e9777415ade0a84
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/nv50.c	GPL-2.0-only (untagged, per Linux COPYING)	0765d1d7187ffdc728802fdb74765e465e7002dcd35f411013a54b3bd2529403
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/priv.h	GPL-2.0-only (untagged, per Linux COPYING)	34080a64e773c86b42af168f46e2f3e6190cbc2ddf1a186db06c58754b2913d9
+drivers/gpu/drm/nouveau/nvkm/subdev/therm/temp.c	GPL-2.0-only (untagged, per Linux COPYING)	2b5a08e64216514c6dee1db7a4ea3bd99ee997b44d77c71406ad72597957b66a
+drivers/gpu/drm/nouveau/nvkm/subdev/timer/base.c	GPL-2.0-only (untagged, per Linux COPYING)	0e2aaec9d9721e86ad8b994777b5c1348768f7bd3ed75a5067e5eb571d172fb3
+drivers/gpu/drm/nouveau/nvkm/subdev/timer/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	025ff758191bbd9310a4d9f0353bf435f25daeb11014b391175d8920a0a03d86
+drivers/gpu/drm/nouveau/nvkm/subdev/timer/nv04.c	GPL-2.0-only (untagged, per Linux COPYING)	9ff42a08081ac418ddf60a7b888f326370e25c382dfdd02b8deca3836bdb2106
+drivers/gpu/drm/nouveau/nvkm/subdev/timer/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	209606e6bf72f1b1fcab9aa85f80eaadfd8b5132e3d853c2e8a1ac7502fcac84
+drivers/gpu/drm/nouveau/nvkm/subdev/timer/nv41.c	GPL-2.0-only (untagged, per Linux COPYING)	835ec735ff354bcdfe579379ef8b97e5db60864f51efa3fabf17b9f9bcfb86ff
+drivers/gpu/drm/nouveau/nvkm/subdev/timer/priv.h	MIT	fe9e0e5409fd26fe269eb45fde22dcdacebd285fa908087e849bdd9cad1c37c1
+drivers/gpu/drm/nouveau/nvkm/subdev/timer/regsnv04.h	MIT	56aa976aca8025429f502a48740aba19d37821a0874440f6cb0fa8fe060fa28b
+drivers/gpu/drm/nouveau/nvkm/subdev/top/base.c	GPL-2.0-only (untagged, per Linux COPYING)	a5384c4f5a920e457bbf70be2a5643328f4fe03ed2042f40105a4a48ad32f373
+drivers/gpu/drm/nouveau/nvkm/subdev/top/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	665f4e10f8519162581a887d470a7571569d0b014e3afbdd20bce1890c69c2e5
+drivers/gpu/drm/nouveau/nvkm/subdev/top/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	834dcf42fee7cb42442d5a60315f4bf8ab401add3ea2e0845af5b34566843b99
+drivers/gpu/drm/nouveau/nvkm/subdev/top/priv.h	MIT	6c7cc843d236e8133ad80239e66630e8339b6f27a21488fed2aa112db300d492
+drivers/gpu/drm/nouveau/nvkm/subdev/vfn/base.c	GPL-2.0-only (untagged, per Linux COPYING)	71c545f266ec902884f16868ee64e525e92cb3e3684a0a095930c0882784fe66
+drivers/gpu/drm/nouveau/nvkm/subdev/vfn/ga100.c	GPL-2.0-only (untagged, per Linux COPYING)	4d146125e50f7ff344926b722cf8065f1d9f3b0ccac0bcc00c55b9d41c087b79
+drivers/gpu/drm/nouveau/nvkm/subdev/vfn/gv100.c	GPL-2.0-only (untagged, per Linux COPYING)	de0655422d382dd17492697f720739bc4481a06dfa16e81c88606e6ad136a3d8
+drivers/gpu/drm/nouveau/nvkm/subdev/vfn/priv.h	MIT	331b3344910443156e2744df8bfb14f1d9a63dd0013fd36e43f82fbc17741a9e
+drivers/gpu/drm/nouveau/nvkm/subdev/vfn/r535.c	GPL-2.0-only (untagged, per Linux COPYING)	0e9d638be153aca0aebb00333a8ce48cad7e0fecdc87809ecf3b0b9e66ec11c8
+drivers/gpu/drm/nouveau/nvkm/subdev/vfn/tu102.c	GPL-2.0-only (untagged, per Linux COPYING)	5299a6b1c4bc89b4d5bf43802e8a94645fbb85a2411eebcd38b06586ca77f861
+drivers/gpu/drm/nouveau/nvkm/subdev/vfn/uvfn.c	GPL-2.0-only (untagged, per Linux COPYING)	c804d8f80357eb5a14f1181acbd4bbb999ec38d424e345c4c9e951dc478d7c23
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/base.c	GPL-2.0-only (untagged, per Linux COPYING)	94cf7e36683f5450fe9d4e338d505aa65e1c4ea59a4890a50abcba49c3b72dec
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/gf100.c	GPL-2.0-only (untagged, per Linux COPYING)	7c1c2b9ec98063f43ce6058dcb4839bb5000987a4d1b3e280438881c451ffef0
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/gf117.c	GPL-2.0-only (untagged, per Linux COPYING)	6b64c8a82f0a1e4f9d589b2abafdc1806075308e118c2d26f4fe459d87df882f
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/gk104.c	GPL-2.0-only (untagged, per Linux COPYING)	fdbdb09b0adab174f06ec1822809198b749e01dec0c608def38f18d83fe6be28
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/gk20a.c	GPL-2.0-only (untagged, per Linux COPYING)	f0f421600bd39ae5fd1a45cfc8995323b4a89383e872de579e7d439d13064a95
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/gk20a.h	GPL-2.0-only (untagged, per Linux COPYING)	1ea38022f8854bc2dd1bdbd6ee0e2ba1fafd555dbcdb5500ba8716248a45dc10
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/gm20b.c	GPL-2.0-only (untagged, per Linux COPYING)	bdf6b9b15587b0c7c692eb077e8c57222c51c144df3553f3337eb7dcf9d90a3d
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/gpio.c	GPL-2.0-only (untagged, per Linux COPYING)	607d5bc38534c3ab27c12d40bf74c59b530b9789fa6cb5ebf3219e97159ca79d
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/nv40.c	GPL-2.0-only (untagged, per Linux COPYING)	198cca4b2c54666f3dece93e5984a036ebf7f44ab583e4f0ba16afe4f70b7cf3
+drivers/gpu/drm/nouveau/nvkm/subdev/volt/priv.h	MIT	f23235b001705368283e4a5ea17300650668c25c8568b3fafe46e7e97cef4884
 drivers/gpu/drm/scheduler/gpu_scheduler_trace.h	GPL-2.0-only (untagged, per Linux COPYING)	18bc9a42c94c222b712fa9c903b91305ce80b4a887d8c452560d07903fb3fae8
 drivers/gpu/drm/scheduler/sched_entity.c	GPL-2.0-only (untagged, per Linux COPYING)	121407affa81f18ae28166786ac3231ae37e54bf138cfbf81f35e4dedbe65a46
 drivers/gpu/drm/scheduler/sched_fence.c	GPL-2.0-only (untagged, per Linux COPYING)	76f7cbc1dd8e964ecbe630cde9a477d88d3adef3464bf510b0811f4fdc1792b9
@@ -3006,6 +4195,7 @@ include/acpi/actbl1.h	BSD-3-Clause OR GPL-2.0	8825ed41c1277162605cd40c15f678a8d8
 include/acpi/actbl2.h	BSD-3-Clause OR GPL-2.0	ec1b65fdc4eba8692764f3ab071ee905d069bec7747b4fb143eb05fe8db6cd83
 include/acpi/actbl3.h	BSD-3-Clause OR GPL-2.0	66bcea45aeb4aaec24f81ec242f2a7765ee5c853bef2fec8a50fa56dc5346fbf
 include/acpi/actypes.h	BSD-3-Clause OR GPL-2.0	0c6ef6e7625a635c98e8fe47bb0752342567783b4a9a704c8ad53d189d464b80
+include/acpi/button.h	GPL-2.0	33562b1141969a18f57a9e2fc56df4b9cb481e8b83ab55df3d6dc9b6a2b961f7
 include/acpi/nhlt.h	GPL-2.0-only	25e38dbd6836271ad958ca72d2810e5a9c20a36bb0b48b4b3d2cc9c7aa4d63d3
 include/acpi/platform/acenv.h	BSD-3-Clause OR GPL-2.0	77959b61f3884b16628b9d22314b91085c2f144e4a77b6c150d6bef0b518e583
 include/acpi/platform/acenvex.h	BSD-3-Clause OR GPL-2.0	df944cfbd965da757d5582e39d5a8ecb375b98e15fbad018c227c2e180deb824
@@ -3201,6 +4391,7 @@ include/kunit/try-catch.h	GPL-2.0	797a4d09bd8e9afaa8f6bd06172d5e9e42ca9d5ef9d69a
 include/kunit/visibility.h	GPL-2.0	da7cc25c8e9b3ef86d3d86f016a0a70570c6cecd30615992729601b73d424343
 include/linux/acpi.h	GPL-2.0-or-later	da5aea6b59ffb8b8e422880100724ae3186f9cced0d2dd00531cae3f0e628abe
 include/linux/acpi_amd_wbrf.h	GPL-2.0	2608667dc25e6c23c83b5873252254b89fe3a6ee1bdf015843e212349ee4496c
+include/linux/agp_backend.h	GPL-2.0-only (untagged, per Linux COPYING)	3d214acc1421a3d92a8e305f8f8ff28d644433ef36a9d89b6be58489ff03e370
 include/linux/alarmtimer.h	GPL-2.0	56f4ac55d0aefeb2b5f94d758f35f50bbb58da6f23a0bf1774d70d7c5b306700
 include/linux/align.h	GPL-2.0	4da2b94e368dab1745dc81e83bd29f580c6620e4f3fa19c871a77b10c31bee36
 include/linux/alloc_tag.h	GPL-2.0	b8e745b2e706b33a8f0ca24487f8784c3cdf9fdde1fbb61a7d5698785e6198d7
@@ -3562,6 +4753,7 @@ include/linux/mtd/mtd.h	GPL-2.0-or-later	7ffee580bb12556e4074f07e6fdf13d56d9a5ca
 include/linux/mtd/partitions.h	GPL-2.0-only (untagged, per Linux COPYING)	5f8a73d0f8292aee02c85866a354fb5095b600c24f2be3ddf911c954e0762de4
 include/linux/mutex.h	GPL-2.0	0a2d01622c134acf57bcf8381e44821b5c058b51ea983eaf304f5085cd51b3e9
 include/linux/mutex_types.h	GPL-2.0	c96488bb111b8b470c993b1ee25456c4e0bb81395df0810fe67c24b65f67f5ab
+include/linux/mxm-wmi.h	GPL-2.0-or-later	d1745bc93ecd2ecfe7a4c513194f4e73dcfb4a30effae0cd436ebc4459d34ebc
 include/linux/net.h	GPL-2.0-or-later	295efa9a9e601a6b219eec48721e4464d1013d80c103b35a1b96a79674a79c6d
 include/linux/net_tstamp.h	GPL-2.0	643476801e936baac42156d0f71a018a447ba6637e17de3b9f8b313c36325a22
 include/linux/netdev_features.h	GPL-2.0-or-later	d0ac20d98594311f8565fe954de1086201f000372a3fc4264c9de7483cde116a
@@ -3606,6 +4798,7 @@ include/linux/pageblock-flags.h	GPL-2.0-only	8a6f37f60046e3c63bc02619546313d8b5d
 include/linux/pagemap.h	GPL-2.0	44f347f4fbd947e1eeb051fd3a8cdc93bd9ddecd2332101187644c0e1c150309
 include/linux/pagevec.h	GPL-2.0	b5ab95c07fdc938aa773b0bf371c03c03aa2fb8f6c6b2f41628ffc6ad6b5abd4
 include/linux/panic.h	GPL-2.0	e4359b990bb3b1454b8c60e2367c4a129a8ab317aca4ff3ccf015478617d2cfd
+include/linux/parser.h	GPL-2.0	fa6e1dcd38689822e55d507917352668331013861381006ed441d9ce94210724
 include/linux/patchkey.h	GPL-2.0	102365f080b0ce3669c82e0b86cac4ffdbbd13f6135297be4aa7d6847468b7e6
 include/linux/path.h	GPL-2.0	0e8f5c7649ea4f6830871af1ab6257affe5f5e6c5c12b6034bddce7c80848084
 include/linux/pci-p2pdma.h	GPL-2.0	2d173f5fe180489dcaffc467dd13ece1d4c0a4b66ec7072914f60687744622f2
@@ -4046,6 +5239,9 @@ include/net/xdp_sock.h	GPL-2.0	355e16cb98a6e39438d48582b2b456dc15adb37792d1cacc9
 include/net/xdp_sock_drv.h	GPL-2.0	d10b373ee82838ce6e40c433dae3daff60997470efaa5ef1eeee17d508e9363f
 include/net/xfrm.h	GPL-2.0	ad8946681d7f384d730bfd3069b1f78d87fab231dd0cbae42d0b530b5ea347d5
 include/net/xsk_buff_pool.h	GPL-2.0	f7d6cac25d6978e660cee91530ffc128c7730b51c740e8df3b01751c88ee3d15
+include/soc/tegra/fuse.h	GPL-2.0-only	2dc7ed09e22b34becac8e0ba37441a652cf551a6fad9e4827492894e005c81d2
+include/soc/tegra/pm.h	GPL-2.0-only	7d34b617ea23ec63ae19e1b1beb896ef34552c551c5f096cbd7c647918c280ab
+include/soc/tegra/pmc.h	GPL-2.0-only	38dfeb513bceb220ac2f775ce542068c65d2ef5e21b3498f4dd91480d7588257
 include/sound/ac97/regs.h	GPL-2.0+	d5822ac65587a6fb6ae01c7a952bb54911449d3fdb0c0468fa689ebe64e33825
 include/sound/ac97_codec.h	GPL-2.0+	1e628b003004842b3e53d4820d2c651dca118735bb9d11f799531746bb8fa4e1
 include/sound/asequencer.h	GPL-2.0-or-later	3cafd28021308a0c613d93ba5185967bdcb3bf018bae23101a782680a35789b0
@@ -4134,6 +5330,7 @@ include/uapi/drm/amdgpu_drm.h	GPL-2.0-only (untagged, per Linux COPYING)	04c85d7
 include/uapi/drm/drm.h	GPL-2.0-only (untagged, per Linux COPYING)	9adac9567a18a234770d98a31c6c505a18e2db02fb0eca596730314d86a46549
 include/uapi/drm/drm_fourcc.h	GPL-2.0-only (untagged, per Linux COPYING)	d521522ed871d67578e0eb9682541d49041e3dc3f5b1aafac6f3ba9e6cf9c566
 include/uapi/drm/drm_mode.h	GPL-2.0-only (untagged, per Linux COPYING)	40b502fee0f74fe46366afd7a744e7e125580d55a86167dca3592a7cef009754
+include/uapi/drm/nouveau_drm.h	GPL-2.0-only (untagged, per Linux COPYING)	2758ed28465a923c5a0eb1c2d2a4af7b43a7fc52e98b38723924a3fae48ccc39
 include/uapi/drm/virtgpu_drm.h	GPL-2.0-only (untagged, per Linux COPYING)	3fb60f5131574dd1fb4aff3e10a45448fa67fe10796e0cf21c6ee583eb996cbd
 include/uapi/linux/aio_abi.h	GPL-2.0-only (untagged, per Linux COPYING)	1f149322eeb746481527a6627e2432ea384c78dee0ee309797d27886e638d352
 include/uapi/linux/audit.h	GPL-2.0+ WITH Linux-syscall-note	9d906005bd35b90266e68a80c1677f375009c2f72fd796d6655cec62fd9818f0

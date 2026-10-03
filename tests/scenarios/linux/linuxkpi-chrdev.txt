@@ -7,7 +7,7 @@ send ls -l /dev/kpi-test
 wait 10, \d+
 wait # $
 send musl-kpitest
-wait kpitest: \d+ passed, 0 failed 60
+wait kpitest: \d+ passed, 0 failed 120
 wait # $
 send ls /sys/class/misc/kpi-test; cat /sys/class/misc/kpi-test/dev
 wait 10:\d+

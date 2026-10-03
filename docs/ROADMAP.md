@@ -180,6 +180,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] amdgpu + DC, TTM, GPU scheduler, DP/HDMI helpers, buddy/GPUVM compiled from Linux (`linux-drm-amd`; list generated from the Makefile by `tools/kbuild-group.py`); in release images, opt-in with `linux.enable=amdgpu`; Raphael firmware ships; `hwcheck display`. Compiled, untested on hardware
   - [ ] Bring-up on the Raphael iGPU (display, then rendering and power): needs hardware
 - [ ] **M39** NVIDIA GPUs (nouveau, GSP firmware)
+  - [x] nouveau compiled from Linux (`linux-drm-nouveau`, list generated from its Kbuild); in release images, opt-in with `linux.enable=nouveau`; GSP-RM 570.144 for Turing through Blackwell GB20x on the storage partition (`firmware/storage.list`, `.links` for linux-firmware's symlinks); `tools/vfio-run.sh`. Compiled, untested on hardware
+  - [ ] Bring-up on the RTX 5070 (GB205) through VFIO: needs hardware
 - [ ] **M40** Intel GPUs (i915, xe)
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE

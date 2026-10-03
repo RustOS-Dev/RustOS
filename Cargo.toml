@@ -55,7 +55,9 @@ linux-drm-virtio = ["linux-drm"]
 linux-drm-amd = ["linux-drm", "linux-i2c"]
 # GPU drivers in release images (write_to_drive.sh): opt-in at boot with
 # kernel.conf linux.enable=<driver> until they have run on hardware.
-linux-gpu = ["linux-drm-amd"]
+# NVIDIA GPUs through Linux nouveau (M39): compiled, untested on hardware.
+linux-drm-nouveau = ["linux-drm", "linux-i2c"]
+linux-gpu = ["linux-drm-amd", "linux-drm-nouveau"]
 # SD/MMC cards on SDHCI hosts (PCI, ACPI) with Linux's MMC core: mmcblkN.
 linux-mmc = ["linuxkpi"]
 # Linux I2C core (adapters, ACPI-enumerated clients, bit-banging).

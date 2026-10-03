@@ -48,6 +48,9 @@ def main():
     ap.add_argument("--module", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--comment", default="")
+    ap.add_argument("--alias", action="append", default=[], metavar="PREFIX=DIR",
+                    help="objects under PREFIX/ come from DIR (relative to the Linux tree), "
+                         "as xe's i915-display/ rule does")
     ap.add_argument("--config", default=os.path.join(ROOT, "third_party/linux/generated/dot-config"),
                     help="the .config to evaluate with (default: RustOS's generated one)")
     a = ap.parse_args()
@@ -77,6 +80,10 @@ def main():
             continue
         seen.add(o)
         path = os.path.normpath(os.path.join(a.src, o[:-2] + ".c"))
+        for al in a.alias:
+            prefix, _, target = al.partition("=")
+            if o.startswith(prefix.rstrip("/") + "/"):
+                path = os.path.normpath(os.path.join(target, o[len(prefix.rstrip("/")) + 1:-2] + ".c"))
         if not os.path.exists(os.path.join(linux, path)):
             missing.append(path)
             continue

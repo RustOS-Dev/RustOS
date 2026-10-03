@@ -90,6 +90,29 @@ which take only virtio devices without a native RustOS driver; the
 `drm-virtio` scenario is the same test on QEMU's virtio-gpu-pci (2D; no
 virgl).
 
+M38: AMD GPUs through Linux amdgpu with the display core (`linux-drm-amd`,
+in release images through `linux-gpu`; compiled, untested on hardware).
+Its file list (`groups/amdgpu.list`, about 800 files) is generated from
+amdgpu's own Makefile by `tools/kbuild-group.py`, which evaluates it with
+GNU make and RustOS's configuration (`tools/kbuild-objs.mk`); files Linux
+builds with `CC_FLAGS_FPU` (the display core's DML) get `-msse -msse2` and
+run inside `kernel_fpu_begin/end`. `groups/drmgpu.list` holds what GPU
+drivers share: TTM, the GPU scheduler, the DisplayPort/HDMI helpers, the
+buddy and suballocators, GPUVM, backlight and hwmon. `c/gpu.c` supplies
+kthread workers, TTM's shmem paths (there is no swap, so TTM keeps its
+pages), CPU identification and power requests; ACPI video, HDMI CEC, perf
+PMUs and device coredumps are reported absent. Resizable BARs keep the
+firmware's layout and PCIe atomics are not routed. Integrated GPUs get
+their VBIOS from the ACPI VFCT table; `pci_map_rom` covers boards with an
+expansion ROM. The Raphael (Ryzen 7000) iGPU firmware ships in
+`firmware/stock.list`.
+
+Drivers that have not run on hardware are opt-in: `amdgpu` binds a device
+only with `linux.enable=amdgpu` in `kernel.conf`. Because `kernel.conf` is
+read after the first probe pass, opt-in drivers wait, and the PCI bus is
+rescanned once it has been read (`kpi_pci_rescan`); a device left unbound
+gets a log line naming the driver and the switch.
+
 M34: Linux sound (`--features linux-sound`, in release images in place of
 the native HDA and USB audio drivers): the ALSA core with OSS emulation,
 snd-hda-intel with the codec drivers, and snd-usb-audio on the LinuxKPI
@@ -321,6 +344,9 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
      `FEATURES` in `build/linuxkpi.rs`).
    - Enable its Kconfig symbols in `configs/rustos.config` and rerun
      `tools/linux-import.py config`.
+   - For a large driver, generate the list from its Makefile:
+     `tools/kbuild-group.py --linux <checkout> --src <dir> --obj <name>-y
+     --module <name> --out src/linuxkpi/groups/<name>.list`.
 2. Build, then implement what the link step reports as undefined. Prefer
    importing Linux's own implementation, from `lib/` or a subsystem, over
    rewriting it.

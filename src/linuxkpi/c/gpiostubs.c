@@ -11,6 +11,7 @@
 #include <linux/err.h>
 #include <linux/gpio/consumer.h>
 #include <linux/gpio/machine.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/devinfo.h>
 #include <drm/drm_panel.h>
 #include "kpi.h"
@@ -122,4 +123,35 @@ int __weak drm_panel_add_follower(struct device *follower_dev,
 
 void __weak drm_panel_remove_follower(struct drm_panel_follower *follower)
 {
+}
+
+struct gpio_desc *__weak devm_gpiod_get(struct device *dev, const char *con_id,
+					enum gpiod_flags flags)
+{
+	return ERR_PTR(-ENOENT);
+}
+
+int __weak gpiod_get_direction(struct gpio_desc *desc)
+{
+	return -EINVAL;
+}
+
+int __weak gpiod_direction_output(struct gpio_desc *desc, int value)
+{
+	return -EINVAL;
+}
+
+int __weak gpiod_set_value_cansleep(struct gpio_desc *desc, int value)
+{
+	return -EINVAL;
+}
+
+struct pinctrl_state *__weak pinctrl_lookup_state(struct pinctrl *p, const char *name)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+int __weak pinctrl_select_state(struct pinctrl *p, struct pinctrl_state *s)
+{
+	return 0;
 }

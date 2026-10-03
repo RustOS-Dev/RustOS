@@ -9,8 +9,14 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * Most drivers are verified only under QEMU. The Intel AX210 Wi-Fi,
   I219/I225/RTL8168 Ethernet and CDC NCM drivers are written against
   reference drivers and specifications but have not yet run on hardware.
-* No GPU acceleration, Thunderbolt management, or
-  suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
+* No GPU acceleration in user space (no Mesa yet), Thunderbolt management,
+  or suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
+* AMD GPUs (Linux amdgpu) are compiled into release images but untested on
+  hardware and off unless `kernel.conf` has `linux.enable=amdgpu`. Without a
+  swap device TTM cannot evict system-memory buffers, resizable BARs are
+  not resized, PCIe atomics are not routed (ROCm-style compute would need
+  them; amdkfd is not built), and HDMI CEC and the ACPI video backlight
+  interface are absent.
 * ATAPI optical drives are detected but not usable.
 
 ## Kernel

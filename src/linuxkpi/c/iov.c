@@ -36,7 +36,8 @@ int import_ubuf(int rw, void __user *buf, size_t len, struct iov_iter *i)
 
 /*
  * Copy up to @bytes between @buf and the iterator's current position
- * (to it if @to_iter), advancing it. Returns the bytes copied.
+ * (to it if @to_iter), advancing it. Returns the bytes copied. A NULL
+ * @buf only advances.
  */
 static size_t kpi_iter_copy(struct iov_iter *i, void *buf, size_t bytes, bool to_iter)
 {
@@ -73,7 +74,9 @@ static size_t kpi_iter_copy(struct iov_iter *i, void *buf, size_t bytes, bool to
 			return done;
 		}
 		n = min(bytes - done, seg_len - i->iov_offset);
-		if (user)
+		if (!buf)
+			left = 0;
+		else if (user)
 			left = to_iter ? copy_to_user(base + i->iov_offset, buf + done, n)
 				       : copy_from_user(buf + done, base + i->iov_offset, n);
 		else
@@ -105,4 +108,18 @@ size_t _copy_to_iter(const void *addr, size_t bytes, struct iov_iter *i)
 size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
 {
 	return kpi_iter_copy(i, addr, bytes, false);
+}
+
+void iov_iter_advance(struct iov_iter *i, size_t bytes)
+{
+	kpi_iter_copy(i, NULL, bytes, false);
+}
+
+/* Pinning the pages behind an iterator (for zero-copy I/O) is not
+ * supported; callers fall back to copying or fail the request. */
+ssize_t iov_iter_extract_pages(struct iov_iter *i, struct page ***pages, size_t maxsize,
+			       unsigned int maxpages, iov_iter_extraction_t extraction_flags,
+			       size_t *offset0)
+{
+	return -EFAULT;
 }

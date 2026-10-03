@@ -59,6 +59,7 @@ KPI_PARAM_OPS(hexint);
 KPI_PARAM_OPS(charp);
 KPI_PARAM_OPS(bool);
 KPI_PARAM_OPS(bool_enable_only);
+KPI_PARAM_OPS(bint);
 KPI_PARAM_OPS(invbool);
 KPI_PARAM_OPS(string);
 const struct kernel_param_ops param_array_ops = { .set = kpi_param_set, .get = kpi_param_get };

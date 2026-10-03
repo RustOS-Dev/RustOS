@@ -933,3 +933,38 @@ long strncpy_from_user(char *dst, const char __user *src, long count)
 	}
 	return count;
 }
+
+/* An order-n block becomes 2^n order-0 pages, each with its own count
+ * (TTM splits pool pages before swapping them out). */
+void split_page(struct page *page, unsigned int order)
+{
+	for (unsigned long i = 0; i < (1UL << order); i++) {
+		if (i)
+			set_page_count(&page[i], 1);
+		set_page_private(&page[i], KPI_TAG_PAGES);
+	}
+}
+
+void copy_page(void *to, void *from)
+{
+	memcpy(to, from, PAGE_SIZE);
+}
+
+void *kvrealloc_node_align_noprof(const void *p, size_t size, unsigned long align,
+				  gfp_t flags, int nid)
+{
+	size_t old;
+	void *n;
+
+	if (!is_vmalloc_addr(p))
+		return krealloc_node_align_noprof(p, size, align, flags, nid);
+	old = rustos_kpi_vmalloc_size(p);
+	if (size <= old)
+		return (void *)p;
+	n = kvmalloc_node_align_noprof(size, align, flags, nid);
+	if (n) {
+		memcpy(n, p, old);
+		kvfree(p);
+	}
+	return n;
+}

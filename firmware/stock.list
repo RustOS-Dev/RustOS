@@ -105,3 +105,18 @@ lf rtl_bt/rtl8852cu_fw_v2.bin rtl_bt/rtl8852cu_fw_v2.bin d1314df53b8f4282f9db57a
 lf rtl_bt/rtl8922au_config.bin rtl_bt/rtl8922au_config.bin 6c28a3f07c6a30ed208c4b64862a23f02b7d93543ea980edd24df16bab45095f
 lf rtl_bt/rtl8922au_fw.bin rtl_bt/rtl8922au_fw.bin 112290ca9dc3985034f572594812f0deb8530dd031686461b55cac43a1c35a79
 lf LICENCE.rtlwifi_firmware.txt LICENSES/LICENCE.rtlwifi_firmware.txt a61351665b4f264f6c631364f85b907d8f8f41f8b369533ef4021765f9f3b62e
+
+# AMD Raphael (Ryzen 7000) integrated GPU (Linux amdgpu, M38): GC 10.3.6,
+# PSP 13.0.5, SDMA 5.2.6, DCN 3.1.5 (DMCUB) and VCN 3.1.2.
+lf amdgpu/gc_10_3_6_ce.bin amdgpu/gc_10_3_6_ce.bin ed5fe8488d16ecc0923ff34afe8aa67177d5e1f3242e1de48ef1643b263ba33b
+lf amdgpu/gc_10_3_6_pfp.bin amdgpu/gc_10_3_6_pfp.bin 042f5d2d223aac6a62b500a47d0d0bf33984200110da0ffca4fe5df9a96571c0
+lf amdgpu/gc_10_3_6_me.bin amdgpu/gc_10_3_6_me.bin 776d2299bc4f3abffd4a7999f5a21a4e38aced8b6b4c199a83610dbabf08176d
+lf amdgpu/gc_10_3_6_mec.bin amdgpu/gc_10_3_6_mec.bin 7003c4a77537e9edaf67064104cd9371fac38a84f71f948349140b28d3c210e8
+lf amdgpu/gc_10_3_6_mec2.bin amdgpu/gc_10_3_6_mec2.bin 7003c4a77537e9edaf67064104cd9371fac38a84f71f948349140b28d3c210e8
+lf amdgpu/gc_10_3_6_rlc.bin amdgpu/gc_10_3_6_rlc.bin acfbac75c0dcfbfe40e222640ef17eb3dc8d206d30bc3863f275f2dd1cb132a5
+lf amdgpu/psp_13_0_5_toc.bin amdgpu/psp_13_0_5_toc.bin 2dfcc2b4d6b7f072a471da3852164560ae709bb563626997c41ef1ef17588bbe
+lf amdgpu/psp_13_0_5_ta.bin amdgpu/psp_13_0_5_ta.bin 088bdb884d7482763b2affa3599e70b0e8dd949457fb69f5604f2557417cea27
+lf amdgpu/sdma_5_2_6.bin amdgpu/sdma_5_2_6.bin 3a163db00eb7e4752be8adbd61cf7dd8f08d924e59a6f798ced7dfcd89f340ed
+lf amdgpu/dcn_3_1_5_dmcub.bin amdgpu/dcn_3_1_5_dmcub.bin c198f520748ed8ac0b8bec04c7d85d2962865c6bbe6c9a6791e661c23750b8d5
+lf amdgpu/vcn_3_1_2.bin amdgpu/vcn_3_1_2.bin 85fc509c1b606ef5f2d99ee6d50221b9707623897d0a91fefa3b8ca9b494df56
+lf LICENSE.amdgpu LICENSES/LICENSE.amdgpu 572872598565dc3513470de971a32bf9db301f47afeef3636345eadae33b2eee

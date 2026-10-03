@@ -16,6 +16,7 @@
  */
 #include <linux/acpi.h>
 #include <linux/bitfield.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -481,6 +482,11 @@ static int kpi_pci_bus_match(struct device *dev, const struct device_driver *drv
 {
 	/* A device a native RustOS driver took is not offered to Linux ones. */
 	if (rustos_kpi_pci_claimed(kpi_idx(to_pci_dev(dev))))
+		return 0;
+	if (!kpi_pci_match(to_pci_driver(drv)->id_table, to_pci_dev(dev)))
+		return 0;
+	/* Opt-in drivers wait for kernel.conf's linux.enable=. */
+	if (!rustos_kpi_driver_allowed(drv->name))
 		return 0;
 	return kpi_pci_match(to_pci_driver(drv)->id_table, to_pci_dev(dev)) != NULL;
 }
@@ -1329,4 +1335,281 @@ dma_addr_t dma_map_resource(struct device *dev, phys_addr_t phys_addr, size_t si
 void dma_unmap_resource(struct device *dev, dma_addr_t addr, size_t size,
 			enum dma_data_direction dir, unsigned long attrs)
 {
+}
+
+/* ------------------------------------------------------- GPU-driver extras */
+
+struct pci_dev *pci_get_domain_bus_and_slot(int domain, unsigned int bus, unsigned int devfn)
+{
+	if (domain != 0)
+		return NULL;
+	for (u32 i = 0; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && d->bus->number == bus && d->devfn == devfn)
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+struct pci_dev *pci_get_base_class(unsigned int class, struct pci_dev *from)
+{
+	u32 start = 0;
+
+	if (from) {
+		start = kpi_idx(from) + 1;
+		pci_dev_put(from);
+	}
+	for (u32 i = start; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && (d->class >> 16) == class)
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+static enum pci_bus_speed kpi_speed(u32 gen)
+{
+	static const enum pci_bus_speed speeds[] = {
+		PCI_SPEED_UNKNOWN, PCIE_SPEED_2_5GT, PCIE_SPEED_5_0GT, PCIE_SPEED_8_0GT,
+		PCIE_SPEED_16_0GT, PCIE_SPEED_32_0GT, PCIE_SPEED_64_0GT,
+	};
+
+	return gen < ARRAY_SIZE(speeds) ? speeds[gen] : PCI_SPEED_UNKNOWN;
+}
+
+/* The fastest link speed the device supports: the highest bit of the
+ * Supported Link Speeds vector (LNKCAP2), else LNKCAP's encoding. */
+enum pci_bus_speed pcie_get_speed_cap(struct pci_dev *dev)
+{
+	u32 cap2 = 0, cap = 0;
+
+	pcie_capability_read_dword(dev, PCI_EXP_LNKCAP2, &cap2);
+	if (cap2 & PCI_EXP_LNKCAP2_SLS)
+		return kpi_speed(fls(cap2 & PCI_EXP_LNKCAP2_SLS) - 1);
+	pcie_capability_read_dword(dev, PCI_EXP_LNKCAP, &cap);
+	return kpi_speed(cap & PCI_EXP_LNKCAP_SLS);
+}
+
+enum pcie_link_width pcie_get_width_cap(struct pci_dev *dev)
+{
+	u32 cap = 0;
+
+	pcie_capability_read_dword(dev, PCI_EXP_LNKCAP, &cap);
+	return cap ? FIELD_GET(PCI_EXP_LNKCAP_MLW, cap) : PCIE_LNK_WIDTH_UNKNOWN;
+}
+
+/* Bandwidth of the device's own link as trained (upstream bridges are not
+ * modelled, so the device is its own limit). In Mb/s, as Linux reports. */
+u32 pcie_bandwidth_available(struct pci_dev *dev, struct pci_dev **limiting_dev,
+			     enum pci_bus_speed *speed, enum pcie_link_width *width)
+{
+	static const u32 mbps[] = { 0, 2000, 4000, 7877, 15754, 31508, 63015 };
+	u16 sta = 0;
+	u32 gen, w;
+
+	pcie_capability_read_word(dev, PCI_EXP_LNKSTA, &sta);
+	gen = sta & PCI_EXP_LNKSTA_CLS;
+	w = FIELD_GET(PCI_EXP_LNKSTA_NLW, sta);
+	if (limiting_dev)
+		*limiting_dev = dev;
+	if (speed)
+		*speed = kpi_speed(gen);
+	if (width)
+		*width = w ? w : PCIE_LNK_WIDTH_UNKNOWN;
+	return gen < ARRAY_SIZE(mbps) ? mbps[gen] * w : 0;
+}
+
+int pcie_get_mps(struct pci_dev *dev)
+{
+	u16 ctl = 0;
+
+	pcie_capability_read_word(dev, PCI_EXP_DEVCTL, &ctl);
+	return 128 << FIELD_GET(PCI_EXP_DEVCTL_PAYLOAD, ctl);
+}
+
+/* RustOS turns ASPM off on the links it touches and never on. */
+bool pcie_aspm_enabled(struct pci_dev *pdev)
+{
+	u16 ctl = 0;
+
+	pcie_capability_read_word(pdev, PCI_EXP_LNKCTL, &ctl);
+	return ctl & PCI_EXP_LNKCTL_ASPMC;
+}
+
+/* AtomicOp routing to the root port is not set up (the path's bridges are
+ * not modelled); amdgpu then runs without PCIe atomics, as on systems
+ * whose root ports lack them. */
+int pci_enable_atomic_ops_to_root(struct pci_dev *dev, u32 cap_mask)
+{
+	return -EINVAL;
+}
+
+/* No ACPI power resources are managed (no D3cold). */
+bool pci_pr3_present(struct pci_dev *pdev)
+{
+	return false;
+}
+
+int pci_wait_for_pending_transaction(struct pci_dev *dev)
+{
+	for (int i = 0; i < 100; i++) {
+		u16 sta = 0;
+
+		pcie_capability_read_word(dev, PCI_EXP_DEVSTA, &sta);
+		if (!(sta & PCI_EXP_DEVSTA_TRPND))
+			return 1;
+		msleep(10);
+	}
+	return 0;
+}
+
+/* Saved states are the first 64 bytes of config space (the header), which
+ * is what a function reset clears. */
+struct pci_saved_state {
+	u32 header[16];
+};
+
+struct pci_saved_state *pci_store_saved_state(struct pci_dev *dev)
+{
+	struct pci_saved_state *s = kzalloc(sizeof(*s), GFP_KERNEL);
+
+	if (!s)
+		return NULL;
+	for (int i = 0; i < 16; i++)
+		pci_read_config_dword(dev, i * 4, &s->header[i]);
+	return s;
+}
+
+int pci_load_saved_state(struct pci_dev *dev, struct pci_saved_state *state)
+{
+	if (!state)
+		return 0;
+	/* Command register last, after the BARs are back. */
+	for (int i = 15; i >= 1; i--)
+		pci_write_config_dword(dev, i * 4, state->header[i]);
+	return 0;
+}
+
+/* MSI and MSI-X state lives in config space, which a function reset done
+ * here restores with the rest of the header; nothing else is cached. */
+void pci_restore_msi_state(struct pci_dev *dev)
+{
+}
+
+/* Function Level Reset with the header saved and restored around it. */
+int pci_reset_function(struct pci_dev *dev)
+{
+	struct pci_saved_state *s;
+	u32 cap = 0;
+
+	pcie_capability_read_dword(dev, PCI_EXP_DEVCAP, &cap);
+	if (!(cap & PCI_EXP_DEVCAP_FLR))
+		return -ENOTTY;
+	s = pci_store_saved_state(dev);
+	if (!s)
+		return -ENOMEM;
+	pci_wait_for_pending_transaction(dev);
+	pcie_capability_set_word(dev, PCI_EXP_DEVCTL, PCI_EXP_DEVCTL_BCR_FLR);
+	msleep(100);
+	pci_load_saved_state(dev, s);
+	kfree(s);
+	return 0;
+}
+
+/* The expansion ROM, if firmware assigned its BAR. Integrated GPUs have
+ * none; amdgpu then takes the VBIOS from the ACPI VFCT table. */
+void __iomem *pci_map_rom(struct pci_dev *pdev, size_t *size)
+{
+	u32 bar = 0, mask = 0;
+	u64 len;
+	void __iomem *rom;
+
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	if (!(bar & PCI_ROM_ADDRESS_MASK))
+		return NULL;
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, PCI_ROM_ADDRESS_MASK);
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &mask);
+	len = (u64)(~(mask & PCI_ROM_ADDRESS_MASK)) + 1;
+	len &= 0xffffffffULL;
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar | PCI_ROM_ADDRESS_ENABLE);
+	rom = ioremap(bar & PCI_ROM_ADDRESS_MASK, len);
+	if (!rom || readw(rom) != 0xaa55) {
+		if (rom)
+			iounmap(rom);
+		pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar);
+		return NULL;
+	}
+	*size = len;
+	return rom;
+}
+
+void pci_unmap_rom(struct pci_dev *pdev, void __iomem *rom)
+{
+	u32 bar = 0;
+
+	iounmap(rom);
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar & ~PCI_ROM_ADDRESS_ENABLE);
+}
+
+/* BARs keep the layout firmware gave them: resizable BARs are reported as
+ * not resizable, so amdgpu keeps its VRAM aperture as is. */
+u32 pci_rebar_get_possible_sizes(struct pci_dev *pdev, int bar)
+{
+	return 0;
+}
+
+int pci_resize_resource(struct pci_dev *dev, int i, int size, int exclude_bars)
+{
+	return -EOPNOTSUPP;
+}
+
+int pci_release_resource(struct pci_dev *dev, int resno)
+{
+	return 0;
+}
+
+void pci_assign_unassigned_bus_resources(struct pci_bus *bus)
+{
+}
+
+struct resource *pci_bus_resource_n(const struct pci_bus *bus, int n)
+{
+	return NULL;
+}
+
+struct kpi_optin {
+	struct pci_dev *dev;
+	struct device_driver *drv;
+};
+
+static int kpi_find_optin(struct device_driver *drv, void *data)
+{
+	struct kpi_optin *o = data;
+
+	if (kpi_pci_match(to_pci_driver(drv)->id_table, o->dev) &&
+	    !rustos_kpi_driver_allowed(drv->name)) {
+		o->drv = drv;
+		return 1;
+	}
+	return 0;
+}
+
+/* kernel.conf was read: probe devices that drivers held back from
+ * (opt-in drivers), and say which stay unbound. */
+void kpi_pci_rescan(void)
+{
+	bus_rescan_devices(&pci_bus_type);
+	for (u32 i = 0; i < kpi_pci_n; i++) {
+		struct kpi_optin o = { .dev = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL };
+
+		if (!o.dev || o.dev->dev.driver || rustos_kpi_pci_claimed(i))
+			continue;
+		bus_for_each_drv(&pci_bus_type, NULL, &o, kpi_find_optin);
+		if (o.drv)
+			dev_info(&o.dev->dev, "%s supports this device but is off by default: add linux.enable=%s to kernel.conf to use it\n",
+				 o.drv->name, o.drv->name);
+	}
 }

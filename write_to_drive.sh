@@ -449,10 +449,11 @@ main() {
     fi
 
     # Linux drivers (LinuxKPI) are part of the stock image: MediaTek
-    # MT7921/MT7922 Wi-Fi and the Linux 802.11 stack. They are compiled from
+    # MT7921/MT7922 Wi-Fi, the Linux 802.11 stack and AMD amdgpu (which binds
+    # only with kernel.conf linux.enable=amdgpu). They are compiled from
     # C and need clang 15 or newer. RUSTOS_FEATURES overrides the feature set
     # (empty for a kernel with RustOS's own drivers only).
-    FEATURES="${RUSTOS_FEATURES-linux-drivers}"
+    FEATURES="${RUSTOS_FEATURES-linux-drivers,linux-gpu}"
     if [[ -n "$FEATURES" ]]; then
         clang_major="$( (${RUSTOS_CLANG:-clang} --version 2>/dev/null || true) | sed -n 's/.*version \([0-9]*\).*/\1/p' | head -1)"
         if [[ -z "$clang_major" || "$clang_major" -lt 15 ]]; then

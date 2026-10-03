@@ -1,0 +1,50 @@
+# GPU driver infrastructure (M38): TTM, the GPU scheduler, DisplayPort/HDMI
+# helpers, memory managers, backlight and hwmon classes. Parts generated
+# by tools/kbuild-group.py from their Makefiles.
+kpi:gpu.c
+module: gpu_lib
+lib/uuid.c
+lib/seq_buf.c
+kernel/time/timeconv.c
+module: ttm
+drivers/gpu/drm/ttm/ttm_tt.c
+drivers/gpu/drm/ttm/ttm_bo.c
+drivers/gpu/drm/ttm/ttm_bo_util.c
+drivers/gpu/drm/ttm/ttm_bo_vm.c
+drivers/gpu/drm/ttm/ttm_module.c
+drivers/gpu/drm/ttm/ttm_execbuf_util.c
+drivers/gpu/drm/ttm/ttm_range_manager.c
+drivers/gpu/drm/ttm/ttm_resource.c
+drivers/gpu/drm/ttm/ttm_pool.c
+drivers/gpu/drm/ttm/ttm_device.c
+drivers/gpu/drm/ttm/ttm_sys_manager.c
+drivers/gpu/drm/ttm/ttm_backup.c
+module: gpu_sched
+drivers/gpu/drm/scheduler/sched_main.c
+drivers/gpu/drm/scheduler/sched_fence.c
+drivers/gpu/drm/scheduler/sched_entity.c
+module: drm_display_helper
+drivers/gpu/drm/display/drm_display_helper_mod.c
+drivers/gpu/drm/display/drm_dp_dual_mode_helper.c
+drivers/gpu/drm/display/drm_dp_helper.c
+drivers/gpu/drm/display/drm_dp_mst_topology.c
+drivers/gpu/drm/display/drm_dsc_helper.c
+drivers/gpu/drm/display/drm_hdcp_helper.c
+drivers/gpu/drm/display/drm_hdmi_cec_notifier_helper.c
+drivers/gpu/drm/display/drm_hdmi_helper.c
+drivers/gpu/drm/display/drm_scdc_helper.c
+module: drm
+drivers/gpu/buddy.c
+drivers/gpu/drm/drm_buddy.c
+drivers/gpu/drm/drm_panel_backlight_quirks.c
+drivers/gpu/drm/drm_exec.c
+drivers/gpu/drm/drm_suballoc.c
+drivers/gpu/drm/drm_gem_ttm_helper.c
+drivers/gpu/drm/drm_gpuvm.c
+module: backlight
+drivers/video/backlight/backlight.c
+module: hwmon
+drivers/hwmon/hwmon.c
+module: amdxcp
+# amdgpu's compute-partition helper (a module of its own in Linux).
+drivers/gpu/drm/amd/amdxcp/amdgpu_xcp_drv.c

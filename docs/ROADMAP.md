@@ -177,6 +177,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 - [x] **M37** C++ runtime, Wayland stack, software-rendered Weston desktop
   - [x] `rustos-c++` + libc++ (`cxx`); meson cross files; Weston 14 and its stack (`ports/weston`) on DRM with pixman, libinput, libseat (`desktop`). Software GL (Mesa softpipe) moves to M41 with the rest of Mesa
 - [ ] **M38** AMD GPUs (amdgpu): display, rendering, power
+  - [x] amdgpu + DC, TTM, GPU scheduler, DP/HDMI helpers, buddy/GPUVM compiled from Linux (`linux-drm-amd`; list generated from the Makefile by `tools/kbuild-group.py`); in release images, opt-in with `linux.enable=amdgpu`; Raphael firmware ships; `hwcheck display`. Compiled, untested on hardware
+  - [ ] Bring-up on the Raphael iGPU (display, then rendering and power): needs hardware
 - [ ] **M39** NVIDIA GPUs (nouveau, GSP firmware)
 - [ ] **M40** Intel GPUs (i915, xe)
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM

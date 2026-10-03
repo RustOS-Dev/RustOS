@@ -45,6 +45,7 @@ unsafe extern "C" {
     fn kpi_devcore_init() -> c_int;
     fn kpi_chrdev_init() -> c_int;
     fn kpi_pci_bus_init() -> c_int;
+    fn kpi_pci_rescan();
     fn device_shutdown();
     fn kpi_selftest() -> c_int;
     fn kpi_jiffies_update();
@@ -157,6 +158,15 @@ pub fn run_initcalls() {
     unsafe { kpi_netdev_open_pending() };
     #[cfg(feature = "linux-usb")]
     usb::init();
+}
+
+/// `kernel.conf` has been read: offer devices to the opt-in drivers it
+/// enabled (`linux.enable=`), which held back until now.
+pub fn params_loaded() {
+    pci::PARAMS_READ.store(true, Ordering::SeqCst);
+    if ready() {
+        unsafe { kpi_pci_rescan() };
+    }
 }
 
 /// Shut down Linux devices (reboot and power-off): each bus's shutdown

@@ -40,6 +40,25 @@ extern "C" fn rustos_kpi_max_pfn() -> u64 {
     mm::with_frames(|f| f.frame_limit() as u64)
 }
 
+/// Usable memory in pages: total, and free right now.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_mem_pages(free: *mut u64) -> u64 {
+    let (f, total) = mm::memory_stats();
+    unsafe { free.write(f / mm::FRAME_SIZE) };
+    total / mm::FRAME_SIZE
+}
+
+/// A Linux driver asked to power the machine off (`reboot` = 0) or to
+/// restart it (thermal shutdown, emergency_restart).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_power(reboot: i32) -> ! {
+    crate::drivers::shutdown();
+    if reboot != 0 {
+        crate::acpi::reboot()
+    }
+    crate::acpi::shutdown()
+}
+
 /// Map zeroed frames at a fixed kernel address (vmemmap). 0 on success.
 #[unsafe(no_mangle)]
 extern "C" fn rustos_kpi_map_zeroed(virt: u64, size: u64) -> u64 {
@@ -94,6 +113,12 @@ extern "C" fn rustos_kpi_vfree(addr: *const u8) {
         mm::unmap_kernel_pages(virt, size);
         without_interrupts(|| VMALLOC_VA.lock().free(virt, size + FRAME_SIZE));
     }
+}
+
+/// Size of the vmalloc area starting at `addr` (0 if it is not one).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_vmalloc_size(addr: *const u8) -> u64 {
+    without_interrupts(|| VMALLOC_AREAS.lock().get(&(addr as u64)).copied()).unwrap_or(0)
 }
 
 #[unsafe(no_mangle)]

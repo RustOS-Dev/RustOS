@@ -42,7 +42,7 @@ ALLOWED = {
     "GPL-2.0", "GPL-2.0-only", "GPL-2.0+", "GPL-2.0-or-later", "LGPL-2.1",
     "LGPL-2.1+", "LGPL-2.1-only", "LGPL-2.1-or-later", "MIT", "BSD-2-Clause",
     "BSD-3-Clause", "ISC", "Linux-OpenIB", "X11", "Zlib", "0BSD", "GPL-1.0+",
-    "GPL-1.0-or-later",
+    "GPL-1.0-or-later", "LGPL-2.0", "LGPL-2.0+", "LGPL-2.0-or-later",
 }
 # Linux's COPYING: files without an SPDX tag are GPL-2.0-only.
 UNTAGGED = "GPL-2.0-only (untagged, per Linux COPYING)"

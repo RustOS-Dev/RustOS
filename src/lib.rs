@@ -120,6 +120,8 @@ pub fn start_userspace() -> ! {
             params::cmdline()
         );
     }
+    #[cfg(feature = "linuxkpi")]
+    linuxkpi::params_loaded();
     if params::flag("log.persist") {
         klog::start_persist();
     }

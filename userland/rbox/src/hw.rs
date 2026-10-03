@@ -808,9 +808,45 @@ fn hotplug(c: &mut Check) {
     );
 }
 
+fn display_section(c: &mut Check) {
+    c.info(
+        "DRM devices",
+        "ls -l /dev/dri /sys/class/drm; for d in /sys/class/drm/card*-*; do echo \"$d: $(cat $d/status) $(cat $d/enabled) $(wc -c < $d/edid) bytes EDID\"; head -3 $d/modes; done",
+    );
+    c.info(
+        "GPU drivers in the log",
+        "dmesg | grep -i -e drm -e amdgpu -e \"off by default\" -e simpledrm -e fb0",
+    );
+    let cards: Vec<String> = (0..4)
+        .map(|i| format!("/dev/dri/card{}", i))
+        .filter(|d| fs::exists(d))
+        .collect();
+    if cards.is_empty() {
+        c.skip("display", "no /dev/dri/card* device found");
+        return;
+    }
+    for d in &cards {
+        // drmtest: connectors, a mode set, page flips with events, PRIME.
+        c.step(
+            &format!("{} mode set and page flips", d),
+            &format!("drmtest -d {} -t 2", d),
+            |out| out.contains("drmtest: ok"),
+        );
+    }
+    if sh("dmesg | grep -q amdgpu").0 == 0 {
+        c.step(
+            "amdgpu firmware and ring tests",
+            "dmesg | grep -i -e amdgpu -e \"ring \" | grep -i -e fw -e firmware -e ring -e error -e fail",
+            |out| !out.to_lowercase().contains("fail") && !out.to_lowercase().contains("error"),
+        );
+    }
+}
+
 fn usage() {
     println!("usage: hwcheck [options] [section...]");
-    println!("sections: system ethernet wifi storage usb audio bluetooth webcam (default: all)");
+    println!(
+        "sections: system ethernet wifi storage usb audio bluetooth webcam display (default: all)"
+    );
     println!("  -y, --batch        never prompt (skip interactive steps)");
     println!("  -o DIR             result directory (default /storage/hwcheck-DATE)");
     println!("  --ssid S --pass P  WPA2/WPA3 network for the Wi-Fi steps");
@@ -973,6 +1009,10 @@ pub fn hwcheck(args: &[String]) -> i32 {
     if want("webcam") {
         c.section("Webcam");
         webcam_section(&mut c);
+    }
+    if want("display") {
+        c.section("Display and GPU");
+        display_section(&mut c);
     }
 
     let count = |r: Res| c.results.iter().filter(|x| x.1 == r).count();

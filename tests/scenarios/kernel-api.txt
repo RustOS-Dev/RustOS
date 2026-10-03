@@ -41,6 +41,6 @@ send rm /storage/etc/shadow
 wait # $
 # Stock firmware ships in the image (firmware/stock.list): Intel AX210/
 # AX211/AX201 Wi-Fi and Bluetooth, MediaTek MT7921/MT7922, regulatory.db.
-send n=0; for f in iwlwifi-ty-a0-gf-a0-72.ucode iwlwifi-ty-a0-gf-a0.pnvm iwlwifi-so-a0-gf-a0-72.ucode iwlwifi-so-a0-hr-b0-72.ucode intel/ibt-0041-0041.sfi mediatek/WIFI_RAM_CODE_MT7961_1.bin mediatek/WIFI_RAM_CODE_MT7922_1.bin regulatory.db; do test -s /lib/firmware/$f && n=$((n+1)); done; test -e /lib/firmware/.stock-missing || n=$((n+10)); echo "stock firmware $n/18"
-wait stock firmware 18/18
+send n=0; for f in iwlwifi-ty-a0-gf-a0-72.ucode iwlwifi-ty-a0-gf-a0.pnvm iwlwifi-so-a0-gf-a0-72.ucode iwlwifi-so-a0-hr-b0-72.ucode intel/ibt-0041-0041.sfi mediatek/WIFI_RAM_CODE_MT7961_1.bin mediatek/WIFI_RAM_CODE_MT7922_1.bin amdgpu/dcn_3_1_5_dmcub.bin regulatory.db; do test -s /lib/firmware/$f && n=$((n+1)); done; test -e /lib/firmware/.stock-missing || n=$((n+10)); echo "stock firmware $n/19"
+wait stock firmware 19/19
 wait # $

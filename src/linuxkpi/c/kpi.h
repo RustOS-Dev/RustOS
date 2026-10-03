@@ -14,12 +14,15 @@
 /* Memory (src/linuxkpi/mm.rs). Physical addresses; 0 means failure. */
 u64 rustos_kpi_page_offset(void);
 u64 rustos_kpi_max_pfn(void);
+u64 rustos_kpi_mem_pages(u64 *free);
+void rustos_kpi_power(int reboot) __attribute__((noreturn));
 u64 rustos_kpi_map_zeroed(u64 virt, u64 size);	/* 0 on success */
 u64 rustos_kpi_alloc_frames(u64 count, u64 align, int below_4g);
 void rustos_kpi_free_frames(u64 phys, u64 count);
 void *rustos_kpi_vmalloc(u64 size);
 void rustos_kpi_vfree(const void *addr);
 int rustos_kpi_is_vmalloc(const void *addr);
+u64 rustos_kpi_vmalloc_size(const void *addr);
 u64 rustos_kpi_virt_to_phys(u64 virt);
 void *rustos_kpi_vmap(const u64 *phys, u64 count);
 void rustos_kpi_vunmap(const void *virt, u64 count);
@@ -83,6 +86,7 @@ void rustos_kpi_pci_write(u32 idx, u32 off, u32 size, u32 val);
 int rustos_kpi_pci_irq(u32 idx, int msi, void (*fn)(void *), void *arg);
 int rustos_kpi_pci_has_msi(u32 idx);
 int rustos_kpi_pci_claimed(u32 idx);
+int rustos_kpi_driver_allowed(const char *name);
 u64 rustos_kpi_random_u64(void);
 
 /* Network devices (src/linuxkpi/net.rs). */

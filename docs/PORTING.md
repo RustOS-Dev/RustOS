@@ -117,24 +117,27 @@ kernel build; delete that directory to drop the ports again.
 
 ### Desktop ports
 
-`ports/desktop.list` names the eDEX-DE desktop and the ports it uses, in
-build order. They are built and installed only by
-`RUSTOS_DESKTOP=1 cargo build`, as whole trees: `bin`, `lib`, `libexec`
-and `share` go under `/usr`, `etc` under `/etc`. See
-[DESKTOP.md](DESKTOP.md).
+The eDEX-DE desktop and the ports it uses are installed like Weston, under
+`/usr/local` (see [DESKTOP.md](DESKTOP.md)):
+
+```sh
+tools/install-port.sh --initramfs weston       # the Wayland stack (M37)
+tools/install-port.sh --initramfs libunwind
+tools/install-port.sh --initramfs edex-de      # needs the weston stage
+tools/install-port.sh --initramfs jetbrains-mono-nerd
+tools/install-port.sh --initramfs tor          # optional: Privacy panel
+tools/install-port.sh --initramfs tor-pt
+tools/install-port.sh --initramfs wireguard-tools
+```
 
 | Port | Result |
 |------|--------|
-| `libunwind` | LLVM libunwind 19.1.7 as `/usr/lib/libgcc_s.so.1`: the unwinder dynamically linked Rust programs (`x86_64-unknown-linux-musl` without `crt-static`) need |
+| `libunwind` | LLVM libunwind 19.1.7 as `/usr/local/lib/libgcc_s.so.1`: the unwinder dynamically linked Rust programs (`x86_64-unknown-linux-musl` without `crt-static`) need |
 | `jetbrains-mono-nerd` | JetBrains Mono Nerd Font 3.4.0 (regular and Mono, four styles), eDEX-DE's font |
-| `tor` | Tor 0.4.8.17 with OpenSSL 3.0.16, libevent 2.1.12 and zlib 1.3.1, static; GeoIP files in `/usr/share/tor` |
+| `tor` | Tor 0.4.8.17 with OpenSSL 3.0.16, libevent 2.1.12 and zlib 1.3.1, static; GeoIP files in `/usr/local/share/tor` |
 | `tor-pt` | lyrebird 0.6.1 (obfs4) and snowflake-client 2.11.0, static Go builds (needs the host's Go), and Snowflake's default bridge lines |
 | `wireguard-tools` | `wg` 1.0.20250521, static (keys and interface configuration; `wg-quick` needs bash and iproute2) |
-| `edex-de` | eDEX-DE at a pinned commit (`EDEX_SRC=DIR` for a checkout): `edex-comp`, `edex-de`, `edex-greeter`, `edex-auth`, themes, Tor helpers, greeter config; needs M37's `tools/cross/pkg-config` and desktop libraries |
-
-`rustos-cc` passes `--eh-frame-hdr` to the linker for dynamic programs and
-libraries (musl's own specs leave it out), so unwinders find the unwind
-tables: Rust panics through `libgcc_s.so.1`, and C++ exceptions.
+| `edex-de` | eDEX-DE at a pinned commit (`EDEX_SRC=DIR` for a checkout): `edex-comp`, `edex-de`, `edex-greeter`, `edex-auth`, themes, Tor helpers, greeter config; built with Rust for `x86_64-unknown-linux-musl` against the weston port's stage |
 
 A new port needs a `ports/NAME/build.sh` that takes `SRC_DIR BUILD_DIR
 DEST_DIR`, uses `fetch URL SHA256 FILE` from `tools/port-lib.sh`, builds

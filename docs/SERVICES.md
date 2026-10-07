@@ -28,7 +28,7 @@ terminal — is marked `failed` and logged; boot goes on.
 | Key | Meaning |
 |-----|---------|
 | `description` | one-line description (`svc list`) |
-| `exec` | command line (required). It runs through `/bin/sh -c` when it contains shell syntax (quotes, `$`, `;`, `\|`, redirections, globs); otherwise it is split at spaces and the program is looked up in `$PATH` (`/bin:/sbin:/usr/bin`) |
+| `exec` | command line (required). It runs through `/bin/sh -c` when it contains shell syntax (quotes, `$`, `;`, `\|`, redirections, globs); otherwise it is split at spaces and the program is looked up in `$PATH` (`/bin:/sbin:/usr/bin:/usr/local/bin`) |
 | `tty` | optional `ttyN` (or `/dev/ttyN`): the service runs on that virtual console as its session leader with it as controlling terminal and standard I/O, like the console shells |
 | `user` | optional account from `/etc/passwd` (default `root`); sets the uid/gid, `HOME`, `USER`, `LOGNAME` and the working directory |
 | `restart` | `no`, `on-failure` (default) or `always` |

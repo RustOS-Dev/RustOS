@@ -7,7 +7,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 Status: the RustOS side that does not need graphics is done (CPU-time accounting, the `svc`
 service manager, Linux signal frames for Go and Rust programs, the ports below except `edex-de`
-itself). In a `RUSTOS_DESKTOP=1` image under QEMU, `tor` checks its configuration, `wg` makes keys,
+itself). In an image with those ports under QEMU, `tor` checks its configuration, `wg` makes keys,
 `lyrebird` and `snowflake-client` start, and a dynamically linked Rust program unwinds a panic
 through the `libunwind` port. eDEX-DE builds for RustOS once M37 supplies the desktop libraries
 and runs once the graphics milestones (M35–M42) are in. What it needs from RustOS, call by call,
@@ -42,20 +42,22 @@ system services (svc): seatd, dbus, upower, rustos-nmd; tor when the Privacy pan
 
 ## Building it into the image
 
+Like Weston (M37), the desktop is installed under `/usr/local` from the ports tree:
+
 ```sh
 git submodule update --init third_party/musl
 rustup target add x86_64-unknown-linux-musl
-RUSTOS_DESKTOP=1 cargo build                          # builds ports/desktop.list, then the kernel
-EDEX_SRC=~/eDEX-DE-RS RUSTOS_DESKTOP=1 cargo build    # with a local eDEX-DE checkout
+tools/install-port.sh --initramfs weston      # Wayland, libinput, seatd, pixman, ...
+tools/install-port.sh --initramfs libunwind   # libgcc_s.so.1 for dynamically linked Rust
+tools/install-port.sh --initramfs edex-de     # EDEX_SRC=~/eDEX-DE-RS for a local checkout
+tools/install-port.sh --initramfs jetbrains-mono-nerd
+cargo build --features linux-drivers          # DRM (bochs, virtio-gpu, simpledrm) and HID
 ```
 
-`ports/desktop.list` is built in order: `libunwind` (the `libgcc_s.so.1` that dynamically linked
-Rust programs need), `jetbrains-mono-nerd`, `tor`, `tor-pt`, `wireguard-tools`, `edex-de`. A port
-that fails is left out with a warning, as with the default ports; until M37 adds
-`tools/cross/pkg-config` and the desktop libraries, that is `edex-de`. The ports are rebuilt only
-when their `build.sh` changes (delete `target/ports/NAME` to force it). Besides eDEX-DE itself they add
-about 80 MB to the image: Tor with its GeoIP files (28 MB), the Go pluggable transports (33 MB)
-and the fonts (19 MB).
+`edex-de` builds against the weston port's stage (`target/ports/build/weston/stage`, through
+`tools/cross/rustos-pkg-config`) and links with `tools/rustos-cc`. The Privacy panel's ports are
+optional: `tor`, `tor-pt` and `wireguard-tools`. Together they add about 80 MB to the image: Tor
+with its GeoIP files (28 MB), the Go pluggable transports (33 MB); the fonts are 19 MB.
 
 ## Turning it on
 

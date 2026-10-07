@@ -6,7 +6,7 @@
 # Dynamically linked against musl and the desktop libraries of M37-M41
 # (wayland, libxkbcommon, libinput, seatd, libudev-zero, libdrm, Mesa's
 # GBM/EGL, dbus), which tools/cross/pkg-config finds in the sysroot, and
-# the libunwind port's libgcc_s.so.1 (built first: ports/desktop.list).
+# the libunwind port's libgcc_s.so.1 (install that port first).
 # Needs Rust with the x86_64-unknown-linux-musl target.
 #
 # EDEX_SRC=/path/to/eDEX-DE-RS builds that checkout instead of the pinned

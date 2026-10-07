@@ -1,9 +1,0 @@
-# The eDEX-DE desktop and the ports it uses, in build order. Built and
-# installed (under /usr and /etc) only by `RUSTOS_DESKTOP=1 cargo build`:
-# edex-de needs the desktop libraries of M37-M41. See docs/DESKTOP.md.
-libunwind
-jetbrains-mono-nerd
-tor
-tor-pt
-wireguard-tools
-edex-de

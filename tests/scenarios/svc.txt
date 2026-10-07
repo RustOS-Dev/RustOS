@@ -14,7 +14,7 @@ wait rc=3
 wait # $
 # The shipped services are not installed yet: they fail at once.
 send svc start upower; echo rc=$?
-wait /usr/libexec/upowerd: not found
+wait /usr/local/libexec/upowerd: not found
 wait rc=1
 wait # $
 send svc status upower --json

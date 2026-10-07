@@ -4,6 +4,7 @@ kpi:printk.c
 kpi:sched.c
 kpi:time.c
 kpi:softirq.c
+kpi:wait_bit.c
 kpi:percpu.c
 kpi:selftest.c
 kpi:pci.c

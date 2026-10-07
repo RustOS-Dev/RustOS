@@ -12,6 +12,7 @@ sound/hda/core/stream.c
 sound/hda/core/array.c
 sound/hda/core/hdmi_chmap.c
 sound/hda/core/component.c
+sound/hda/core/i915.c
 module: snd_intel_dspcfg
 sound/hda/core/intel-dsp-config.c
 sound/hda/core/intel-nhlt.c

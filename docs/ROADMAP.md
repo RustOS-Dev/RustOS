@@ -183,6 +183,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] nouveau compiled from Linux (`linux-drm-nouveau`, list generated from its Kbuild); in release images, opt-in with `linux.enable=nouveau`; GSP-RM 570.144 for Turing through Blackwell GB20x on the storage partition (`firmware/storage.list`, `.links` for linux-firmware's symlinks); `tools/vfio-run.sh`. Compiled, untested on hardware
   - [ ] Bring-up on the RTX 5070 (GB205) through VFIO: needs hardware
 - [ ] **M40** Intel GPUs (i915, xe)
+  - [x] i915 with display (Gen9 to Meteor Lake) and xe without display compiled from Linux (lists generated, xe via `--alias`); i915 in release images, opt-in with `linux.enable=i915`; GuC/HuC/GSC/DMC firmware on the storage partition; stolen memory from GGC/BDSM. Compiled, untested on hardware
+  - [ ] Bring-up on Intel hardware: needs hardware
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
 

@@ -1061,3 +1061,9 @@ void wake_q_add(struct wake_q_head *head, struct task_struct *task)
 void wake_up_q(struct wake_q_head *head)
 {
 }
+
+/* Waiting for I/O is ordinary sleeping here (no iowait accounting). */
+void io_schedule(void)
+{
+	schedule();
+}

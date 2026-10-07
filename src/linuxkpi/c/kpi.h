@@ -15,6 +15,7 @@
 u64 rustos_kpi_page_offset(void);
 u64 rustos_kpi_max_pfn(void);
 u64 rustos_kpi_mem_pages(u64 *free);
+u64 rustos_kpi_tsc_khz(void);
 void rustos_kpi_power(int reboot) __attribute__((noreturn));
 u64 rustos_kpi_map_zeroed(u64 virt, u64 size);	/* 0 on success */
 u64 rustos_kpi_alloc_frames(u64 count, u64 align, int below_4g);

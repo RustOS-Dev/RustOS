@@ -22,6 +22,11 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   GSP firmware lives on the storage partition, so a drive written without
   it (or a full storage partition) leaves nouveau without firmware; SVM
   and the WMI/MXM interface are absent.
+* Intel GPUs (Linux i915) are compiled in, untested on hardware and off
+  unless `kernel.conf` has `linux.enable=i915`; xe (Lunar Lake,
+  Battlemage) is compiled without display and not in release images. For
+  all GPU drivers, user mappings of buffers that move (TTM eviction, i915
+  GGTT rebinding) are not revoked, and userptr buffers are unsupported.
 * ATAPI optical drives are detected but not usable.
 
 ## Kernel

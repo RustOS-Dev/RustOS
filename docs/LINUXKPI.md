@@ -122,8 +122,28 @@ WMI bus (MXM data comes from the VBIOS), and SVM is off. To develop
 without rebooting the desktop, `tools/vfio-run.sh` boots RustOS in QEMU
 with the card passed through.
 
+M40: Intel GPUs through Linux i915 (`linux-drm-i915`, in release images
+through `linux-gpu`) and xe (`linux-drm-xe`, render and compute only:
+Linux builds xe's display only as a module). Both lists are generated;
+xe compiles i915's display sources under `i915-display/` and `i915-soc/`
+names, which `kbuild-group.py --alias` maps back. xe's workaround tables
+(`generated/xe_*wa_oob.[ch]`) come from Linux's own generator
+(`xe_gen_wa_oob`, run on `xe_wa_oob.rules` and `xe_device_wa_oob.rules`)
+and are imported with the sources. The firmware i915 and xe request
+(GuC, HuC, GSC, DMC: names taken from their `MODULE_FIRMWARE` tables by
+preprocessing them) is in `firmware/storage.list`. Stolen memory is read
+from the GPU's GGC/BDSM registers as Linux's early x86 quirks do
+(`c/intelgfx.c`). i915's GGTT mmap faults fill page tables through
+`apply_to_page_range`, which the shim serves page by page from the fault
+in progress (`c/chrdev.c`); `rep_movs_alternative`, the user-copy routine
+inline `__copy_*_user` calls, is a register-convention thunk onto the
+shim's fault-safe copies (`c/uaccess.c`). Not provided: userptr objects
+(no HMM), relayfs (GuC log streaming), sysctl, the LPE audio and GSC
+helper interrupt chips, and the legacy `I915_GEM_MMAP` ioctl.
+
 Drivers that have not run on hardware are opt-in: `amdgpu` and `nouveau`
-bind a device only when `kernel.conf` names them (`linux.enable=amdgpu,nouveau`). Because `kernel.conf` is
+bind a device only when `kernel.conf` names them
+(`linux.enable=amdgpu,nouveau,i915,xe`). Because `kernel.conf` is
 read after the first probe pass, opt-in drivers wait, and the PCI bus is
 rescanned once it has been read (`kpi_pci_rescan`); a device left unbound
 gets a log line naming the driver and the switch.

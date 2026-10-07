@@ -66,3 +66,6 @@ lib/maple_tree.c
 # so every driver that registers a sensor expects it.
 module: hwmon
 drivers/hwmon/hwmon.c
+# The auxiliary bus (AUXILIARY_BUS is on for i915/xe's GSC and audio).
+module: auxiliary
+drivers/base/auxiliary.c

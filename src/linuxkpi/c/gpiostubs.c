@@ -15,6 +15,7 @@
 #include <linux/gpio/driver.h>
 #include <linux/gpio/machine.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/machine.h>
 #include <linux/pinctrl/devinfo.h>
 #include <drm/drm_panel.h>
 #include "kpi.h"
@@ -221,6 +222,25 @@ void __weak clk_disable(struct clk *clk)
 }
 
 unsigned long __weak clk_get_rate(struct clk *clk)
+{
+	return 0;
+}
+
+int __weak gpiod_set_value(struct gpio_desc *desc, int value)
+{
+	return -EINVAL;
+}
+
+struct pinctrl *__weak devm_pinctrl_get(struct device *dev)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+void __weak devm_pinctrl_put(struct pinctrl *p)
+{
+}
+
+int __weak pinctrl_register_mappings(const struct pinctrl_map *map, unsigned int num_maps)
 {
 	return 0;
 }

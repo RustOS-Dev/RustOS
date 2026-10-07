@@ -1,0 +1,8 @@
+# What i915 needs from outside drivers/gpu (M40): the Intel GTT helper
+# (integrated GPUs' graphics aperture, without AGP) and the IOSF sideband
+# bus (punit/display PLLs on Atom-class SoCs).
+kpi:intelgfx.c
+module: intel_gtt
+drivers/char/agp/intel-gtt.c
+module: iosf_mbi
+arch/x86/platform/intel/iosf_mbi.c

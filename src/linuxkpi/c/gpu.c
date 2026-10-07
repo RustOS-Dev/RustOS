@@ -34,6 +34,22 @@
 #include <linux/hrtimer.h>
 #include <linux/seq_file.h>
 #include <linux/dcache.h>
+#include <linux/cpufreq.h>
+#include <linux/irq_work.h>
+#include <linux/interrupt.h>
+#include <linux/mmu_notifier.h>
+#include <linux/oom.h>
+#include <linux/relay.h>
+#include <linux/stop_machine.h>
+#include <linux/sysctl.h>
+#include <linux/vmalloc.h>
+#include <linux/writeback.h>
+#include <linux/irq.h>
+#include <linux/sched/clock.h>
+#include <linux/fs.h>
+#include <drm/drm_gpusvm.h>
+#include <linux/devcoredump.h>
+#include <linux/sched/mm.h>
 #include "kpi.h"
 
 /* ------------------------------------------------------- kthread workers */
@@ -590,4 +606,425 @@ char *d_path(const struct path *path, char *buf, int buflen)
 char *mangle_path(char *s, const char *p, const char *esc)
 {
 	return NULL;
+}
+
+/* ------------------------------------------------------- i915 and xe */
+
+int __cond_resched_lock(spinlock_t *lock)
+{
+	return 0;
+}
+
+int _atomic_dec_and_lock_irqsave(atomic_t *atomic, spinlock_t *lock, unsigned long *flags)
+{
+	if (atomic_add_unless(atomic, -1, 1))
+		return 0;
+	spin_lock_irqsave(lock, *flags);
+	if (atomic_dec_and_test(atomic))
+		return 1;
+	spin_unlock_irqrestore(lock, *flags);
+	return 0;
+}
+
+bool refcount_dec_and_lock(refcount_t *r, spinlock_t *lock)
+{
+	if (refcount_dec_not_one(r))
+		return false;
+	spin_lock(lock);
+	if (!refcount_dec_and_test(r)) {
+		spin_unlock(lock);
+		return false;
+	}
+	return true;
+}
+
+bool refcount_dec_and_lock_irqsave(refcount_t *r, spinlock_t *lock, unsigned long *flags)
+{
+	if (refcount_dec_not_one(r))
+		return false;
+	spin_lock_irqsave(lock, *flags);
+	if (!refcount_dec_and_test(r)) {
+		spin_unlock_irqrestore(lock, *flags);
+		return false;
+	}
+	return true;
+}
+
+/* Polled RCU grace periods: every cookie may need a full grace period. */
+unsigned long get_state_synchronize_rcu(void)
+{
+	return 0;
+}
+
+void cond_synchronize_rcu(unsigned long oldstate)
+{
+	synchronize_rcu();
+}
+
+static void kpi_rcu_work_fn(struct rcu_head *rcu)
+{
+	struct rcu_work *rwork = container_of(rcu, struct rcu_work, rcu);
+
+	queue_work(rwork->wq, &rwork->work);
+}
+
+bool queue_rcu_work(struct workqueue_struct *wq, struct rcu_work *rwork)
+{
+	rwork->wq = wq;
+	call_rcu(&rwork->rcu, kpi_rcu_work_fn);
+	return true;
+}
+
+/* Interrupt descriptors for drivers' own irq chips (LPE audio, GSC) are
+ * not provided: those helpers stay off. */
+int __irq_alloc_descs(int irq, unsigned int from, unsigned int cnt, int node,
+		      struct module *owner, const struct irq_affinity_desc *affinity)
+{
+	return -ENOMEM;
+}
+
+void irq_free_descs(unsigned int irq, unsigned int cnt)
+{
+}
+
+bool synchronize_hardirq(unsigned int irq)
+{
+	synchronize_irq(irq);
+	return true;
+}
+
+void irq_work_sync(struct irq_work *work)
+{
+	while (irq_work_is_busy(work))
+		cpu_relax();
+}
+
+void tasklet_unlock_spin_wait(struct tasklet_struct *t)
+{
+	while (test_bit(TASKLET_STATE_RUN, &t->state))
+		cpu_relax();
+}
+
+long io_schedule_timeout(long timeout)
+{
+	return schedule_timeout(timeout);
+}
+
+u64 local_clock(void)
+{
+	return ktime_get_ns();
+}
+
+/* Runs @fn with interrupts off on this CPU; the others keep running (the
+ * callers, i915's Broxton GGTT workaround, tolerate that on one GPU). */
+int stop_machine(cpu_stop_fn_t fn, void *data, const struct cpumask *cpus)
+{
+	unsigned long flags;
+	int ret;
+
+	local_irq_save(flags);
+	ret = fn(data);
+	local_irq_restore(flags);
+	return ret;
+}
+
+void on_each_cpu_cond_mask(smp_cond_func_t cond_func, smp_call_func_t func, void *info,
+			   bool wait, const struct cpumask *mask)
+{
+	preempt_disable();
+	if (!cond_func || cond_func(smp_processor_id(), info))
+		func(info);
+	preempt_enable();
+}
+
+struct cpufreq_policy *cpufreq_cpu_get(unsigned int cpu)
+{
+	return NULL;
+}
+
+void cpufreq_cpu_put(struct cpufreq_policy *policy)
+{
+}
+
+unsigned int tsc_khz;
+pteval_t __supported_pte_mask = ~0ULL;
+
+static int __init kpi_tsc_khz_init(void)
+{
+	tsc_khz = rustos_kpi_tsc_khz();
+	return 0;
+}
+core_initcall(kpi_tsc_khz_init);
+
+/* RustOS programs the PAT with write-combining. */
+bool pat_enabled(void)
+{
+	return true;
+}
+
+int set_pages_uc(struct page *page, int numpages)
+{
+	return 0;
+}
+
+void *vmap_pfn(unsigned long *pfns, unsigned int count, pgprot_t prot)
+{
+	u64 *phys = kmalloc_array(count, sizeof(*phys), GFP_KERNEL);
+	void *v;
+
+	if (!phys)
+		return NULL;
+	for (unsigned int i = 0; i < count; i++)
+		phys[i] = (u64)pfns[i] << PAGE_SHIFT;
+	v = rustos_kpi_vmap(phys, count);
+	kfree(phys);
+	return v;
+}
+
+void unlock_page(struct page *page)
+{
+	folio_unlock(page_folio(page));
+}
+
+bool folio_redirty_for_writepage(struct writeback_control *wbc, struct folio *folio)
+{
+	return folio_mark_dirty(folio);
+}
+
+/* No swap: shmem objects are never written back. */
+struct folio *writeback_iter(struct address_space *mapping, struct writeback_control *wbc,
+			     struct folio *folio, int *error)
+{
+	*error = 0;
+	return NULL;
+}
+
+ssize_t kernel_write(struct file *file, const void *buf, size_t count, loff_t *pos)
+{
+	return -EOPNOTSUPP;
+}
+
+struct file *get_file_active(struct file **f)
+{
+	struct file *file = READ_ONCE(*f);
+
+	if (file)
+		get_file(file);
+	return file;
+}
+
+/* Linux pids are not tracked. */
+struct pid *get_task_pid(struct task_struct *task, enum pid_type type)
+{
+	return NULL;
+}
+
+/* User-space VMAs are RustOS's, not Linux mm structures: the legacy
+ * I915_GEM_MMAP ioctl (vm_mmap) is unsupported; mmap offsets work. */
+struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
+{
+	return NULL;
+}
+
+unsigned long vm_mmap(struct file *file, unsigned long addr, unsigned long len,
+		      unsigned long prot, unsigned long flag, unsigned long offset)
+{
+	return -ENODEV;
+}
+
+int compat_vma_mmap_prepare(struct file *file, struct vm_area_struct *vma)
+{
+	return -ENODEV;
+}
+
+/* No userptr objects (CONFIG_DRM_I915_USERPTR is off; xe's SVM needs
+ * HMM): interval notifiers cannot be registered. */
+int mmu_interval_notifier_insert(struct mmu_interval_notifier *interval_sub,
+				 struct mm_struct *mm, unsigned long start,
+				 unsigned long length,
+				 const struct mmu_interval_notifier_ops *ops)
+{
+	return -ENODEV;
+}
+
+void mmu_interval_notifier_remove(struct mmu_interval_notifier *interval_sub)
+{
+}
+
+unsigned long mmu_interval_read_begin(struct mmu_interval_notifier *interval_sub)
+{
+	return 0;
+}
+
+/* Memory-pressure and vmap-purge notifiers never fire. */
+int register_oom_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+int unregister_oom_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+int register_vmap_purge_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+int unregister_vmap_purge_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+/* relayfs (GuC log streaming) is not provided: the log relay stays off. */
+struct rchan *relay_open(const char *base_filename, struct dentry *parent, size_t subbuf_size,
+			 size_t n_subbufs, const struct rchan_callbacks *cb, void *private_data)
+{
+	return NULL;
+}
+
+void relay_close(struct rchan *chan)
+{
+}
+
+void relay_flush(struct rchan *chan)
+{
+}
+
+int relay_buf_full(struct rchan_buf *buf)
+{
+	return 0;
+}
+
+size_t relay_switch_subbuf(struct rchan_buf *buf, size_t length)
+{
+	return 0;
+}
+
+/* No sysctl tree (/proc/sys): tables are accepted and never shown. */
+const int sysctl_vals[] = { 0, 1, 2, 3, 4, 100, 200, 1000, 3000, INT_MAX, 65535, -1 };
+
+struct ctl_table_header *register_sysctl_sz(const char *path, const struct ctl_table *table,
+					    size_t table_size)
+{
+	return NULL;
+}
+
+void unregister_sysctl_table(struct ctl_table_header *table)
+{
+}
+
+int proc_dointvec_minmax(const struct ctl_table *table, int write, void *buffer,
+			 size_t *lenp, loff_t *ppos)
+{
+	return -EINVAL;
+}
+
+ssize_t perf_event_sysfs_show(struct device *dev, struct device_attribute *attr, char *page)
+{
+	return 0;
+}
+
+/* debugfs is off: these back files that are never created. */
+loff_t __weak generic_file_llseek(struct file *file, loff_t offset, int whence)
+{
+	return -ESPIPE;
+}
+
+ssize_t simple_attr_read(struct file *file, char __user *buf, size_t len, loff_t *ppos)
+{
+	return -EINVAL;
+}
+
+ssize_t simple_attr_write(struct file *file, const char __user *buf, size_t len, loff_t *ppos)
+{
+	return -EINVAL;
+}
+
+int acpi_video_register(void)
+{
+	return -ENODEV;
+}
+
+void acpi_video_unregister(void)
+{
+}
+
+/* Linux mm_structs are not tracked (current->mm is NULL): nothing to
+ * pin or switch to. */
+void __mmdrop(struct mm_struct *mm)
+{
+}
+
+void mmput(struct mm_struct *mm)
+{
+}
+
+void kthread_use_mm(struct mm_struct *mm)
+{
+}
+
+void kthread_unuse_mm(struct mm_struct *mm)
+{
+}
+
+struct task_struct *get_pid_task(struct pid *pid, enum pid_type type)
+{
+	return NULL;
+}
+
+void dev_coredump_put(struct device *dev)
+{
+}
+
+/*
+ * drm_gpusvm (drivers/gpu/drm/drm_gpusvm.c) in its "simple" mode, which xe
+ * uses for userptr bookkeeping: there is no HMM, so pages of user memory
+ * cannot be collected and userptr objects fail to bind.
+ */
+int drm_gpusvm_init(struct drm_gpusvm *gpusvm, const char *name, struct drm_device *drm,
+		    struct mm_struct *mm, unsigned long mm_start, unsigned long mm_range,
+		    unsigned long notifier_size, const struct drm_gpusvm_ops *ops,
+		    const unsigned long *chunk_sizes, int num_chunks)
+{
+	if (mm)
+		return -EOPNOTSUPP;	/* full SVM needs HMM */
+	if (ops || num_chunks || mm_range || notifier_size)
+		return -EINVAL;
+	gpusvm->name = name;
+	gpusvm->drm = drm;
+	gpusvm->mm = NULL;
+	gpusvm->mm_start = mm_start;
+	gpusvm->mm_range = mm_range;
+	gpusvm->notifier_size = notifier_size;
+	gpusvm->ops = ops;
+	gpusvm->chunk_sizes = chunk_sizes;
+	gpusvm->num_chunks = num_chunks;
+	gpusvm->root = RB_ROOT_CACHED;
+	INIT_LIST_HEAD(&gpusvm->notifier_list);
+	init_rwsem(&gpusvm->notifier_lock);
+	return 0;
+}
+
+void drm_gpusvm_fini(struct drm_gpusvm *gpusvm)
+{
+}
+
+int drm_gpusvm_get_pages(struct drm_gpusvm *gpusvm, struct drm_gpusvm_pages *svm_pages,
+			 struct mm_struct *mm, struct mmu_interval_notifier *notifier,
+			 unsigned long pages_start, unsigned long pages_end,
+			 const struct drm_gpusvm_ctx *ctx)
+{
+	return -EOPNOTSUPP;
+}
+
+void drm_gpusvm_unmap_pages(struct drm_gpusvm *gpusvm, struct drm_gpusvm_pages *svm_pages,
+			    unsigned long npages, const struct drm_gpusvm_ctx *ctx)
+{
+}
+
+void drm_gpusvm_free_pages(struct drm_gpusvm *gpusvm, struct drm_gpusvm_pages *svm_pages,
+			   unsigned long npages)
+{
 }

@@ -186,6 +186,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] i915 with display (Gen9 to Meteor Lake) and xe without display compiled from Linux (lists generated, xe via `--alias`); i915 in release images, opt-in with `linux.enable=i915`; GuC/HuC/GSC/DMC firmware on the storage partition; stolen memory from GGC/BDSM. Compiled, untested on hardware
   - [ ] Bring-up on Intel hardware: needs hardware
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
+  - [x] Mesa 26.2 in `ports/weston`: EGL (GBM, Wayland), GLES 3.1, softpipe through kms_swrast on any KMS display (`gl-kmscube`), Weston's GL renderer (`desktop-gl`); virgl, zink, iris, RADV and ANV built (host `mesa_clc` for Intel); Vulkan loader and `vulkaninfo` (`gl-kmscube`). GPU drivers untested on hardware
+  - [ ] Not built: llvmpipe/lavapipe (LLVM not ported), radeonsi (libelf; AMD OpenGL is zink on RADV), NVK (Rust not cross-built for RustOS), desktop GL through GLX/glvnd
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
 
 ## Context

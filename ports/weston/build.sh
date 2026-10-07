@@ -67,6 +67,23 @@ meson_pkg() {
     echo "weston port: $name" >&2
 }
 
+# cmake_pkg NAME SRCDIR [CMAKE OPTIONS...]: cross-build and stage a CMake project.
+cmake_pkg() {
+    name="$1"; dir="$2"; shift 2
+    b="$BUILD/b-$name"
+    rm -rf "$b"
+    PKG_CONFIG="$ROOT/tools/cross/rustos-pkg-config" cmake -G Ninja -S "$dir" -B "$b" \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+        -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$ROOT/tools/rustos-c++" \
+        -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_FIND_ROOT_PATH="$STAGE/usr/local" -DCMAKE_PREFIX_PATH="$STAGE/usr/local" \
+        "$@" >"$BUILD/$name.log" 2>&1 || { tail -30 "$BUILD/$name.log" >&2; exit 1; }
+    ninja -C "$b" >>"$BUILD/$name.log" 2>&1 || { tail -40 "$BUILD/$name.log" >&2; exit 1; }
+    DESTDIR="$STAGE" ninja -C "$b" install >>"$BUILD/$name.log" 2>&1
+    mark "$name"
+    echo "weston port: $name" >&2
+}
+
 # autotools_pkg NAME SRCDIR [CONFIGURE OPTIONS...]
 autotools_pkg() {
     name="$1"; dir="$2"; shift 2
@@ -120,6 +137,12 @@ fetch https://gitlab.freedesktop.org/emersion/libdisplay-info/-/releases/0.2.0/d
     5a2f002a16f42dd3540c8846f80a90b8f4bdcd067a94b9d2087bc2feae974176 "$SRC/libdisplay-info-0.2.0.tar.xz"
 fetch https://archive.mesa3d.org/mesa-26.2.4.tar.xz \
     bce5f7fbebb934373b86c999a064d52fb5065878dc57f287f95346648ec832e9 "$SRC/mesa-26.2.4.tar.xz"
+fetch_git https://github.com/KhronosGroup/Vulkan-Headers v1.4.365 \
+    c46850864f4661461b0f6cb9922c058ffea4915e "$SRC/Vulkan-Headers-1.4.365"
+fetch_git https://github.com/KhronosGroup/Vulkan-Loader v1.4.365 \
+    f866657ff687a36d767cd7783bab800e31ebafaa "$SRC/Vulkan-Loader-1.4.365"
+fetch_git https://github.com/KhronosGroup/Vulkan-Tools v1.4.365 \
+    f13d435dd50dc616db0c10e7bac87cd3aa7c82e3 "$SRC/Vulkan-Tools-1.4.365"
 fetch_git_commit https://gitlab.freedesktop.org/mesa/kmscube.git \
     f60e50e887d3c49e91ac9b06d8199b36152632fa "$SRC/kmscube-f60e50e"
 fetch https://gitlab.freedesktop.org/wayland/weston/-/releases/14.0.1/downloads/weston-14.0.1.tar.xz \
@@ -222,6 +245,18 @@ built mesa || meson_pkg mesa "$(unpack "$SRC/mesa-26.2.4.tar.xz")" \
     -Dvideo-codecs= -Dgallium-va=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
     -Dlmsensors=disabled -Dzstd=disabled -Dxmlconfig=enabled -Dbuild-tests=false \
     -Dandroid-libbacktrace=disabled
+# The Vulkan loader (libvulkan.so.1: Vulkan applications, and zink, which
+# runs OpenGL on RADV/ANV) and vulkaninfo.
+built vulkan-headers || cmake_pkg vulkan-headers "$SRC/Vulkan-Headers-1.4.365"
+built vulkan-loader || cmake_pkg vulkan-loader "$SRC/Vulkan-Loader-1.4.365" \
+    -DBUILD_WSI_XCB_SUPPORT=OFF -DBUILD_WSI_XLIB_SUPPORT=OFF -DBUILD_WSI_XLIB_XRANDR_SUPPORT=OFF \
+    -DBUILD_WSI_WAYLAND_SUPPORT=ON -DBUILD_TESTS=OFF -DUSE_GAS=OFF \
+    -DVulkanHeaders_DIR="$STAGE/usr/local/share/cmake/VulkanHeaders"
+built vulkaninfo || cmake_pkg vulkaninfo "$SRC/Vulkan-Tools-1.4.365" \
+    -DBUILD_CUBE=OFF -DBUILD_ICD=OFF -DBUILD_VULKANINFO=ON -DBUILD_TESTS=OFF \
+    -DBUILD_WSI_XCB_SUPPORT=OFF -DBUILD_WSI_XLIB_SUPPORT=OFF -DBUILD_WSI_WAYLAND_SUPPORT=ON \
+    -DBUILD_WSI_DIRECTFB_SUPPORT=OFF \
+    -DVulkanHeaders_DIR="$STAGE/usr/local/share/cmake/VulkanHeaders"
 if ! built kmscube; then
     rm -rf "$BUILD/src/kmscube"
     cp -r "$SRC/kmscube-f60e50e" "$BUILD/src/kmscube"

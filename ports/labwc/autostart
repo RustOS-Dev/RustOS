@@ -1,0 +1,2 @@
+# Run by labwc at startup (sh syntax). The RustOS default opens a terminal.
+foot >/dev/null 2>&1 &

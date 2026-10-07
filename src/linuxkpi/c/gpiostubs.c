@@ -18,6 +18,7 @@
 #include <linux/pinctrl/machine.h>
 #include <linux/pinctrl/devinfo.h>
 #include <drm/drm_panel.h>
+#include <video/nomodeset.h>
 #include "kpi.h"
 
 /* drivers/base/pinctrl.c: devices have no pin control states (ACPI
@@ -243,4 +244,11 @@ void __weak devm_pinctrl_put(struct pinctrl *p)
 int __weak pinctrl_register_mappings(const struct pinctrl_map *map, unsigned int num_maps)
 {
 	return 0;
+}
+
+/* drivers/video/nomodeset.c (DRM builds): without DRM, GPU drivers are
+ * not restricted to firmware framebuffers. HDA's i915 audio link asks. */
+bool __weak video_firmware_drivers_only(void)
+{
+	return false;
 }

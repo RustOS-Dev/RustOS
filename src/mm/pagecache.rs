@@ -417,6 +417,28 @@ impl ShmObject {
         pages.insert(idx, p);
         Ok(p)
     }
+
+    /// Frame of page `idx` if it was ever touched.
+    pub fn existing_page(&self, idx: u64) -> Option<u64> {
+        self.pages.lock().get(&idx).copied()
+    }
+
+    /// Drop the object's pages from `idx` on (mappings keep their own
+    /// references to frames they map).
+    pub fn truncate_pages(&self, idx: u64) {
+        let gone = self.pages.lock().split_off(&idx);
+        for (_, p) in gone {
+            frame_release(p);
+        }
+    }
+
+    /// Zero bytes `from..` of page `idx` (the tail of a shrunk file).
+    pub fn zero_tail(&self, idx: u64, from: usize) {
+        if let Some(p) = self.existing_page(idx) {
+            let ptr = crate::mm::phys_ptr::<u8>(p);
+            unsafe { core::ptr::write_bytes(ptr.add(from), 0, FRAME_SIZE as usize - from) };
+        }
+    }
 }
 
 impl Drop for ShmObject {

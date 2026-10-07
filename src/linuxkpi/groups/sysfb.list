@@ -1,0 +1,7 @@
+# The firmware (UEFI GOP) framebuffer as a DRM device: simpledrm on a
+# simple-framebuffer platform device (M35).
+module: simpledrm
+drivers/gpu/drm/sysfb/drm_sysfb.c
+drivers/gpu/drm/sysfb/drm_sysfb_modeset.c
+drivers/gpu/drm/sysfb/simpledrm.c
+kpi:sysfb.c

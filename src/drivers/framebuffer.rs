@@ -10,7 +10,7 @@
 //! reports.
 
 use crate::sync::Mutex;
-use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
+use bootloader_api::info::{FrameBuffer, PixelFormat};
 use core::fmt;
 
 const FONT_8X16: &[u8] = include_bytes!("../../assets/font8x16.bin");
@@ -109,9 +109,24 @@ enum Parse {
     Osc,
 }
 
+/// Geometry of the buffer the console draws on.
+#[derive(Clone, Copy, Debug)]
+pub struct FbInfo {
+    pub byte_len: usize,
+    pub width: usize,
+    pub height: usize,
+    pub pixel_format: PixelFormat,
+    pub bytes_per_pixel: usize,
+    /// Pixels from the start of a line to the start of the next.
+    pub stride: usize,
+}
+
 pub struct FbConsole {
     fb: &'static mut [u8],
-    info: FrameBufferInfo,
+    info: FbInfo,
+    /// `fb` is the firmware framebuffer (physically contiguous, mappable
+    /// as /dev/fb0), not a display driver's buffer.
+    firmware: bool,
     cols: usize,
     rows: usize,
     cx: usize,
@@ -280,6 +295,7 @@ impl FbConsole {
         for y in 0..self.rows {
             if self.dirty[y] {
                 self.dirty[y] = false;
+                note_damage(y);
                 for x in 0..self.cols {
                     self.render_cell(x, y, false);
                 }
@@ -289,6 +305,7 @@ impl FbConsole {
         }
         if self.cursor_visible && crate::drivers::console::view_is_live() {
             let (x, y) = (self.cx.min(self.cols - 1), self.cy);
+            note_damage(y);
             self.render_cell(x, y, true);
             self.drawn_cursor = Some((x, y));
         }
@@ -819,8 +836,44 @@ impl FbConsole {
     }
 
     /// Raw framebuffer access for /dev/fb0.
-    pub fn framebuffer(&mut self) -> (&mut [u8], FrameBufferInfo) {
+    pub fn framebuffer(&mut self) -> (&mut [u8], FbInfo) {
         (self.fb, self.info)
+    }
+
+    /// Draw on `fb` from now on, with the text kept (the newest lines, if
+    /// the new screen has fewer).
+    fn retarget(&mut self, fb: &'static mut [u8], info: FbInfo, firmware: bool) {
+        let cols = (info.width / FONT_WIDTH).clamp(1, MAX_COLS);
+        let rows = (info.height / FONT_HEIGHT).clamp(1, MAX_ROWS);
+        if (cols, rows) != (self.cols, self.rows) {
+            let (oc, or) = (self.cols, self.rows);
+            let old: alloc::vec::Vec<Cell> = self.grid()[..oc * or].to_vec();
+            let skip = or.saturating_sub(rows);
+            let blank = self.blank();
+            for y in 0..rows {
+                for x in 0..cols {
+                    let src = y + skip;
+                    self.grid()[y * cols + x] = if src < or && x < oc {
+                        old[src * oc + x]
+                    } else {
+                        blank
+                    };
+                }
+            }
+            self.cy = self.cy.saturating_sub(skip).min(rows - 1);
+            self.cx = self.cx.min(cols - 1);
+            self.cols = cols;
+            self.rows = rows;
+            self.scroll_top = 0;
+            self.scroll_bottom = rows - 1;
+            self.alt = None;
+        }
+        self.fb = fb;
+        self.info = info;
+        self.firmware = firmware;
+        self.drawn_cursor = None;
+        self.mark_all();
+        self.render();
     }
 }
 
@@ -946,13 +999,22 @@ impl fmt::Write for FbConsole {
 /// # Safety
 /// Must be called once with the bootloader's framebuffer.
 pub unsafe fn init(framebuffer: FrameBuffer) {
-    let info = framebuffer.info();
+    let bi = framebuffer.info();
+    let info = FbInfo {
+        byte_len: bi.byte_len,
+        width: bi.width,
+        height: bi.height,
+        pixel_format: bi.pixel_format,
+        bytes_per_pixel: bi.bytes_per_pixel,
+        stride: bi.stride,
+    };
     let fb = framebuffer.into_buffer();
     let cols = (info.width / FONT_WIDTH).clamp(1, MAX_COLS);
     let rows = (info.height / FONT_HEIGHT).clamp(1, MAX_ROWS);
     let mut con = FbConsole {
         fb,
         info,
+        firmware: true,
         cols,
         rows,
         cx: 0,
@@ -1005,13 +1067,99 @@ pub fn geometry() -> Option<(usize, usize, usize, usize, bool)> {
     })
 }
 
+/// Text rows drawn since the last `take_damage` (first, last; MAX if none).
+static DAMAGE_LO: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(usize::MAX);
+static DAMAGE_HI: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+fn note_damage(row: usize) {
+    use core::sync::atomic::Ordering::Relaxed;
+    DAMAGE_LO.fetch_min(row, Relaxed);
+    DAMAGE_HI.fetch_max(row, Relaxed);
+}
+
+/// Pixel rows drawn since the last call (first, last), for a display
+/// driver that copies from the console's buffer.
+pub fn take_damage() -> Option<(usize, usize)> {
+    use core::sync::atomic::Ordering::Relaxed;
+    // A program draws through /dev/fb0: the whole screen may change.
+    if GRAPHICS.load(core::sync::atomic::Ordering::SeqCst) {
+        return geometry().map(|(_, h, ..)| (0, h.saturating_sub(1)));
+    }
+    let lo = DAMAGE_LO.swap(usize::MAX, Relaxed);
+    let hi = DAMAGE_HI.swap(0, Relaxed);
+    (lo != usize::MAX).then(|| (lo * FONT_HEIGHT, (hi + 1) * FONT_HEIGHT - 1))
+}
+
+/// A display driver took the device (Linux DRM): stop drawing on the
+/// firmware framebuffer. The text is kept for `attach`; meanwhile output
+/// continues on the serial port.
+pub fn release() {
+    let had = x86_64::instructions::interrupts::without_interrupts(|| {
+        CONSOLE.lock().as_mut().map(|c| {
+            let info = c.info;
+            c.retarget(
+                &mut [],
+                FbInfo {
+                    byte_len: 0,
+                    ..info
+                },
+                false,
+            );
+        })
+    });
+    if had.is_some() {
+        crate::println!("[fb] firmware framebuffer handed over to a display driver");
+    }
+}
+
+/// Draw the console on a display driver's buffer (XRGB8888, `pitch`
+/// bytes per line).
+///
+/// # Safety
+/// `ptr..ptr+len` must stay mapped and writable until the next
+/// `attach`/`release`.
+pub unsafe fn attach(ptr: *mut u8, len: usize, width: usize, height: usize, pitch: usize) {
+    let fb = unsafe { core::slice::from_raw_parts_mut(ptr, len) };
+    let info = FbInfo {
+        byte_len: len,
+        width,
+        height,
+        pixel_format: PixelFormat::Bgr,
+        bytes_per_pixel: 4,
+        stride: pitch / 4,
+    };
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        if let Some(c) = CONSOLE.lock().as_mut() {
+            c.retarget(fb, info, false);
+        }
+    });
+    crate::println!("[fb] console on a {}x{} display buffer", width, height);
+}
+
+/// The buffer the console draws on: (address, length, firmware
+/// framebuffer?). A display driver's buffer is virtually contiguous only.
+pub fn buffer() -> Option<(usize, usize, bool)> {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        CONSOLE
+            .lock()
+            .as_mut()
+            .filter(|c| !c.fb.is_empty())
+            .map(|c| (c.fb.as_mut_ptr() as usize, c.fb.len(), c.firmware))
+    })
+}
+
 /// Physical address of the framebuffer (for mmap of /dev/fb0).
 pub fn framebuffer_phys() -> Option<(u64, usize)> {
     x86_64::instructions::interrupts::without_interrupts(|| {
-        CONSOLE.lock().as_mut().and_then(|c| {
-            let virt = c.fb.as_ptr() as u64;
-            let len = c.fb.len();
-            crate::mm::virt_to_phys(virt).map(|p| (p, len))
-        })
+        CONSOLE
+            .lock()
+            .as_mut()
+            .filter(|c| c.firmware)
+            .and_then(|c| {
+                let virt = c.fb.as_ptr() as u64;
+                let len = c.fb.len();
+                crate::mm::virt_to_phys(virt).map(|p| (p, len))
+            })
     })
 }

@@ -104,6 +104,12 @@ impl Inode for DevDir {
         if devs.keys().any(|k| k.starts_with(&dir_prefix)) {
             return Ok(Arc::new(DevDir { prefix: full }));
         }
+        if self.prefix.is_empty() && name == "shm" {
+            // Mount point of the /dev/shm tmpfs.
+            return Ok(Arc::new(DevDir {
+                prefix: String::from("shm"),
+            }));
+        }
         if self.prefix.is_empty() {
             let target = match name {
                 "stdin" => Some("/proc/self/fd/0"),

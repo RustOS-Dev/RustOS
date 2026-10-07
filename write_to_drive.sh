@@ -276,13 +276,18 @@ provision_ax210_firmware() {
     run_as_root mkdir -p "$firmware_dir"
 
     if [[ -z "$source" ]]; then
+        # The image already carries the stock firmware (firmware/stock.list,
+        # in the initramfs); put a copy on the drive too, where updates go.
+        local stock="${SCRIPT_DIR:-.}/target/firmware"
+        if [[ -d "$stock" ]] && [[ -n "$(ls -A "$stock" 2>/dev/null)" ]]; then
+            run_as_root cp -r "$stock/." "$firmware_dir/"
+            echo "Provisioned stock firmware into $firmware_dir"
+            return 0
+        fi
         if source="$(auto_detect_ax210_firmware_source)"; then
             echo "Auto-detected Intel WiFi firmware source: $source"
         else
-            echo "Intel WiFi firmware not provided and no host copy was auto-detected."
-            echo "Copy iwlwifi-ty-a0-gf-a0-72.ucode and iwlwifi-ty-a0-gf-a0.pnvm (from linux-firmware)"
-            echo "into /lib/firmware on the RUSTOS_ROOT partition, or re-run with"
-            echo "--ax210-firmware <file-or-dir> / RUSTOS_AX210_FIRMWARE."
+            echo "Note: no separate firmware copy put on the drive; the image's built-in firmware is used."
             return 0
         fi
     fi
@@ -433,8 +438,44 @@ main() {
     echo "Updating submodules to pinned repository commits..."
     as_build_user git submodule update --init --recursive
 
-    echo "Building kernel (release)..."
-    as_build_user "${CARGO_CMD[@]}" build --release
+    # Wi-Fi/Bluetooth firmware ships in the image (firmware/stock.list);
+    # fetch it first so a missing download stops here rather than producing
+    # an image whose wireless cannot start.
+    echo "Fetching stock firmware (linux-firmware, wireless-regdb)..."
+    if ! as_build_user sh "$SCRIPT_DIR/tools/fetch-firmware.sh"; then
+        echo "Error: could not download the stock firmware (see above)." >&2
+        echo "Check network access to git.kernel.org, or set RUSTOS_FIRMWARE=0 to build without it." >&2
+        [[ "${RUSTOS_FIRMWARE:-1}" == "0" ]] || exit 1
+    fi
+    # Firmware too large for the image (NVIDIA GSP for nouveau, about
+    # 90 MB) goes on the storage partition instead (firmware/storage.list).
+    if [[ "${RUSTOS_FIRMWARE:-1}" != "0" ]]; then
+        echo "Fetching storage-partition firmware (NVIDIA GSP)..."
+        if ! as_build_user sh "$SCRIPT_DIR/tools/fetch-firmware.sh" "$SCRIPT_DIR/target/firmware-storage" "$SCRIPT_DIR/firmware/storage.list"; then
+            echo "Error: could not download the storage-partition firmware (see above)." >&2
+            echo "Check network access to git.kernel.org, or set RUSTOS_FIRMWARE=0 to build without it." >&2
+            exit 1
+        fi
+    fi
+
+    # Linux drivers (LinuxKPI) are part of the stock image: MediaTek
+    # MT7921/MT7922 Wi-Fi, the Linux 802.11 stack and AMD amdgpu (which binds
+    # only with kernel.conf linux.enable=amdgpu). They are compiled from
+    # C and need clang 15 or newer. RUSTOS_FEATURES overrides the feature set
+    # (empty for a kernel with RustOS's own drivers only).
+    FEATURES="${RUSTOS_FEATURES-linux-drivers,linux-gpu}"
+    if [[ -n "$FEATURES" ]]; then
+        clang_major="$( (${RUSTOS_CLANG:-clang} --version 2>/dev/null || true) | sed -n 's/.*version \([0-9]*\).*/\1/p' | head -1)"
+        if [[ -z "$clang_major" || "$clang_major" -lt 15 ]]; then
+            echo "Error: building the stock Linux drivers (MediaTek Wi-Fi) needs clang 15 or newer." >&2
+            echo "Install it (Debian/Ubuntu: sudo apt install clang; Fedora: sudo dnf install clang)," >&2
+            echo "or set RUSTOS_FEATURES= to build without them." >&2
+            exit 1
+        fi
+    fi
+
+    echo "Building kernel (release${FEATURES:+, features: $FEATURES})..."
+    as_build_user "${CARGO_CMD[@]}" build --release ${FEATURES:+--features "$FEATURES"}
 
     KERNEL_ELF=$(find "$SCRIPT_DIR/target" -path "*/release/rustos" -not -name "*.d" | head -1)
     if [[ -z "$KERNEL_ELF" || ! -f "$KERNEL_ELF" ]]; then
@@ -554,6 +595,11 @@ main() {
     run_as_root mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
     populate_rootfs_skeleton "$MOUNT_TMP"
     provision_ax210_firmware "$MOUNT_TMP" "$AX210_FIRMWARE_SOURCE"
+    if [[ -d "$SCRIPT_DIR/target/firmware-storage" ]]; then
+        run_as_root mkdir -p "$MOUNT_TMP/lib/firmware"
+        run_as_root cp -r "$SCRIPT_DIR/target/firmware-storage/." "$MOUNT_TMP/lib/firmware/"
+        echo "Provisioned storage-partition firmware into $MOUNT_TMP/lib/firmware"
+    fi
     run_as_root umount "$MOUNT_TMP"
     rmdir "$MOUNT_TMP"
 

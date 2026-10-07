@@ -158,26 +158,46 @@ fn reg_children(key: &str) -> Vec<(String, FileType)> {
     } else {
         format!("{key}/")
     };
-    REG.read()
+    let mut out: Vec<(String, FileType)> = Vec::new();
+    for (k, r) in REG
+        .read()
         .range(prefix.clone()..)
         .take_while(|(k, _)| k.starts_with(&prefix))
-        .filter(|(k, _)| !k[prefix.len()..].contains('/'))
-        .map(|(k, r)| {
-            let kind = match r {
-                Reg::Dir => FileType::Directory,
-                Reg::File(_) => FileType::Regular,
-                Reg::Link(_) => FileType::Symlink,
-            };
-            (k[prefix.len()..].into(), kind)
-        })
-        .collect()
+    {
+        let rest = &k[prefix.len()..];
+        // Deeper entries imply their parent directories.
+        let (name, kind) = match rest.split_once('/') {
+            Some((dir, _)) => (dir, FileType::Directory),
+            None => (
+                rest,
+                match r {
+                    Reg::Dir => FileType::Directory,
+                    Reg::File(_) => FileType::Regular,
+                    Reg::Link(_) => FileType::Symlink,
+                },
+            ),
+        };
+        if !out.iter().any(|(n, _)| n == name) {
+            out.push((name.into(), kind));
+        }
+    }
+    out
 }
 
 fn reg_node(key: &str) -> Option<Node> {
-    match REG.read().get(key)? {
-        Reg::Dir => Some(Node::Dir(Vec::new())),
-        Reg::File(a) => Some(Node::Attr(a.clone())),
-        Reg::Link(t) => Some(Node::Link(t.clone())),
+    let reg = REG.read();
+    match reg.get(key) {
+        Some(Reg::Dir) => Some(Node::Dir(Vec::new())),
+        Some(Reg::File(a)) => Some(Node::Attr(a.clone())),
+        Some(Reg::Link(t)) => Some(Node::Link(t.clone())),
+        // A directory nobody registered, with registered entries below.
+        None => {
+            let prefix = format!("{key}/");
+            reg.range(prefix.clone()..)
+                .next()
+                .is_some_and(|(k, _)| k.starts_with(&prefix))
+                .then(|| Node::Dir(Vec::new()))
+        }
     }
 }
 

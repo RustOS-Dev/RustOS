@@ -108,6 +108,8 @@ pub struct Thread {
     acct_folded: AtomicBool,
     /// Signal mask, thread-directed pending signals, alternate stack.
     pub sig: crate::process::signal::ThreadSignals,
+    /// `core::panic::Location` of the last state change (state dumps).
+    state_site: AtomicUsize,
 }
 
 unsafe impl Send for Thread {}
@@ -123,8 +125,25 @@ impl Thread {
         }
     }
 
+    #[track_caller]
     fn set_state(&self, s: State) {
         self.state.store(s as u8, Ordering::SeqCst);
+        self.note_state_site();
+    }
+
+    /// Remember where the state last changed (state dumps).
+    #[track_caller]
+    fn note_state_site(&self) {
+        self.state_site.store(
+            core::panic::Location::caller() as *const _ as usize,
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Where the state last changed ("file:line"), for state dumps.
+    pub fn state_site(&self) -> Option<&'static core::panic::Location<'static>> {
+        let p = self.state_site.load(Ordering::Relaxed) as *const core::panic::Location<'static>;
+        unsafe { p.as_ref() }
     }
 
     pub fn kstack_top(&self) -> u64 {
@@ -219,6 +238,21 @@ impl Ord for TimerEntry {
 fn push_timer(deadline: u64, kind: TimerKind) {
     let seq = TIMER_SEQ.fetch_add(1, Ordering::Relaxed);
     push_timer_seq(deadline, seq, kind);
+}
+
+/// Pending timers and how far away the earliest is (ms; negative: late),
+/// for state dumps.
+pub fn timer_summary() -> Option<(usize, i64)> {
+    let now = crate::time::nanos() as i64;
+    irqsave(|| {
+        TIMERS.try_lock().map(|h| {
+            (
+                h.len(),
+                h.peek()
+                    .map_or(0, |e| (e.0.deadline as i64 - now) / 1_000_000),
+            )
+        })
+    })
 }
 
 fn push_timer_seq(deadline: u64, seq: u64, kind: TimerKind) {
@@ -383,6 +417,7 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         stime: AtomicU64::new(0),
         acct_folded: AtomicBool::new(false),
         sig: crate::process::signal::ThreadSignals::new(),
+        state_site: AtomicUsize::new(0),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t
@@ -575,7 +610,9 @@ pub fn make_ready(t: Arc<Thread>) {
 }
 
 /// Wake a blocked thread (no-op if it is not blocked).
+#[track_caller]
 pub fn wake(t: &Arc<Thread>) {
+    let site = core::panic::Location::caller() as *const _ as usize;
     irqsave(|| {
         if t.state
             .compare_exchange(
@@ -586,11 +623,23 @@ pub fn wake(t: &Arc<Thread>) {
             )
             .is_ok()
         {
+            t.state_site.store(site, Ordering::Relaxed);
             enqueue(t.clone());
         } else {
             t.wakeup_pending.store(true, Ordering::SeqCst);
         }
     });
+}
+
+/// Whether `tid` is in some run queue (state dumps; may miss a thread
+/// being moved between queues).
+pub fn is_queued(tid: Tid) -> bool {
+    let n = cpu::cpu_count().clamp(1, cpu::MAX_CPUS as u32) as usize;
+    irqsave(|| {
+        RUN_QUEUES[..n]
+            .iter()
+            .any(|q| q.try_lock().is_some_and(|q| q.iter().any(|t| t.tid == tid)))
+    })
 }
 
 /// Number of runnable threads queued on each CPU.
@@ -705,8 +754,9 @@ pub fn timer_tick() {
     cputime::move_irq_to_softirq(crate::time::rdtsc().wrapping_sub(t0));
     let pc = cpu::this();
     // RCU readers run with preemption disabled: a tick that interrupted
-    // preemptible code is a quiescent state for this CPU.
-    if pc.preempt_count.load(Ordering::Relaxed) == 0 {
+    // preemptible code (only this interrupt's own hard-IRQ count) is a
+    // quiescent state for this CPU.
+    if pc.preempt_count.load(Ordering::Relaxed) & !cpu::HARDIRQ_MASK == 0 {
         pc.rcu_qs.fetch_add(1, Ordering::Relaxed);
     }
     #[cfg(feature = "linuxkpi")]

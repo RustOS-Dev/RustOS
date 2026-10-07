@@ -26,6 +26,9 @@ pub const MAP_ANONYMOUS: u32 = 0x20;
 
 /// Software bit marking a copy-on-write page.
 const COW_BIT: F = F::BIT_9;
+/// Marks device pages: not owned by the address space (never released or
+/// copied on write).
+const DEVICE_BIT: F = F::BIT_10;
 
 /// Flags for intermediate page tables of user mappings. Permissions are
 /// enforced at the leaf, so parents are always writable and user-accessible
@@ -42,7 +45,13 @@ pub enum Backing {
     /// Zero-filled anonymous memory.
     Anon,
     /// Direct mapping of physical memory (device memory such as /dev/fb0).
-    Phys { base: u64 },
+    Phys { base: u64, cache: mm::Cache },
+    /// Device pages supplied on fault; `pgoff` is the file page of the
+    /// area's start.
+    Device {
+        pages: Arc<dyn crate::vfs::MapPages>,
+        pgoff: u64,
+    },
     /// File pages from the page cache; `offset` is the file offset of the
     /// area's start.
     File {
@@ -57,11 +66,23 @@ pub enum Backing {
 }
 
 impl Backing {
+    /// Device memory: pages not owned by the address space.
+    fn is_device(&self) -> bool {
+        matches!(self, Backing::Phys { .. } | Backing::Device { .. })
+    }
+
     /// The backing of the part of an area starting `delta` bytes in.
     fn advanced(&self, delta: u64) -> Backing {
         match self {
             Backing::Anon => Backing::Anon,
-            Backing::Phys { base } => Backing::Phys { base: base + delta },
+            Backing::Phys { base, cache } => Backing::Phys {
+                base: base + delta,
+                cache: *cache,
+            },
+            Backing::Device { pages, pgoff } => Backing::Device {
+                pages: pages.clone(),
+                pgoff: pgoff + delta / FRAME_SIZE,
+            },
             Backing::File { inode, offset } => Backing::File {
                 inode: inode.clone(),
                 offset: offset + delta,
@@ -200,7 +221,7 @@ impl AddressSpace {
                 right.backing = a.backing.advanced(end - a.start);
                 self.areas.insert(right.start, right);
             }
-            let is_phys = matches!(a.backing, Backing::Phys { .. });
+            let is_phys = a.backing.is_device();
             self.unmap_pages(a.start.max(start), a.end.min(end), !is_phys);
         }
     }
@@ -265,7 +286,9 @@ impl AddressSpace {
                 if let TranslateResult::Mapped { flags, .. } =
                     mapper.translate(page.start_address())
                 {
-                    let mut nf = leaf_flags(prot);
+                    // The memory type and device marker stay.
+                    let mut nf =
+                        leaf_flags(prot) | (flags & (F::NO_CACHE | F::WRITE_THROUGH | DEVICE_BIT));
                     if flags.contains(COW_BIT) {
                         nf.remove(F::WRITABLE);
                         nf |= COW_BIT;
@@ -390,7 +413,19 @@ impl AddressSpace {
                         }
                         None => return Err("out of memory"),
                     },
-                    Backing::Phys { base } => (base + (va - area.start), false, true),
+                    Backing::Phys { base, cache } => {
+                        flags |= cache.flags();
+                        (base + (va - area.start), false, true)
+                    }
+                    Backing::Device { pages, pgoff } => {
+                        match pages.fault(pgoff + (va - area.start) / FRAME_SIZE, write) {
+                            Ok((phys, cache)) => {
+                                flags |= cache.flags();
+                                (phys, false, true)
+                            }
+                            Err(_) => return Err("device mapping fault"),
+                        }
+                    }
                     Backing::File { inode, offset } => {
                         let idx = (offset + (va - area.start)) / FRAME_SIZE;
                         let Ok(p) = mm::pagecache::get_page(inode, idx) else {
@@ -413,7 +448,7 @@ impl AddressSpace {
                     }
                 };
                 if device {
-                    flags |= F::NO_CACHE | F::WRITE_THROUGH;
+                    flags |= DEVICE_BIT;
                 } else if !fresh {
                     mm::frame_share(phys);
                 }
@@ -451,10 +486,7 @@ impl AddressSpace {
     /// place. Pages move with their contents.
     pub fn mremap(&mut self, old: u64, old_len: u64, new_len: u64, may_move: bool) -> KResult<u64> {
         let area = self.find_area(old).cloned().ok_or(EFAULT)?;
-        if old != area.start
-            || old + old_len > area.end
-            || matches!(area.backing, Backing::Phys { .. })
-        {
+        if old != area.start || old + old_len > area.end || area.backing.is_device() {
             return Err(EINVAL);
         }
         if new_len <= old_len {
@@ -623,15 +655,15 @@ impl AddressSpace {
                             | ((i1 as u64) << 12);
                         let phys = e1.addr().as_u64();
                         let area = self.find_area(va);
-                        let shared_or_device = area.is_none_or(|a| {
-                            a.flags & MAP_SHARED != 0 || matches!(a.backing, Backing::Phys { .. })
-                        });
+                        let device = flags.contains(DEVICE_BIT);
+                        let shared_or_device =
+                            device || area.is_none_or(|a| a.flags & MAP_SHARED != 0);
                         let mut cflags = flags;
                         if !shared_or_device && flags.contains(F::WRITABLE) {
                             cflags = (flags - F::WRITABLE) | COW_BIT;
                             e1.set_flags(cflags);
                         }
-                        if !matches!(area.map(|a| &a.backing), Some(Backing::Phys { .. })) {
+                        if !device {
                             mm::frame_share(phys);
                         }
                         let page = Page::<Size4KiB>::containing_address(VirtAddr::new(va));
@@ -684,7 +716,7 @@ impl AddressSpace {
                         if e1.flags().contains(F::PRESENT) {
                             let va_phys = e1.addr().as_u64();
                             // Device mappings are not owned.
-                            if !e1.flags().contains(F::NO_CACHE) {
+                            if !e1.flags().contains(DEVICE_BIT) {
                                 mm::frame_release(va_phys);
                             }
                         }

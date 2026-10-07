@@ -5,12 +5,21 @@
 //! docs/ROADMAP-ROUND4.md §4.
 
 pub mod acpi;
+pub mod chrdev;
 pub mod firmware;
+#[cfg(feature = "linux-hid")]
+pub mod input;
 pub mod mm;
+#[cfg(feature = "linux-mmc")]
+pub mod mmc;
 pub mod net;
 pub mod pci;
 pub mod sched;
 pub mod sysfs;
+#[cfg(feature = "linux-serial")]
+pub mod tty;
+#[cfg(feature = "linux-usb")]
+pub mod usb;
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -34,7 +43,9 @@ unsafe extern "C" {
     fn kpi_workqueues_init() -> c_int;
     fn kpi_rcu_init() -> c_int;
     fn kpi_devcore_init() -> c_int;
+    fn kpi_chrdev_init() -> c_int;
     fn kpi_pci_bus_init() -> c_int;
+    fn kpi_pci_rescan();
     fn device_shutdown();
     fn kpi_selftest() -> c_int;
     fn kpi_jiffies_update();
@@ -77,9 +88,18 @@ pub fn init() {
         crate::println!("[linuxkpi] device core setup failed; LinuxKPI disabled");
         return;
     }
+    if unsafe { kpi_chrdev_init() } != 0 {
+        crate::println!("[linuxkpi] character device setup failed; LinuxKPI disabled");
+        return;
+    }
     pci::init();
     if unsafe { kpi_pci_bus_init() } != 0 {
         crate::println!("[linuxkpi] PCI bus setup failed; LinuxKPI disabled");
+        return;
+    }
+    #[cfg(feature = "linux-usb")]
+    if !usb::bus_init() {
+        crate::println!("[linuxkpi] USB bus setup failed; LinuxKPI disabled");
         return;
     }
     unsafe { kpi_net_init() };
@@ -136,6 +156,17 @@ pub fn run_initcalls() {
         }
     }
     unsafe { kpi_netdev_open_pending() };
+    #[cfg(feature = "linux-usb")]
+    usb::init();
+}
+
+/// `kernel.conf` has been read: offer devices to the opt-in drivers it
+/// enabled (`linux.enable=`), which held back until now.
+pub fn params_loaded() {
+    pci::PARAMS_READ.store(true, Ordering::SeqCst);
+    if ready() {
+        unsafe { kpi_pci_rescan() };
+    }
 }
 
 /// Shut down Linux devices (reboot and power-off): each bus's shutdown

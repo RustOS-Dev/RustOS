@@ -2,8 +2,8 @@
 //! HCI commands and events, advertising data, L2CAP (BR/EDR basic mode and
 //! LE credit-based), ATT and a GATT client, the Security Manager (LE Secure
 //! Connections and legacy pairing, with the Core specification's crypto
-//! functions), SDP, HID over GATT and BR/EDR HIDP, and the Intel
-//! controller firmware format.
+//! functions), SDP, HID over GATT and BR/EDR HIDP, and the Intel and
+//! MediaTek controller firmware formats.
 //!
 //! Multi-byte values are kept in wire order (least significant byte
 //! first), as they appear in HCI and SMP packets.
@@ -13,6 +13,7 @@
 extern crate alloc;
 
 pub mod adv;
+pub mod bcm;
 pub mod att;
 pub mod crypto;
 pub mod gatt;
@@ -20,6 +21,8 @@ pub mod hci;
 pub mod hid;
 pub mod intel;
 pub mod l2cap;
+pub mod mtk;
+pub mod rtl;
 pub mod sdp;
 pub mod smp;
 

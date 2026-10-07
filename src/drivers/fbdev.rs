@@ -7,9 +7,13 @@ use crate::vfs::FileLike;
 use alloc::sync::Arc;
 use core::any::Any;
 
-pub struct FbDev {
-    pub phys: u64,
-    pub len: usize,
+/// The console's framebuffer, whichever buffer it currently draws on: the
+/// firmware framebuffer, or a display driver's buffer once a Linux DRM
+/// driver has taken the display (then mapped page by page).
+pub struct FbDev;
+
+/// Geometry of the current buffer.
+struct Geometry {
     width: u32,
     height: u32,
     stride: u32,
@@ -19,17 +23,43 @@ pub struct FbDev {
 
 impl FbDev {
     pub fn new() -> Option<Arc<FbDev>> {
-        let (width, height, stride, bpp, bgr) = super::framebuffer::geometry()?;
-        let (phys, len) = super::framebuffer::framebuffer_phys()?;
-        Some(Arc::new(FbDev {
-            phys,
-            len,
+        super::framebuffer::geometry()?;
+        Some(Arc::new(FbDev))
+    }
+
+    fn geometry() -> KResult<Geometry> {
+        let (width, height, stride, bpp, bgr) = super::framebuffer::geometry().ok_or(ENODEV)?;
+        Ok(Geometry {
             width: width as u32,
             height: height as u32,
             stride: stride as u32,
             bpp: bpp as u32,
             bgr,
-        }))
+        })
+    }
+
+    /// (address, length) of the buffer.
+    fn buffer() -> KResult<(usize, usize)> {
+        super::framebuffer::buffer()
+            .map(|(p, l, _)| (p, l))
+            .ok_or(ENODEV)
+    }
+}
+
+/// Pages of a display driver's buffer (virtually contiguous only).
+struct BufferPages {
+    base: usize,
+    len: usize,
+}
+
+impl crate::vfs::MapPages for BufferPages {
+    fn fault(&self, pgoff: u64, _write: bool) -> KResult<(u64, crate::mm::Cache)> {
+        let off = (pgoff * crate::mm::FRAME_SIZE) as usize;
+        if off >= self.len {
+            return Err(EFAULT);
+        }
+        let phys = crate::mm::virt_to_phys((self.base + off) as u64).ok_or(EFAULT)?;
+        Ok((phys, crate::mm::Cache::WriteBack))
     }
 }
 
@@ -90,6 +120,25 @@ struct FixScreenInfo {
 }
 
 impl FileLike for FbDev {
+    /// The framebuffer, write-combining (much faster than uncached for
+    /// the streaming writes graphics code does).
+    fn mmap(&self, off: u64, len: u64, _prot: u32) -> KResult<Option<crate::vfs::DeviceMap>> {
+        let (base, size) = FbDev::buffer()?;
+        if off + len > (size as u64).next_multiple_of(crate::mm::FRAME_SIZE) {
+            return Err(EINVAL);
+        }
+        if let Some((phys, _)) = super::framebuffer::framebuffer_phys() {
+            return Ok(Some(crate::vfs::DeviceMap::Phys {
+                base: phys + off,
+                cache: crate::mm::Cache::WriteCombining,
+            }));
+        }
+        // Page-aligned (a vmap), so page `pgoff` of the file is at base + pgoff pages.
+        Ok(Some(crate::vfs::DeviceMap::Pages(Arc::new(BufferPages {
+            base,
+            len: size,
+        }))))
+    }
     fn read(&self, _b: &mut [u8], _nb: bool) -> KResult<usize> {
         Ok(0)
     }
@@ -97,51 +146,48 @@ impl FileLike for FbDev {
         Ok(b.len())
     }
     fn read_at(&self, off: u64, buf: &mut [u8]) -> Option<KResult<usize>> {
+        let (base, len) = match FbDev::buffer() {
+            Ok(b) => b,
+            Err(e) => return Some(Err(e)),
+        };
         let off = off as usize;
-        if off >= self.len {
+        if off >= len {
             return Some(Ok(0));
         }
-        let n = buf.len().min(self.len - off);
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                crate::mm::phys_ptr::<u8>(self.phys + off as u64),
-                buf.as_mut_ptr(),
-                n,
-            )
-        };
+        let n = buf.len().min(len - off);
+        unsafe { core::ptr::copy_nonoverlapping((base + off) as *const u8, buf.as_mut_ptr(), n) };
         Some(Ok(n))
     }
     fn write_at(&self, off: u64, buf: &[u8]) -> Option<KResult<usize>> {
+        let (base, len) = match FbDev::buffer() {
+            Ok(b) => b,
+            Err(e) => return Some(Err(e)),
+        };
         let off = off as usize;
-        if off >= self.len {
+        if off >= len {
             return Some(Err(ENOSPC));
         }
-        let n = buf.len().min(self.len - off);
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                buf.as_ptr(),
-                crate::mm::phys_ptr::<u8>(self.phys + off as u64),
-                n,
-            )
-        };
+        let n = buf.len().min(len - off);
+        unsafe { core::ptr::copy_nonoverlapping(buf.as_ptr(), (base + off) as *mut u8, n) };
         Some(Ok(n))
     }
     fn size(&self) -> Option<u64> {
-        Some(self.len as u64)
+        FbDev::buffer().ok().map(|(_, l)| l as u64)
     }
     fn ioctl(&self, cmd: u64, arg: u64) -> KResult<i64> {
         const FBIOGET_VSCREENINFO: u64 = 0x4600;
         const FBIOPUT_VSCREENINFO: u64 = 0x4601;
         const FBIOGET_FSCREENINFO: u64 = 0x4602;
+        let g = FbDev::geometry()?;
         match cmd {
             FBIOGET_VSCREENINFO => {
-                let (r, b) = if self.bgr { (16, 0) } else { (0, 16) };
+                let (r, b) = if g.bgr { (16, 0) } else { (0, 16) };
                 let v = VarScreenInfo {
-                    xres: self.width,
-                    yres: self.height,
-                    xres_virtual: self.width,
-                    yres_virtual: self.height,
-                    bits_per_pixel: self.bpp * 8,
+                    xres: g.width,
+                    yres: g.height,
+                    xres_virtual: g.width,
+                    yres_virtual: g.height,
+                    bits_per_pixel: g.bpp * 8,
                     red: Bitfield {
                         offset: r,
                         length: 8,
@@ -170,15 +216,15 @@ impl FileLike for FbDev {
                 id[..8].copy_from_slice(b"RustOSfb");
                 let f = FixScreenInfo {
                     id,
-                    smem_start: self.phys,
-                    smem_len: self.len as u32,
+                    smem_start: super::framebuffer::framebuffer_phys().map_or(0, |(p, _)| p),
+                    smem_len: FbDev::buffer().map_or(0, |(_, l)| l as u32),
                     kind: 0,
                     type_aux: 0,
                     visual: 2, // TRUECOLOR
                     xpanstep: 0,
                     ypanstep: 0,
                     ywrapstep: 0,
-                    line_length: self.stride * self.bpp,
+                    line_length: g.stride * g.bpp,
                     mmio_start: 0,
                     mmio_len: 0,
                     accel: 0,

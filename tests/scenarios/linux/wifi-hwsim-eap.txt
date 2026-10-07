@@ -1,0 +1,66 @@
+# WPA2-Enterprise over mac80211_hwsim (kernel built with --features linux-hwsim):
+# PEAP-MSCHAPv2 against hostapd's integrated EAP server. The test CA and
+# server certificate are made on the host and fetched over the QEMU network.
+hostrun rm -rf /tmp/rustos-eap && mkdir -p /tmp/rustos-eap && cd /tmp/rustos-eap && openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.pem -days 2 -subj /CN=rustos-test-ca 2>/dev/null && openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr -subj /CN=rustos-eap-server 2>/dev/null && openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out server.pem -days 2 2>/dev/null
+hostbg cd /tmp/rustos-eap && exec python3 -m http.server 18093 --bind 127.0.0.1
+wait \[linuxkpi\] mac80211_hwsim registered as wlan1 240
+wait # $ 240
+send dhcp -t 30 eth0
+wait leased 30
+wait # $ 30
+send cd /tmp && wget -q http://10.0.2.2:18093/ca.pem && wget -q http://10.0.2.2:18093/server.pem && wget -q http://10.0.2.2:18093/server.key && echo GOT-CERTS
+wait GOT-CERTS 60
+wait # $ 30
+send mkdir -p /var/run; dhcp -r wlan1; ip addr add 192.168.78.1/24 dev wlan1
+wait # $ 30
+send echo 'interface=wlan1' > /tmp/eap.conf
+wait # $ 20
+send echo 'driver=nl80211' >> /tmp/eap.conf
+wait # $ 20
+send echo 'ctrl_interface=/var/run/hostapd' >> /tmp/eap.conf
+wait # $ 20
+send echo 'hw_mode=g' >> /tmp/eap.conf
+wait # $ 20
+send echo 'channel=11' >> /tmp/eap.conf
+wait # $ 20
+send echo 'ssid=rustos-eap' >> /tmp/eap.conf
+wait # $ 20
+send echo 'wpa=2' >> /tmp/eap.conf
+wait # $ 20
+send echo 'wpa_key_mgmt=WPA-EAP' >> /tmp/eap.conf
+wait # $ 20
+send echo 'rsn_pairwise=CCMP' >> /tmp/eap.conf
+wait # $ 20
+send echo 'ieee8021x=1' >> /tmp/eap.conf
+wait # $ 20
+send echo 'eap_server=1' >> /tmp/eap.conf
+wait # $ 20
+send echo 'eap_user_file=/tmp/eap_user' >> /tmp/eap.conf
+wait # $ 20
+send echo 'ca_cert=/tmp/ca.pem' >> /tmp/eap.conf
+wait # $ 20
+send echo 'server_cert=/tmp/server.pem' >> /tmp/eap.conf
+wait # $ 20
+send echo 'private_key=/tmp/server.key' >> /tmp/eap.conf
+wait # $ 20
+send echo 'wpa_pairwise_update_count=10' >> /tmp/eap.conf
+wait # $ 20
+send echo '* PEAP' > /tmp/eap_user
+wait # $ 20
+send echo '"alice" MSCHAPV2 "wonderland-42" [2]' >> /tmp/eap_user
+wait # $ 20
+send hostapd -B -f /tmp/hostapd-eap.log /tmp/eap.conf; echo hostapd=$?
+wait hostapd=0 120
+wait # $ 30
+send wifi -i wlan0 connect rustos-eap wonderland-42 --eap peap --identity alice --ca /tmp/ca.pem --no-portal-check
+wait connected to "rustos-eap" 180
+wait # $ 30
+send wifi -i wlan0 status
+wait security WPA2-EAP|security WPA-EAP
+wait # $ 30
+send grep -c 'CTRL-EVENT-EAP-SUCCESS' /var/log/wpa_supplicant-wlan0.log | sed 's/^/eap-ok=/'
+wait eap-ok=[1-9] 30
+wait # $ 30
+send wifi -i wlan0 connect rustos-eap not-the-password --eap peap --identity alice --ca /tmp/ca.pem --no-portal-check
+wait wifi: (authentication failed|timed out) 180
+wait # $ 30

@@ -64,13 +64,8 @@ fn main() {
         add_jsd(&manifest_dir, &mut files);
         add_fonts(&mut files);
     }
-    // The desktop (ports/desktop.list: eDEX-DE and the ports it uses), only
-    // with RUSTOS_DESKTOP=1: eDEX-DE needs the graphics and desktop ports
-    // of milestones M37-M42 in the sysroot. Installed as whole trees under
-    // /usr (bin, lib, libexec, share) and /etc.
-    println!("cargo:rerun-if-env-changed=RUSTOS_DESKTOP");
-    if !skip && std::env::var("RUSTOS_DESKTOP").as_deref() == Ok("1") {
-        add_desktop_ports(&manifest_dir, &mut files);
+    if !skip {
+        add_stock_firmware(&manifest_dir, &mut files);
     }
     // Trust store for `wget https://`: the build host's CA bundle, or the
     // file named by RUSTOS_CA_BUNDLE (empty to leave it out).
@@ -92,30 +87,9 @@ fn main() {
 /// that cannot be built (no network for its sources, no C compiler) is
 /// left out with a warning.
 fn add_default_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
-    for (_, staged) in build_ports(root, "ports/default.list") {
-        for dir in ["usr", "usr/bin"] {
-            if !files.iter().any(|(n, _)| n == dir) {
-                files.push((dir.into(), Entry::Dir));
-            }
-        }
-        let before = files.len();
-        add_tree(&staged.join("bin"), "usr/bin/", files);
-        for (_, e) in files[before..].iter_mut() {
-            if let Entry::File(_, mode) = e {
-                *mode = 0o755;
-            }
-        }
-    }
-}
-
-/// Build (if its recipe changed since the last build) every port named in
-/// the list file; returns the ones that are staged. A port that cannot be
-/// built is left out with a warning.
-fn build_ports(root: &Path, list: &str) -> Vec<(String, PathBuf)> {
-    let Ok(list) = std::fs::read_to_string(root.join(list)) else {
-        return Vec::new();
+    let Ok(list) = std::fs::read_to_string(root.join("ports/default.list")) else {
+        return;
     };
-    let mut staged_ports = Vec::new();
     for name in list
         .lines()
         .map(str::trim)
@@ -137,62 +111,73 @@ fn build_ports(root: &Path, list: &str) -> Vec<(String, PathBuf)> {
             }
             let _ = std::fs::write(&stamp, &recipe);
         }
-        staged_ports.push((name.to_string(), staged));
-    }
-    staged_ports
-}
-
-/// Install the ports of ports/desktop.list: `bin`, `lib`, `libexec` and
-/// `share` of each staged tree under /usr, and `etc` under /etc, without
-/// static libraries and symlinks. Programs in bin/ and libexec/ (and
-/// shared libraries) are executable. A file that is already in the image
-/// is kept.
-fn add_desktop_ports(root: &Path, files: &mut Vec<(String, Entry)>) {
-    for (name, staged) in build_ports(root, "ports/desktop.list") {
-        for (sub, dest, exec) in [
-            ("bin", "usr/bin", true),
-            ("lib", "usr/lib", true),
-            ("libexec", "usr/libexec", true),
-            ("share", "usr/share", false),
-            ("etc", "etc", false),
-        ] {
-            let dir = staged.join(sub);
-            if !dir.is_dir() {
-                continue;
+        for dir in ["usr", "usr/bin"] {
+            if !files.iter().any(|(n, _)| n == dir) {
+                files.push((dir.into(), Entry::Dir));
             }
-            let mut tree = Vec::new();
-            add_tree(&dir, &format!("{dest}/"), &mut tree);
-            let mut parents = vec![dest.to_string()];
-            if let Some((p, _)) = dest.rsplit_once('/') {
-                parents.insert(0, p.to_string());
-            }
-            for d in parents {
-                if !files.iter().any(|(n, _)| *n == d) {
-                    files.push((d, Entry::Dir));
-                }
-            }
-            for (n, mut e) in tree {
-                // Static libraries and development symlinks (libfoo.so ->
-                // libfoo.so.1) are for building other ports, not the image.
-                let src = dir.join(&n[dest.len() + 1..]);
-                if n.ends_with(".a") || src.is_symlink() {
-                    continue;
-                }
-                if files.iter().any(|(m, _)| *m == n) {
-                    if let Entry::File(..) = e {
-                        println!("cargo:warning=port {name}: /{n} is already in the image");
-                    }
-                    continue;
-                }
-                if let Entry::File(_, mode) = &mut e
-                    && exec
-                {
-                    *mode = 0o755;
-                }
-                files.push((n, e));
+        }
+        let before = files.len();
+        add_tree(&staged.join("bin"), "usr/bin/", files);
+        for (_, e) in files[before..].iter_mut() {
+            if let Entry::File(_, mode) = e {
+                *mode = 0o755;
             }
         }
     }
+}
+
+/// Firmware every image ships (firmware/stock.list) under /lib/firmware,
+/// fetched and checksum-verified by tools/fetch-firmware.sh. Without it
+/// Wi-Fi and Bluetooth on the supported cards do not start, so a failed
+/// fetch fails release builds (and `write_to_drive.sh`, which fetches
+/// first) and is a warning for debug builds. RUSTOS_FIRMWARE=0 leaves it
+/// out. An image without it carries lib/firmware/.stock-missing, which the
+/// kernel reports when a driver finds no firmware.
+fn add_stock_firmware(root: &Path, files: &mut Vec<(String, Entry)>) {
+    println!("cargo:rerun-if-env-changed=RUSTOS_FIRMWARE");
+    println!("cargo:rerun-if-changed=firmware/stock.list");
+    for dir in ["lib", "lib/firmware"] {
+        if !files.iter().any(|(n, _)| n == dir) {
+            files.push((dir.into(), Entry::Dir));
+        }
+    }
+    if std::env::var("RUSTOS_FIRMWARE").as_deref() == Ok("0") {
+        files.push((
+            "lib/firmware/.stock-missing".into(),
+            Entry::File(b"built with RUSTOS_FIRMWARE=0\n".to_vec(), 0o644),
+        ));
+        return;
+    }
+    let out = root.join("target/firmware");
+    let ok = Command::new("sh")
+        .arg(root.join("tools/fetch-firmware.sh"))
+        .arg(&out)
+        .status()
+        .is_ok_and(|s| s.success());
+    if !ok {
+        // A release image without its firmware looks fine until Wi-Fi
+        // fails on someone's laptop: refuse to build one.
+        if std::env::var("PROFILE").as_deref() == Ok("release") {
+            panic!(
+                "stock firmware (firmware/stock.list) could not be fetched: a release image \
+                 needs it for Intel and MediaTek Wi-Fi/Bluetooth. Build with network access, \
+                 or set RUSTOS_FIRMWARE=0 to build an image without it on purpose."
+            );
+        }
+        println!(
+            "cargo:warning=stock firmware could not be fetched (no network?): this image has no Wi-Fi/Bluetooth firmware"
+        );
+        // The kernel reports this when a driver looks for firmware.
+        files.push((
+            "lib/firmware/.stock-missing".into(),
+            Entry::File(
+                b"stock firmware could not be fetched at build time\n".to_vec(),
+                0o644,
+            ),
+        ));
+        return;
+    }
+    add_tree(&out, "lib/firmware/", files);
 }
 
 /// DejaVu fonts for the graphical browser (from the host's
@@ -377,13 +362,15 @@ fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
     let src = userland.join("musltest");
     let out = root.join("target").join("musltest");
     let _ = std::fs::create_dir_all(&out);
-    let steps: [(&[&str], &str, &str); 6] = [
+    let steps: [(&[&str], &str, &str); 8] = [
         (&["-O2"], "musl-hello", "hello.c"),
         (&["-O2", "-static"], "musl-hello-static", "hello.c"),
         (&["-O2", "-pthread"], "musl-threads", "threads.c"),
         (&["-O2", "-fPIC", "-shared"], "libplugin.so", "plugin.c"),
         (&["-O2"], "musl-dlopen", "dlopen.c"),
         (&["-O2"], "musl-libctest", "libctest.c"),
+        (&["-O2"], "musl-kpitest", "kpitest.c"),
+        (&["-O2"], "musl-desktop", "desktop.c"),
     ];
     for (flags, name, file) in steps {
         let status = Command::new("sh")
@@ -417,6 +404,8 @@ fn build_musl_tests(userland: &Path, root: &Path) -> Vec<(String, Entry)> {
         ("musl-threads", "bin/musl-threads", 0o755),
         ("musl-dlopen", "bin/musl-dlopen", 0o755),
         ("musl-libctest", "bin/musl-libctest", 0o755),
+        ("musl-kpitest", "bin/musl-kpitest", 0o755),
+        ("musl-desktop", "bin/musl-desktop", 0o755),
         ("libplugin.so", "usr/lib/libplugin.so", 0o644),
     ] {
         if let Ok(d) = std::fs::read(out.join(name)) {

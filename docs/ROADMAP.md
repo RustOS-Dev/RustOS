@@ -133,20 +133,55 @@ Detailed plan: [ROADMAP-ROUND4.md](ROADMAP-ROUND4.md). RustOS is
 GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
 (Linux 6.18 LTS) instead of being rewritten.
 
-- [ ] **M27** LinuxKPI foundation: import tooling, C build, shim core (tasks, locking, RCU, timers, workqueues, memory/`struct page`, IRQ, DMA, PCI, firmware, cdev, device model); Linux e1000 in QEMU
-  - [x] import tooling + C build; [x] Linux e1000 in QEMU (`eth-linux-e1000`); [ ] shim remainder (RCU, firmware, cdev, device core, sysfs); [ ] RustOS gaps (§4 of ROADMAP-ROUND4.md)
-- [ ] **M28** Linux networking glue (netdev, skb, NAPI, netlink, AF_PACKET, crypto subset), cfg80211 + mac80211, wpa_supplicant/hostapd, `mac80211_hwsim` CI
+- [x] **M27** LinuxKPI foundation: import tooling, C build, shim core (tasks, locking, RCU, timers, workqueues, memory/`struct page`, IRQ, DMA, PCI, firmware, cdev, device model); Linux e1000 in QEMU
+  - [x] import tooling + C build; [x] Linux e1000 in QEMU (`eth-linux-e1000`); [x] shim remainder (RCU, SRCU, ww_mutex, firmware, cdev/misc/anon fds, device core, sysfs, ACPI); [x] RustOS gaps (PAT/WC, VA allocator, device mmap, IRQ depth, PCI claims); in-kernel self-test instead of host unit tests
+- [x] **M28** Linux networking glue (netdev, skb, NAPI, netlink, AF_PACKET, crypto subset), cfg80211 + mac80211, wpa_supplicant/hostapd, `mac80211_hwsim` CI
+  - `wifi-hwsim`:
+    - WPA2 and DHCP over the air;
+    - WPA3-SAE + PMF on a two-BSS AP;
+    - group rekey, roam, reconnect, wrong password.
+  - `wifi-hwsim-eap`: PEAP-MSCHAPv2.
+  - `wifi` drives wpa_supplicant for Linux-driver interfaces.
+  - Firmware for supported cards ships in the image (`firmware/stock.list`).
 - [ ] **M29** MediaTek MT7921/MT7921K (RZ608)/MT7922 PCIe via Linux mt76
+  - [x] mt76 + mt792x + mt7921e compiled and linked into release images (`linux-drivers`); PCI driver registers; firmware ships in the image; ACPI SAR (`mt792x_acpi_sar`) on the AML interpreter
+  - [ ] hardware: `hwcheck wifi` on the MT7921K laptop (compiled, untested on hardware)
 - [ ] **M30** LinuxKPI USB core, xHCI isochronous IN, Linux usbnet in QEMU, MT7921AU, MediaTek Bluetooth firmware
+  - [x] LinuxKPI USB core (device/interface model on the `usb` bus, URBs on per-endpoint workers, unlink/kill, hot-unplug)
+  - [x] Linux usbnet + cdc_ether + rndis_host in QEMU (`eth-usb-linux`, `eth-usb-linux-rndis`); cdc_ncm compiled
+  - [x] MT7921AU (`mt7921u`, mt76 USB) compiled into release images; untested on hardware
+  - [x] MediaTek Bluetooth firmware (btmtk WMT patch download in the native btusb; format host-tested); untested on hardware
+  - [ ] isochronous URBs in the LinuxKPI USB core: moved to M34, where Linux snd-usb-audio on QEMU `usb-audio` tests them (the xHCI driver already queues isochronous IN TDs)
 - [ ] **M31** Wi-Fi coverage: iwlwifi (all), rtw88, rtw89, mt76 family, mt7601u, ath9k/ath9k_htc, ath10k/11k/12k, brcmfmac
 - [ ] **M32** Ethernet coverage: r8152, usbnet family, igb, alx, tg3, atlantic, Linux r8169/e1000e/igc
-- [ ] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware
+  - [x] Linux igb in QEMU (`eth-igb`); e1000e, igc, alx, tg3, atlantic, r8169 (+ phylib, Realtek PHY), r8152, ASIX, ipheth compiled into release images; their firmware ships
+  - [ ] hardware: `hwcheck ethernet` on each family (compiled, untested on hardware)
+- [x] **M33** Laptop platform: I2C/GPIO, I2C-HID touchpads, HID core, MMC/SD, USB serial, UVC webcams, Realtek/Broadcom BT firmware
+  - [x] USB serial (usb-serial, ftdi_sio, cp210x, ch341, pl2303, option, cdc-acm) on RustOS terminals (`usb-serial`); `stty`
+  - [x] SD/MMC: Linux MMC core + sdhci-pci/sdhci-acpi, cards as `mmcblkN` (`sdcard`)
+  - [x] Linux input core + HID core (hid-generic, hid-multitouch, quirk drivers), i2c-hid core; Linux usbhid behind `linux-usbhid` (`usb-hid-linux`)
+  - [x] ACPI platform devices, IRQ domains, gpiolib + pinctrl-amd, DesignWare I2C, i2c-core-acpi: I2C-HID touchpads on AMD (compiled, untested on hardware; `acpi-platform`)
+  - [ ] Intel LPSS I2C and Intel pin controllers
+  - [x] UVC webcams (media controller, V4L2, videobuf2, uvcvideo), isochronous URBs in the LinuxKPI USB core, xHCI isochronous IN; `vgrab`, `hwcheck webcam` (untested on hardware)
+  - [x] Realtek (btrtl) and Broadcom (btbcm) Bluetooth firmware loading in btusb; rtl_bt firmware ships (untested on hardware)
 - [ ] **M34** Linux sound: ALSA core, HDA codecs, USB audio, SOF/ACP microphones, OSS emulation
-- [ ] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
-- [ ] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU
-- [ ] **M37** C++ runtime, Wayland stack, software-rendered Weston desktop
+  - [x] ALSA core, OSS emulation, snd-hda-intel + codecs, snd-usb-audio on isochronous URBs (`audio-linux`); in release images
+  - [ ] SOF/ACP DSP microphones; Linux virtio-sound (native driver kept)
+- [x] **M35** DRM core, dma-buf, efidrm/simpledrm, bochs, virtio-gpu
+  - [x] DRM core, KMS helpers, GEM shmem, dma-buf/sync_file, bochs; firmware framebuffer handover; `drmtest` (`drm-bochs`)
+  - [x] Linux virtio core and virtio-gpu (`drm-virtio`)
+  - [x] Console as a DRM client, `/dev/fb0` on the console's buffer, simpledrm on the firmware framebuffer (`drm-simpledrm`); efidrm not used (Linux picks simpledrm with `SYSFB_SIMPLEFB`, and efidrm needs `CONFIG_EFI`)
+  - [x] PRIME and sync_file in `drmtest`; `/sys/class/drm` connectors. TTM, the GPU scheduler and `drm/display` are imported with amdgpu (M38): none of the M35 drivers use them
+- [x] **M36** Desktop kernel features: SCM_RIGHTS, memfd, inotify, uevents, VT switching, kernel FPU
+  - [x] memfd + seals, `/dev/shm`, inotify, pidfds, `close_range`, `copy_file_range`; netlink uevents (Linux device model, native USB and input); `VT_PROCESS` release handshake, `VT_WAITACTIVE`, `K_OFF`, `EVIOCREVOKE`; kernel FPU sections (`desktop-kernel`, `musl`). Unix fd passing and credentials came with M28
+- [x] **M37** C++ runtime, Wayland stack, software-rendered Weston desktop
+  - [x] `rustos-c++` + libc++ (`cxx`); meson cross files; Weston 14 and its stack (`ports/weston`) on DRM with pixman, libinput, libseat (`desktop`). Software GL (Mesa softpipe) moves to M41 with the rest of Mesa
 - [ ] **M38** AMD GPUs (amdgpu): display, rendering, power
+  - [x] amdgpu + DC, TTM, GPU scheduler, DP/HDMI helpers, buddy/GPUVM compiled from Linux (`linux-drm-amd`; list generated from the Makefile by `tools/kbuild-group.py`); in release images, opt-in with `linux.enable=amdgpu`; Raphael firmware ships; `hwcheck display`. Compiled, untested on hardware
+  - [ ] Bring-up on the Raphael iGPU (display, then rendering and power): needs hardware
 - [ ] **M39** NVIDIA GPUs (nouveau, GSP firmware)
+  - [x] nouveau compiled from Linux (`linux-drm-nouveau`, list generated from its Kbuild); in release images, opt-in with `linux.enable=nouveau`; GSP-RM 570.144 for Turing through Blackwell GB20x on the storage partition (`firmware/storage.list`, `.links` for linux-firmware's symlinks); `tools/vfio-run.sh`. Compiled, untested on hardware
+  - [ ] Bring-up on the RTX 5070 (GB205) through VFIO: needs hardware
 - [ ] **M40** Intel GPUs (i915, xe)
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE

@@ -1,0 +1,14 @@
+# virtio-gpu (M35): QEMU's virtio-gpu-pci, 2D (no 3D/virgl contexts).
+module: virtio_gpu
+drivers/gpu/drm/virtio/virtgpu_drv.c
+drivers/gpu/drm/virtio/virtgpu_kms.c
+drivers/gpu/drm/virtio/virtgpu_gem.c
+drivers/gpu/drm/virtio/virtgpu_vram.c
+drivers/gpu/drm/virtio/virtgpu_display.c
+drivers/gpu/drm/virtio/virtgpu_vq.c
+drivers/gpu/drm/virtio/virtgpu_fence.c
+drivers/gpu/drm/virtio/virtgpu_object.c
+drivers/gpu/drm/virtio/virtgpu_plane.c
+drivers/gpu/drm/virtio/virtgpu_ioctl.c
+drivers/gpu/drm/virtio/virtgpu_prime.c
+drivers/gpu/drm/virtio/virtgpu_submit.c

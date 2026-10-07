@@ -31,3 +31,38 @@ kernel/async.c
 # ACPI/IRQ hooks, resources, init.
 kpi:sysfs.c
 kpi:devcore.c
+kpi:chrdev.c
+# Library code drivers and subsystems share.
+lib/scatterlist.c
+lib/rbtree.c
+lib/rhashtable.c
+lib/ratelimit.c
+lib/math/gcd.c
+# Byte bit-reversal table, PTP time counters, SHA-256 (M32 drivers).
+lib/bitrev.c
+lib/llist.c
+# Counting semaphores (HID core).
+kernel/locking/semaphore.c
+kernel/time/timecounter.c
+lib/crypto/sha256.c
+# ACPI device objects and platform devices (M33), interrupt descriptors
+# and domains for GSIs and GPIO controllers, fallbacks for the GPIO
+# consumer API when gpiolib is not built.
+kpi:irq.c
+kpi:acpiscan.c
+kpi:gpiostubs.c
+kpi:uaccess.c
+kpi:iov.c
+drivers/acpi/resource.c
+drivers/acpi/acpi_platform.c
+# LED classes and triggers (mt76 Wi-Fi LEDs, HDA mute LEDs).
+drivers/leds/led-core.c
+drivers/leds/led-class.c
+drivers/leds/led-triggers.c
+lib/list_sort.c
+# Maple trees (regmap caches, nouveau's VM_BIND address spaces).
+lib/maple_tree.c
+# The hwmon class (sensors of mt7921, igb, tg3, amdgpu): HWMON is on for amdgpu,
+# so every driver that registers a sensor expects it.
+module: hwmon
+drivers/hwmon/hwmon.c

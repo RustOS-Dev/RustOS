@@ -42,7 +42,7 @@ ALLOWED = {
     "GPL-2.0", "GPL-2.0-only", "GPL-2.0+", "GPL-2.0-or-later", "LGPL-2.1",
     "LGPL-2.1+", "LGPL-2.1-only", "LGPL-2.1-or-later", "MIT", "BSD-2-Clause",
     "BSD-3-Clause", "ISC", "Linux-OpenIB", "X11", "Zlib", "0BSD", "GPL-1.0+",
-    "GPL-1.0-or-later",
+    "GPL-1.0-or-later", "LGPL-2.0", "LGPL-2.0+", "LGPL-2.0-or-later",
 }
 # Linux's COPYING: files without an SPDX tag are GPL-2.0-only.
 UNTAGGED = "GPL-2.0-only (untagged, per Linux COPYING)"
@@ -164,15 +164,23 @@ def cmd_config(args):
 
 # ---------------------------------------------------------------- import
 
-def group_files(name):
+def group_entries(name, linux):
+    """(file, extra clang flags) for each source of a group; `module:` and
+    `cflags:` lines work as in build/linuxkpi.rs."""
     path = os.path.join(GROUPS, name + ".list")
-    files = []
+    out, flags = [], []
     with open(path) as f:
         for line in f:
             line = line.split("#", 1)[0].strip()
-            if line:
-                files.append(line)
-    return files
+            if not line:
+                continue
+            if line.startswith("module:"):
+                flags = []
+            elif line.startswith("cflags:"):
+                flags = flags + [x.replace("@LINUX@", linux) for x in line[7:].split()]
+            else:
+                out.append((line, list(flags)))
+    return out
 
 
 def licence_of(path):
@@ -192,15 +200,15 @@ def licence_ok(expr):
         return True
     # e.g. "GPL-2.0 OR MIT", "(GPL-2.0+ WITH Linux-syscall-note) OR BSD-3-Clause"
     expr = expr.replace("(", " ").replace(")", " ")
-    for alt in re.split(r"\s+OR\s+", expr):
-        ids = re.split(r"\s+AND\s+", alt)
+    for alt in re.split(r"\s+OR\s+", expr, flags=re.I):
+        ids = re.split(r"\s+AND\s+", alt, flags=re.I)
         if all(i.split(" WITH ")[0].strip() in ALLOWED for i in ids):
             return True
     return False
 
 
-def deps(linux, cfile):
-    flags = cflags(linux, extra_gen=os.path.join(DEST, "generated"))
+def deps(linux, cfile, extra=()):
+    flags = cflags(linux, extra_gen=os.path.join(DEST, "generated")) + list(extra)
     mod = os.path.splitext(os.path.basename(cfile))[0]
     path = (os.path.join(KPI, "c", cfile[4:]) if cfile.startswith("kpi:")
             else os.path.join(linux, cfile))
@@ -253,10 +261,10 @@ def cmd_import(args):
     manifest = read_manifest()
     needed = set()
     for g in args.groups:
-        for c in group_files(g):
+        for c, extra in group_entries(g, linux):
             if not c.startswith("kpi:"):
                 needed.add(c)
-            needed.update(deps(linux, c))
+            needed.update(deps(linux, c, extra))
     bad = []
     for rel in sorted(needed):
         src = os.path.join(linux, rel)

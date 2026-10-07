@@ -72,6 +72,7 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
     let rsdp = boot_info.rsdp_addr.into_option();
     let boot_info: &'static BootInfo = boot_info;
     unsafe { mm::init(boot_info) };
+    mm::init_pat();
     let (free, total) = mm::memory_stats();
     println!(
         "[mm] {} MiB usable, {} MiB free, heap {} MiB",
@@ -119,11 +120,14 @@ pub fn start_userspace() -> ! {
             params::cmdline()
         );
     }
+    #[cfg(feature = "linuxkpi")]
+    linuxkpi::params_loaded();
     if params::flag("log.persist") {
         klog::start_persist();
     }
     bluetooth::late_init();
 
+    syscall::init();
     if option_env!("RUSTOS_STRACE").is_some() {
         syscall::TRACE.store(true, core::sync::atomic::Ordering::Relaxed);
     }
@@ -133,7 +137,11 @@ pub fn start_userspace() -> ! {
             match process::spawn_init(
                 path,
                 &[path],
-                &["PATH=/bin:/sbin:/usr/bin", "HOME=/root", "TERM=vt100"],
+                &[
+                    "PATH=/bin:/sbin:/usr/bin:/usr/local/bin",
+                    "HOME=/root",
+                    "TERM=vt100",
+                ],
             ) {
                 Ok(p) => {
                     println!("[init] started {} (pid {})", path, p.pid);

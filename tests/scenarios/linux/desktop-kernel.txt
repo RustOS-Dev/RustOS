@@ -1,0 +1,42 @@
+# Kernel features a Wayland desktop needs (M36), on a kernel with the Linux
+# DRM drivers (--features linux-drivers): musl-desktop checks fd passing
+# of a sealed memfd, shared mappings, /dev/shm, inotify, pidfds,
+# close_range, copy_file_range and clocks; a USB keyboard plugged in sends
+# uevents (the USB device and its input node) to a netlink listener, as
+# does a USB Ethernet adapter the Linux drivers bind (Linux device-model
+# uevents: interfaces with MODALIAS, the network device, DRIVER); and a
+# VT switch runs the VT_PROCESS handshake with DRM master dropped and taken
+# back, as a compositor does.
+wait # $ 240
+send musl-desktop
+wait musl-desktop: \d+ passed, 0 failed 60
+wait # $
+send musl-desktop uevent 15 > /tmp/ue.txt &
+sleep 3
+monitor device_add usb-kbd,bus=xhci.0,id=kbd2
+sleep 6
+send wait; cat /tmp/ue.txt
+wait add@/devices/virtual/rustos-input/input\d+/event\d+
+wait DEVNAME=input/event\d+
+wait add@/devices/usb/
+wait PRODUCT=627/1/
+wait uevent: \d+ events
+wait # $
+# A device Linux drivers bind: uevents from the Linux device model.
+send musl-desktop uevent 15 > /tmp/ue2.txt &
+sleep 3
+monitor device_add usb-net,bus=xhci.0,netdev=un0,id=unet
+sleep 8
+send wait; cat /tmp/ue2.txt
+wait DEVTYPE=usb_interface
+wait MODALIAS=usb:v0525pA4A2
+wait add@/devices/usb/.*/eth\d+
+wait SUBSYSTEM=net
+wait bind@
+wait DRIVER=cdc_ether
+wait # $
+send musl-desktop vt
+wait vt: DRM open
+wait vt: switched to 2
+wait musl-desktop vt: \d+ passed, 0 failed 30
+wait # $

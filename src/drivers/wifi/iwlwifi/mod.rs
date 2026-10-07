@@ -235,6 +235,18 @@ pub fn probe(dev: &PciDevice) {
         return;
     };
     let rf_type = (t.hw_rf_id >> 12) & 0xFFF;
+    // Wi-Fi 5 RF modules (JF, 9461/9462/9560) on these platforms need the
+    // older firmware API, which this driver does not speak.
+    const RF_JF2: u32 = 0x105;
+    const RF_JF1: u32 = 0x108;
+    if integrated && (rf_type == RF_JF1 || rf_type == RF_JF2) {
+        crate::println!(
+            "[iwlwifi] {:04x}: Wi-Fi 5 RF module (rf_id {:#x}) is not supported (Wi-Fi 6/6E only)",
+            dev.device_id,
+            t.hw_rf_id
+        );
+        return;
+    }
     let family = if integrated {
         if rf_type == 0x10A || rf_type == 0x10C {
             "so-a0-hr-b0"
@@ -720,10 +732,9 @@ impl Driver {
         let (i, data) = match crate::firmware::load_any(&refs) {
             Ok(x) => x,
             Err(_) => {
-                self.dev.set_phase(
-                    Phase::NoFirmware,
-                    &format!("install {} (and .pnvm) into /lib/firmware", names[0]),
-                );
+                let hint = crate::firmware::missing_hint(&names[0]);
+                crate::println!("[iwlwifi] no firmware: {}", hint);
+                self.dev.set_phase(Phase::NoFirmware, &hint);
                 return Err(ENOENT);
             }
         };

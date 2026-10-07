@@ -1,0 +1,5 @@
+# An xHCI controller to plug a keyboard into (uevent check).
+-device qemu-xhci,id=xhci
+# For the Linux uevent check: a network for a USB Ethernet adapter
+# plugged in later (Linux cdc_ether binds it).
+-netdev user,id=un0

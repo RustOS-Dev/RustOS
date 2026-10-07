@@ -16,6 +16,11 @@ wait # $
 send musl-libctest
 wait libctest: \d+ passed, 0 failed 120
 wait # $
+# Desktop kernel features: memfd and seals, fd passing, /dev/shm,
+# inotify, pidfds, close_range, copy_file_range, clocks.
+send musl-desktop
+wait musl-desktop: \d+ passed, 0 failed 60
+wait # $
 # Ports in the default image (ports/default.list)
 send busybox sh -c 'for i in 1 2 3; do echo bb$i; done | busybox wc -l | busybox sed s/^/BB-RESULT:/'
 wait BB-RESULT:\s*3\r\n

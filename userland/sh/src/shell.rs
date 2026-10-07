@@ -98,7 +98,7 @@ impl Shell {
             is_child: false,
         };
         if sh.get_var("PATH").is_none() {
-            sh.set_var("PATH", "/bin:/sbin:/usr/bin");
+            sh.set_var("PATH", "/bin:/sbin:/usr/bin:/usr/local/bin");
             sh.export("PATH");
         }
         if sh.get_var("PS1").is_none() {

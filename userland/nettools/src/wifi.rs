@@ -3,6 +3,8 @@
 //!   wifi [status] [-i IFACE]
 //!   wifi scan [-i IFACE]
 //!   wifi connect SSID [PASSPHRASE] [--save] [-i IFACE]
+//!   wifi connect SSID PASSWORD --eap peap|ttls --identity ID
+//!        [--anonymous ID] [--ca CERT.pem] [-i IFACE]
 //!   wifi disconnect [-i IFACE]
 //!   wifi auto [-q]            join the first reachable network in wifi.conf
 //!   wifi forget SSID
@@ -10,7 +12,12 @@
 //!
 //! Saved networks live in /storage/etc/wifi.conf (persistent) or
 //! /etc/wifi.conf, as `ssid=...` / `psk=...` pairs, one network per block.
+//!
+//! RustOS's own drivers (Intel AX210) are driven through interface ioctls;
+//! interfaces of Linux drivers (LinuxKPI) through wpa_supplicant, which
+//! `wifi` starts on demand (src/wpa.rs).
 
+use crate::wpa;
 use rustos_rt::net;
 use rustos_rt::prelude::*;
 
@@ -46,11 +53,18 @@ fn request(iface: &str, cmd: u64, buf: &mut [u8], arg: &[u8]) -> rustos_rt::Resu
     s.ioctl(cmd, &mut r as *mut WifiIfReq as usize)
 }
 
+/// True if the interface belongs to a RustOS driver (answers the wifi
+/// ioctls); false for Linux drivers, which wpa_supplicant drives.
+fn native(iface: &str) -> bool {
+    let mut buf = vec![0u8; 512];
+    request(iface, WIFI_STATUS, &mut buf, &[]).is_ok()
+}
+
 fn status(iface: &str) -> String {
     let mut buf = vec![0u8; 512];
     match request(iface, WIFI_STATUS, &mut buf, &[]) {
         Ok(n) => String::from_utf8_lossy(&buf[..n]).into_owned(),
-        Err(_) => String::new(),
+        Err(_) => wpa::status(iface),
     }
 }
 
@@ -90,11 +104,19 @@ fn print_status(iface: &str) {
     }
 }
 
-fn scan(iface: &str) -> i32 {
+fn scan_text(iface: &str) -> Result<String, String> {
+    if !native(iface) {
+        return wpa::scan(iface);
+    }
     let mut buf = vec![0u8; 16384];
-    match request(iface, WIFI_SCAN, &mut buf, &[]) {
-        Ok(n) => {
-            let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+    request(iface, WIFI_SCAN, &mut buf, &[])
+        .map(|n| String::from_utf8_lossy(&buf[..n]).into_owned())
+        .map_err(|e| format!("{}", e))
+}
+
+fn scan(iface: &str) -> i32 {
+    match scan_text(iface) {
+        Ok(text) => {
             println!(
                 "{:<17}  {:>4}  {:>6}  {:<10}  SSID",
                 "BSSID", "CHAN", "SIGNAL", "SECURITY"
@@ -143,9 +165,27 @@ fn after_connect(iface: &str, quiet: bool) {
 }
 
 /// Start connecting and wait for the outcome.
-fn connect(iface: &str, ssid: &str, pass: &str, timeout_ms: u64, quiet: bool) -> bool {
-    let mut s = ssid.as_bytes().to_vec();
-    if let Err(e) = request(iface, WIFI_CONNECT, &mut s, pass.as_bytes()) {
+fn connect(
+    iface: &str,
+    ssid: &str,
+    pass: &str,
+    eap: Option<&wpa::Eap>,
+    timeout_ms: u64,
+    quiet: bool,
+) -> bool {
+    let started = if native(iface) {
+        if eap.is_some() {
+            Err(String::from(
+                "802.1X (--eap) needs a Linux driver (wpa_supplicant)",
+            ))
+        } else {
+            let mut s = ssid.as_bytes().to_vec();
+            request(iface, WIFI_CONNECT, &mut s, pass.as_bytes()).map_err(|e| format!("{}", e))
+        }
+    } else {
+        wpa::connect(iface, ssid, pass, eap).map(|_| 0)
+    };
+    if let Err(e) = started {
         if !quiet {
             eprintln!("wifi: connect: {}", e);
         }
@@ -169,7 +209,20 @@ fn connect(iface: &str, ssid: &str, pass: &str, timeout_ms: u64, quiet: bool) ->
                 }
                 return false;
             }
-            _ => rustos_rt::time::sleep_ms(250),
+            _ => {
+                // wpa_supplicant retries a network it disabled after a
+                // failed handshake 10 s later; give up only if that fails too.
+                if rustos_rt::time::millis() - start >= 12_000
+                    && let Some(why) = wpa::failure(iface)
+                {
+                    if !quiet {
+                        eprintln!("wifi: {}", why);
+                    }
+                    let _ = wpa::disconnect(iface);
+                    return false;
+                }
+                rustos_rt::time::sleep_ms(250)
+            }
         }
     }
     if !quiet {
@@ -248,11 +301,31 @@ pub fn wifi(args: &[String]) -> i32 {
     let mut rest: Vec<&str> = Vec::new();
     let mut save_it = false;
     let mut quiet = false;
+    let mut eap_method: Option<String> = None;
+    let mut identity: Option<String> = None;
+    let mut anonymous: Option<String> = None;
+    let mut ca: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "-i" => {
                 iface = args.get(i + 1).cloned();
+                i += 1;
+            }
+            "--eap" => {
+                eap_method = args.get(i + 1).cloned();
+                i += 1;
+            }
+            "--identity" => {
+                identity = args.get(i + 1).cloned();
+                i += 1;
+            }
+            "--anonymous" => {
+                anonymous = args.get(i + 1).cloned();
+                i += 1;
+            }
+            "--ca" => {
+                ca = args.get(i + 1).cloned();
                 i += 1;
             }
             "--save" | "-s" => save_it = true,
@@ -289,11 +362,24 @@ pub fn wifi(args: &[String]) -> i32 {
                 return 2;
             };
             let pass = rest.get(2).copied().unwrap_or("");
-            if !pass.is_empty() && !(8..=63).contains(&pass.len()) {
+            let eap = match (&eap_method, &identity) {
+                (Some(m), Some(id)) => Some(wpa::Eap {
+                    method: m,
+                    identity: id,
+                    anonymous: anonymous.as_deref(),
+                    ca_cert: ca.as_deref(),
+                }),
+                (Some(_), None) => {
+                    eprintln!("wifi: --eap needs --identity");
+                    return 2;
+                }
+                _ => None,
+            };
+            if eap.is_none() && !pass.is_empty() && !(8..=63).contains(&pass.len()) {
                 eprintln!("wifi: passphrase must be 8-63 characters");
                 return 2;
             }
-            if !connect(&iface, ssid, pass, 30_000, false) {
+            if !connect(&iface, ssid, pass, eap.as_ref(), 30_000, false) {
                 return 1;
             }
             let rc = if save_it { save(ssid, pass) } else { 0 };
@@ -308,6 +394,10 @@ pub fn wifi(args: &[String]) -> i32 {
                 println!("{}", field(&s, "power").unwrap_or("unknown"));
                 0
             }
+            Some("on" | "off" | "auto") if !native(&iface) => {
+                eprintln!("wifi: power save control is not available for this driver yet");
+                1
+            }
             Some(m @ ("on" | "off" | "auto")) => {
                 let mut b = m.as_bytes().to_vec();
                 match request(&iface, WIFI_POWER, &mut b, &[]) {
@@ -321,6 +411,13 @@ pub fn wifi(args: &[String]) -> i32 {
             _ => {
                 eprintln!("usage: wifi power [on|off|auto|status]");
                 2
+            }
+        },
+        "disconnect" if !native(&iface) => match wpa::disconnect(&iface) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("wifi: {}", e);
+                1
             }
         },
         "disconnect" => match request(&iface, WIFI_DISCONNECT, &mut [], &[]) {
@@ -347,7 +444,7 @@ pub fn wifi(args: &[String]) -> i32 {
                 if !quiet {
                     println!("wifi: trying \"{}\"", ssid);
                 }
-                if connect(&iface, ssid, psk, 25_000, quiet) {
+                if connect(&iface, ssid, psk, None, 25_000, quiet) {
                     if quiet {
                         println!("wifi: connected to \"{}\"", ssid);
                     }
@@ -359,7 +456,7 @@ pub fn wifi(args: &[String]) -> i32 {
         }
         _ => {
             eprintln!(
-                "usage: wifi [status|scan|connect SSID [PASS] [--save]|disconnect|auto|forget SSID|power [on|off|auto]] [-i IFACE]"
+                "usage: wifi [status|scan|connect SSID [PASS] [--save] [--eap M --identity ID]|disconnect|auto|forget SSID|power [on|off|auto]] [-i IFACE]"
             );
             2
         }

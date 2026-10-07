@@ -45,7 +45,7 @@ pub static FRAMES: Mutex<Option<frame::FrameAllocator>> = Mutex::new(None);
 /// Physical address of the kernel PML4 (the template every address space copies).
 pub static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
-static MMIO_NEXT: AtomicU64 = AtomicU64::new(MMIO_START);
+static MMIO_VA: Mutex<VaAlloc> = Mutex::new(VaAlloc::new(MMIO_START, MMIO_END));
 static KSTACK_NEXT: AtomicU64 = AtomicU64::new(KSTACK_START);
 static BOOT_REGIONS: AtomicU64 = AtomicU64::new(0);
 
@@ -158,22 +158,118 @@ pub fn zero_frame(phys: u64) {
     unsafe { core::ptr::write_bytes(phys_ptr::<u8>(phys), 0, FRAME_SIZE as usize) };
 }
 
-/// Map `size` bytes of device memory at `phys` into the uncached MMIO window
-/// and return the virtual address corresponding to `phys` (offset preserved).
+/// Memory type of a device mapping. `init_pat` programs the PAT so each
+/// has a page-table encoding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cache {
+    WriteBack,
+    /// Write-combining: for framebuffers and GPU apertures.
+    WriteCombining,
+    Uncached,
+}
+
+impl Cache {
+    pub fn flags(self) -> PageTableFlags {
+        match self {
+            Cache::WriteBack => PageTableFlags::empty(),
+            // PAT entry 1 (PWT only), set to WC by init_pat.
+            Cache::WriteCombining => PageTableFlags::WRITE_THROUGH,
+            // PAT entry 3 (PCD | PWT): UC.
+            Cache::Uncached => PageTableFlags::NO_CACHE | PageTableFlags::WRITE_THROUGH,
+        }
+    }
+}
+
+/// PAT entries as Linux sets them: WB, WC, UC-, UC, WB, WP, UC-, WT.
+const PAT_VALUE: u64 = 0x0407_0506_0007_0106;
+
+/// Program this CPU's PAT (on the BSP before the APs start: they copy it).
+/// Entry 1 changes from WT to WC; the entries RustOS uses for WB (0) and
+/// UC (3) keep their power-on meaning.
+pub fn init_pat() {
+    use x86_64::registers::model_specific::Msr;
+    unsafe {
+        core::arch::asm!("wbinvd", options(nostack));
+        Msr::new(0x277).write(PAT_VALUE);
+        core::arch::asm!("wbinvd", options(nostack));
+    }
+    x86_64::instructions::tlb::flush_all();
+}
+
+/// A first-fit allocator of kernel virtual address ranges in a window.
+pub struct VaAlloc {
+    next: u64,
+    end: u64,
+    /// Freed ranges below `next`: start -> length.
+    free: alloc::collections::BTreeMap<u64, u64>,
+}
+
+impl VaAlloc {
+    pub const fn new(start: u64, end: u64) -> VaAlloc {
+        VaAlloc {
+            next: start,
+            end,
+            free: alloc::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Allocate `size` bytes (a multiple of the page size).
+    pub fn alloc(&mut self, size: u64) -> Option<u64> {
+        if let Some((&start, &len)) = self.free.iter().find(|&(_, &len)| len >= size) {
+            self.free.remove(&start);
+            if len > size {
+                self.free.insert(start + size, len - size);
+            }
+            return Some(start);
+        }
+        if self.next + size > self.end {
+            return None;
+        }
+        let v = self.next;
+        self.next += size;
+        Some(v)
+    }
+
+    pub fn free(&mut self, mut start: u64, mut size: u64) {
+        // Merge with the neighbours.
+        if let Some((&prev, &plen)) = self.free.range(..start).next_back()
+            && prev + plen == start
+        {
+            self.free.remove(&prev);
+            start = prev;
+            size += plen;
+        }
+        if let Some(nlen) = self.free.remove(&(start + size)) {
+            size += nlen;
+        }
+        if start + size == self.next {
+            self.next = start;
+        } else {
+            self.free.insert(start, size);
+        }
+    }
+}
+
+/// Map `size` bytes of device memory at `phys` uncached into the MMIO
+/// window and return the virtual address corresponding to `phys` (offset
+/// preserved).
 pub fn map_mmio(phys: u64, size: usize) -> u64 {
+    map_mmio_cache(phys, size, Cache::Uncached).expect("MMIO window exhausted")
+}
+
+/// Map device memory with memory type `cache`. Undo with `unmap_mmio`.
+pub fn map_mmio_cache(phys: u64, size: usize, cache: Cache) -> Option<u64> {
     let page_off = phys & (FRAME_SIZE - 1);
     let base = phys - page_off;
-    let pages = (size as u64 + page_off).div_ceil(FRAME_SIZE);
-    let virt = MMIO_NEXT.fetch_add((pages + 1) * FRAME_SIZE, Ordering::SeqCst);
-    assert!(
-        virt + pages * FRAME_SIZE < MMIO_END,
-        "MMIO window exhausted"
-    );
+    let pages = (size as u64 + page_off).div_ceil(FRAME_SIZE).max(1);
+    // One unmapped guard page after each mapping.
+    let virt = x86_64::instructions::interrupts::without_interrupts(|| {
+        MMIO_VA.lock().alloc((pages + 1) * FRAME_SIZE)
+    })?;
     let flags = PageTableFlags::PRESENT
         | PageTableFlags::WRITABLE
-        | PageTableFlags::NO_CACHE
-        | PageTableFlags::WRITE_THROUGH
-        | PageTableFlags::NO_EXECUTE;
+        | PageTableFlags::NO_EXECUTE
+        | cache.flags();
     with_mapper(|m| {
         for i in 0..pages {
             let page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt + i * FRAME_SIZE));
@@ -185,7 +281,55 @@ pub fn map_mmio(phys: u64, size: usize) -> u64 {
             }
         }
     });
-    virt + page_off
+    Some(virt + page_off)
+}
+
+/// Remove a mapping made by `map_mmio`/`map_mmio_cache` (`virt` and
+/// `size` as passed back and in).
+pub fn unmap_mmio(virt: u64, size: usize) {
+    let page_off = virt & (FRAME_SIZE - 1);
+    let base = virt - page_off;
+    let pages = (size as u64 + page_off).div_ceil(FRAME_SIZE).max(1);
+    with_mapper(|m| {
+        for i in 0..pages {
+            let page = Page::<Size4KiB>::containing_address(VirtAddr::new(base + i * FRAME_SIZE));
+            if let Ok((_, flush)) = m.unmap(page) {
+                flush.flush();
+            }
+        }
+    });
+    crate::arch::x86_64::smp::tlb_shootdown(0);
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        MMIO_VA.lock().free(base, (pages + 1) * FRAME_SIZE)
+    });
+}
+
+/// Map existing frames (write-back) at consecutive kernel addresses, as
+/// Linux's vmap(); undo with `unmap_frames`.
+pub fn map_frames(frames: &[u64]) -> Option<u64> {
+    let n = frames.len() as u64;
+    let virt = x86_64::instructions::interrupts::without_interrupts(|| {
+        MMIO_VA.lock().alloc((n + 1) * FRAME_SIZE)
+    })?;
+    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+    with_mapper(|m| {
+        for (i, &phys) in frames.iter().enumerate() {
+            let page =
+                Page::<Size4KiB>::containing_address(VirtAddr::new(virt + i as u64 * FRAME_SIZE));
+            let frame = PhysFrame::containing_address(PhysAddr::new(phys));
+            unsafe {
+                m.map_to(page, frame, flags, &mut GlobalFrames)
+                    .expect("map_frames")
+                    .flush();
+            }
+        }
+    });
+    Some(virt)
+}
+
+/// Remove a `map_frames` mapping of `count` frames (the frames stay).
+pub fn unmap_frames(virt: u64, count: usize) {
+    unmap_mmio(virt, count * FRAME_SIZE as usize);
 }
 
 /// Map fresh zeroed frames at `virt..virt+size` in the kernel address space.

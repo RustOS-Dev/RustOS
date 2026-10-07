@@ -4,6 +4,7 @@
 usage: check-png.py FILE CHECK...
   X,Y=R,G,B[~TOL]     the pixel at (X, Y) is that color (default tolerance 24)
   count:R,G,B>=N      at least N pixels are that color (tolerance 24)
+  count:R,G,B<=N      at most N pixels are that color
   size=WxH            the image size
 """
 import struct
@@ -72,10 +73,11 @@ def main():
             good = want == "%dx%d" % (w, h)
             print("%s %s (got %dx%d)" % ("ok" if good else "FAIL", chk, w, h))
         elif chk.startswith("count:"):
-            col, n = chk[6:].split(">=")
+            at_most = "<=" in chk
+            col, n = chk[6:].split("<=" if at_most else ">=")
             col = tuple(int(v) for v in col.split(","))
             got = sum(1 for y in range(h) for x in range(w) if close(px(x, y), col, 24))
-            good = got >= int(n)
+            good = got <= int(n) if at_most else got >= int(n)
             print("%s %s (got %d)" % ("ok" if good else "FAIL", chk, got))
         else:
             pos, col = chk.split("=")

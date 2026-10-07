@@ -18,6 +18,7 @@
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <acpi/button.h>
 #include "kpi.h"
 
 struct kpi_acpi_node {
@@ -28,40 +29,128 @@ struct kpi_acpi_node {
 static LIST_HEAD(kpi_acpi_nodes);
 static DEFINE_MUTEX(kpi_acpi_lock);
 
-static acpi_handle kpi_acpi_intern(const char *path)
+/*
+ * Canonical form of an absolute path: name segments padded to four
+ * characters as the namespace stores them ("\_SB.I2CA" -> "\_SB_.I2CA").
+ */
+static char *kpi_acpi_normalize(const char *path)
+{
+	char *out = kmalloc(strlen(path) * 2 + 2, GFP_KERNEL), *o = out;
+	const char *p = path;
+
+	if (!out)
+		return NULL;
+	if (*p == '\\')
+		*o++ = *p++;
+	while (*p) {
+		size_t n = strcspn(p, ".");
+
+		memcpy(o, p, n);
+		o += n;
+		for (; n && n < 4; n++)
+			*o++ = '_';
+		p += strcspn(p, ".");
+		if (*p == '.')
+			*o++ = *p++;
+	}
+	*o = 0;
+	return out;
+}
+
+acpi_handle kpi_acpi_intern(const char *path)
 {
 	struct kpi_acpi_node *n;
+	char *norm = kpi_acpi_normalize(path);
 
+	if (!norm)
+		return NULL;
 	mutex_lock(&kpi_acpi_lock);
 	list_for_each_entry(n, &kpi_acpi_nodes, list) {
-		if (!strcmp(n->path, path))
+		if (!strcmp(n->path, norm))
 			goto out;
 	}
-	n = kmalloc(sizeof(*n) + strlen(path) + 1, GFP_KERNEL);
+	n = kmalloc(sizeof(*n) + strlen(norm) + 1, GFP_KERNEL);
 	if (n) {
-		strcpy(n->path, path);
+		strcpy(n->path, norm);
 		list_add(&n->list, &kpi_acpi_nodes);
 	}
 out:
 	mutex_unlock(&kpi_acpi_lock);
+	kfree(norm);
 	return n;
 }
 
-static const char *kpi_acpi_path(acpi_handle h)
+const char *kpi_acpi_path(acpi_handle h)
 {
+	if (h == ACPI_ROOT_OBJECT)
+		return "\\";
 	return h ? ((struct kpi_acpi_node *)h)->path : NULL;
 }
 
-/* Absolute path for @name relative to @h (ACPICA's rules, simplified). */
+/* The scope containing @path ("\\" for top-level objects). */
+static char *kpi_acpi_parent_path(const char *path)
+{
+	const char *dot = strrchr(path, '.');
+
+	if (!dot)
+		return kstrdup("\\", GFP_KERNEL);
+	return kstrndup(path, dot - path, GFP_KERNEL);
+}
+
+/*
+ * Absolute path for @name relative to @h, by ACPICA's rules: "\\" roots,
+ * each "^" goes up a scope, and a single name segment is searched for in
+ * the scope and then each enclosing one.
+ */
 static char *kpi_acpi_resolve(acpi_handle h, const char *name)
 {
+	char *scope, *up, *path;
+
 	if (!name || !*name)
 		return h ? kstrdup(kpi_acpi_path(h), GFP_KERNEL) : NULL;
 	if (name[0] == '\\')
 		return kstrdup(name, GFP_KERNEL);
 	if (!h)
 		return NULL;
-	return kasprintf(GFP_KERNEL, "%s.%s", kpi_acpi_path(h), name);
+	scope = kstrdup(kpi_acpi_path(h), GFP_KERNEL);
+	while (scope && *name == '^') {
+		up = kpi_acpi_parent_path(scope);
+		kfree(scope);
+		scope = up;
+		name++;
+	}
+	if (!scope)
+		return NULL;
+	for (;;) {
+		bool root = !strcmp(scope, "\\");
+
+		path = kasprintf(GFP_KERNEL, root ? "%s%s" : "%s.%s", scope, name);
+		if (!path || strchr(name, '.') || root || rustos_kpi_acpi_exists(path))
+			break;
+		/* Single segment not in this scope: try the enclosing one. */
+		kfree(path);
+		up = kpi_acpi_parent_path(scope);
+		kfree(scope);
+		scope = up;
+		if (!scope)
+			return NULL;
+	}
+	kfree(scope);
+	return path;
+}
+
+acpi_status acpi_get_parent(acpi_handle object, acpi_handle *out_handle)
+{
+	char *p;
+
+	if (!object || !strcmp(kpi_acpi_path(object), "\\"))
+		return AE_NULL_ENTRY;
+	p = kpi_acpi_parent_path(kpi_acpi_path(object));
+	if (!p)
+		return AE_NO_MEMORY;
+	*out_handle = kpi_acpi_intern(p);
+	kfree(p);
+	return *out_handle ? AE_OK : AE_NO_MEMORY;
 }
 
 /* ------------------------------------------------------------ encoding */
@@ -485,14 +574,12 @@ void acpi_handle_printk(const char *level, acpi_handle handle, const char *fmt, 
 
 /* ------------------------------------------------------------ companions */
 
-const struct fwnode_operations acpi_device_fwnode_ops = {};
-
 bool is_acpi_device_node(const struct fwnode_handle *fwnode)
 {
 	return !IS_ERR_OR_NULL(fwnode) && fwnode->ops == &acpi_device_fwnode_ops;
 }
 
-/* Give a PCI device its ACPI companion (the namespace node with its _ADR). */
+/* Give a PCI device its ACPI companion (the device object with its _ADR). */
 void kpi_acpi_pci_companion(struct pci_dev *pdev)
 {
 	char path[256];
@@ -501,10 +588,59 @@ void kpi_acpi_pci_companion(struct pci_dev *pdev)
 	if (rustos_kpi_acpi_pci_path(pdev->bus->number, PCI_SLOT(pdev->devfn),
 				     PCI_FUNC(pdev->devfn), path, sizeof(path)))
 		return;
-	adev = kzalloc(sizeof(*adev), GFP_KERNEL);
-	if (!adev)
-		return;
-	adev->handle = kpi_acpi_intern(path);
-	fwnode_init(&adev->fwnode, &acpi_device_fwnode_ops);
-	ACPI_COMPANION_SET(&pdev->dev, adev);
+	adev = kpi_acpi_device_at(path);
+	if (adev)
+		ACPI_COMPANION_SET(&pdev->dev, adev);
+}
+
+/* ACPI tables are not reloaded at run time (no SSDT overlays). */
+int acpi_reconfig_notifier_register(struct notifier_block *nb)
+{
+	return 0;
+}
+
+int acpi_reconfig_notifier_unregister(struct notifier_block *nb)
+{
+	return 0;
+}
+
+void acpi_device_fix_up_power_extended(struct acpi_device *adev)
+{
+}
+
+int acpi_device_fix_up_power(struct acpi_device *device)
+{
+	return 0;
+}
+
+int acpi_device_set_power(struct acpi_device *device, int state)
+{
+	return 0;
+}
+
+/* Walking a device's ACPI children is not supported: callers (nouveau's
+ * GSP ACPI method table) find none and send what they have. */
+acpi_status acpi_get_next_object(acpi_object_type type, acpi_handle parent,
+				 acpi_handle child, acpi_handle *ret_handle)
+{
+	return AE_NOT_FOUND;
+}
+
+/* The lid switch is not tracked: unknown, which drivers treat as open. */
+int acpi_lid_open(void)
+{
+	return -ENODEV;
+}
+
+/* No WMI bus: no GUID is present (nouveau's MXM tables then come from the
+ * VBIOS). */
+bool wmi_has_guid(const char *guid)
+{
+	return false;
+}
+
+acpi_status wmi_evaluate_method(const char *guid, u8 instance, u32 method_id,
+				const struct acpi_buffer *in, struct acpi_buffer *out)
+{
+	return AE_NOT_FOUND;
 }

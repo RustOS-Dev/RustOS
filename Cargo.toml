@@ -18,6 +18,60 @@ harness = false
 # See docs/ROADMAP-ROUND4.md.
 linuxkpi = []
 linux-e1000 = ["linuxkpi"]
+# Test-only Linux driver /dev/kpi-test (src/linuxkpi/c/testdev.c).
+linux-test = ["linuxkpi"]
+# Linux Wi-Fi stack: generic netlink, cfg80211, mac80211.
+linux-wifi = ["linuxkpi"]
+# Simulated radios for testing the Wi-Fi stack.
+linux-hwsim = ["linux-wifi"]
+# Linux USB drivers on RustOS's xHCI driver (the LinuxKPI USB core).
+linux-usb = ["linuxkpi"]
+# Linux USB networking instead of the native CDC ECM/RNDIS driver: usbnet
+# with CDC ECM/NCM, RNDIS, r8152, ASIX and iPhone tethering.
+linux-usbnet = ["linux-usb", "linux-phy"]
+# Linux USB serial adapters (FTDI, CP210x, CH341, PL2303, option modems) and
+# CDC ACM devices as RustOS terminals (/dev/ttyUSB*, /dev/ttyACM*).
+linux-serial = ["linux-usb"]
+# Linux input core and HID (generic, multitouch, HID over I2C for laptop
+# touchpads); Linux input devices become RustOS ones.
+linux-hid = ["linux-i2c"]
+# Linux USB HID instead of the native USB HID driver (tests the Linux HID
+# path on QEMU's USB keyboard and tablet).
+linux-usbhid = ["linux-hid", "linux-usb"]
+# ACPI I2C controllers and AMD GPIO for I2C-HID touchpads (M33).
+linux-platform = ["linux-hid"]
+# USB webcams: V4L2, videobuf2, media controller and uvcvideo (M33).
+linux-video = ["linux-usb", "linux-i2c"]
+# Linux sound: ALSA with OSS emulation, Intel HDA and USB audio, in place
+# of the native HDA and USB audio drivers (M34). USB audio reports to the
+# media controller, hence linux-video.
+linux-sound = ["linux-usb", "linux-video", "linux-hid"]
+# DRM core and KMS helpers (M35); drivers are features of their own.
+linux-drm = ["linuxkpi"]
+linux-drm-sysfb = ["linux-drm"]
+linux-drm-bochs = ["linux-drm"]
+linux-drm-virtio = ["linux-drm"]
+# AMD GPUs through Linux amdgpu (M38): compiled, untested on hardware.
+linux-drm-amd = ["linux-drm", "linux-i2c"]
+# GPU drivers in release images (write_to_drive.sh): opt-in at boot with
+# kernel.conf linux.enable=<driver> until they have run on hardware.
+# NVIDIA GPUs through Linux nouveau (M39): compiled, untested on hardware.
+linux-drm-nouveau = ["linux-drm", "linux-i2c"]
+linux-gpu = ["linux-drm-amd", "linux-drm-nouveau"]
+# SD/MMC cards on SDHCI hosts (PCI, ACPI) with Linux's MMC core: mmcblkN.
+linux-mmc = ["linuxkpi"]
+# Linux I2C core (adapters, ACPI-enumerated clients, bit-banging).
+linux-i2c = ["linuxkpi"]
+# Linux PHY library and MDIO bus (phylink, the Realtek PHY driver).
+linux-phy = ["linuxkpi"]
+# Linux PCIe Ethernet drivers for hardware the native drivers do not
+# cover: igb, e1000e, igc, alx, tg3, atlantic, r8169 (with phylib).
+linux-eth = ["linux-i2c", "linux-phy"]
+# MediaTek MT7921/MT7921K/MT7920/MT7922 Wi-Fi (Linux mt76): PCIe, and the
+# MT7921AU USB adapters.
+linux-mt7921 = ["linux-wifi", "linux-usb"]
+# The Linux drivers release images ship (write_to_drive.sh builds with it).
+linux-drivers = ["linux-mt7921", "linux-eth", "linux-usbnet", "linux-serial", "linux-mmc", "linux-hid", "linux-platform", "linux-video", "linux-sound", "linux-drm-sysfb", "linux-drm-bochs", "linux-drm-virtio"]
 
 [dependencies]
 bootloader_api = "0.11"
@@ -75,6 +129,13 @@ default-features = false
 
 # WPA2 key derivation and WPA3-SAE group math are slow unoptimized; keep
 # them fast in debug kernels too.
+# Light optimisation for the kernel itself: unoptimised packet and
+# 802.11 paths are too slow under QEMU's emulation for Wi-Fi handshakes
+# (wifi-hwsim) to meet their timeouts.
+[profile.dev]
+opt-level = 1
+[profile.dev.package.smoltcp]
+opt-level = 3
 [profile.dev.package.wlan]
 opt-level = 3
 [profile.dev.package.sha1]

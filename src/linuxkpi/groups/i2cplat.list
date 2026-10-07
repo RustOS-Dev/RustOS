@@ -1,0 +1,9 @@
+# ACPI I2C controllers (M33): Synopsys DesignWare on AMD (AMDI0010) and
+# other ACPI platforms (regmap in the regmap group), and fixed-rate clocks
+# (c/clk.c).
+kpi:clk.c
+module: i2c_designware_core
+drivers/i2c/busses/i2c-designware-common.c
+drivers/i2c/busses/i2c-designware-master.c
+module: i2c_designware_platform
+drivers/i2c/busses/i2c-designware-platdrv.c

@@ -96,6 +96,15 @@ impl FdTable {
         }
     }
 
+    /// One past the highest descriptor slot.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.iter().all(|e| e.is_none())
+    }
+
     pub fn close_all(&mut self) {
         self.entries.clear();
     }

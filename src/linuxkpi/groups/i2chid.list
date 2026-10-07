@@ -1,0 +1,6 @@
+# HID over I2C (M33): laptop touchpads and touchscreens (ACPI PNP0C50).
+module: i2c_hid
+drivers/hid/i2c-hid/i2c-hid-core.c
+drivers/hid/i2c-hid/i2c-hid-dmi-quirks.c
+module: i2c_hid_acpi
+drivers/hid/i2c-hid/i2c-hid-acpi.c

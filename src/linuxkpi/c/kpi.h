@@ -9,16 +9,31 @@
 #define _RUSTOS_KPI_H
 
 #include <linux/types.h>
+#include <linux/irqreturn.h>
 
 /* Memory (src/linuxkpi/mm.rs). Physical addresses; 0 means failure. */
 u64 rustos_kpi_page_offset(void);
 u64 rustos_kpi_max_pfn(void);
+u64 rustos_kpi_mem_pages(u64 *free);
+void rustos_kpi_power(int reboot) __attribute__((noreturn));
 u64 rustos_kpi_map_zeroed(u64 virt, u64 size);	/* 0 on success */
 u64 rustos_kpi_alloc_frames(u64 count, u64 align, int below_4g);
 void rustos_kpi_free_frames(u64 phys, u64 count);
 void *rustos_kpi_vmalloc(u64 size);
 void rustos_kpi_vfree(const void *addr);
 int rustos_kpi_is_vmalloc(const void *addr);
+u64 rustos_kpi_vmalloc_size(const void *addr);
+u64 rustos_kpi_virt_to_phys(u64 virt);
+void *rustos_kpi_vmap(const u64 *phys, u64 count);
+void rustos_kpi_vunmap(const void *virt, u64 count);
+u64 rustos_kpi_fb_phys(u64 *len);
+void rustos_kpi_fb_release(void);
+void rustos_kpi_uevent(const char *buf, size_t len);
+u64 rustos_kpi_uevent_seqnum(void);
+int rustos_kpi_fb_geometry(u32 *width, u32 *height, u32 *pitch, u32 *bpp, int *bgr);
+bool kpi_sysfb_register(void);
+void rustos_kpi_console_attach(void *ptr, u64 len, u32 width, u32 height, u32 pitch);
+int rustos_kpi_console_damage(u32 *lo, u32 *hi);
 void *rustos_kpi_ioremap(u64 phys, u64 size, int wc);
 void rustos_kpi_iounmap(void *addr);
 
@@ -32,7 +47,9 @@ u64 rustos_kpi_nanos(void);
 void rustos_kpi_delay_ns(u64 ns);
 u64 rustos_kpi_thread_id(void);
 void **rustos_kpi_task_slot(void);	/* per-thread slot for the task_struct shadow */
-void rustos_kpi_sleep(u64 deadline_ns);	/* until woken; 0 = no timeout */
+/* Until woken; 0 = no timeout. `site` (the caller) shows as the thread's
+ * wait channel in state dumps. */
+void rustos_kpi_sleep(u64 deadline_ns, void *site);
 void rustos_kpi_wake(u64 tid);
 void rustos_kpi_yield(void);
 u64 rustos_kpi_spawn(void (*fn)(void *), void *arg, const char *name);
@@ -68,11 +85,22 @@ void rustos_kpi_pci_write(u32 idx, u32 off, u32 size, u32 val);
  * interrupt context. Returns the vector or -1. */
 int rustos_kpi_pci_irq(u32 idx, int msi, void (*fn)(void *), void *arg);
 int rustos_kpi_pci_has_msi(u32 idx);
+int rustos_kpi_pci_claimed(u32 idx);
+int rustos_kpi_driver_allowed(const char *name);
 u64 rustos_kpi_random_u64(void);
 
 /* Network devices (src/linuxkpi/net.rs). */
-u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless,
-			       const char *driver, char *name, u32 name_len);
+/* `ether`: 0 for interfaces that carry no Ethernet frames (radiotap
+ * monitors), which RustOS's IP stack leaves alone. */
+u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless, int ether,
+			       const char *driver, const char *name);
+int rustos_kpi_netdev_ifindex(u64 handle);
+/* The interface was opened (1) or closed (0) on the Linux side. */
+void rustos_kpi_netdev_state(u64 handle, int up);
+void rustos_kpi_net_kick(void);	/* a transmit queue has room again */
+void rustos_kpi_netdev_unregister(u64 handle);
+void rustos_kpi_netdev_set_mac(u64 handle, const u8 *mac);
+int rustos_kpi_ifname_free(const char *name);
 void rustos_kpi_netdev_rx(u64 handle, const void *data, u32 len);
 void rustos_kpi_netdev_carrier(u64 handle, int on);
 void rustos_kpi_netdev_mtu(u64 handle, u32 mtu);
@@ -104,9 +132,91 @@ int rustos_kpi_acpi_eval(const char *path, const void *args, size_t args_len,
 int rustos_kpi_acpi_exists(const char *path);
 int rustos_kpi_acpi_pci_path(u8 bus, u8 dev, u8 func, char *buf, size_t len);
 int rustos_kpi_acpi_table(const u8 *sig, u32 instance, u64 *phys, u64 *len);
+void rustos_kpi_acpi_for_each_device(void (*cb)(void *ctx, const char *path, const char *hid,
+						   const char *cids, const char *uid, u32 sta,
+						   u64 adr, int has_adr),
+				     void *ctx);
+int rustos_kpi_gsi_request(u32 gsi, int level, int active_low, void (*fn)(void *), void *arg);
+void rustos_kpi_gsi_mask(u32 gsi, int masked);
+void rustos_kpi_isa_irq(u32 irq, u32 *gsi, int *level, int *active_low);
+
+/* ACPI namespace nodes and device objects (c/acpi.c, c/acpiscan.c). */
+struct acpi_device;
+void *kpi_acpi_intern(const char *path);
+const char *kpi_acpi_path(void *handle);
+void kpi_acpi_scan_devices(void);
+struct acpi_device *kpi_acpi_device_at(const char *path);
+bool acpi_device_is_present(const struct acpi_device *adev);
+
+/* PCI functions' own interrupts (c/pci.c), behind c/irq.c's API. */
+int kpi_pci_request_irq(unsigned int irq, irqreturn_t (*handler)(int, void *),
+			irqreturn_t (*thread_fn)(int, void *), unsigned long flags, const char *name, void *dev);
+const void *kpi_pci_free_irq(unsigned int irq, void *dev_id);
+void kpi_pci_synchronize_irq(unsigned int irq);
+void kpi_pci_disable_irq(unsigned int irq);
+void kpi_pci_enable_irq(unsigned int irq);
+
+/* Character devices and descriptors (src/linuxkpi/chrdev.rs). */
+int rustos_kpi_devnode_add(const char *name, u32 devt, int block);
+void rustos_kpi_devnode_remove(const char *name);
+void rustos_kpi_waitq_wake(void *waitq);
+int rustos_kpi_fd_install(void *file, int cloexec, int fd);
+int rustos_kpi_fd_reserve(int cloexec);
+void rustos_kpi_fd_unreserve(int fd);
+void *rustos_kpi_fd_file(int fd);
+
+/* Netlink (src/linuxkpi/net.rs): a kernel socket for protocol `unit`
+ * gets user datagrams through input() and closed user ports through
+ * release(); NULLs unregister. */
+void rustos_kpi_netlink_register(u32 unit, void (*input)(u32, u32, const void *, size_t),
+				 void (*release)(u32, u32));
+int rustos_kpi_netlink_unicast(u32 proto, u32 portid, const void *data, size_t len);
+int rustos_kpi_netlink_multicast(u32 proto, u32 group, u32 exclude_portid, const void *data,
+				 size_t len);	/* sockets reached */
+int rustos_kpi_netlink_has_listeners(u32 proto, u32 group);
+
+/* USB (src/linuxkpi/usb.rs). Endpoints are addresses (bit 7: IN); 0 is
+ * the control endpoint, whose URBs carry `setup`. Errors are -errno. */
+int rustos_kpi_usb_control(u64 handle, const u8 *setup, void *data, u32 timeout_ms);
+/* Isochronous URBs pass their struct usb_iso_packet_descriptor array,
+ * whose actual_length and status RustOS fills in. */
+int rustos_kpi_usb_submit(u64 handle, u8 ep, void *buf, u32 len, const u8 *setup,
+			  int zero_packet, void *iso, u32 npackets,
+			  void *urb);	/* completes via kpi_usb_complete() */
+int rustos_kpi_usb_cancel(u64 handle, u8 ep, void *urb);
+int rustos_kpi_usb_clear_halt(u64 handle, u8 ep);
+int rustos_kpi_usb_set_interface(u64 handle, u32 ifnum, u32 alt, int select);
+int rustos_kpi_usb_claim(u64 handle, u32 ifnum);	/* 1: claimed for Linux */
+void *rustos_kpi_usb_cookie(u64 handle);
+void rustos_kpi_usb_set_cookie(u64 handle, void *cookie);
+
+/* tty devices (src/linuxkpi/tty.rs): RustOS terminals for Linux ttys. */
+struct kpi_tty;
+u64 rustos_kpi_tty_register(const char *name, u32 major, u32 minor, struct kpi_tty *kt,
+			    u32 cflag);
+void rustos_kpi_tty_unregister(u64 handle);
+void rustos_kpi_tty_hangup(u64 handle);
+void rustos_kpi_tty_receive(u64 handle, const u8 *data, size_t len);
+
+/* SD/MMC cards (src/linuxkpi/mmc.rs). */
+struct kpi_mmc_disk;
+u64 rustos_kpi_mmc_disk_add(struct kpi_mmc_disk *d, u64 sectors, const char *model, int ro);
+void rustos_kpi_mmc_disk_remove(u64 handle);
+
+/* Input devices (src/linuxkpi/input.rs). */
+struct kpi_input_caps;
+struct input_handle;
+u64 rustos_kpi_input_add(const char *name, const char *phys, const struct kpi_input_caps *caps,
+			 struct input_handle *handle);
+void rustos_kpi_input_remove(u64 rid);
+void rustos_kpi_input_event(u64 rid, u32 type, u32 code, s32 value);
+
+/* Credentials of the calling process (src/linuxkpi/sched.rs). */
+u32 rustos_kpi_current_uid(void);
 
 /* Shared between the C glue files. */
 void kpi_netdev_open_pending(void);
+bool kpi_uaccess_kernel(const void *addr, unsigned long n);
 struct pci_dev;
 void kpi_acpi_pci_companion(struct pci_dev *pdev);
 

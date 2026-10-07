@@ -18,6 +18,12 @@ unsafe extern "C" {
     /// Build an skb from `data` and hand it to the driver. 0 on success.
     fn kpi_netdev_xmit(dev: *mut c_void, data: *const u8, len: u32) -> c_int;
     fn kpi_netdev_stop(dev: *mut c_void);
+    /// 1 if some transmit queue of the device is running.
+    fn kpi_netdev_tx_ready(dev: *mut c_void) -> c_int;
+    /// dev_open()/dev_close(); 0 or -errno.
+    fn kpi_netdev_set_up(dev: *mut c_void, up: c_int) -> c_int;
+    /// ndo_set_mac_address(); 0 or -errno.
+    fn kpi_netdev_set_mac(dev: *mut c_void, mac: *const u8) -> c_int;
 }
 
 /// Frames waiting for the network thread, per interface (bounded).
@@ -26,7 +32,8 @@ const RX_QUEUE_MAX: usize = 1024;
 struct LinuxNetDev {
     dev: usize,
     driver: &'static str,
-    mac: [u8; 6],
+    mac: Mutex<[u8; 6]>,
+    index: AtomicU32,
     mtu: AtomicU32,
     wireless: bool,
     carrier: AtomicBool,
@@ -35,7 +42,7 @@ struct LinuxNetDev {
 
 impl NetDevice for LinuxNetDev {
     fn mac(&self) -> [u8; 6] {
-        self.mac
+        *self.mac.lock()
     }
     fn mtu(&self) -> usize {
         self.mtu.load(Ordering::Relaxed) as usize
@@ -61,42 +68,64 @@ impl NetDevice for LinuxNetDev {
             _ => Err(EAGAIN),
         }
     }
+    fn tx_ready(&self) -> bool {
+        unsafe { kpi_netdev_tx_ready(self.dev as *mut c_void) != 0 }
+    }
     fn receive(&self) -> Option<Vec<u8>> {
         without_interrupts(|| self.rx.lock().pop_front())
     }
     fn shutdown(&self) {
         unsafe { kpi_netdev_stop(self.dev as *mut c_void) };
     }
+    fn set_mac(&self, mac: [u8; 6]) -> KResult<()> {
+        match unsafe { kpi_netdev_set_mac(self.dev as *mut c_void, mac.as_ptr()) } {
+            0 => Ok(()),
+            e => Err(crate::errno::Errno(-e)),
+        }
+    }
+    fn set_up(&self, up: bool) -> KResult<()> {
+        match unsafe { kpi_netdev_set_up(self.dev as *mut c_void, up as c_int) } {
+            0 => Ok(()),
+            e => Err(crate::errno::Errno(-e)),
+        }
+    }
 }
 
 static NEXT: AtomicU32 = AtomicU32::new(1);
 static DEVS: Mutex<BTreeMap<u64, Arc<LinuxNetDev>>> = Mutex::new(BTreeMap::new());
 
-/// Register a Linux net_device; writes the interface name (eth0, wlan0, …)
-/// into `name` and returns a handle for the other calls.
+fn dev(handle: u64) -> Option<Arc<LinuxNetDev>> {
+    without_interrupts(|| DEVS.lock().get(&handle).cloned())
+}
+
+fn c_str(p: *const c_char) -> Option<String> {
+    (!p.is_null()).then(|| String::from(unsafe { core::ffi::CStr::from_ptr(p) }.to_string_lossy()))
+}
+
+/// Register a Linux net_device under `name` (chosen by dev_alloc_name());
+/// returns a handle for the other calls.
 #[unsafe(no_mangle)]
 extern "C" fn rustos_kpi_netdev_register(
     dev: *mut c_void,
     mac: *const u8,
     mtu: u32,
     wireless: c_int,
+    ether: c_int,
     driver: *const c_char,
-    name: *mut u8,
-    name_len: u32,
+    name: *const c_char,
 ) -> u64 {
     let mut m = [0u8; 6];
     m.copy_from_slice(unsafe { core::slice::from_raw_parts(mac, 6) });
     // Driver names are string literals in the driver's module; keep a copy.
-    let drv = if driver.is_null() {
-        "linux"
-    } else {
-        let s = unsafe { core::ffi::CStr::from_ptr(driver) }.to_string_lossy();
-        &*alloc::boxed::Box::leak(String::from(s).into_boxed_str())
+    let drv: &'static str = match c_str(driver) {
+        Some(s) => alloc::boxed::Box::leak(s.into_boxed_str()),
+        None => "linux",
     };
     let nd = Arc::new(LinuxNetDev {
         dev: dev as usize,
         driver: drv,
-        mac: m,
+        mac: Mutex::new(m),
+        index: AtomicU32::new(0),
         mtu: AtomicU32::new(mtu),
         wireless: wireless != 0,
         carrier: AtomicBool::new(false),
@@ -104,13 +133,129 @@ extern "C" fn rustos_kpi_netdev_register(
     });
     let handle = NEXT.fetch_add(1, Ordering::SeqCst) as u64;
     without_interrupts(|| DEVS.lock().insert(handle, nd.clone()));
-    let ifname = crate::net::register(nd);
-    let out = unsafe { core::slice::from_raw_parts_mut(name, name_len as usize) };
-    let n = ifname.len().min(out.len().saturating_sub(1));
-    out[..n].copy_from_slice(&ifname.as_bytes()[..n]);
-    out[n] = 0;
+    let want = c_str(name);
+    let (ifname, index) = crate::net::register_named(nd.clone(), want.as_deref());
+    nd.index.store(index, Ordering::SeqCst);
+    if ether == 0 {
+        let _ = crate::net::set_dhcp(&ifname, false);
+    }
     crate::println!("[linuxkpi] {} registered as {}", drv, ifname);
     handle
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netdev_ifindex(handle: u64) -> c_int {
+    dev(handle).map_or(0, |d| d.index.load(Ordering::SeqCst) as c_int)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netdev_state(handle: u64, up: c_int) {
+    if let Some(d) = dev(handle) {
+        crate::net::set_admin_state(d.index.load(Ordering::SeqCst), up != 0);
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netdev_unregister(handle: u64) {
+    if let Some(d) = without_interrupts(|| DEVS.lock().remove(&handle)) {
+        crate::net::unregister_index(d.index.load(Ordering::SeqCst));
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netdev_set_mac(handle: u64, mac: *const u8) {
+    if let Some(d) = dev(handle) {
+        d.mac
+            .lock()
+            .copy_from_slice(unsafe { core::slice::from_raw_parts(mac, 6) });
+        crate::net::kick();
+    }
+}
+
+/// A transmit queue woke up: let the stack send what it held back.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_net_kick() {
+    crate::net::kick();
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_ifname_free(name: *const c_char) -> c_int {
+    c_str(name).is_some_and(|n| crate::net::name_free(&n)) as c_int
+}
+
+// ------------------------------------------------------------- netlink
+
+type NlInput = unsafe extern "C" fn(u32, u32, *const u8, usize);
+type NlRelease = unsafe extern "C" fn(u32, u32);
+
+/// The C kernel sockets, per netlink protocol.
+static NL_C: Mutex<[(usize, usize); 32]> = Mutex::new([(0, 0); 32]);
+
+fn nl_input(proto: u32, portid: u32, data: &[u8]) {
+    let f = NL_C.lock().get(proto as usize).map_or(0, |e| e.0);
+    if f != 0 {
+        let f: NlInput = unsafe { core::mem::transmute(f) };
+        unsafe { f(proto, portid, data.as_ptr(), data.len()) };
+    }
+}
+
+fn nl_release(proto: u32, portid: u32) {
+    let f = NL_C.lock().get(proto as usize).map_or(0, |e| e.1);
+    if f != 0 {
+        let f: NlRelease = unsafe { core::mem::transmute(f) };
+        unsafe { f(proto, portid) };
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netlink_register(
+    unit: u32,
+    input: Option<NlInput>,
+    release: Option<NlRelease>,
+) {
+    if unit as usize >= 32 {
+        return;
+    }
+    NL_C.lock()[unit as usize] = (
+        input.map_or(0, |f| f as usize),
+        release.map_or(0, |f| f as usize),
+    );
+    if input.is_some() {
+        crate::net::netlink::register_kernel(unit, Some(nl_input), Some(nl_release));
+    } else {
+        crate::net::netlink::register_kernel(unit, None, None);
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netlink_unicast(
+    proto: u32,
+    portid: u32,
+    data: *const u8,
+    len: usize,
+) -> c_int {
+    let d = unsafe { core::slice::from_raw_parts(data, len) }.to_vec();
+    match crate::net::netlink::unicast(proto, portid, d) {
+        Ok(()) => 0,
+        Err(e) => -e.0,
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netlink_multicast(
+    proto: u32,
+    group: u32,
+    exclude: u32,
+    data: *const u8,
+    len: usize,
+) -> c_int {
+    let d = unsafe { core::slice::from_raw_parts(data, len) };
+    crate::net::netlink::multicast_except(proto, group, exclude, d) as c_int
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_netlink_has_listeners(proto: u32, group: u32) -> c_int {
+    crate::net::netlink::has_listeners(proto, group) as c_int
 }
 
 #[unsafe(no_mangle)]

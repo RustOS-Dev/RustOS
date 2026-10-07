@@ -1,0 +1,4 @@
+# SDHCI controller with an ext4-formatted 64 MiB SD card
+-device sdhci-pci
+-drive if=none,id=card0,format=raw,file=@EXT4:64:sdcard@
+-device sd-card,drive=card0

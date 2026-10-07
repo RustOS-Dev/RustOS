@@ -20,7 +20,9 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/timer.h>
+#include <linux/hrtimer.h>
 #include <linux/workqueue.h>
+#include <linux/async.h>
 #include "kpi.h"
 
 /* x86_64 Linux makes jiffies an alias of jiffies_64 in its linker script. */
@@ -195,6 +197,188 @@ int timer_shutdown(struct timer_list *timer)
 	return was;
 }
 
+/* --------------------------------------------------------------- hrtimers */
+
+/*
+ * hrtimers are RustOS one-shot timers too. The handle lives in
+ * node.node.__rb_parent_color; state is HRTIMER_STATE_ENQUEUED while one
+ * is armed. Expiry times are in the timer's clock (node.expires): monotonic
+ * and boot time are the same clock here, and CLOCK_REALTIME/TAI deadlines
+ * are converted when armed. Callbacks run in the softirq thread.
+ */
+static struct hrtimer_cpu_base kpi_hrtimer_cpu_base;
+static struct hrtimer_clock_base kpi_hrtimer_bases[] = {
+	{ .cpu_base = &kpi_hrtimer_cpu_base, .index = 0, .clockid = CLOCK_MONOTONIC },
+	{ .cpu_base = &kpi_hrtimer_cpu_base, .index = 1, .clockid = CLOCK_REALTIME },
+	{ .cpu_base = &kpi_hrtimer_cpu_base, .index = 2, .clockid = CLOCK_BOOTTIME },
+	{ .cpu_base = &kpi_hrtimer_cpu_base, .index = 3, .clockid = CLOCK_TAI },
+};
+
+/* From kernel/time/hrtimer.c: add, saturating at KTIME_MAX. */
+ktime_t ktime_add_safe(const ktime_t lhs, const ktime_t rhs)
+{
+	ktime_t res = ktime_add_unsafe(lhs, rhs);
+
+	if (res < 0 || res < lhs || res < rhs)
+		res = ktime_set(KTIME_SEC_MAX, 0);
+	return res;
+}
+
+static ktime_t kpi_clock_now(clockid_t clock)
+{
+	return clock == CLOCK_REALTIME || clock == CLOCK_TAI ? rustos_kpi_realtime_ns() :
+							       rustos_kpi_nanos();
+}
+
+static void kpi_hrtimer_fire(void *arg, u64 handle);
+
+void hrtimer_setup(struct hrtimer *timer, enum hrtimer_restart (*function)(struct hrtimer *),
+		   clockid_t clock_id, enum hrtimer_mode mode)
+{
+	struct hrtimer_clock_base *base = &kpi_hrtimer_bases[0];
+
+	memset(timer, 0, sizeof(*timer));
+	for (int i = 0; i < ARRAY_SIZE(kpi_hrtimer_bases); i++)
+		if (kpi_hrtimer_bases[i].clockid == clock_id)
+			base = &kpi_hrtimer_bases[i];
+	timer->base = base;
+	ACCESS_PRIVATE(timer, function) = function;
+	timer->is_soft = !!(mode & HRTIMER_MODE_SOFT);
+	timer->is_hard = !!(mode & HRTIMER_MODE_HARD);
+}
+
+/* Lock held. */
+static int kpi_hrtimer_detach(struct hrtimer *timer)
+{
+	if (!(timer->state & HRTIMER_STATE_ENQUEUED))
+		return 0;
+	rustos_kpi_timer_cancel(timer->node.node.__rb_parent_color);
+	timer->node.node.__rb_parent_color = 0;
+	WRITE_ONCE(timer->state, HRTIMER_STATE_INACTIVE);
+	return 1;
+}
+
+/* Lock held: arm for node.expires. */
+static void kpi_hrtimer_arm(struct hrtimer *timer)
+{
+	ktime_t now = kpi_clock_now(timer->base->clockid);
+	s64 delta = ktime_to_ns(ktime_sub(timer->node.expires, now));
+
+	if (delta < 0)
+		delta = 0;
+	timer->node.node.__rb_parent_color =
+		rustos_kpi_timer_start(rustos_kpi_nanos() + delta, kpi_hrtimer_fire, timer);
+	WRITE_ONCE(timer->state, HRTIMER_STATE_ENQUEUED);
+}
+
+void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim, u64 range_ns,
+			    const enum hrtimer_mode mode)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	kpi_hrtimer_detach(timer);
+	if (mode & HRTIMER_MODE_REL)
+		tim = ktime_add_safe(kpi_clock_now(timer->base->clockid), tim);
+	timer->node.expires = tim;
+	timer->_softexpires = tim;
+	kpi_hrtimer_arm(timer);
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+}
+
+static void kpi_hrtimer_fire(void *arg, u64 handle)
+{
+	struct hrtimer *timer = arg;
+	enum hrtimer_restart (*fn)(struct hrtimer *);
+	enum hrtimer_restart ret;
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	if (!(timer->state & HRTIMER_STATE_ENQUEUED) ||
+	    timer->node.node.__rb_parent_color != handle) {
+		raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+		return;
+	}
+	timer->node.node.__rb_parent_color = 0;
+	WRITE_ONCE(timer->state, HRTIMER_STATE_INACTIVE);
+	WRITE_ONCE(timer->base->running, timer);
+	fn = ACCESS_PRIVATE(timer, function);
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+
+	ret = fn(timer);
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	/* Restart unless the callback (or someone else) re-armed it. */
+	if (ret == HRTIMER_RESTART && !(timer->state & HRTIMER_STATE_ENQUEUED))
+		kpi_hrtimer_arm(timer);
+	WRITE_ONCE(timer->base->running, NULL);
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+}
+
+int hrtimer_try_to_cancel(struct hrtimer *timer)
+{
+	unsigned long flags;
+	int ret;
+
+	raw_spin_lock_irqsave(&kpi_timer_lock, flags);
+	if (READ_ONCE(timer->base->running) == timer)
+		ret = -1;
+	else
+		ret = kpi_hrtimer_detach(timer);
+	raw_spin_unlock_irqrestore(&kpi_timer_lock, flags);
+	return ret;
+}
+
+int hrtimer_cancel(struct hrtimer *timer)
+{
+	int ret;
+
+	for (;;) {
+		ret = hrtimer_try_to_cancel(timer);
+		if (ret >= 0)
+			return ret;
+		rustos_kpi_yield();
+	}
+}
+
+bool hrtimer_active(const struct hrtimer *timer)
+{
+	return (READ_ONCE(timer->state) & HRTIMER_STATE_ENQUEUED) ||
+	       READ_ONCE(timer->base->running) == timer;
+}
+
+ktime_t hrtimer_cb_get_time(const struct hrtimer *timer)
+{
+	return kpi_clock_now(timer->base->clockid);
+}
+
+u64 hrtimer_forward(struct hrtimer *timer, ktime_t now, ktime_t interval)
+{
+	ktime_t delta = ktime_sub(now, hrtimer_get_expires(timer));
+	u64 orun = 1;
+
+	if (delta < 0)
+		return 0;
+	if (interval < 1)
+		interval = 1;
+	if (delta >= interval) {
+		s64 incr = ktime_to_ns(interval);
+
+		orun = ktime_divns(delta, incr);
+		hrtimer_add_expires_ns(timer, incr * orun);
+		if (hrtimer_get_expires_tv64(timer) > now)
+			return orun;
+		orun++;
+	}
+	hrtimer_add_expires(timer, interval);
+	return orun;
+}
+
+ktime_t __hrtimer_get_remaining(const struct hrtimer *timer, bool adjust)
+{
+	return ktime_sub(hrtimer_get_expires(timer), kpi_clock_now(timer->base->clockid));
+}
+
 /* ------------------------------------------------------------ workqueues */
 
 #define KPI_WQ_MAX_WORKERS	4
@@ -298,8 +482,27 @@ static void kpi_queue(struct workqueue_struct *wq, struct work_struct *work)
 	wake_up(&wq->more);
 }
 
+/* Work items disabled by disable_work*() (and how often): queueing them
+ * fails until enable_work*() balances the count. Linux keeps the count in
+ * work->data; a small table does here. */
+#define KPI_MAX_DISABLED 128
+static struct {
+	struct work_struct *work;
+	int count;
+} kpi_disabled[KPI_MAX_DISABLED];
+
+static bool kpi_work_disabled(struct work_struct *work)
+{
+	for (int i = 0; i < KPI_MAX_DISABLED; i++)
+		if (READ_ONCE(kpi_disabled[i].work) == work)
+			return true;
+	return false;
+}
+
 bool queue_work_on(int cpu, struct workqueue_struct *wq, struct work_struct *work)
 {
+	if (kpi_work_disabled(work))
+		return false;
 	if (test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))
 		return false;
 	kpi_queue(wq, work);
@@ -315,12 +518,18 @@ void delayed_work_timer_fn(struct timer_list *t)
 {
 	struct delayed_work *dwork = timer_container_of(dwork, t, timer);
 
+	if (kpi_work_disabled(&dwork->work)) {
+		clear_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&dwork->work));
+		return;
+	}
 	kpi_queue(dwork->wq, &dwork->work);
 }
 
 bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq, struct delayed_work *dwork,
 			   unsigned long delay)
 {
+	if (kpi_work_disabled(&dwork->work))
+		return false;
 	if (test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&dwork->work)))
 		return false;
 	dwork->wq = wq;
@@ -386,6 +595,89 @@ bool cancel_delayed_work_sync(struct delayed_work *dwork)
 	return cancel_work_sync(&dwork->work) || t;
 }
 
+bool disable_work(struct work_struct *work)
+{
+	unsigned long flags;
+	bool was = kpi_cancel(work);
+	int free = -1;
+
+	raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+	for (int i = 0; i < KPI_MAX_DISABLED; i++) {
+		if (kpi_disabled[i].work == work) {
+			kpi_disabled[i].count++;
+			free = -2;
+			break;
+		}
+		if (!kpi_disabled[i].work && free == -1)
+			free = i;
+	}
+	if (free >= 0) {
+		kpi_disabled[free].work = work;
+		kpi_disabled[free].count = 1;
+	}
+	raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+	WARN_ON_ONCE(free == -1);
+	return was;
+}
+
+bool disable_work_sync(struct work_struct *work)
+{
+	bool was = disable_work(work);
+
+	while (kpi_work_running(work))
+		rustos_kpi_yield();
+	return was;
+}
+
+bool enable_work(struct work_struct *work)
+{
+	unsigned long flags;
+	bool enabled = true;
+
+	raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+	for (int i = 0; i < KPI_MAX_DISABLED; i++) {
+		if (kpi_disabled[i].work != work)
+			continue;
+		if (--kpi_disabled[i].count == 0)
+			kpi_disabled[i].work = NULL;
+		else
+			enabled = false;
+		break;
+	}
+	raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+	return enabled;
+}
+
+bool disable_delayed_work(struct delayed_work *dwork)
+{
+	bool t = timer_delete(&dwork->timer);
+
+	return disable_work(&dwork->work) || t;
+}
+
+bool disable_delayed_work_sync(struct delayed_work *dwork)
+{
+	bool t = timer_delete_sync(&dwork->timer);
+
+	return disable_work_sync(&dwork->work) || t;
+}
+
+bool enable_delayed_work(struct delayed_work *dwork)
+{
+	return enable_work(&dwork->work);
+}
+
+unsigned int work_busy(struct work_struct *work)
+{
+	unsigned int ret = 0;
+
+	if (test_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))
+		ret |= WORK_BUSY_PENDING;
+	if (kpi_work_running(work))
+		ret |= WORK_BUSY_RUNNING;
+	return ret;
+}
+
 bool flush_work(struct work_struct *work)
 {
 	bool waited = false;
@@ -432,8 +724,12 @@ int kpi_workqueues_init(void)
 	system_freezable_power_efficient_wq = system_percpu_wq;
 	system_bh_wq = system_highpri_wq;
 	system_bh_highpri_wq = system_highpri_wq;
-	return system_percpu_wq && system_highpri_wq && system_long_wq && system_unbound_wq ?
-	       0 : -ENOMEM;
+	if (!system_percpu_wq || !system_highpri_wq || !system_long_wq || !system_unbound_wq)
+		return -ENOMEM;
+	/* kernel/async.c's queue (start_kernel() sets it up in Linux): drivers
+	 * that prefer asynchronous probing (sdhci-pci) use it. */
+	async_init();
+	return 0;
 }
 
 /* -------------------------------------------- jiffies conversions (time.c) */
@@ -560,4 +856,108 @@ time64_t ktime_get_real_seconds(void)
 /* Every workqueue runs its items on its own threads; nothing to tune. */
 void workqueue_set_min_active(struct workqueue_struct *wq, int min_active)
 {
+}
+
+struct timespec64 ns_to_timespec64(s64 nsec)
+{
+	struct timespec64 ts = { 0, 0 };
+	s32 rem;
+
+	if (likely(nsec > 0)) {
+		ts.tv_sec = div_u64_rem(nsec, NSEC_PER_SEC, &rem);
+		ts.tv_nsec = rem;
+	} else if (nsec < 0) {
+		ts.tv_sec = -div_u64_rem(-nsec - 1, NSEC_PER_SEC, &rem) - 1;
+		ts.tv_nsec = NSEC_PER_SEC - rem - 1;
+	}
+	return ts;
+}
+
+/* From kernel/time/timer.c (round to a whole second, never into the past). */
+static unsigned long kpi_round_jiffies(unsigned long j, bool force_up)
+{
+	unsigned long original = j;
+	int rem = j % HZ;
+
+	if (rem < HZ / 4 && !force_up)
+		j = j - rem;
+	else
+		j = j - rem + HZ;
+	return time_is_after_jiffies(j) ? j : original;
+}
+
+unsigned long round_jiffies(unsigned long j)
+{
+	return kpi_round_jiffies(j, false);
+}
+
+unsigned long round_jiffies_relative(unsigned long j)
+{
+	unsigned long j0 = jiffies;
+
+	return kpi_round_jiffies(j + j0, false) - j0;
+}
+
+unsigned long round_jiffies_up(unsigned long j)
+{
+	return kpi_round_jiffies(j, true);
+}
+
+unsigned long round_jiffies_up_relative(unsigned long j)
+{
+	unsigned long j0 = jiffies;
+
+	return kpi_round_jiffies(j + j0, true) - j0;
+}
+
+void set_normalized_timespec64(struct timespec64 *ts, time64_t sec, s64 nsec)
+{
+	while (nsec >= NSEC_PER_SEC) {
+		nsec -= NSEC_PER_SEC;
+		++sec;
+	}
+	while (nsec < 0) {
+		nsec += NSEC_PER_SEC;
+		--sec;
+	}
+	ts->tv_sec = sec;
+	ts->tv_nsec = nsec;
+}
+
+void ktime_get_clock_ts64(clockid_t id, struct timespec64 *ts)
+{
+	if (id == CLOCK_REALTIME)
+		ktime_get_real_ts64(ts);
+	else
+		*ts = ktime_to_timespec64(ktime_get());
+}
+
+/* No cross-timestamping between device and system clocks (PTP). */
+int get_device_system_crosststamp(int (*get_time_fn)(ktime_t *device_time,
+						     struct system_counterval_t *sys_counterval,
+						     void *ctx),
+				  void *ctx, struct system_time_snapshot *history,
+				  struct system_device_crosststamp *xtstamp)
+{
+	return -EOPNOTSUPP;
+}
+
+u64 sched_clock(void)
+{
+	return ktime_get_ns();
+}
+
+/* Monotonic time to another clock (offsets of real time; boot and TAI
+ * equal monotonic here: no suspend, no leap second table). */
+ktime_t ktime_mono_to_any(ktime_t tmono, enum tk_offsets offs)
+{
+	if (offs == TK_OFFS_REAL)
+		return ktime_add(tmono, ktime_sub(ktime_get_real(), ktime_get()));
+	return tmono;
+}
+
+/* No NTP adjustment: the raw monotonic clock is the monotonic clock. */
+void ktime_get_raw_ts64(struct timespec64 *ts)
+{
+	ktime_get_ts64(ts);
 }

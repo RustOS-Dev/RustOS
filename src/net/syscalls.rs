@@ -1,14 +1,15 @@
 //! Socket system calls, sockaddr conversion and interface ioctls.
 
+use super::generic::{Ancillary, Creds, GenericSocket};
 use super::socket::{AF_INET, AF_INET6, AF_UNIX, Proto, Socket};
+use super::unix;
 use crate::errno::*;
 use crate::process::uaccess;
 use crate::syscall::nr;
-use crate::vfs::{self, File, FileLike, POLLHUP, POLLIN, POLLOUT};
+use crate::vfs::{self, File, FileLike};
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::any::Any;
 use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv4Cidr, Ipv6Address};
 
 const SOCK_STREAM: u32 = 1;
@@ -146,6 +147,14 @@ fn read_iov(iov: u64, cnt: u64) -> KResult<Vec<(u64, usize)>> {
 }
 
 pub fn dispatch(n: u64, a: [u64; 6]) -> KResult<i64> {
+    // Non-IP sockets (AF_UNIX, AF_NETLINK, AF_PACKET).
+    if !matches!(n, nr::SOCKET | nr::SOCKETPAIR)
+        && let Ok(file) = get_file(a[0] as i32)
+        && let Some(stream) = file.stream()
+        && stream.as_socket().is_some()
+    {
+        return generic_dispatch(n, a, &file, stream.as_socket().unwrap());
+    }
     match n {
         nr::SOCKET => socket(a[0] as u16, a[1] as u32, a[2] as u32),
         nr::SOCKETPAIR => socketpair(a[0] as u16, a[1] as u32, a[3]),
@@ -267,7 +276,13 @@ fn socket(domain: u16, ty: u32, protocol: u32) -> KResult<i64> {
     let flags = ty & (SOCK_NONBLOCK | SOCK_CLOEXEC);
     let kind = ty & 0xF;
     if domain == AF_UNIX {
-        return Err(EAFNOSUPPORT);
+        if !matches!(kind, SOCK_STREAM | SOCK_DGRAM | unix::SOCK_SEQPACKET) {
+            return Err(ESOCKTNOSUPPORT);
+        }
+        return install(unix::UnixSocket::new(kind), flags);
+    }
+    if let Some(r) = super::other_family_socket(domain, kind, protocol) {
+        return install(r?, flags);
     }
     if domain != AF_INET && domain != AF_INET6 {
         return Err(EAFNOSUPPORT);
@@ -279,68 +294,298 @@ fn socket(domain: u16, ty: u32, protocol: u32) -> KResult<i64> {
         (SOCK_RAW, 1 | 58) => Proto::Icmp {
             raw: domain == AF_INET,
         },
+        // IPPROTO_RAW: programs (udhcpd, ifconfig) open one for interface
+        // ioctls; raw IP output itself is not supported.
+        (SOCK_RAW, 255) => Proto::Udp,
         (SOCK_STREAM | SOCK_DGRAM | SOCK_RAW, _) => return Err(EPROTONOSUPPORT),
         _ => return Err(ESOCKTNOSUPPORT),
     };
     install(Socket::new(domain, proto), flags)
 }
 
-// ---------------------------------------------------------------------------
-// socketpair (AF_UNIX) over two pipes
-// ---------------------------------------------------------------------------
-
-struct PairEnd {
-    rx: Arc<dyn FileLike>,
-    tx: Arc<dyn FileLike>,
-}
-
-impl FileLike for PairEnd {
-    fn read(&self, buf: &mut [u8], nb: bool) -> KResult<usize> {
-        self.rx.read(buf, nb)
-    }
-    fn write(&self, buf: &[u8], nb: bool) -> KResult<usize> {
-        self.tx.write(buf, nb)
-    }
-    fn poll(&self) -> u16 {
-        (self.rx.poll() & (POLLIN | POLLHUP)) | (self.tx.poll() & POLLOUT)
-    }
-    fn wait_queue(&self) -> &crate::sched::WaitQueue {
-        self.rx.wait_queue() // shared with `tx`
-    }
-    fn stat(&self) -> KResult<crate::vfs::Metadata> {
-        Ok(crate::vfs::Metadata::new(
-            crate::vfs::FileType::Socket,
-            0o777,
-        ))
-    }
-    fn close(&self) {
-        self.rx.close();
-        self.tx.close();
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 fn socketpair(domain: u16, ty: u32, sv: u64) -> KResult<i64> {
     if domain != AF_UNIX {
-        return Err(EOPNOTSUPP);
+        return Err(EAFNOSUPPORT);
+    }
+    let kind = ty & 0xF;
+    if !matches!(kind, SOCK_STREAM | SOCK_DGRAM | unix::SOCK_SEQPACKET) {
+        return Err(ESOCKTNOSUPPORT);
     }
     let flags = ty & (SOCK_NONBLOCK | SOCK_CLOEXEC);
-    let wq = Arc::new(crate::sched::WaitQueue::new());
-    let (r1, w1) = vfs::pipe::pipe_on(wq.clone());
-    let (r2, w2) = vfs::pipe::pipe_on(wq);
-    let a = Arc::new(PairEnd { rx: r1, tx: w2 });
-    let b = Arc::new(PairEnd { rx: r2, tx: w1 });
+    let (a, b) = unix::UnixSocket::pair(kind);
     let fa = install(a, flags)? as i32;
-    let fb = install(b, flags)? as i32;
+    let fb = match install(b, flags) {
+        Ok(fd) => fd as i32,
+        Err(e) => {
+            let _ = cur_files()?.files.lock().close(fa);
+            return Err(e);
+        }
+    };
     uaccess::write_user(sv, &[fa, fb])?;
     Ok(0)
 }
 
 // ---------------------------------------------------------------------------
-// Options
+// Non-IP sockets
 // ---------------------------------------------------------------------------
+
+const MSG_TRUNC: u32 = 0x20;
+const MSG_CTRUNC: u32 = 0x8;
+const MSG_CMSG_CLOEXEC: u32 = 0x4000_0000;
+const SCM_RIGHTS: i32 = 1;
+const SCM_CREDENTIALS: i32 = 2;
+
+fn read_raw_addr(addr: u64, len: u64) -> KResult<Vec<u8>> {
+    if addr == 0 {
+        return Err(EFAULT);
+    }
+    uaccess::read_bytes(addr, (len as usize).min(128))
+}
+
+/// Write `raw` to a user sockaddr buffer whose length is at `lenptr`.
+fn write_raw_addr(addr: u64, lenptr: u64, raw: &[u8]) -> KResult<()> {
+    if addr == 0 || lenptr == 0 {
+        return Ok(());
+    }
+    let cap: u32 = uaccess::read_user(lenptr)?;
+    let n = raw.len().min(cap as usize);
+    uaccess::copy_to_user(addr, &raw[..n])?;
+    uaccess::write_user(lenptr, &(raw.len() as u32))
+}
+
+/// Parse control messages (`SCM_RIGHTS`, `SCM_CREDENTIALS`).
+fn read_cmsgs(ctl: u64, len: u64) -> KResult<Ancillary> {
+    let mut anc = Ancillary::default();
+    if ctl == 0 || len == 0 {
+        return Ok(anc);
+    }
+    let buf = uaccess::read_bytes(ctl, (len as usize).min(4096))?;
+    let mut off = 0;
+    while off + 16 <= buf.len() {
+        let clen = u64::from_ne_bytes(buf[off..off + 8].try_into().unwrap()) as usize;
+        let level = i32::from_ne_bytes(buf[off + 8..off + 12].try_into().unwrap());
+        let kind = i32::from_ne_bytes(buf[off + 12..off + 16].try_into().unwrap());
+        if clen < 16 || off + clen > buf.len() {
+            return Err(EINVAL);
+        }
+        let data = &buf[off + 16..off + clen];
+        if level == SOL_SOCKET as i32 && kind == SCM_RIGHTS {
+            let files = cur_files()?.files.lock().clone();
+            for c in data.chunks_exact(4) {
+                let fd = i32::from_ne_bytes(c.try_into().unwrap());
+                anc.files.push(files.get(fd)?);
+            }
+        } else if level == SOL_SOCKET as i32 && kind == SCM_CREDENTIALS {
+            // The kernel vouches for the credentials: use the real ones.
+            anc.creds = Some(Creds::current());
+        }
+        off += clen.next_multiple_of(8);
+    }
+    Ok(anc)
+}
+
+/// Append one control message if it fits in `cap` bytes.
+fn push_cmsg(out: &mut Vec<u8>, cap: usize, kind: i32, data: &[u8]) -> bool {
+    if out.len() + 16 + data.len() > cap {
+        return false;
+    }
+    out.extend_from_slice(&((16 + data.len()) as u64).to_ne_bytes());
+    out.extend_from_slice(&(SOL_SOCKET as i32).to_ne_bytes());
+    out.extend_from_slice(&kind.to_ne_bytes());
+    out.extend_from_slice(data);
+    let padded = out.len().next_multiple_of(8).min(cap);
+    out.resize(padded, 0);
+    true
+}
+
+/// Write `anc` as control messages; returns (bytes written, truncated).
+fn write_cmsgs(ctl: u64, cap: u64, anc: Ancillary, flags: u32) -> KResult<(usize, bool)> {
+    let cap = if ctl == 0 { 0 } else { cap as usize };
+    let mut out = Vec::new();
+    let mut truncated = false;
+    if let Some(c) = anc.creds {
+        let d = [
+            c.pid.to_ne_bytes(),
+            c.uid.to_ne_bytes(),
+            c.gid.to_ne_bytes(),
+        ]
+        .concat();
+        truncated |= !push_cmsg(&mut out, cap, SCM_CREDENTIALS, &d);
+    }
+    if !anc.files.is_empty() {
+        let room = cap.saturating_sub(out.len() + 16) / 4;
+        let n = anc.files.len().min(room);
+        truncated |= n < anc.files.len();
+        if n > 0 {
+            let p = cur_files()?;
+            let mut fds = Vec::new();
+            {
+                let mut table = p.files.lock();
+                for f in anc.files.into_iter().take(n) {
+                    fds.push(table.install(f, flags & MSG_CMSG_CLOEXEC != 0)?);
+                }
+            }
+            let d: Vec<u8> = fds.iter().flat_map(|fd| fd.to_ne_bytes()).collect();
+            push_cmsg(&mut out, cap, SCM_RIGHTS, &d);
+        }
+    }
+    if !out.is_empty() {
+        uaccess::copy_to_user(ctl, &out)?;
+    }
+    Ok((out.len(), truncated))
+}
+
+fn generic_dispatch(n: u64, a: [u64; 6], file: &Arc<File>, s: &dyn GenericSocket) -> KResult<i64> {
+    match n {
+        nr::BIND => {
+            s.bind(&read_raw_addr(a[1], a[2])?)?;
+            Ok(0)
+        }
+        nr::LISTEN => {
+            s.listen(a[1] as usize)?;
+            Ok(0)
+        }
+        nr::CONNECT => {
+            s.connect(&read_raw_addr(a[1], a[2])?, nonblock(file, 0))?;
+            Ok(0)
+        }
+        nr::ACCEPT | nr::ACCEPT4 => {
+            let flags = if n == nr::ACCEPT4 { a[3] as u32 } else { 0 };
+            let (child, peer) = s.accept(nonblock(file, 0))?;
+            write_raw_addr(a[1], a[2], &peer)?;
+            install(child, flags)
+        }
+        nr::SENDTO => {
+            let data = uaccess::read_bytes(a[1], (a[2] as usize).min(1 << 20))?;
+            let dest = if a[4] != 0 {
+                Some(read_raw_addr(a[4], a[5])?)
+            } else {
+                None
+            };
+            Ok(s.send(
+                &data,
+                dest.as_deref(),
+                Ancillary::default(),
+                nonblock(file, a[3] as u32),
+            )? as i64)
+        }
+        nr::RECVFROM => {
+            let flags = a[3] as u32;
+            let mut buf = vec![0u8; (a[2] as usize).min(1 << 20)];
+            let r = s.recv(&mut buf, nonblock(file, flags), flags & MSG_PEEK != 0)?;
+            uaccess::copy_to_user(a[1], &buf[..r.len])?;
+            if let Some(from) = &r.from {
+                write_raw_addr(a[4], a[5], from)?;
+            } else if a[5] != 0 {
+                uaccess::write_user(a[5], &0u32)?;
+            }
+            Ok(if flags & MSG_TRUNC != 0 {
+                r.full_len
+            } else {
+                r.len
+            } as i64)
+        }
+        nr::SENDMSG => {
+            let msg = a[1];
+            let name: u64 = uaccess::read_user(msg)?;
+            let namelen: u32 = uaccess::read_user(msg + 8)?;
+            let iov: u64 = uaccess::read_user(msg + 16)?;
+            let iovlen: u64 = uaccess::read_user(msg + 24)?;
+            let ctl: u64 = uaccess::read_user(msg + 32)?;
+            let ctllen: u64 = uaccess::read_user(msg + 40)?;
+            let mut data = Vec::new();
+            for (base, len) in read_iov(iov, iovlen)? {
+                data.extend_from_slice(&uaccess::read_bytes(base, len.min(1 << 20))?);
+            }
+            let dest = if name != 0 {
+                Some(read_raw_addr(name, namelen as u64)?)
+            } else {
+                None
+            };
+            let anc = read_cmsgs(ctl, ctllen)?;
+            Ok(s.send(&data, dest.as_deref(), anc, nonblock(file, a[2] as u32))? as i64)
+        }
+        nr::RECVMSG => {
+            let msg = a[1];
+            let flags = a[2] as u32;
+            let name: u64 = uaccess::read_user(msg)?;
+            let iov: u64 = uaccess::read_user(msg + 16)?;
+            let iovlen: u64 = uaccess::read_user(msg + 24)?;
+            let ctl: u64 = uaccess::read_user(msg + 32)?;
+            let ctlcap: u64 = uaccess::read_user(msg + 40)?;
+            let iovs = read_iov(iov, iovlen)?;
+            let total: usize = iovs.iter().map(|(_, l)| *l).sum();
+            let mut buf = vec![0u8; total.min(1 << 20)];
+            let r = s.recv(&mut buf, nonblock(file, flags), flags & MSG_PEEK != 0)?;
+            let mut off = 0;
+            for (base, len) in iovs {
+                if off >= r.len {
+                    break;
+                }
+                let m = len.min(r.len - off);
+                uaccess::copy_to_user(base, &buf[off..off + m])?;
+                off += m;
+            }
+            if name != 0 {
+                match &r.from {
+                    Some(from) => write_raw_addr(name, msg + 8, from)?,
+                    None => uaccess::write_user(msg + 8, &0u32)?,
+                }
+            }
+            let (clen, ctrunc) = write_cmsgs(ctl, ctlcap, r.ancillary, flags)?;
+            uaccess::write_user(msg + 40, &(clen as u64))?;
+            let mut mflags = 0u32;
+            if r.full_len > r.len {
+                mflags |= MSG_TRUNC;
+            }
+            if ctrunc {
+                mflags |= MSG_CTRUNC;
+            }
+            uaccess::write_user(msg + 48, &mflags)?;
+            Ok(if flags & MSG_TRUNC != 0 {
+                r.full_len
+            } else {
+                r.len
+            } as i64)
+        }
+        nr::SHUTDOWN => {
+            if a[1] > 2 {
+                return Err(EINVAL);
+            }
+            s.shutdown(a[1] as u32)?;
+            Ok(0)
+        }
+        nr::GETSOCKNAME => {
+            write_raw_addr(a[1], a[2], &s.sockname())?;
+            Ok(0)
+        }
+        nr::GETPEERNAME => {
+            write_raw_addr(a[1], a[2], &s.peername()?)?;
+            Ok(0)
+        }
+        nr::SETSOCKOPT => {
+            let val = if a[3] != 0 {
+                uaccess::read_bytes(a[3], (a[4] as usize).min(256))?
+            } else {
+                Vec::new()
+            };
+            s.setsockopt(a[1] as u32, a[2] as u32, &val)?;
+            Ok(0)
+        }
+        nr::GETSOCKOPT => {
+            let (level, name) = (a[1] as u32, a[2] as u32);
+            let val = match (level, name) {
+                (SOL_SOCKET, SO_TYPE) => (s.sock_type() as i32).to_ne_bytes().to_vec(),
+                (SOL_SOCKET, SO_ERROR) => 0i32.to_ne_bytes().to_vec(),
+                (SOL_SOCKET, SO_SNDBUF | SO_RCVBUF) => 212_992i32.to_ne_bytes().to_vec(),
+                _ => s.getsockopt(level, name)?,
+            };
+            write_raw_addr(a[3], a[4], &val)?;
+            Ok(0)
+        }
+        _ => Err(ENOSYS),
+    }
+}
 
 fn read_timeval_ms(ptr: u64, len: usize) -> KResult<Option<u64>> {
     if len < 16 {
@@ -366,6 +611,9 @@ fn setsockopt(s: &Socket, level: u32, name: u32, val: u64, len: usize) -> KResul
         (SOL_SOCKET, SO_KEEPALIVE) => s.set_keepalive(read_int(val, len)? != 0),
         (SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT | SO_BROADCAST | SO_SNDBUF | SO_RCVBUF) => {}
         (SOL_SOCKET, 13) => {} // SO_LINGER
+        // SO_BINDTODEVICE: accepted; sockets are not tied to one interface
+        // (routing picks it), which is what DHCP servers need here.
+        (SOL_SOCKET, 25) => {}
         (IPPROTO_TCP, TCP_NODELAY) => s.set_nodelay(read_int(val, len)? != 0),
         (IPPROTO_TCP, _) => {}
         (IPPROTO_IP, IP_TTL) => s.set_ttl(read_int(val, len)?.clamp(1, 255) as u8),
@@ -406,6 +654,7 @@ fn getsockopt(s: &Socket, level: u32, name: u32, val: u64, lenptr: u64) -> KResu
 
 const SIOCADDRT: u64 = 0x890B;
 const SIOCDELRT: u64 = 0x890C;
+const SIOCGIFNAME: u64 = 0x8910;
 const SIOCGIFCONF: u64 = 0x8912;
 const SIOCGIFFLAGS: u64 = 0x8913;
 const SIOCSIFFLAGS: u64 = 0x8914;
@@ -416,7 +665,9 @@ const SIOCGIFNETMASK: u64 = 0x891B;
 const SIOCSIFNETMASK: u64 = 0x891C;
 const SIOCGIFMTU: u64 = 0x8921;
 const SIOCGIFHWADDR: u64 = 0x8927;
+const SIOCSIFHWADDR: u64 = 0x8924;
 const SIOCGIFINDEX: u64 = 0x8933;
+const SIOCGIFTXQLEN: u64 = 0x8942;
 /// RustOS: int at offset 16: 1 = start DHCP, 0 = stop.
 pub const SIOCRDHCP: u64 = 0x89F0;
 /// RustOS: set default gateway (sockaddr_in at 16; 0.0.0.0 clears).
@@ -460,6 +711,16 @@ fn need_admin() -> KResult<()> {
 }
 
 pub fn if_ioctl(cmd: u64, arg: u64) -> KResult<i64> {
+    if cmd == SIOCGIFNAME {
+        let index: i32 = uaccess::read_user(arg + 16)?;
+        let name = super::with(|net| net.by_index(index as u32).map(|i| i.name.clone()))
+            .flatten()
+            .ok_or(ENODEV)?;
+        let mut buf = [0u8; 16];
+        buf[..name.len().min(15)].copy_from_slice(&name.as_bytes()[..name.len().min(15)]);
+        uaccess::copy_to_user(arg, &buf)?;
+        return Ok(0);
+    }
     if cmd == SIOCGIFCONF {
         let len: i32 = uaccess::read_user(arg)?;
         let buf: u64 = uaccess::read_user(arg + 8)?;
@@ -542,6 +803,24 @@ pub fn if_ioctl(cmd: u64, arg: u64) -> KResult<i64> {
         }
         _ => {}
     }
+    if cmd == SIOCSIFHWADDR {
+        need_admin()?;
+        let mut b = [0u8; 8];
+        uaccess::copy_from_user(&mut b, data)?;
+        let mut mac = [0u8; 6];
+        mac.copy_from_slice(&b[2..8]);
+        let dev = super::with(|net| net.iface(&name).and_then(|i| i.device().cloned()))
+            .flatten()
+            .ok_or(ENODEV)?;
+        dev.set_mac(mac)?;
+        super::kick();
+        return Ok(0);
+    }
+    if cmd == SIOCSIFFLAGS {
+        let f: u16 = uaccess::read_user(data)?;
+        super::set_link_up(&name, f & IFF_UP != 0)?;
+        return Ok(0);
+    }
     if cmd == SIOCRDHCP {
         let on: i32 = uaccess::read_user(data)?;
         super::set_dhcp(&name, on != 0)?;
@@ -562,10 +841,7 @@ pub fn if_ioctl(cmd: u64, arg: u64) -> KResult<i64> {
                 }
                 uaccess::write_user(data, &f)?;
             }
-            SIOCSIFFLAGS => {
-                let f: u16 = uaccess::read_user(data)?;
-                ifc.up = f & IFF_UP != 0;
-            }
+            SIOCSIFFLAGS => unreachable!(),
             SIOCGIFADDR => write_sin(data, ifc.ipv4().ok_or(EADDRNOTAVAIL)?.address())?,
             SIOCGIFNETMASK => write_sin(data, ifc.ipv4().ok_or(EADDRNOTAVAIL)?.netmask())?,
             SIOCGIFBRDADDR => write_sin(
@@ -604,6 +880,7 @@ pub fn if_ioctl(cmd: u64, arg: u64) -> KResult<i64> {
                 uaccess::copy_to_user(data, &b)?;
             }
             SIOCGIFINDEX => uaccess::write_user(data, &(ifc.index as i32))?,
+            SIOCGIFTXQLEN => uaccess::write_user(data, &1000i32)?,
             SIOCRGATEWAY => {
                 let g = read_sin(data)?;
                 ifc.set_gateway((!g.is_unspecified()).then_some(g));

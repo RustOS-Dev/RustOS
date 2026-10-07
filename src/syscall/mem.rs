@@ -41,26 +41,37 @@ pub fn mmap(addr: u64, len: u64, prot: u32, flags: u32, fd: i32, off: u64) -> Sy
         space.find_free(len).ok_or(ENOMEM)?
     };
 
-    // Device memory (e.g. the framebuffer) is mapped directly.
+    // Device memory (e.g. the framebuffer, DRM buffers) maps as the
+    // device says.
     if let Some(f) = &file
         && let Some(s) = f.stream()
-        && let Some((phys, size)) = crate::drivers::mmap_phys(s.as_ref())
+        && let Some(map) = s.mmap(off, len, prot)?
     {
-        if off + len > size.next_multiple_of(FRAME_SIZE) {
-            return Err(EINVAL);
-        }
+        let backing = match map {
+            crate::vfs::DeviceMap::Phys { base, cache } => Backing::Phys { base, cache },
+            crate::vfs::DeviceMap::Pages(pages) => Backing::Device {
+                pages,
+                pgoff: off / FRAME_SIZE,
+            },
+        };
         space.add_area(Area {
             start,
             end: start + len,
             prot,
             flags: flags | MAP_SHARED,
-            backing: Backing::Phys { base: phys + off },
+            backing,
             name: "[device]",
         })?;
         return Ok(start as i64);
     }
 
+    // Shared mappings of a memfd map its frames.
+    let memfd = file.as_deref().and_then(super::fdobj::as_memfd);
     let backing = match &file {
+        Some(_) if flags & MAP_SHARED != 0 && memfd.is_some() => Backing::Shm {
+            obj: memfd.unwrap().pages().clone(),
+            offset: off,
+        },
         Some(f) => match &f.object {
             crate::vfs::FileObject::Inode(i) => Backing::File {
                 inode: i.clone(),
@@ -78,6 +89,9 @@ pub fn mmap(addr: u64, len: u64, prot: u32, flags: u32, fd: i32, off: u64) -> Sy
         && (!f.readable() || (flags & MAP_SHARED != 0 && prot & PROT_WRITE != 0 && !f.writable()))
     {
         return Err(EACCES);
+    }
+    if let Some(m) = file.as_deref().and_then(super::fdobj::as_memfd) {
+        m.check_map(flags & MAP_SHARED != 0 && prot & PROT_WRITE != 0)?;
     }
     space.add_area(Area {
         start,

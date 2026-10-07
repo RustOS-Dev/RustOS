@@ -39,7 +39,13 @@ impl Media {
     }
 
     /// Start playing clip `id` from `from` seconds for element `key`.
-    pub fn play(&mut self, key: i64, id: usize, from: f64, volume: f64) -> Result<(), &'static str> {
+    pub fn play(
+        &mut self,
+        key: i64,
+        id: usize,
+        from: f64,
+        volume: f64,
+    ) -> Result<(), &'static str> {
         self.stop(key);
         let c = self.clips.get(id).ok_or("no such clip")?;
         let start = ((from.max(0.0) * c.rate as f64) as usize).min(c.frames()) * c.channels;

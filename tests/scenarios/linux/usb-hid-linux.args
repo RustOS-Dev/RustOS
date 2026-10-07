@@ -1,0 +1,4 @@
+# QEMU USB keyboard and tablet on Linux usbhid (linux-usbhid builds)
+-device qemu-xhci,id=xhci
+-device usb-kbd,bus=xhci.0,port=1
+-device usb-tablet,bus=xhci.0,port=2

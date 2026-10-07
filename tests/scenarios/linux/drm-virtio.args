@@ -1,0 +1,3 @@
+# virtio-gpu as a second display (the bootloader needs a GOP with a
+# linear framebuffer, which virtio-gpu's is not; the standard VGA has one).
+-device virtio-gpu-pci,id=vgpu

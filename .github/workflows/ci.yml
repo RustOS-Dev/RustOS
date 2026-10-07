@@ -82,7 +82,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: cargo clippy
-        run: cargo clippy -- -D warnings
+        run: |
+          cargo clippy -- -D warnings
+          # Feature builds compile Rust that the default build leaves out.
+          cargo clippy --features linux-hwsim,linux-drivers,linux-e1000,linux-test -- -D warnings
 
   host-crates:
     name: Host crate tests
@@ -139,6 +142,9 @@ jobs:
           # e2fsprogs: ext2/ext4 test disks; openssl + python3: HTTPS test
           # server; gcc: dynamic-linking test programs
           sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs curl openssl python3 gcc fonts-dejavu-core
+          # C++ runtime and desktop ports (tools/rustos-c++, ports/libcxx,
+          # ports/weston)
+          sudo apt-get install -y g++ cmake ninja-build meson gperf bison flex pkg-config libexpat1-dev libffi-dev hwdata
 
       - name: Make runner script executable
         run: chmod +x run-qemu-uefi.sh
@@ -167,8 +173,77 @@ jobs:
           cargo build
           RUSTOS_SMP=4 tools/run-scenarios.sh
 
-      - name: Linux drivers through LinuxKPI (Linux e1000, 2 and 4 CPUs)
+      - name: Linux drivers through LinuxKPI (Linux e1000, test driver; 2 and 4 CPUs)
         run: |
-          cargo build --features linux-e1000
-          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/*.txt
-          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/*.txt
+          cargo build --features linux-e1000,linux-test
+          S="tests/scenarios/linux/eth-linux-e1000.txt tests/scenarios/linux/linuxkpi-chrdev.txt"
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos $S
+          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos $S
+      - name: Linux 802.11 stack (cfg80211, mac80211, mac80211_hwsim) with hostapd and wpa_supplicant
+        run: |
+          cargo build --features linux-hwsim
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/wifi-hwsim.txt tests/scenarios/linux/wifi-hwsim-eap.txt
+      - name: Linux USB networking (usbnet, cdc_ether, rndis_host) on the LinuxKPI USB core
+        run: |
+          cargo build --features linux-usbnet
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux.txt
+          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux.txt
+          RUSTOS_USB_PREFER_RNDIS=1 cargo build --features linux-usbnet
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux-rndis.txt
+      - name: Linux Ethernet drivers (igb on QEMU's 82576; e1000e, igc, alx, tg3, atlantic, r8169 compiled)
+        run: |
+          cargo build --features linux-eth
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
+          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
+      - name: Linux USB serial (usb-serial + ftdi_sio) on RustOS terminals
+        run: |
+          cargo build --features linux-serial
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/usb-serial.txt
+      - name: Linux SD/MMC (MMC core, sdhci-pci) with an SD card
+        run: |
+          cargo build --features linux-mmc
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/sdcard.txt
+      - name: ACPI platform devices and IRQ domains (acpi-platform)
+        run: |
+          cargo build --features linux-platform
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/acpi-platform.txt
+      - name: Linux sound (audio-linux)
+        run: |
+          cargo build --features linux-sound
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/audio-linux.txt
+      - name: Linux DRM on the firmware framebuffer and QEMU's standard VGA (drm-simpledrm, drm-bochs)
+        run: |
+          cargo build --features linux-drm-sysfb,linux-drm-bochs
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-simpledrm.txt tests/scenarios/linux/drm-bochs.txt
+      - name: C++ runtime (cxx)
+        run: |
+          tools/install-port.sh --initramfs libcxx
+          cargo build
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/cxx.txt
+      - name: Wayland desktop (desktop)
+        run: |
+          tools/install-port.sh --initramfs weston
+          cargo build --features linux-drivers
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop.txt
+      - name: Desktop kernel features (desktop-kernel)
+        run: |
+          cargo build --features linux-drivers
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop-kernel.txt
+      - name: Linux virtio-gpu (drm-virtio)
+        run: |
+          cargo build --features linux-drm-virtio
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-virtio.txt
+      - name: Release driver set with GPU drivers (amdgpu, opt-in; drm-bochs)
+        run: |
+          cargo build --features linux-drivers,linux-gpu
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-bochs.txt
+      - name: Linux usbhid and input core (usb-hid-linux)
+        run: |
+          cargo build --features linux-usbhid
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/usb-hid-linux.txt
+      - name: Native drivers keep their devices in the release driver set
+        run: |
+          cargo build --features linux-drivers
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/eth-e1000.txt tests/scenarios/eth-e1000e.txt tests/scenarios/eth-usb.txt tests/scenarios/usb.txt
+      - name: Release driver set (linux-drivers, as write_to_drive.sh builds it)
+        run: cargo build --release --features linux-drivers

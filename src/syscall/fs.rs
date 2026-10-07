@@ -289,6 +289,9 @@ pub fn ioctl(fd: i32, cmd: u64, arg: u64) -> SysResult {
     const FIONBIO: u64 = 0x5421;
     const FIOCLEX: u64 = 0x5451;
     const FIONCLEX: u64 = 0x5450;
+    // The request is an unsigned int in Linux; musl passes an int, so
+    // requests with bit 31 set (_IOR) arrive sign-extended.
+    let cmd = cmd & 0xffff_ffff;
     let f = file(fd)?;
     match cmd {
         FIONBIO => {
@@ -398,6 +401,11 @@ pub fn fcntl(fd: i32, cmd: u32, arg: u64) -> SysResult {
             t.get(fd)?;
             Ok(0)
         }
+        super::fdobj::F_ADD_SEALS | super::fdobj::F_GET_SEALS => {
+            let f = t.get(fd)?;
+            drop(t);
+            super::fdobj::seals(&f, cmd, arg)
+        }
         _ => Err(EINVAL),
     }
 }
@@ -426,6 +434,7 @@ pub fn ftruncate(fd: i32, len: u64) -> SysResult {
     let i = f.inode.as_ref().ok_or(EINVAL)?;
     i.truncate(len)?;
     crate::mm::pagecache::truncate(i, len);
+    vfs::inotify::file_event(&f.path, Some(i), vfs::inotify::IN_MODIFY);
     Ok(0)
 }
 
@@ -575,6 +584,7 @@ pub fn readlinkat(dirfd: i32, path: u64, buf: u64, size: u64) -> SysResult {
 pub fn fchmodat(dirfd: i32, path: u64, mode: u32) -> SysResult {
     let abs = path_at(dirfd, path)?;
     vfs::lookup(&abs)?.chmod(mode)?;
+    vfs::inotify::attrib(&abs);
     Ok(0)
 }
 
@@ -586,6 +596,7 @@ pub fn fchmod(fd: i32, mode: u32) -> SysResult {
 pub fn fchownat(dirfd: i32, path: u64, uid: u32, gid: u32) -> SysResult {
     let abs = path_at(dirfd, path)?;
     vfs::lookup(&abs)?.chown(uid, gid)?;
+    vfs::inotify::attrib(&abs);
     Ok(0)
 }
 
@@ -622,6 +633,7 @@ pub fn mknod(path: u64, mode: u32) -> SysResult {
     };
     let (dir, name) = vfs::lookup_parent(&abs)?;
     dir.create(&name, kind, mode & 0o7777)?;
+    vfs::inotify::created(&abs);
     Ok(0)
 }
 

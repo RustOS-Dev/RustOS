@@ -19,11 +19,13 @@
 #include <linux/kthread.h>
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
+#include <linux/rtmutex.h>
 #include <linux/ww_mutex.h>
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
+#include <linux/sched/wake_q.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/swait.h>
@@ -40,7 +42,11 @@ struct kpi_kthread {
 	int should_park;
 	int result;
 	struct completion exited;
+	struct completion parked;	/* the thread reached kthread_parkme() */
 };
+
+/* Shared by all tasks: no Linux pids, signals or rlimits are tracked. */
+static struct signal_struct kpi_signal;
 
 static struct task_struct *kpi_new_task(const char *name)
 {
@@ -52,6 +58,7 @@ static struct task_struct *kpi_new_task(const char *name)
 	refcount_set(&t->usage, 1);
 	strscpy(t->comm, name ?: "rustos", sizeof(t->comm));
 	t->prio = t->static_prio = t->normal_prio = MAX_RT_PRIO + 20;
+	t->signal = &kpi_signal;
 	return t;
 }
 
@@ -76,9 +83,9 @@ pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
 
 /* ------------------------------------------------------------ schedule */
 
-static void kpi_sleep(u64 deadline_ns)
+static noinline void kpi_sleep(u64 deadline_ns)
 {
-	rustos_kpi_sleep(deadline_ns);
+	rustos_kpi_sleep(deadline_ns, __builtin_return_address(0));
 }
 
 asmlinkage __visible void __sched schedule(void)
@@ -156,12 +163,27 @@ void preempt_schedule_notrace(void)
 
 static void kpi_kthread_start(struct task_struct *p);
 
+/*
+ * The full barriers are try_to_wake_up()'s: the waker's stores (the
+ * condition; a kthread's start flag) must be visible before it reads the
+ * sleeper's state and thread id, as the sleeper's set_current_state()
+ * orders its stores before it reads the condition. Without them x86 may
+ * let both sides read the old values: a new kthread that has not yet
+ * published its id sleeps forever.
+ */
 int wake_up_state(struct task_struct *p, unsigned int state)
 {
+	/*
+	 * A new kthread starts on any wake-up, whatever its state reads: it
+	 * may be between a spurious return from schedule() and setting its
+	 * state again, and must not miss its start.
+	 */
+	kpi_kthread_start(p);
+	smp_mb();
 	if (!(READ_ONCE(p->__state) & state))
 		return 0;
 	WRITE_ONCE(p->__state, TASK_RUNNING);
-	kpi_kthread_start(p);
+	smp_mb();
 	if (READ_ONCE(p->pid))
 		rustos_kpi_wake(p->pid);
 	return 1;
@@ -247,6 +269,7 @@ static void kpi_kthread_main(void *arg)
 	void **slot = rustos_kpi_task_slot();
 
 	*slot = t;
+	/* Ordered before the start flag is read by set_current_state(). */
 	WRITE_ONCE(t->pid, rustos_kpi_thread_id());
 	t->tgid = t->pid;
 	/* Created stopped: run once wake_up_process() was called. */
@@ -284,6 +307,7 @@ struct task_struct *kthread_create_on_node(int (*threadfn)(void *data), void *da
 	k->threadfn = threadfn;
 	k->data = data;
 	init_completion(&k->exited);
+	init_completion(&k->parked);
 	rustos_kpi_spawn(kpi_kthread_main, t, name);
 	return t;
 }
@@ -302,10 +326,51 @@ bool kthread_should_park(void)
 	return (current->flags & PF_KTHREAD) && k && READ_ONCE(k->should_park);
 }
 
+/* Park: the thread calls kthread_parkme() when it sees kthread_should_park()
+ * and sleeps there until unparked (or stopped). */
+void kthread_parkme(void)
+{
+	struct kpi_kthread *k = current->worker_private;
+
+	if (!(current->flags & PF_KTHREAD) || !k)
+		return;
+	complete(&k->parked);
+	for (;;) {
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		if (!READ_ONCE(k->should_park) || READ_ONCE(k->should_stop))
+			break;
+		schedule();
+	}
+	__set_current_state(TASK_RUNNING);
+}
+
+int kthread_park(struct task_struct *t)
+{
+	struct kpi_kthread *k = t->worker_private;
+
+	if (READ_ONCE(k->should_park))
+		return -EBUSY;
+	reinit_completion(&k->parked);
+	WRITE_ONCE(k->should_park, 1);
+	WRITE_ONCE(k->started, 1);
+	wake_up_process(t);
+	wait_for_completion(&k->parked);
+	return 0;
+}
+
+void kthread_unpark(struct task_struct *t)
+{
+	struct kpi_kthread *k = t->worker_private;
+
+	WRITE_ONCE(k->should_park, 0);
+	wake_up_process(t);
+}
+
 int kthread_stop(struct task_struct *t)
 {
 	struct kpi_kthread *k = t->worker_private;
 
+	WRITE_ONCE(k->should_park, 0);
 	WRITE_ONCE(k->should_stop, 1);
 	WRITE_ONCE(k->started, 1);
 	wake_up_process(t);
@@ -955,4 +1020,44 @@ long wait_woken(struct wait_queue_entry *wq_entry, unsigned mode, long timeout)
 	__set_current_state(TASK_RUNNING);
 	smp_store_mb(wq_entry->flags, wq_entry->flags & ~WQ_FLAG_WOKEN);
 	return timeout;
+}
+
+/* ------------------------------------------------------------- rt_mutex */
+
+/* No priority inheritance (RustOS has no priority scheduling): an rt_mutex
+ * is a sleeping lock owned through ->owner, retried after a short sleep
+ * when contended (I2C bus locks, rarely contended). */
+void __rt_mutex_init(struct rt_mutex *lock, const char *name, struct lock_class_key *key)
+{
+	raw_spin_lock_init(&lock->rtmutex.wait_lock);
+	lock->rtmutex.waiters = RB_ROOT_CACHED;
+	lock->rtmutex.owner = NULL;
+}
+
+int rt_mutex_trylock(struct rt_mutex *lock)
+{
+	return try_cmpxchg_acquire(&lock->rtmutex.owner, &(struct task_struct *){ NULL }, current);
+}
+
+void rt_mutex_lock(struct rt_mutex *lock)
+{
+	might_sleep();
+	while (!rt_mutex_trylock(lock))
+		usleep_range(50, 100);
+}
+
+void rt_mutex_unlock(struct rt_mutex *lock)
+{
+	smp_store_release(&lock->rtmutex.owner, NULL);
+}
+
+/* Deferred wake-up lists: wake at once (RustOS wake-ups never sleep, so
+ * waking under the caller's lock is fine). */
+void wake_q_add(struct wake_q_head *head, struct task_struct *task)
+{
+	wake_up_process(task);
+}
+
+void wake_up_q(struct wake_q_head *head)
+{
 }

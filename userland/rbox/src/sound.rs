@@ -76,30 +76,30 @@ pub fn play(args: &[String]) -> i32 {
             Err(e) => return err("play", f, e),
         };
         // PCM WAV plays as stored; anything else (MP3) is decoded first.
-        let (rate, ch, fmt, body, len): (u32, u16, Format, Vec<u8>, usize) =
-            match wav::parse(&data) {
-                Some(w) => {
-                    let body = &data[w.data_off..w.data_off + w.data_len];
-                    let b = if w.format == Format::S24 {
-                        wav::unpack24(body)
-                    } else {
-                        body.to_vec()
-                    };
-                    (w.rate, w.channels, w.format, b, w.data_len)
+        let (rate, ch, fmt, body, len): (u32, u16, Format, Vec<u8>, usize) = match wav::parse(&data)
+        {
+            Some(w) => {
+                let body = &data[w.data_off..w.data_off + w.data_len];
+                let b = if w.format == Format::S24 {
+                    wav::unpack24(body)
+                } else {
+                    body.to_vec()
+                };
+                (w.rate, w.channels, w.format, b, w.data_len)
+            }
+            None => match clip::decode(&data) {
+                Some(c) => {
+                    let mut b = Vec::with_capacity(c.samples.len() * 2);
+                    Format::S16.encode(&c.samples, &mut b);
+                    let n = b.len();
+                    (c.rate, c.channels as u16, Format::S16, b, n)
                 }
-                None => match clip::decode(&data) {
-                    Some(c) => {
-                        let mut b = Vec::with_capacity(c.samples.len() * 2);
-                        Format::S16.encode(&c.samples, &mut b);
-                        let n = b.len();
-                        (c.rate, c.channels as u16, Format::S16, b, n)
-                    }
-                    None => {
-                        eprintln!("play: {}: not a WAV or MP3 file", f);
-                        return 1;
-                    }
-                },
-            };
+                None => {
+                    eprintln!("play: {}: not a WAV or MP3 file", f);
+                    return 1;
+                }
+            },
+        };
         let out = match open_dsp(&dev, true, rate, ch, fmt) {
             Ok(o) => o,
             Err(e) => return err("play", &dev, e),

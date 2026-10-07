@@ -5,6 +5,8 @@
  * the I/O resource tree, and the subsystems driver_init() starts that
  * RustOS does not have (CPU and container devices, the block class).
  */
+#include <linux/radix-tree.h>
+#include <linux/vmalloc.h>
 #include <linux/acpi.h>
 #include <linux/backing-dev-defs.h>
 #include <linux/blkdev.h>
@@ -13,6 +15,8 @@
 #include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
+#include <linux/resource_ext.h>
+#include <linux/slab.h>
 #include <linux/irq.h>
 #include <linux/kobject.h>
 #include <linux/platform_device.h>
@@ -36,12 +40,81 @@ void dump_stack(void)
 /* ---------------------------------------------------------------- uevents */
 
 /*
- * Netlink uevents come with M36 (NETLINK_KOBJECT_UEVENT); until then
- * they are dropped, as on a Linux system with no listener.
+ * kobject_uevent_env() as lib/kobject_uevent.c builds it (the kset's
+ * filter, subsystem name and uevent callback, so devices carry MAJOR,
+ * MINOR, DEVNAME, DRIVER, MODALIAS, ...), sent by RustOS to its
+ * NETLINK_KOBJECT_UEVENT listeners. No usermode helper.
  */
+static const char *const kpi_kobject_actions[] = {
+	[KOBJ_ADD] = "add", [KOBJ_REMOVE] = "remove", [KOBJ_CHANGE] = "change",
+	[KOBJ_MOVE] = "move", [KOBJ_ONLINE] = "online", [KOBJ_OFFLINE] = "offline",
+	[KOBJ_BIND] = "bind", [KOBJ_UNBIND] = "unbind",
+};
+
 int kobject_uevent_env(struct kobject *kobj, enum kobject_action action, char *envp_ext[])
 {
-	return 0;
+	const struct kset_uevent_ops *uevent_ops;
+	struct kobj_uevent_env *env;
+	struct kobject *top_kobj;
+	const char *subsystem;
+	struct kset *kset;
+	char *devpath, *msg;
+	size_t len = 0;
+	int i, ret = 0;
+
+	if (action == KOBJ_REMOVE)
+		kobj->state_remove_uevent_sent = 1;
+	top_kobj = kobj;
+	while (!top_kobj->kset && top_kobj->parent)
+		top_kobj = top_kobj->parent;
+	if (!top_kobj->kset)
+		return -EINVAL;
+	kset = top_kobj->kset;
+	uevent_ops = kset->uevent_ops;
+	if (kobj->uevent_suppress)
+		return 0;
+	if (uevent_ops && uevent_ops->filter && !uevent_ops->filter(kobj))
+		return 0;
+	subsystem = uevent_ops && uevent_ops->name ? uevent_ops->name(kobj)
+						   : kobject_name(&kset->kobj);
+	if (!subsystem)
+		return 0;
+	env = kzalloc(sizeof(*env), GFP_KERNEL);
+	if (!env)
+		return -ENOMEM;
+	devpath = kobject_get_path(kobj, GFP_KERNEL);
+	if (!devpath) {
+		ret = -ENOENT;
+		goto out;
+	}
+	ret = add_uevent_var(env, "ACTION=%s", kpi_kobject_actions[action]) ?:
+	      add_uevent_var(env, "DEVPATH=%s", devpath) ?:
+	      add_uevent_var(env, "SUBSYSTEM=%s", subsystem);
+	for (i = 0; !ret && envp_ext && envp_ext[i]; i++)
+		ret = add_uevent_var(env, "%s", envp_ext[i]);
+	if (!ret && uevent_ops && uevent_ops->uevent)
+		ret = uevent_ops->uevent(kobj, env);
+	if (ret)
+		goto out;
+	if (action == KOBJ_ADD)
+		kobj->state_add_uevent_sent = 1;
+	ret = add_uevent_var(env, "SEQNUM=%llu", rustos_kpi_uevent_seqnum());
+	if (ret)
+		goto out;
+	msg = kmalloc(strlen(kpi_kobject_actions[action]) + strlen(devpath) + 2 + env->buflen,
+		      GFP_KERNEL);
+	if (!msg) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	len = sprintf(msg, "%s@%s", kpi_kobject_actions[action], devpath) + 1;
+	memcpy(msg + len, env->buf, env->buflen);
+	rustos_kpi_uevent(msg, len + env->buflen);
+	kfree(msg);
+out:
+	kfree(devpath);
+	kfree(env);
+	return ret;
 }
 
 int kobject_uevent(struct kobject *kobj, enum kobject_action action)
@@ -78,14 +151,6 @@ int add_uevent_var(struct kobj_uevent_env *env, const char *format, ...)
 
 /* ----------------------------------------------- ACPI device-core hooks */
 
-void acpi_device_notify(struct device *dev)
-{
-}
-
-void acpi_device_notify_remove(struct device *dev)
-{
-}
-
 int acpi_device_uevent_modalias(const struct device *dev, struct kobj_uevent_env *env)
 {
 	return -ENODEV;
@@ -94,11 +159,6 @@ int acpi_device_uevent_modalias(const struct device *dev, struct kobj_uevent_env
 int acpi_device_modalias(struct device *dev, char *buf, int size)
 {
 	return -ENODEV;
-}
-
-bool acpi_driver_match_device(struct device *dev, const struct device_driver *drv)
-{
-	return false;
 }
 
 enum dev_dma_attr acpi_get_dma_attr(struct acpi_device *adev)
@@ -129,16 +189,26 @@ int irq_update_affinity_desc(unsigned int irq, struct irq_affinity_desc *affinit
 	return 0;
 }
 
-struct irq_data *irq_get_irq_data(unsigned int irq)
-{
-	return NULL;
-}
-
-void irq_dispose_mapping(unsigned int virq)
-{
-}
-
 /* ------------------------------------------------------------- resources */
+
+struct resource_entry *resource_list_create_entry(struct resource *res, size_t extra_size)
+{
+	struct resource_entry *entry = kzalloc(sizeof(*entry) + extra_size, GFP_KERNEL);
+
+	if (entry) {
+		INIT_LIST_HEAD(&entry->node);
+		entry->res = res ? res : &entry->__res;
+	}
+	return entry;
+}
+
+void resource_list_free(struct list_head *head)
+{
+	struct resource_entry *entry, *tmp;
+
+	list_for_each_entry_safe(entry, tmp, head, node)
+		resource_list_destroy_entry(entry);
+}
 
 /*
  * The resource tree is not kept: RustOS assigns and tracks BARs itself.
@@ -173,16 +243,106 @@ int request_resource(struct resource *root, struct resource *new)
 	return 0;
 }
 
+/*
+ * Regions are not checked for conflicts (RustOS keeps no resource tree):
+ * the caller gets a resource describing what it asked for. They are kept
+ * on a list so that __release_region() can free them.
+ */
+static LIST_HEAD(kpi_regions);
+static DEFINE_SPINLOCK(kpi_regions_lock);
+
+struct kpi_region {
+	struct list_head link;
+	struct resource res;
+};
+
 struct resource *__request_region(struct resource *parent, resource_size_t start,
 				  resource_size_t n, const char *name, int flags)
 {
-	static struct resource dummy;
+	struct kpi_region *r = kzalloc(sizeof(*r), GFP_KERNEL);
 
-	return &dummy;
+	if (!r)
+		return NULL;
+	r->res.start = start;
+	r->res.end = start + n - 1;
+	r->res.name = name;
+	r->res.flags = (parent ? parent->flags & IORESOURCE_TYPE_BITS : 0) | IORESOURCE_BUSY | flags;
+	spin_lock(&kpi_regions_lock);
+	list_add(&r->link, &kpi_regions);
+	spin_unlock(&kpi_regions_lock);
+	return &r->res;
 }
 
 void __release_region(struct resource *parent, resource_size_t start, resource_size_t n)
 {
+	struct kpi_region *r, *found = NULL;
+
+	spin_lock(&kpi_regions_lock);
+	list_for_each_entry(r, &kpi_regions, link) {
+		if (r->res.start == start && resource_size(&r->res) == n) {
+			list_del(&r->link);
+			found = r;
+			break;
+		}
+	}
+	spin_unlock(&kpi_regions_lock);
+	kfree(found);
+}
+
+struct kpi_devm_region {
+	struct resource *parent;
+	resource_size_t start, n;
+};
+
+static void kpi_devm_region_release(struct device *dev, void *res)
+{
+	struct kpi_devm_region *d = res;
+
+	__release_region(d->parent, d->start, d->n);
+}
+
+static int kpi_devm_region_match(struct device *dev, void *res, void *data)
+{
+	struct kpi_devm_region *a = res, *b = data;
+
+	return a->parent == b->parent && a->start == b->start && a->n == b->n;
+}
+
+struct resource *__devm_request_region(struct device *dev, struct resource *parent,
+				      resource_size_t start, resource_size_t n, const char *name)
+{
+	struct kpi_devm_region *d;
+	struct resource *res;
+
+	d = devres_alloc(kpi_devm_region_release, sizeof(*d), GFP_KERNEL);
+	if (!d)
+		return NULL;
+	res = __request_region(parent, start, n, name, 0);
+	if (!res) {
+		devres_free(d);
+		return NULL;
+	}
+	d->parent = parent;
+	d->start = start;
+	d->n = n;
+	devres_add(dev, d);
+	return res;
+}
+
+void __devm_release_region(struct device *dev, struct resource *parent, resource_size_t start,
+			   resource_size_t n)
+{
+	struct kpi_devm_region match = { parent, start, n };
+
+	WARN_ON(devres_release(dev, kpi_devm_region_release, kpi_devm_region_match, &match));
+}
+
+/* Device coredumps (drivers/base/devcoredump.c): not kept; the driver's
+ * buffer is freed as devcoredump does once read. */
+void dev_coredumpv(struct device *dev, void *data, size_t datalen, gfp_t gfp)
+{
+	dev_info(dev, "firmware coredump (%zu bytes) discarded\n", datalen);
+	vfree(data);
 }
 
 /* --------------------------------------- subsystems driver_init() starts */
@@ -253,9 +413,18 @@ int get_cmdline(struct task_struct *task, char *buffer, int buflen)
 
 struct kobject *kernel_kobj;
 
-/* driver_init() plus the /sys/kernel kobject (kernel/ksysfs.c). */
+/* lib/maple_tree.c, in builds with regmap. */
+void __weak maple_tree_init(void)
+{
+}
+
+/* What start_kernel() sets up for library code (radix trees back IDRs,
+ * maple trees back regmap caches), driver_init(), and the /sys/kernel
+ * kobject (kernel/ksysfs.c). */
 int kpi_devcore_init(void)
 {
+	radix_tree_init();
+	maple_tree_init();
 	driver_init();
 	kernel_kobj = kobject_create_and_add("kernel", NULL);
 	return kernel_kobj ? 0 : -ENOMEM;

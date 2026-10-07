@@ -1,0 +1,3 @@
+# A display no Linux driver binds (QEMU's ramfb, which the firmware gives
+# a GOP), so the firmware framebuffer stays with simpledrm.
+-vga none -device ramfb

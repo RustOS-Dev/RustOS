@@ -3,3 +3,5 @@
 busybox
 curl
 quickjs
+wpa_supplicant
+hostapd

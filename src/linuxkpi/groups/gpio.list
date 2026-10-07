@@ -1,0 +1,14 @@
+# GPIO and pin control (M33): gpiolib with its ACPI part (GpioInt and
+# GpioIo resources), the pin control core, and AMD's GPIO controller
+# (AMDI0030), whose pin interrupts are I2C-HID touchpads' interrupts.
+drivers/gpio/gpiolib.c
+drivers/gpio/gpiolib-devres.c
+drivers/gpio/gpiolib-legacy.c
+drivers/gpio/gpiolib-acpi-core.c
+drivers/gpio/gpiolib-acpi-quirks.c
+drivers/pinctrl/core.c
+drivers/pinctrl/pinmux.c
+drivers/pinctrl/pinconf.c
+drivers/pinctrl/pinconf-generic.c
+drivers/pinctrl/pinctrl-utils.c
+drivers/pinctrl/pinctrl-amd.c

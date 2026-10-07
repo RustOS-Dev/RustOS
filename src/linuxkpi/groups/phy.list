@@ -1,0 +1,21 @@
+# Linux PHY library and MDIO bus (M32), with the Realtek PHY driver
+# r8169 uses. The MDIO bus comes first: its subsys_initcall must run
+# before phylib's registers drivers on it (Linux's link order).
+drivers/net/phy/mdio_bus.c
+drivers/net/phy/mdio_device.c
+drivers/net/phy/phy.c
+drivers/net/phy/phy-c45.c
+drivers/net/phy/phy-core.c
+drivers/net/phy/phy_device.c
+drivers/net/phy/linkmode.c
+drivers/net/phy/phy_link_topology.c
+drivers/net/phy/phy_caps.c
+drivers/net/phy/mdio_bus_provider.c
+drivers/net/phy/mdio_devres.c
+drivers/net/phy/stubs.c
+drivers/net/phy/realtek/realtek_main.c
+# Link mode tables (link_mode_params) and the clause 45 MDIO helpers.
+net/ethtool/common.c
+drivers/net/mdio.c
+# phylink (MAC-PHY link management; ASIX AX88772 adapters use it).
+drivers/net/phy/phylink.c

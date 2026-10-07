@@ -394,7 +394,17 @@ fn net_steps(c: &mut Check, o: &Opts, iface: &str) {
 }
 
 fn wifi_state(iface: &str) -> String {
-    let st = read_trim(&format!("/sys/class/net/{}/wireless/status", iface));
+    let mut st = read_trim(&format!("/sys/class/net/{}/wireless/status", iface));
+    if st.is_empty() {
+        // Linux drivers (LinuxKPI): `wifi` asks wpa_supplicant.
+        let (_, out) = sh(&format!("wifi -i {} status", iface));
+        st = out
+            .lines()
+            .next()
+            .and_then(|l| l.split(": ").nth(1))
+            .map(|s| format!("state={}", s.trim()))
+            .unwrap_or_default();
+    }
     st.split_whitespace()
         .find_map(|kv| kv.strip_prefix("state=").map(String::from))
         .unwrap_or(st)
@@ -405,13 +415,27 @@ fn wifi_section(c: &mut Check, o: &Opts, iface: &str) {
         &format!("{} status", iface),
         &format!("wifi -i {} status", iface),
     );
+    // Which driver, and what it said while loading (Linux drivers report
+    // firmware versions and missing files in the kernel log).
+    c.info(
+        &format!("{} driver", iface),
+        &format!(
+            "readlink /sys/class/net/{0}/device/driver; dmesg | grep -iE '{0}|mt79|mt76|iwlwifi|firmware' | tail -20",
+            iface
+        ),
+    );
     let fw = c.step(
         &format!("{} firmware loaded", iface),
         &format!("wifi -i {} status", iface),
         |out| !out.contains("no-firmware") && !out.contains("state=failed"),
     );
     if fw != Res::Pass {
-        println!("    install the firmware into /storage/lib/firmware (docs/WIFI.md)");
+        // The kernel's status message says which file and why (an image
+        // built without its stock firmware, or a missing file).
+        println!(
+            "    see the firmware line above (`wifi -i {} status`) and docs/WIFI.md",
+            iface
+        );
         return;
     }
     c.step(
@@ -435,11 +459,19 @@ fn wifi_section(c: &mut Check, o: &Opts, iface: &str) {
             "no 6 GHz network seen (needs a Wi-Fi 6E access point nearby)",
         );
     }
-    c.step(
-        &format!("{} power save status", iface),
-        &format!("wifi -i {} power", iface),
-        |out| out.contains("power"),
-    );
+    let (_, power) = sh(&format!("wifi -i {} power", iface));
+    if power.contains("not available") {
+        c.skip(
+            &format!("{} power save status", iface),
+            "power save control is not available for this driver yet",
+        );
+    } else {
+        c.step(
+            &format!("{} power save status", iface),
+            &format!("wifi -i {} power", iface),
+            |out| out.contains("power") || out.contains("on") || out.contains("off"),
+        );
+    }
     let open = o.open_ssid.clone().or_else(|| {
         c.ask("  SSID of an OPEN network to test (Enter to skip): ")
             .filter(|s| !s.is_empty())
@@ -605,23 +637,60 @@ fn wait_for(secs: u64, f: impl Fn() -> bool) -> bool {
 
 /// Sound cards: each one plays a tone (the user confirms hearing it) and
 /// records a second where it can.
+fn webcam_section(c: &mut Check) {
+    c.info(
+        "video devices",
+        "ls -l /dev/video* /dev/media*; dmesg | grep -i -e uvc -e video",
+    );
+    let cams: Vec<String> = (0..8)
+        .map(|i| format!("/dev/video{}", i))
+        .filter(|d| fs::exists(d))
+        .collect();
+    if cams.is_empty() {
+        c.skip("webcam", "no /dev/video* device found");
+        return;
+    }
+    for (i, d) in cams.iter().enumerate() {
+        // UVC cameras also expose metadata nodes, which vgrab refuses.
+        c.step(
+            &format!("{} captures frames", d),
+            &format!("vgrab -d {} -n 10 -o {}/frame{}.raw", d, c.dir, i),
+            |out| out.contains("captured 10 frames") || out.contains("not a streaming capture"),
+        );
+    }
+}
+
 fn audio_section(c: &mut Check) {
     let cards = fs::read_to_string("/proc/asound/cards").unwrap_or_default();
-    c.info("sound cards", "cat /proc/asound/cards; dmesg | grep -e \"\\[sound\\]\" -e \"\\[hda\\]\"");
-    let n = (0..8)
-        .filter(|i| fs::exists(&format!("/dev/dsp{}", i)))
-        .count();
-    if n == 0 {
+    c.info(
+        "sound cards",
+        "cat /proc/asound/cards; dmesg | grep -e \"\\[sound\\]\" -e \"\\[hda\\]\"",
+    );
+    // Native drivers name cards /dev/dsp0..; ALSA's OSS emulation /dev/dsp,
+    // /dev/dsp1, ...
+    let devs: Vec<(usize, String)> = (0..8)
+        .map(|i| {
+            let n = format!("/dev/dsp{}", i);
+            if i == 0 && !fs::exists(&n) {
+                String::from("/dev/dsp")
+            } else {
+                n
+            }
+        })
+        .enumerate()
+        .filter(|(_, d)| fs::exists(d))
+        .collect();
+    if devs.is_empty() {
         c.skip("audio", "no sound card found");
         return;
     }
-    for i in 0..n {
-        let dev = format!("/dev/dsp{}", i);
+    for (i, dev) in devs {
+        let dev = dev.as_str();
         let name = cards
             .lines()
             .find(|l| l.trim_start().starts_with(&format!("{} ", i)))
             .map(|l| l.trim().to_string())
-            .unwrap_or_else(|| dev.clone());
+            .unwrap_or_else(|| String::from(dev));
         let r = c.step(
             &format!("{} plays", dev),
             &format!("beep -f 440 -l 700 -v 40 -d {}", dev),
@@ -633,7 +702,12 @@ fn audio_section(c: &mut Check) {
                     c.record(&format!("{} audible", dev), Res::Pass, "", &name);
                 }
                 Some(_) => {
-                    c.record(&format!("{} audible", dev), Res::Fail, "no sound heard", &name);
+                    c.record(
+                        &format!("{} audible", dev),
+                        Res::Fail,
+                        "no sound heard",
+                        &name,
+                    );
                 }
                 None => c.skip(&format!("{} audible", dev), "interactive only"),
             }
@@ -649,7 +723,10 @@ fn audio_section(c: &mut Check) {
 /// Bluetooth: the controller comes up, scans, and (interactively) pairs
 /// with a keyboard or mouse whose input then arrives.
 fn bluetooth_section(c: &mut Check) {
-    c.info("controller", "bt status; dmesg | grep -e \"\\[bt\\]\" -e ibt-");
+    c.info(
+        "controller",
+        "bt status; dmesg | grep -e \"\\[bt\\]\" -e ibt-",
+    );
     let (_, st) = sh("bt status");
     if st.contains("no Bluetooth controller") || st.contains("No such file") {
         c.skip("Bluetooth", "no controller found");
@@ -692,11 +769,9 @@ fn bluetooth_section(c: &mut Check) {
     c.step("disconnect", &format!("bt disconnect {}", addr), |_| true);
     println!("    waiting 15 s for the device to reconnect (press a key if it sleeps)...");
     time::sleep_ms(15000);
-    c.step(
-        "reconnect with the stored key",
-        "bt status",
-        |out| out.contains(&addr.to_uppercase()),
-    );
+    c.step("reconnect with the stored key", "bt status", |out| {
+        out.contains(&addr.to_uppercase())
+    });
 }
 
 fn hotplug(c: &mut Check) {
@@ -733,9 +808,45 @@ fn hotplug(c: &mut Check) {
     );
 }
 
+fn display_section(c: &mut Check) {
+    c.info(
+        "DRM devices",
+        "ls -l /dev/dri /sys/class/drm; for d in /sys/class/drm/card*-*; do echo \"$d: $(cat $d/status) $(cat $d/enabled) $(wc -c < $d/edid) bytes EDID\"; head -3 $d/modes; done",
+    );
+    c.info(
+        "GPU drivers in the log",
+        "dmesg | grep -i -e drm -e amdgpu -e \"off by default\" -e simpledrm -e fb0",
+    );
+    let cards: Vec<String> = (0..4)
+        .map(|i| format!("/dev/dri/card{}", i))
+        .filter(|d| fs::exists(d))
+        .collect();
+    if cards.is_empty() {
+        c.skip("display", "no /dev/dri/card* device found");
+        return;
+    }
+    for d in &cards {
+        // drmtest: connectors, a mode set, page flips with events, PRIME.
+        c.step(
+            &format!("{} mode set and page flips", d),
+            &format!("drmtest -d {} -t 2", d),
+            |out| out.contains("drmtest: ok"),
+        );
+    }
+    if sh("dmesg | grep -q amdgpu").0 == 0 {
+        c.step(
+            "amdgpu firmware and ring tests",
+            "dmesg | grep -i -e amdgpu -e \"ring \" | grep -i -e fw -e firmware -e ring -e error -e fail",
+            |out| !out.to_lowercase().contains("fail") && !out.to_lowercase().contains("error"),
+        );
+    }
+}
+
 fn usage() {
     println!("usage: hwcheck [options] [section...]");
-    println!("sections: system ethernet wifi storage usb audio bluetooth (default: all)");
+    println!(
+        "sections: system ethernet wifi storage usb audio bluetooth webcam display (default: all)"
+    );
     println!("  -y, --batch        never prompt (skip interactive steps)");
     println!("  -o DIR             result directory (default /storage/hwcheck-DATE)");
     println!("  --ssid S --pass P  WPA2/WPA3 network for the Wi-Fi steps");
@@ -894,6 +1005,14 @@ pub fn hwcheck(args: &[String]) -> i32 {
     if want("bluetooth") {
         c.section("Bluetooth");
         bluetooth_section(&mut c);
+    }
+    if want("webcam") {
+        c.section("Webcam");
+        webcam_section(&mut c);
+    }
+    if want("display") {
+        c.section("Display and GPU");
+        display_section(&mut c);
     }
 
     let count = |r: Res| c.results.iter().filter(|x| x.1 == r).count();

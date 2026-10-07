@@ -1,0 +1,8 @@
+# The C++ runtime (libc++, libc++abi, libunwind on musl; needs the libcxx
+# port staged with tools/install-port.sh --initramfs libcxx): cxxtest runs
+# iostreams, containers, exceptions across frames, RTTI, static
+# constructors, threads, atomics, chrono, regex and filesystem.
+wait # $ 240
+send /usr/local/bin/cxxtest
+wait cxxtest: \d+ passed, 0 failed 60
+wait # $

@@ -1,0 +1,9 @@
+# Crypto: the library ciphers Linux implements in lib/crypto, under the
+# crypto API subset mac80211 and cfg80211 use (src/linuxkpi/c/crypto.c).
+lib/crypto/aes.c
+lib/crypto/aesgcm.c
+lib/crypto/arc4.c
+lib/crypto/gf128mul.c
+lib/crypto/utils.c
+lib/crypto/memneq.c
+kpi:crypto.c

@@ -14,13 +14,39 @@ use std::sync::Mutex;
 const FEATURES: &[(&str, &[&str])] = &[
     ("LINUXKPI", &["proof", "kpi", "base"]),
     ("LINUX_E1000", &["e1000"]),
+    ("LINUX_TEST", &["testdev"]),
+    ("LINUX_WIFI", &["crypto", "netlink", "cfg80211", "mac80211"]),
+    ("LINUX_HWSIM", &["virtio", "hwsim"]),
+    ("LINUX_USB", &["usb"]),
+    ("LINUX_USBNET", &["usbnet"]),
+    ("LINUX_I2C", &["i2c"]),
+    ("LINUX_SERIAL", &["tty", "usbserial"]),
+    ("LINUX_MMC", &["mmc"]),
+    ("LINUX_HID", &["input", "hid", "i2chid"]),
+    ("LINUX_USBHID", &["usbhid"]),
+    ("LINUX_PLATFORM", &["regmap", "gpio", "i2cplat"]),
+    ("LINUX_VIDEO", &["dmabuf", "media", "uvc"]),
+    ("LINUX_SOUND", &["regmap", "sound", "hda", "sndusb"]),
+    ("LINUX_DRM", &["dmabuf", "drm"]),
+    ("LINUX_DRM_SYSFB", &["sysfb"]),
+    ("LINUX_DRM_BOCHS", &["bochs"]),
+    ("LINUX_DRM_VIRTIO", &["virtio", "virtiogpu"]),
+    ("LINUX_DRM_AMD", &["drmgpu", "amdgpu"]),
+    ("LINUX_DRM_NOUVEAU", &["drmgpu", "nouveau"]),
+    ("LINUX_PHY", &["phy"]),
+    ("LINUX_ETH", &["eth"]),
+    ("LINUX_MT7921", &["mt7921", "mt7921u"]),
 ];
 
 pub fn build(root: &Path, out: &Path) {
     let mut groups: Vec<&str> = Vec::new();
     for (feature, gs) in FEATURES {
         if std::env::var_os(format!("CARGO_FEATURE_{feature}")).is_some() {
-            groups.extend(gs.iter().copied());
+            for g in gs.iter() {
+                if !groups.contains(g) {
+                    groups.push(g);
+                }
+            }
         }
     }
     if groups.is_empty() {
@@ -157,19 +183,55 @@ fn cflags(root: &Path) -> Vec<String> {
         .collect()
 }
 
-fn group_sources(root: &Path, group: &str) -> Vec<PathBuf> {
+/// One source of a group: its path, the module it belongs to
+/// (KBUILD_MODNAME) and extra compiler flags.
+struct Source {
+    path: PathBuf,
+    module: String,
+    flags: Vec<String>,
+}
+
+/// The sources of `group`. Besides file paths, a list may hold
+/// `module: NAME` (KBUILD_MODNAME of the files that follow; default: the
+/// group name) and `cflags: FLAGS` (extra flags for the files that follow,
+/// like a Makefile's ccflags-y; `@LINUX@` is the imported tree). A
+/// `module:` line clears the flags.
+fn group_sources(root: &Path, group: &str) -> Vec<Source> {
     let list = root
         .join("src/linuxkpi/groups")
         .join(format!("{group}.list"));
     let text = std::fs::read_to_string(&list).unwrap_or_else(|e| panic!("{}: {e}", list.display()));
-    text.lines()
-        .map(|l| l.split('#').next().unwrap().trim())
-        .filter(|l| !l.is_empty())
-        .map(|l| match l.strip_prefix("kpi:") {
+    let linux = root.join("third_party/linux");
+    let mut module = group.to_string();
+    let mut flags: Vec<String> = Vec::new();
+    let mut out = Vec::new();
+    for l in text.lines().map(|l| l.split('#').next().unwrap().trim()) {
+        if l.is_empty() {
+            continue;
+        }
+        if let Some(m) = l.strip_prefix("module:") {
+            module = m.trim().to_string();
+            flags.clear();
+            continue;
+        }
+        if let Some(f) = l.strip_prefix("cflags:") {
+            flags.extend(
+                f.split_whitespace()
+                    .map(|x| x.replace("@LINUX@", linux.to_str().unwrap())),
+            );
+            continue;
+        }
+        let path = match l.strip_prefix("kpi:") {
             Some(rest) => root.join("src/linuxkpi/c").join(rest),
-            None => root.join("third_party/linux").join(l),
-        })
-        .collect()
+            None => linux.join(l),
+        };
+        out.push(Source {
+            path,
+            module: module.clone(),
+            flags: flags.clone(),
+        });
+    }
+    out
 }
 
 /// True if `obj` is newer than every dependency in its `.d` file and was
@@ -209,19 +271,18 @@ fn compile_group(
     let srcs = group_sources(root, group);
     let objdir = libdir.join(group);
     std::fs::create_dir_all(&objdir).unwrap();
-    let jobs: Vec<(PathBuf, PathBuf)> = srcs
-        .iter()
+    let jobs: Vec<(Source, PathBuf)> = srcs
+        .into_iter()
         .map(|src| {
-            let rel = src.strip_prefix(root).unwrap_or(src);
+            let rel = src.path.strip_prefix(root).unwrap_or(&src.path);
             let name = rel.to_string_lossy().replace(['/', '\\'], "__");
-            (
-                src.clone(),
-                objdir.join(format!("{}.o", name.trim_end_matches(".c"))),
-            )
+            let obj = objdir.join(format!("{}.o", name.trim_end_matches(".c")));
+            (src, obj)
         })
         .collect();
+    let objs: Vec<PathBuf> = jobs.iter().map(|(_, o)| o.clone()).collect();
     let objcopy = llvm_tool("llvm-objcopy");
-    let queue = Mutex::new(jobs.clone());
+    let queue = Mutex::new(jobs);
     let errors = Mutex::new(Vec::<String>::new());
     let n = std::env::var("NUM_JOBS")
         .ok()
@@ -235,20 +296,26 @@ fn compile_group(
                     let Some((src, obj)) = queue.lock().unwrap().pop() else {
                         break;
                     };
-                    if up_to_date(&obj, stamp) {
+                    // The object depends on its own module name and flags too.
+                    let stamp = format!("{stamp} {} {}", src.module, src.flags.join(" "));
+                    if up_to_date(&obj, &stamp) {
                         continue;
                     }
+                    let module = &src.module;
+                    let src_flags = &src.flags;
+                    let src = &src.path;
                     let base = src.file_stem().unwrap().to_string_lossy().replace('-', "_");
                     let out = Command::new(clang)
                         .args(flags)
-                        .arg(format!("-DKBUILD_MODNAME=\"{group}\""))
+                        .args(src_flags)
+                        .arg(format!("-DKBUILD_MODNAME=\"{module}\""))
                         .arg(format!("-DKBUILD_BASENAME=\"{base}\""))
-                        .arg(format!("-DKBUILD_MODFILE=\"{group}\""))
+                        .arg(format!("-DKBUILD_MODFILE=\"{module}\""))
                         .arg("-MD")
                         .arg("-MF")
                         .arg(obj.with_extension("d"))
                         .arg("-c")
-                        .arg(&src)
+                        .arg(src)
                         .arg("-o")
                         .arg(&obj)
                         .output();
@@ -267,7 +334,7 @@ fn compile_group(
                                     .push(format!("llvm-objcopy failed on {}", obj.display()));
                                 continue;
                             }
-                            std::fs::write(obj.with_extension("stamp"), stamp).unwrap();
+                            std::fs::write(obj.with_extension("stamp"), &stamp).unwrap();
                         }
                         Ok(o) => {
                             let err = String::from_utf8_lossy(&o.stderr);
@@ -291,5 +358,5 @@ fn compile_group(
             errors.join("\n")
         );
     }
-    jobs.into_iter().map(|(_, o)| o).collect()
+    objs
 }

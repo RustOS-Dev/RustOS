@@ -151,7 +151,10 @@ for line in open(script):
     op, _, arg = line.partition(" ")
     if op == "wait":
         parts = arg.rsplit(" ", 1)
-        rx, to = (parts[0], float(parts[1])) if len(parts) == 2 and parts[1].replace('.','',1).isdigit() else (arg, 60)
+        # A trailing number is the timeout (seconds) unless it is too large
+        # to be one: then it is part of the pattern ("speed 115200").
+        is_to = len(parts) == 2 and parts[1].replace('.', '', 1).isdigit() and float(parts[1]) <= 1800
+        rx, to = (parts[0], float(parts[1])) if is_to else (arg, 60)
         out = read_until(rx, to)
         if out is None:
             sys.stdout.buffer.write(log + buf)
@@ -159,15 +162,18 @@ for line in open(script):
             # Ask the kernel for a state dump (serial BREAK = SysRq).
             try:
                 import socket
-                m = socket.socket(socket.AF_UNIX)
-                m.connect(mon_path)
-                m.sendall(b"chardev-send-break serial0\n")
-                time.sleep(0.3)
-                m.close()
-                buf = b""
-                read_until("(?!x)x", 5)  # never matches: collect 5 s of output
-                dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l or b"[nmi]" in l)
-                print("*** kernel state:\n" + dump.decode(errors="replace"))
+                # Two samples a few seconds apart: a CPU stuck in one
+                # place shows the same location twice.
+                for sample in (1, 2):
+                    m = socket.socket(socket.AF_UNIX)
+                    m.connect(mon_path)
+                    m.sendall(b"chardev-send-break serial0\n")
+                    time.sleep(0.3)
+                    m.close()
+                    buf = b""
+                    read_until("(?!x)x", 5)  # never matches: collect 5 s of output
+                    dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l or b"[nmi]" in l)
+                    print(f"*** kernel state ({sample}):\n" + dump.decode(errors="replace"))
             except Exception as e:
                 print(f"*** no state dump: {e}")
             ok = False

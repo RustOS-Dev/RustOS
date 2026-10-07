@@ -163,6 +163,8 @@ struct Client<T> {
     queue: Mutex<VecDeque<T>>,
     /// EVIOCSCLOCKID: monotonic timestamps instead of wall-clock time.
     monotonic: AtomicBool,
+    /// EVIOCREVOKE: no more events; reads fail with ENODEV.
+    revoked: AtomicBool,
 }
 
 /// Leaves a keyboard's lock LEDs (bit 0 num, 1 caps, 2 scroll).
@@ -197,6 +199,9 @@ fn push_to<T: Copy>(clients: &Mutex<Vec<Weak<Client<T>>>>, e: T) {
         let mut cl = clients.lock();
         cl.retain(|w| w.strong_count() > 0);
         for c in cl.iter().filter_map(|w| w.upgrade()) {
+            if c.revoked.load(Ordering::Relaxed) {
+                continue;
+            }
             let mut q = c.queue.lock();
             if q.len() >= QUEUE_MAX {
                 q.pop_front();
@@ -230,12 +235,195 @@ pub fn register(info: Info) -> Arc<InputDev> {
         (13 << 8) | (64 + dev.idx as u64),
         Arc::new(EventNode(Some(dev.clone()))),
     );
+    publish_sysfs(&dev);
+    input_uevent("add", &dev);
     dev
+}
+
+/// A bitmap as Linux prints capabilities (input_print_bitmap): 64-bit
+/// words in hex, most significant first, leading zero words left out.
+fn linux_bitmap(bits: impl Iterator<Item = u16>) -> String {
+    let mut words: Vec<u64> = Vec::new();
+    for b in bits {
+        let (w, i) = (b as usize / 64, b % 64);
+        if words.len() <= w {
+            words.resize(w + 1, 0);
+        }
+        words[w] |= 1 << i;
+    }
+    while words.len() > 1 && words.last() == Some(&0) {
+        words.pop();
+    }
+    let mut out = alloc::format!("{:x}", words.last().copied().unwrap_or(0));
+    for w in words.iter().rev().skip(1) {
+        out.push_str(&alloc::format!(" {:016x}", w));
+    }
+    out
+}
+
+/// A sysfs file computed from the device's description.
+struct InfoAttr(Weak<InputDev>, fn(&InputDev, &Info) -> String);
+
+impl crate::vfs::sysfs::Attr for InfoAttr {
+    fn show(&self) -> KResult<Vec<u8>> {
+        let d = self.0.upgrade().ok_or(ENODEV)?;
+        let info = irqless(|| d.info.lock().clone());
+        let mut s = (self.1)(&d, &info);
+        s.push('\n');
+        Ok(s.into_bytes())
+    }
+}
+
+/// The device's capabilities as Linux names them in uevents and in
+/// capabilities/*: (name, bitmap).
+fn capabilities(info: &Info) -> [(&'static str, String); 6] {
+    let ev = info.ev_bits();
+    [
+        (
+            "ev",
+            linux_bitmap((0..32u16).filter(|b| ev & (1 << b) != 0)),
+        ),
+        ("key", linux_bitmap(info.keys.iter().copied())),
+        ("rel", linux_bitmap(info.rel.iter().copied())),
+        ("abs", linux_bitmap(info.abs.iter().map(|(c, _)| *c))),
+        ("led", linux_bitmap(info.leds.iter().copied())),
+        (
+            "prop",
+            linux_bitmap((0..32u16).filter(|b| info.props & (1 << b) != 0)),
+        ),
+    ]
+}
+
+/// The device in /sys as Linux lays it out, which libudev(-zero) and
+/// libinput read: devices/virtual/input/inputN (name, id/*,
+/// capabilities/*, uevent with the capability bitmaps; under
+/// devices/virtual/rustos-input) and its eventN node (dev, uevent with
+/// DEVNAME), linked from class/input/eventN and dev/char/13:M. Shared directories (class/input, dev/char, ...) are not
+/// registered: they exist implicitly, and the Linux device core (when
+/// built in) registers its own.
+fn publish_sysfs(dev: &Arc<InputDev>) {
+    use crate::vfs::sysfs::{add_dir, add_file, add_link};
+    let n = dev.idx;
+    // A parent directory of RustOS's own: the Linux input core (when built
+    // in) numbers its inputN devices independently.
+    let base = alloc::format!("devices/virtual/rustos-input/input{n}");
+    let ev = alloc::format!("{base}/event{n}");
+    let w = Arc::downgrade(dev);
+    let file = |path: String, f: fn(&InputDev, &Info) -> String| {
+        let _ = add_file(&path, Arc::new(InfoAttr(w.clone(), f)));
+    };
+    let _ = add_dir(&base);
+    let _ = add_link(&alloc::format!("{base}/subsystem"), "/sys/class/input");
+    file(alloc::format!("{base}/name"), |_, i| i.name.clone());
+    file(alloc::format!("{base}/phys"), |_, i| i.phys.clone());
+    file(alloc::format!("{base}/uniq"), |_, i| i.uniq.clone());
+    let _ = add_dir(&alloc::format!("{base}/id"));
+    file(alloc::format!("{base}/id/bustype"), |_, i| {
+        alloc::format!("{:04x}", i.id[0])
+    });
+    file(alloc::format!("{base}/id/vendor"), |_, i| {
+        alloc::format!("{:04x}", i.id[1])
+    });
+    file(alloc::format!("{base}/id/product"), |_, i| {
+        alloc::format!("{:04x}", i.id[2])
+    });
+    file(alloc::format!("{base}/id/version"), |_, i| {
+        alloc::format!("{:04x}", i.id[3])
+    });
+    let _ = add_dir(&alloc::format!("{base}/capabilities"));
+    file(alloc::format!("{base}/capabilities/ev"), |_, i| {
+        capabilities(i)[0].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/key"), |_, i| {
+        capabilities(i)[1].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/rel"), |_, i| {
+        capabilities(i)[2].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/abs"), |_, i| {
+        capabilities(i)[3].1.clone()
+    });
+    file(alloc::format!("{base}/capabilities/led"), |_, i| {
+        capabilities(i)[4].1.clone()
+    });
+    file(alloc::format!("{base}/properties"), |_, i| {
+        capabilities(i)[5].1.clone()
+    });
+    file(alloc::format!("{base}/uevent"), |_, i| {
+        let mut s = alloc::format!(
+            "PRODUCT={:x}/{:x}/{:x}/{:x}\nNAME=\"{}\"\nPHYS=\"{}\"",
+            i.id[0],
+            i.id[1],
+            i.id[2],
+            i.id[3],
+            i.name,
+            i.phys
+        );
+        for (k, v) in capabilities(i) {
+            if v != "0" || k == "ev" || k == "prop" {
+                s.push_str(&alloc::format!("\n{}={}", k.to_uppercase(), v));
+            }
+        }
+        s
+    });
+    let _ = add_dir(&ev);
+    let _ = add_link(&alloc::format!("{ev}/subsystem"), "/sys/class/input");
+    let _ = add_link(
+        &alloc::format!("{ev}/device"),
+        &alloc::format!("/sys/{base}"),
+    );
+    file(alloc::format!("{ev}/dev"), |d, _| {
+        alloc::format!("13:{}", 64 + d.idx)
+    });
+    file(alloc::format!("{ev}/uevent"), |d, _| {
+        alloc::format!(
+            "MAJOR=13\nMINOR={}\nDEVNAME=input/event{}",
+            64 + d.idx,
+            d.idx
+        )
+    });
+    let _ = add_link(
+        &alloc::format!("class/input/event{n}"),
+        &alloc::format!("/sys/{ev}"),
+    );
+    let _ = add_link(
+        &alloc::format!("dev/char/13:{}", 64 + n),
+        &alloc::format!("/sys/{ev}"),
+    );
+}
+
+fn unpublish_sysfs(n: usize) {
+    use crate::vfs::sysfs::remove;
+    remove(&alloc::format!("dev/char/13:{}", 64 + n));
+    remove(&alloc::format!("class/input/event{n}"));
+    remove(&alloc::format!("devices/virtual/rustos-input/input{n}"));
+}
+
+/// The uevent for an input device's event node (what libinput's udev
+/// monitor waits for).
+fn input_uevent(action: &str, dev: &InputDev) {
+    let name = alloc::format!("input/event{}", dev.idx);
+    crate::net::netlink::uevent(
+        action,
+        &alloc::format!(
+            "/devices/virtual/rustos-input/input{}/event{}",
+            dev.idx,
+            dev.idx
+        ),
+        "input",
+        &[
+            ("MAJOR", "13"),
+            ("MINOR", &alloc::format!("{}", 64 + dev.idx)),
+            ("DEVNAME", &name),
+        ],
+    );
 }
 
 /// Remove a device (unplugged); its open files see no more events.
 pub fn unregister(dev: &Arc<InputDev>) {
     crate::vfs::devfs::unregister(&alloc::format!("input/event{}", dev.idx));
+    input_uevent("remove", dev);
+    unpublish_sysfs(dev.idx);
     irqless(|| DEVICES.lock().retain(|d| !Arc::ptr_eq(d, dev)));
 }
 
@@ -385,6 +573,23 @@ fn extended_key(c: u16) -> Option<u16> {
     })
 }
 
+/// PS/2 set-1 scancode bytes for Linux key `code` (make, or break with
+/// `down` false), as the console keyboard takes them; None for keys it
+/// has no code for.
+pub fn keycode_scancodes(code: u16, down: bool) -> Option<([u8; 2], usize)> {
+    let brk = if down { 0 } else { 0x80 };
+    let plain = match code {
+        1..=0x53 | 0x56..=0x58 => Some(code as u8),
+        _ => None,
+    };
+    if let Some(sc) = plain {
+        return Some(([sc | brk, 0], 1));
+    }
+    (0x01u16..0x80)
+        .find(|&sc| extended_key(sc) == Some(code))
+        .map(|sc| ([0xE0, sc as u8 | brk], 2))
+}
+
 /// The console's lock keys changed: update every keyboard's LEDs.
 pub fn console_leds(bits: u8) {
     if CONSOLE_LEDS.swap(bits as u32, Ordering::Relaxed) == bits as u32 {
@@ -447,6 +652,7 @@ impl<T: Copy + Send + 'static> Client<T> {
         let c = Arc::new(Client {
             queue: Mutex::new(VecDeque::new()),
             monotonic: AtomicBool::new(false),
+            revoked: AtomicBool::new(false),
         });
         irqless(|| list.lock().push(Arc::downgrade(&c)));
         c
@@ -465,6 +671,9 @@ impl<T: Copy + Send + 'static> Client<T> {
     ) -> KResult<usize> {
         if buf.len() < size {
             return Err(EINVAL);
+        }
+        if self.revoked.load(Ordering::Relaxed) {
+            return Err(ENODEV);
         }
         let mono = self.monotonic.load(Ordering::Relaxed);
         loop {
@@ -573,6 +782,9 @@ impl EventFile {
             return Err(ENOTTY);
         }
         let nr = (cmd & 0xFF) as u16;
+        if self.client.revoked.load(Ordering::Relaxed) {
+            return Err(ENODEV);
+        }
         let info = match &self.dev {
             Some(d) => d.info(),
             None => merged_info(),
@@ -697,7 +909,28 @@ impl EventFile {
                     }
                 })
             }
-            0x91 => Ok(0), // EVIOCREVOKE
+            0x91 => {
+                // EVIOCREVOKE (a session manager takes a device away from
+                // a client on VT switch): this file gets no more events.
+                if arg != 0 {
+                    return Err(EINVAL);
+                }
+                self.client.revoked.store(true, Ordering::SeqCst);
+                irqless(|| self.client.queue.lock().clear());
+                if let Some(d) = &self.dev {
+                    irqless(|| {
+                        let mut g = d.grab.lock();
+                        if g.as_ref()
+                            .and_then(|w| w.upgrade())
+                            .is_some_and(|c| Arc::ptr_eq(&c, &self.client))
+                        {
+                            *g = None;
+                        }
+                    });
+                }
+                WQ.wake_all();
+                Ok(0)
+            }
             0xA0 => {
                 let mut b = [0u8; 4];
                 uaccess::copy_from_user(&mut b, arg)?;
@@ -748,7 +981,9 @@ impl crate::vfs::FileLike for EventFile {
         &WQ
     }
     fn poll(&self) -> u16 {
-        if self.client.is_empty() {
+        if self.client.revoked.load(Ordering::Relaxed) {
+            crate::vfs::POLLERR | crate::vfs::POLLHUP
+        } else if self.client.is_empty() {
             0
         } else {
             crate::vfs::POLLIN

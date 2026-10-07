@@ -7,6 +7,20 @@ switching, ACKs, retransmission, rate scaling, CCMP/GCMP encryption) runs in
 the adapter's firmware; authentication, association and the WPA handshakes
 run in the kernel.
 
+Adapters with Linux drivers (MediaTek MT7921 PCIe cards and MT7921AU USB
+adapters, M29/M30 onwards) use
+Linux's 802.11 stack through [LinuxKPI](LINUXKPI.md), with **wpa_supplicant**
+doing the security. `wifi` drives these adapters through wpa_supplicant's
+control socket (`userland/nettools/src/wpa.rs`), starting wpa_supplicant when
+needed. The commands are the same. Linux-driver interfaces also support:
+- WPA2/WPA3-Enterprise:
+  `wifi connect SSID PASSWORD --eap peap|ttls --identity ID [--ca CERT.pem]`;
+- OWE;
+- `hostapd` for access points.
+
+The native AX210 driver stays the default for its cards until Linux iwlwifi
+(M31) has passed `hwcheck` on hardware.
+
 ## Components
 
 | Layer | Location | Role |
@@ -25,7 +39,10 @@ authenticator (`cd crates/wlan && cargo test`).
 
 ## Firmware
 
-The adapter needs Intel's firmware from
+RustOS ships this firmware in every image (`/lib/firmware`, listed in
+[firmware/stock.list](../firmware/stock.list) and fetched at build time from a
+pinned linux-firmware release), so the adapter works without copying
+anything. The files come from
 [linux-firmware](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git)
 (`intel/iwlwifi/`):
 
@@ -35,16 +52,24 @@ The adapter needs Intel's firmware from
 | AX211 (CNVi) | 8086:51F0/51F1/54F0/7A70/7AF0/7F70 | `iwlwifi-so-a0-gf-a0-72.ucode`, `iwlwifi-so-a0-gf-a0.pnvm` |
 | AX201 (CNVi, HR RF) | same IDs, HR radio | `iwlwifi-so-a0-hr-b0-72.ucode` |
 
+A release build (`cargo build --release`, `write_to_drive.sh`) fails if it
+cannot download this firmware, rather than producing an image without it;
+set `RUSTOS_FIRMWARE=0` to build such an image on purpose. If a driver then
+finds no firmware, `wifi status` and the kernel log say the image was built
+without it. Wi-Fi 5 RF modules (9461/9462/9560) on CNVi platforms are not
+supported by the native driver and are reported as such.
+
 The kernel loads them from the first of `/lib/firmware`,
 `/storage/lib/firmware`, `/boot/efi/firmware` and
 `/boot/efi/EFI/rustos/firmware`. Firmware is retried every few seconds
 after boot (the storage partition is mounted after drivers probe) and on
 every `wifi` request, so copying the files in later works without a reboot.
 
-`write_to_drive.sh` provisions them onto the storage partition:
+`write_to_drive.sh` also copies them onto the storage partition, or a
+different set when given one:
 
 ```sh
-./write_to_drive.sh --drive /dev/sdX                          # auto-detect /lib/firmware
+./write_to_drive.sh --drive /dev/sdX                          # stock firmware
 ./write_to_drive.sh --drive /dev/sdX --ax210-firmware ~/linux-firmware/intel/iwlwifi
 RUSTOS_AX210_FIRMWARE=/path/to/iwlwifi-ty-a0-gf-a0-72.ucode ./write_to_drive.sh --drive /dev/sdX
 ```

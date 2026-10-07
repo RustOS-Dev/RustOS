@@ -1,0 +1,12 @@
+# Intel HDA with a duplex codec and a USB Audio Class speaker, both
+# recorded by QEMU's wav audio backend.
+-audiodev wav,id=a0,path=/tmp/rustos-audio-lhda.wav
+-device intel-hda
+-device hda-duplex,audiodev=a0
+# A second HDA whose input works (the none backend records silence).
+-audiodev none,id=a2
+-device ich9-intel-hda
+-device hda-micro,audiodev=a2
+-audiodev wav,id=a3,path=/tmp/rustos-audio-lusb.wav
+-device qemu-xhci,id=xhci
+-device usb-audio,bus=xhci.0,audiodev=a3

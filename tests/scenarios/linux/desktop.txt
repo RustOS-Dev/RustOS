@@ -1,0 +1,53 @@
+# A Wayland desktop (M37): Weston 14 with the DRM backend and the pixman
+# renderer on Linux bochs DRM (kernel built with --features linux-drivers;
+# the weston port staged with tools/install-port.sh --initramfs weston).
+# libseat's embedded seat takes the VT and DRM master, libinput finds the
+# PS/2 keyboard and mouse through libudev-zero and /sys, and weston-terminal
+# runs a shell. Keys typed with QEMU's sendkey go evdev -> libinput ->
+# Weston -> weston-terminal -> pty -> shell, which writes a file the serial
+# shell then reads; QEMU screendumps show the desktop and the terminal.
+hostrun rm -rf /tmp/rustos-desktop && mkdir -p /tmp/rustos-desktop
+wait # $ 240
+send mkdir -p /tmp/xdg; chmod 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin; weston --backend=drm --renderer=pixman --log=/tmp/weston.log &
+sleep 15
+send grep -a -e "libseat: session control granted" -e "Output 'Virtual-1' enabled" -e "device is a keyboard" /tmp/weston.log
+wait session control granted
+wait device is a keyboard
+wait # $
+send WAYLAND_DISPLAY=wayland-1 weston-terminal &
+sleep 30
+monitor screendump /tmp/rustos-desktop/desktop.ppm
+# The panel (dark), the wallpaper (grey) and the terminal (black).
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-desktop/desktop.ppm size=1280x800 'count:0,0,0>=150000' 1100,700=130,124,121~25 640,10=40,40,40~25
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey w
+monitor sendkey a
+monitor sendkey y
+monitor sendkey l
+monitor sendkey a
+monitor sendkey n
+monitor sendkey d
+monitor sendkey minus
+monitor sendkey t
+monitor sendkey y
+monitor sendkey p
+monitor sendkey e
+monitor sendkey d
+monitor sendkey spc
+monitor sendkey shift-dot
+monitor sendkey spc
+monitor sendkey slash
+monitor sendkey t
+monitor sendkey m
+monitor sendkey p
+monitor sendkey slash
+monitor sendkey k
+monitor sendkey ret
+sleep 5
+send cat /tmp/k
+wait wayland-typed
+wait # $

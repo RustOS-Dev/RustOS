@@ -51,6 +51,43 @@ fn intx_dispatch(gsi: u32) {
     apic::eoi();
 }
 
+/// A native RustOS PCI driver: `probe` returns true if it took the device.
+pub struct Driver {
+    pub name: &'static str,
+    pub probe: fn(&PciDevice) -> bool,
+}
+
+/// Devices bound by native drivers: (bus, device, function) -> driver.
+static CLAIMS: Mutex<alloc::collections::BTreeMap<(u8, u8, u8), &'static str>> =
+    Mutex::new(alloc::collections::BTreeMap::new());
+
+/// Record that `driver` drives `dev` (Linux drivers then leave it alone).
+pub fn claim(dev: &PciDevice, driver: &'static str) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        CLAIMS.lock().insert((dev.bus, dev.dev, dev.func), driver)
+    });
+}
+
+/// The native driver bound to `bus:dev.func`, if any.
+pub fn claimed_by(bus: u8, dev: u8, func: u8) -> Option<&'static str> {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        CLAIMS.lock().get(&(bus, dev, func)).copied()
+    })
+}
+
+/// Offer every device to `drivers` in order; the first that takes a
+/// device claims it.
+pub fn probe_drivers(drivers: &[Driver]) {
+    for dev in enumerate() {
+        if claimed_by(dev.bus, dev.dev, dev.func).is_some() {
+            continue;
+        }
+        if let Some(d) = drivers.iter().find(|d| (d.probe)(&dev)) {
+            claim(&dev, d.name);
+        }
+    }
+}
+
 /// Map the ECAM windows described by MCFG. Safe to call more than once.
 pub fn init_ecam() {
     ECAM.call_once(|| {
@@ -206,6 +243,33 @@ pub const CAP_MSIX: u8 = 0x11;
 pub const EXT_CAP_AER: u16 = 0x0001;
 pub const EXT_CAP_LTR: u16 = 0x0018;
 pub const EXT_CAP_L1SS: u16 = 0x001E;
+
+/// Add `handler` to global system interrupt `gsi` (shared with PCI INTx
+/// handlers on the same line), routing it on first use. Returns the vector.
+pub fn request_gsi(
+    gsi: u32,
+    level: bool,
+    active_low: bool,
+    handler: alloc::boxed::Box<dyn Fn() + Send + Sync>,
+) -> Option<u8> {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut lines = INTX.lock();
+        if let Some(line) = lines.get_mut(&gsi) {
+            line.handlers.push(handler);
+            return Some(line.vector);
+        }
+        let v = idt::alloc_vector(move |_f| intx_dispatch(gsi))?;
+        lines.insert(
+            gsi,
+            IntxLine {
+                vector: v,
+                handlers: alloc::vec![handler],
+            },
+        );
+        apic::route_gsi(gsi, v, apic::id(), level, active_low);
+        Some(v)
+    })
+}
 
 impl PciDevice {
     pub fn read32(&self, off: u16) -> u32 {

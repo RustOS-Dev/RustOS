@@ -15,10 +15,13 @@
  * caches coherent, so the sync calls are barriers.
  */
 #include <linux/acpi.h>
+#include <linux/bitfield.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/irq.h>
+#include <linux/irqdomain.h>
 #include <linux/kthread.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
@@ -252,6 +255,88 @@ void __iomem *pci_ioremap_bar(struct pci_dev *pdev, int bar)
 	return ioremap(pci_resource_start(pdev, bar), pci_resource_len(pdev, bar));
 }
 
+/* ------------------------------------------------- managed PCI (pcim_*) */
+
+struct kpi_pcim_table {
+	void __iomem *table[PCI_STD_NUM_BARS];
+};
+
+static void kpi_pcim_table_release(struct device *dev, void *res)
+{
+	struct kpi_pcim_table *t = res;
+
+	for (int i = 0; i < PCI_STD_NUM_BARS; i++)
+		if (t->table[i])
+			pci_iounmap(to_pci_dev(dev), t->table[i]);
+}
+
+void __iomem *const *pcim_iomap_table(struct pci_dev *pdev)
+{
+	struct kpi_pcim_table *t = devres_find(&pdev->dev, kpi_pcim_table_release, NULL, NULL);
+
+	if (t)
+		return t->table;
+	t = devres_alloc(kpi_pcim_table_release, sizeof(*t), GFP_KERNEL);
+	if (!t)
+		return NULL;
+	devres_add(&pdev->dev, t);
+	return t->table;
+}
+
+int pcim_iomap_regions(struct pci_dev *pdev, int mask, const char *name)
+{
+	void __iomem **table = (void __iomem **)pcim_iomap_table(pdev);
+
+	if (!table)
+		return -ENOMEM;
+	for (int bar = 0; bar < PCI_STD_NUM_BARS; bar++) {
+		if (!(mask & BIT(bar)) || !pci_resource_len(pdev, bar))
+			continue;
+		table[bar] = pci_iomap(pdev, bar, 0);
+		if (!table[bar])
+			return -ENOMEM;
+	}
+	return 0;
+}
+
+static void kpi_pcim_disable(struct device *dev, void *res)
+{
+	pci_disable_device(to_pci_dev(dev));
+}
+
+int pcim_enable_device(struct pci_dev *pdev)
+{
+	void *res = devres_alloc(kpi_pcim_disable, 0, GFP_KERNEL);
+	int err;
+
+	if (!res)
+		return -ENOMEM;
+	err = pci_enable_device(pdev);
+	if (err) {
+		devres_free(res);
+		return err;
+	}
+	devres_add(&pdev->dev, res);
+	return 0;
+}
+
+/* ASPM: clear the link's L0s/L1 enables (PCI_EXP_LNKCTL). */
+int pci_disable_link_state(struct pci_dev *pdev, int state)
+{
+	u16 clear = 0;
+
+	if (state & PCIE_LINK_STATE_L0S)
+		clear |= PCI_EXP_LNKCTL_ASPM_L0S;
+	if (state & PCIE_LINK_STATE_L1)
+		clear |= PCI_EXP_LNKCTL_ASPM_L1;
+	return pcie_capability_clear_and_set_word_unlocked(pdev, PCI_EXP_LNKCTL, clear, 0);
+}
+
+int pci_disable_link_state_locked(struct pci_dev *pdev, int state)
+{
+	return pci_disable_link_state(pdev, state);
+}
+
 void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long maxlen)
 {
 	unsigned long len = pci_resource_len(dev, bar);
@@ -356,6 +441,7 @@ static struct kpi_pci_dev *kpi_pci_create(u32 idx)
 	dev->current_state = PCI_D0;
 	dev->dma_mask = DMA_BIT_MASK(32);
 	dev->dev.dma_mask = &dev->dma_mask;
+	dev->dev.dma_parms = &dev->dma_parms;
 	dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
 	device_initialize(&dev->dev);
 	dev->dev.bus = &pci_bus_type;
@@ -394,6 +480,14 @@ static struct kpi_pci_dev *kpi_pci_create(u32 idx)
 
 static int kpi_pci_bus_match(struct device *dev, const struct device_driver *drv)
 {
+	/* A device a native RustOS driver took is not offered to Linux ones. */
+	if (rustos_kpi_pci_claimed(kpi_idx(to_pci_dev(dev))))
+		return 0;
+	if (!kpi_pci_match(to_pci_driver(drv)->id_table, to_pci_dev(dev)))
+		return 0;
+	/* Opt-in drivers wait for kernel.conf's linux.enable=. */
+	if (!rustos_kpi_driver_allowed(drv->name))
+		return 0;
 	return kpi_pci_match(to_pci_driver(drv)->id_table, to_pci_dev(dev)) != NULL;
 }
 
@@ -613,7 +707,7 @@ static void kpi_irq_trampoline(void *arg)
 
 	if (!READ_ONCE(d->handler) || READ_ONCE(d->disabled))
 		return;
-	preempt_count_add(HARDIRQ_OFFSET);
+	/* RustOS's dispatch already counts hard-IRQ context (HARDIRQ_OFFSET). */
 	WRITE_ONCE(d->running, 1);
 	ret = d->handler(d->irq, d->dev_id);
 	if ((ret & IRQ_WAKE_THREAD) && d->thread) {
@@ -621,7 +715,6 @@ static void kpi_irq_trampoline(void *arg)
 		wake_up_process(d->thread);
 	}
 	WRITE_ONCE(d->running, 0);
-	preempt_count_sub(HARDIRQ_OFFSET);
 }
 
 static irqreturn_t kpi_default_primary(int irq, void *dev_id)
@@ -629,8 +722,8 @@ static irqreturn_t kpi_default_primary(int irq, void *dev_id)
 	return IRQ_WAKE_THREAD;
 }
 
-int request_threaded_irq(unsigned int irq, irq_handler_t handler, irq_handler_t thread_fn,
-			 unsigned long flags, const char *name, void *dev)
+int kpi_pci_request_irq(unsigned int irq, irq_handler_t handler, irq_handler_t thread_fn,
+			unsigned long flags, const char *name, void *dev)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 	struct kpi_pci_dev *k;
@@ -666,15 +759,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler, irq_handler_t 
 	return 0;
 }
 
-int request_any_context_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
-			    const char *name, void *dev_id)
-{
-	int r = request_threaded_irq(irq, handler, NULL, flags, name, dev_id);
-
-	return r ? r : IRQC_IS_HARDIRQ;
-}
-
-void synchronize_irq(unsigned int irq)
+void kpi_pci_synchronize_irq(unsigned int irq)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
@@ -682,18 +767,65 @@ void synchronize_irq(unsigned int irq)
 		cpu_relax();
 }
 
-const void *free_irq(unsigned int irq, void *dev_id)
+struct kpi_devm_irq {
+	unsigned int irq;
+	void *dev_id;
+};
+
+static void kpi_devm_irq_release(struct device *dev, void *res)
+{
+	struct kpi_devm_irq *r = res;
+
+	free_irq(r->irq, r->dev_id);
+}
+
+static int kpi_devm_irq_match(struct device *dev, void *res, void *data)
+{
+	struct kpi_devm_irq *r = res, *m = data;
+
+	return r->irq == m->irq && r->dev_id == m->dev_id;
+}
+
+int devm_request_threaded_irq(struct device *dev, unsigned int irq, irq_handler_t handler,
+			      irq_handler_t thread_fn, unsigned long irqflags,
+			      const char *devname, void *dev_id)
+{
+	struct kpi_devm_irq *r = devres_alloc(kpi_devm_irq_release, sizeof(*r), GFP_KERNEL);
+	int err;
+
+	if (!r)
+		return -ENOMEM;
+	err = request_threaded_irq(irq, handler, thread_fn, irqflags,
+				   devname ?: dev_name(dev), dev_id);
+	if (err) {
+		devres_free(r);
+		return err;
+	}
+	r->irq = irq;
+	r->dev_id = dev_id;
+	devres_add(dev, r);
+	return 0;
+}
+
+void devm_free_irq(struct device *dev, unsigned int irq, void *dev_id)
+{
+	struct kpi_devm_irq m = { .irq = irq, .dev_id = dev_id };
+
+	WARN_ON(devres_release(dev, kpi_devm_irq_release, kpi_devm_irq_match, &m));
+}
+
+const void *kpi_pci_free_irq(unsigned int irq, void *dev_id)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
 	if (!d)
 		return NULL;
 	WRITE_ONCE(d->handler, NULL);
-	synchronize_irq(irq);
+	kpi_pci_synchronize_irq(irq);
 	return d->name;
 }
 
-void disable_irq_nosync(unsigned int irq)
+void kpi_pci_disable_irq(unsigned int irq)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
@@ -701,13 +833,7 @@ void disable_irq_nosync(unsigned int irq)
 		WRITE_ONCE(d->disabled, d->disabled + 1);
 }
 
-void disable_irq(unsigned int irq)
-{
-	disable_irq_nosync(irq);
-	synchronize_irq(irq);
-}
-
-void enable_irq(unsigned int irq)
+void kpi_pci_enable_irq(unsigned int irq)
 {
 	struct kpi_irq *d = kpi_irq_desc(irq);
 
@@ -751,6 +877,49 @@ void dma_free_attrs(struct device *dev, size_t size, void *cpu_addr, dma_addr_t 
 {
 	if (cpu_addr)
 		free_pages((unsigned long)cpu_addr, get_order(size));
+}
+
+struct kpi_dmam {
+	void *vaddr;
+	dma_addr_t dma;
+	size_t size;
+	unsigned long attrs;
+};
+
+static void kpi_dmam_release(struct device *dev, void *res)
+{
+	struct kpi_dmam *d = res;
+
+	dma_free_attrs(dev, d->size, d->vaddr, d->dma, d->attrs);
+}
+
+void *dmam_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle, gfp_t gfp,
+		       unsigned long attrs)
+{
+	struct kpi_dmam *d = devres_alloc(kpi_dmam_release, sizeof(*d), gfp);
+
+	if (!d)
+		return NULL;
+	d->vaddr = dma_alloc_attrs(dev, size, dma_handle, gfp, attrs);
+	if (!d->vaddr) {
+		devres_free(d);
+		return NULL;
+	}
+	d->dma = *dma_handle;
+	d->size = size;
+	d->attrs = attrs;
+	devres_add(dev, d);
+	return d->vaddr;
+}
+
+/* lib/iomap_copy.c */
+void __ioread32_copy(void *to, const void __iomem *from, size_t count)
+{
+	u32 *dst = to;
+	const u32 __iomem *src = from;
+
+	while (count--)
+		*dst++ = __raw_readl(src++);
 }
 
 dma_addr_t dma_map_page_attrs(struct device *dev, struct page *page, size_t offset, size_t size,
@@ -800,4 +969,672 @@ unsigned int dma_map_sg_attrs(struct device *dev, struct scatterlist *sg, int ne
 void dma_unmap_sg_attrs(struct device *dev, struct scatterlist *sg, int nents,
 			enum dma_data_direction dir, unsigned long attrs)
 {
+}
+
+int dma_map_sgtable(struct device *dev, struct sg_table *sgt, enum dma_data_direction dir,
+		    unsigned long attrs)
+{
+	sgt->nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents, dir, attrs);
+	return 0;
+}
+
+/* ------------------------------------------------ more PCI (M32 drivers) */
+
+/* One interrupt vector per device (MSI or INTx): MSI-X requests fail and
+ * drivers fall back to MSI, as they do on systems without MSI-X. */
+int pci_enable_msix_range(struct pci_dev *dev, struct msix_entry *entries, int minvec,
+			  int maxvec)
+{
+	return -ENOSPC;
+}
+
+void pci_disable_msix(struct pci_dev *dev)
+{
+}
+
+int pcie_get_readrq(struct pci_dev *dev)
+{
+	u16 ctl;
+
+	pcie_capability_read_word(dev, PCI_EXP_DEVCTL, &ctl);
+	return 128 << FIELD_GET(PCI_EXP_DEVCTL_READRQ, ctl);
+}
+
+int pcie_set_readrq(struct pci_dev *dev, int rq)
+{
+	u16 v;
+
+	if (rq < 128 || rq > 4096 || !is_power_of_2(rq))
+		return -EINVAL;
+	v = FIELD_PREP(PCI_EXP_DEVCTL_READRQ, ffs(rq) - 8);
+	return pcie_capability_clear_and_set_word_unlocked(dev, PCI_EXP_DEVCTL,
+							   PCI_EXP_DEVCTL_READRQ, v);
+}
+
+void pcie_print_link_status(struct pci_dev *dev)
+{
+	u16 sta;
+
+	if (!pci_is_pcie(dev))
+		return;
+	pcie_capability_read_word(dev, PCI_EXP_LNKSTA, &sta);
+	pci_info(dev, "PCIe link: gen %u x%u\n", sta & PCI_EXP_LNKSTA_CLS,
+		 FIELD_GET(PCI_EXP_LNKSTA_NLW, sta));
+}
+
+void __iomem *pcim_iomap_region(struct pci_dev *pdev, int bar, const char *name)
+{
+	void __iomem **table = (void __iomem **)pcim_iomap_table(pdev);
+
+	if (!table)
+		return IOMEM_ERR_PTR(-ENOMEM);
+	if (!table[bar])
+		table[bar] = pci_iomap(pdev, bar, 0);
+	return table[bar] ? table[bar] : IOMEM_ERR_PTR(-ENOMEM);
+}
+
+int pcim_set_mwi(struct pci_dev *dev)
+{
+	return pci_set_mwi(dev);
+}
+
+/* Secondary bus resets are not done: report it as unsupported. */
+int pci_reset_bus(struct pci_dev *dev)
+{
+	return -ENOTTY;
+}
+
+int pci_status_get_and_clear_errors(struct pci_dev *pdev)
+{
+	u16 status;
+
+	pci_read_config_word(pdev, PCI_STATUS, &status);
+	status &= PCI_STATUS_ERROR_BITS;
+	if (status)
+		pci_write_config_word(pdev, PCI_STATUS, status);
+	return status;
+}
+
+int pci_prepare_to_sleep(struct pci_dev *dev)
+{
+	return 0;
+}
+
+bool pci_dev_run_wake(struct pci_dev *dev)
+{
+	return false;
+}
+
+bool pci_device_is_present(struct pci_dev *pdev)
+{
+	u32 v;
+
+	pci_read_config_dword(pdev, PCI_VENDOR_ID, &v);
+	return (v & 0xffff) != 0xffff;
+}
+
+/* Lookups over the devices LinuxKPI knows (one PCI segment). */
+struct pci_dev *pci_get_device(unsigned int vendor, unsigned int device, struct pci_dev *from)
+{
+	u32 start = 0;
+
+	if (from) {
+		start = kpi_idx(from) + 1;
+		pci_dev_put(from);
+	}
+	for (u32 i = start; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && (vendor == PCI_ANY_ID || d->vendor == vendor) &&
+		    (device == PCI_ANY_ID || d->device == device))
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+struct pci_dev *pci_get_slot(struct pci_bus *bus, unsigned int devfn)
+{
+	for (u32 i = 0; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && d->bus == bus && d->devfn == devfn)
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+int pci_dev_present(const struct pci_device_id *ids)
+{
+	for (u32 i = 0; i < kpi_pci_n; i++)
+		if (kpi_pci[i] && kpi_pci_match(ids, &kpi_pci[i]->pdev))
+			return 1;
+	return 0;
+}
+
+/* Vital Product Data is not read: drivers use their other sources (the
+ * EEPROM / NVM) for what VPD would give. */
+void *pci_vpd_alloc(struct pci_dev *dev, unsigned int *size)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+int pci_vpd_find_ro_info_keyword(const void *buf, unsigned int len, const char *kw,
+				 unsigned int *size)
+{
+	return -ENOENT;
+}
+
+int pci_vpd_check_csum(const void *buf, unsigned int len)
+{
+	return -ENOENT;
+}
+
+int __irq_apply_affinity_hint(unsigned int irq, const struct cpumask *m, bool setaffinity)
+{
+	return 0;
+}
+
+/* ------------------------------------------------ more DMA (M33 drivers) */
+
+void __dma_sync_sg_for_cpu(struct device *dev, struct scatterlist *sg, int nelems,
+			   enum dma_data_direction dir)
+{
+	mb();
+}
+
+void __dma_sync_sg_for_device(struct device *dev, struct scatterlist *sg, int nelems,
+			      enum dma_data_direction dir)
+{
+	mb();
+}
+
+/* No IOMMU or bounce limits: any size maps. */
+size_t dma_max_mapping_size(struct device *dev)
+{
+	return SIZE_MAX;
+}
+
+static int kpi_dmam_match(struct device *dev, void *res, void *data)
+{
+	return ((struct kpi_dmam *)res)->vaddr == data;
+}
+
+void dmam_free_coherent(struct device *dev, size_t size, void *vaddr, dma_addr_t dma_handle)
+{
+	WARN_ON(devres_release(dev, kpi_dmam_release, kpi_dmam_match, vaddr));
+}
+
+
+/* The resource tree is not kept (c/devcore.c): no parent resources. */
+struct resource *pci_find_resource(struct pci_dev *dev, struct resource *res)
+{
+	return NULL;
+}
+
+/* ------------------------------------------------- more DMA (M34 sound) */
+
+/* No IOMMU and coherent x86 caches: bus addresses are physical, and
+ * "noncontiguous" buffers are allocated contiguous (one-entry tables). */
+bool __dma_need_sync(struct device *dev, dma_addr_t dma_addr)
+{
+	return false;
+}
+
+bool dma_can_mmap(struct device *dev)
+{
+	return true;
+}
+
+int dma_mmap_attrs(struct device *dev, struct vm_area_struct *vma, void *cpu_addr,
+		   dma_addr_t dma_addr, size_t size, unsigned long attrs)
+{
+	unsigned long pages = PAGE_ALIGN(size) >> PAGE_SHIFT;
+
+	if (vma->vm_pgoff >= pages || vma_pages(vma) > pages - vma->vm_pgoff)
+		return -ENXIO;
+	return remap_pfn_range(vma, vma->vm_start, PHYS_PFN(dma_addr) + vma->vm_pgoff,
+			       vma->vm_end - vma->vm_start, vma->vm_page_prot);
+}
+
+struct page *dma_alloc_pages(struct device *dev, size_t size, dma_addr_t *dma_handle,
+			     enum dma_data_direction dir, gfp_t gfp)
+{
+	struct page *page = alloc_pages(gfp | __GFP_ZERO, get_order(size));
+
+	if (page)
+		*dma_handle = page_to_phys(page);
+	return page;
+}
+
+void dma_free_pages(struct device *dev, size_t size, struct page *page, dma_addr_t dma_handle,
+		    enum dma_data_direction dir)
+{
+	__free_pages(page, get_order(size));
+}
+
+int dma_mmap_pages(struct device *dev, struct vm_area_struct *vma, size_t size,
+		   struct page *page)
+{
+	return dma_mmap_attrs(dev, vma, page_address(page), page_to_phys(page), size, 0);
+}
+
+struct sg_table *dma_alloc_noncontiguous(struct device *dev, size_t size,
+					 enum dma_data_direction dir, gfp_t gfp,
+					 unsigned long attrs)
+{
+	struct sg_table *sgt = kzalloc(sizeof(*sgt), gfp & ~__GFP_ZERO);
+	dma_addr_t dma;
+	struct page *page;
+
+	if (!sgt)
+		return NULL;
+	page = dma_alloc_pages(dev, size, &dma, dir, gfp);
+	if (!page || sg_alloc_table(sgt, 1, GFP_KERNEL)) {
+		if (page)
+			dma_free_pages(dev, size, page, dma, dir);
+		kfree(sgt);
+		return NULL;
+	}
+	sg_set_page(sgt->sgl, page, PAGE_ALIGN(size), 0);
+	sg_dma_address(sgt->sgl) = dma;
+	sg_dma_len(sgt->sgl) = PAGE_ALIGN(size);
+	sgt->nents = 1;
+	return sgt;
+}
+
+void dma_free_noncontiguous(struct device *dev, size_t size, struct sg_table *sgt,
+			    enum dma_data_direction dir)
+{
+	dma_free_pages(dev, size, sg_page(sgt->sgl), sg_dma_address(sgt->sgl), dir);
+	sg_free_table(sgt);
+	kfree(sgt);
+}
+
+void *dma_vmap_noncontiguous(struct device *dev, size_t size, struct sg_table *sgt)
+{
+	return page_address(sg_page(sgt->sgl));
+}
+
+void dma_vunmap_noncontiguous(struct device *dev, void *vaddr)
+{
+}
+
+int dma_mmap_noncontiguous(struct device *dev, struct vm_area_struct *vma, size_t size,
+			   struct sg_table *sgt)
+{
+	return dma_mmap_attrs(dev, vma, NULL, sg_dma_address(sgt->sgl), size, 0);
+}
+
+const struct pci_device_id *pci_match_id(const struct pci_device_id *ids, struct pci_dev *dev)
+{
+	for (; ids && (ids->vendor || ids->subvendor || ids->class_mask); ids++) {
+		if ((ids->vendor == PCI_ANY_ID || ids->vendor == dev->vendor) &&
+		    (ids->device == PCI_ANY_ID || ids->device == dev->device) &&
+		    (ids->subvendor == PCI_ANY_ID || ids->subvendor == dev->subsystem_vendor) &&
+		    (ids->subdevice == PCI_ANY_ID || ids->subdevice == dev->subsystem_device) &&
+		    !((ids->class ^ dev->class) & ids->class_mask))
+			return ids;
+	}
+	return NULL;
+}
+
+/* --------------------------------------------- more PCI (M35 virtio) */
+
+void __iomem *pci_iomap_range(struct pci_dev *dev, int bar, unsigned long offset,
+			      unsigned long maxlen)
+{
+	unsigned long len = pci_resource_len(dev, bar);
+
+	if (len <= offset || !len)
+		return NULL;
+	len -= offset;
+	if (maxlen && len > maxlen)
+		len = maxlen;
+	if (pci_resource_flags(dev, bar) & IORESOURCE_IO)
+		return ioport_map(pci_resource_start(dev, bar) + offset, len);
+	return ioremap(pci_resource_start(dev, bar) + offset, len);
+}
+
+u8 pci_find_next_capability(struct pci_dev *dev, u8 pos, int cap)
+{
+	u8 id;
+	int ttl = 48;
+
+	pci_read_config_byte(dev, pos + PCI_CAP_LIST_NEXT, &pos);
+	while (ttl-- && pos >= 0x40) {
+		pos &= ~3;
+		pci_read_config_byte(dev, pos + PCI_CAP_LIST_ID, &id);
+		if (id == 0xff)
+			break;
+		if (id == cap)
+			return pos;
+		pci_read_config_byte(dev, pos + PCI_CAP_LIST_NEXT, &pos);
+	}
+	return 0;
+}
+
+int pci_alloc_irq_vectors_affinity(struct pci_dev *dev, unsigned int min_vecs,
+				   unsigned int max_vecs, unsigned int flags,
+				   struct irq_affinity *affd)
+{
+	return pci_alloc_irq_vectors(dev, min_vecs, max_vecs, flags);
+}
+
+const struct cpumask *pci_irq_get_affinity(struct pci_dev *pdev, int vec)
+{
+	return NULL;
+}
+
+/* MMIO and other device resources: bus address = physical address. */
+dma_addr_t dma_map_resource(struct device *dev, phys_addr_t phys_addr, size_t size,
+			    enum dma_data_direction dir, unsigned long attrs)
+{
+	return phys_addr;
+}
+
+void dma_unmap_resource(struct device *dev, dma_addr_t addr, size_t size,
+			enum dma_data_direction dir, unsigned long attrs)
+{
+}
+
+/* ------------------------------------------------------- GPU-driver extras */
+
+struct pci_dev *pci_get_domain_bus_and_slot(int domain, unsigned int bus, unsigned int devfn)
+{
+	if (domain != 0)
+		return NULL;
+	for (u32 i = 0; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && d->bus->number == bus && d->devfn == devfn)
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+struct pci_dev *pci_get_base_class(unsigned int class, struct pci_dev *from)
+{
+	u32 start = 0;
+
+	if (from) {
+		start = kpi_idx(from) + 1;
+		pci_dev_put(from);
+	}
+	for (u32 i = start; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && (d->class >> 16) == class)
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+static enum pci_bus_speed kpi_speed(u32 gen)
+{
+	static const enum pci_bus_speed speeds[] = {
+		PCI_SPEED_UNKNOWN, PCIE_SPEED_2_5GT, PCIE_SPEED_5_0GT, PCIE_SPEED_8_0GT,
+		PCIE_SPEED_16_0GT, PCIE_SPEED_32_0GT, PCIE_SPEED_64_0GT,
+	};
+
+	return gen < ARRAY_SIZE(speeds) ? speeds[gen] : PCI_SPEED_UNKNOWN;
+}
+
+/* The fastest link speed the device supports: the highest bit of the
+ * Supported Link Speeds vector (LNKCAP2), else LNKCAP's encoding. */
+enum pci_bus_speed pcie_get_speed_cap(struct pci_dev *dev)
+{
+	u32 cap2 = 0, cap = 0;
+
+	pcie_capability_read_dword(dev, PCI_EXP_LNKCAP2, &cap2);
+	if (cap2 & PCI_EXP_LNKCAP2_SLS)
+		return kpi_speed(fls(cap2 & PCI_EXP_LNKCAP2_SLS) - 1);
+	pcie_capability_read_dword(dev, PCI_EXP_LNKCAP, &cap);
+	return kpi_speed(cap & PCI_EXP_LNKCAP_SLS);
+}
+
+enum pcie_link_width pcie_get_width_cap(struct pci_dev *dev)
+{
+	u32 cap = 0;
+
+	pcie_capability_read_dword(dev, PCI_EXP_LNKCAP, &cap);
+	return cap ? FIELD_GET(PCI_EXP_LNKCAP_MLW, cap) : PCIE_LNK_WIDTH_UNKNOWN;
+}
+
+/* Bandwidth of the device's own link as trained (upstream bridges are not
+ * modelled, so the device is its own limit). In Mb/s, as Linux reports. */
+u32 pcie_bandwidth_available(struct pci_dev *dev, struct pci_dev **limiting_dev,
+			     enum pci_bus_speed *speed, enum pcie_link_width *width)
+{
+	static const u32 mbps[] = { 0, 2000, 4000, 7877, 15754, 31508, 63015 };
+	u16 sta = 0;
+	u32 gen, w;
+
+	pcie_capability_read_word(dev, PCI_EXP_LNKSTA, &sta);
+	gen = sta & PCI_EXP_LNKSTA_CLS;
+	w = FIELD_GET(PCI_EXP_LNKSTA_NLW, sta);
+	if (limiting_dev)
+		*limiting_dev = dev;
+	if (speed)
+		*speed = kpi_speed(gen);
+	if (width)
+		*width = w ? w : PCIE_LNK_WIDTH_UNKNOWN;
+	return gen < ARRAY_SIZE(mbps) ? mbps[gen] * w : 0;
+}
+
+int pcie_get_mps(struct pci_dev *dev)
+{
+	u16 ctl = 0;
+
+	pcie_capability_read_word(dev, PCI_EXP_DEVCTL, &ctl);
+	return 128 << FIELD_GET(PCI_EXP_DEVCTL_PAYLOAD, ctl);
+}
+
+/* RustOS turns ASPM off on the links it touches and never on. */
+bool pcie_aspm_enabled(struct pci_dev *pdev)
+{
+	u16 ctl = 0;
+
+	pcie_capability_read_word(pdev, PCI_EXP_LNKCTL, &ctl);
+	return ctl & PCI_EXP_LNKCTL_ASPMC;
+}
+
+/* AtomicOp routing to the root port is not set up (the path's bridges are
+ * not modelled); amdgpu then runs without PCIe atomics, as on systems
+ * whose root ports lack them. */
+int pci_enable_atomic_ops_to_root(struct pci_dev *dev, u32 cap_mask)
+{
+	return -EINVAL;
+}
+
+/* No ACPI power resources are managed (no D3cold). */
+bool pci_pr3_present(struct pci_dev *pdev)
+{
+	return false;
+}
+
+int pci_wait_for_pending_transaction(struct pci_dev *dev)
+{
+	for (int i = 0; i < 100; i++) {
+		u16 sta = 0;
+
+		pcie_capability_read_word(dev, PCI_EXP_DEVSTA, &sta);
+		if (!(sta & PCI_EXP_DEVSTA_TRPND))
+			return 1;
+		msleep(10);
+	}
+	return 0;
+}
+
+/* Saved states are the first 64 bytes of config space (the header), which
+ * is what a function reset clears. */
+struct pci_saved_state {
+	u32 header[16];
+};
+
+struct pci_saved_state *pci_store_saved_state(struct pci_dev *dev)
+{
+	struct pci_saved_state *s = kzalloc(sizeof(*s), GFP_KERNEL);
+
+	if (!s)
+		return NULL;
+	for (int i = 0; i < 16; i++)
+		pci_read_config_dword(dev, i * 4, &s->header[i]);
+	return s;
+}
+
+int pci_load_saved_state(struct pci_dev *dev, struct pci_saved_state *state)
+{
+	if (!state)
+		return 0;
+	/* Command register last, after the BARs are back. */
+	for (int i = 15; i >= 1; i--)
+		pci_write_config_dword(dev, i * 4, state->header[i]);
+	return 0;
+}
+
+/* MSI and MSI-X state lives in config space, which a function reset done
+ * here restores with the rest of the header; nothing else is cached. */
+void pci_restore_msi_state(struct pci_dev *dev)
+{
+}
+
+/* Function Level Reset with the header saved and restored around it. */
+int pci_reset_function(struct pci_dev *dev)
+{
+	struct pci_saved_state *s;
+	u32 cap = 0;
+
+	pcie_capability_read_dword(dev, PCI_EXP_DEVCAP, &cap);
+	if (!(cap & PCI_EXP_DEVCAP_FLR))
+		return -ENOTTY;
+	s = pci_store_saved_state(dev);
+	if (!s)
+		return -ENOMEM;
+	pci_wait_for_pending_transaction(dev);
+	pcie_capability_set_word(dev, PCI_EXP_DEVCTL, PCI_EXP_DEVCTL_BCR_FLR);
+	msleep(100);
+	pci_load_saved_state(dev, s);
+	kfree(s);
+	return 0;
+}
+
+/* The expansion ROM, if firmware assigned its BAR. Integrated GPUs have
+ * none; amdgpu then takes the VBIOS from the ACPI VFCT table. */
+void __iomem *pci_map_rom(struct pci_dev *pdev, size_t *size)
+{
+	u32 bar = 0, mask = 0;
+	u64 len;
+	void __iomem *rom;
+
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	if (!(bar & PCI_ROM_ADDRESS_MASK))
+		return NULL;
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, PCI_ROM_ADDRESS_MASK);
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &mask);
+	len = (u64)(~(mask & PCI_ROM_ADDRESS_MASK)) + 1;
+	len &= 0xffffffffULL;
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar | PCI_ROM_ADDRESS_ENABLE);
+	rom = ioremap(bar & PCI_ROM_ADDRESS_MASK, len);
+	if (!rom || readw(rom) != 0xaa55) {
+		if (rom)
+			iounmap(rom);
+		pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar);
+		return NULL;
+	}
+	*size = len;
+	return rom;
+}
+
+void pci_unmap_rom(struct pci_dev *pdev, void __iomem *rom)
+{
+	u32 bar = 0;
+
+	iounmap(rom);
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar & ~PCI_ROM_ADDRESS_ENABLE);
+}
+
+/* BARs keep the layout firmware gave them: resizable BARs are reported as
+ * not resizable, so amdgpu keeps its VRAM aperture as is. */
+u32 pci_rebar_get_possible_sizes(struct pci_dev *pdev, int bar)
+{
+	return 0;
+}
+
+int pci_resize_resource(struct pci_dev *dev, int i, int size, int exclude_bars)
+{
+	return -EOPNOTSUPP;
+}
+
+int pci_release_resource(struct pci_dev *dev, int resno)
+{
+	return 0;
+}
+
+void pci_assign_unassigned_bus_resources(struct pci_bus *bus)
+{
+}
+
+struct resource *pci_bus_resource_n(const struct pci_bus *bus, int n)
+{
+	return NULL;
+}
+
+struct kpi_optin {
+	struct pci_dev *dev;
+	struct device_driver *drv;
+};
+
+static int kpi_find_optin(struct device_driver *drv, void *data)
+{
+	struct kpi_optin *o = data;
+
+	if (kpi_pci_match(to_pci_driver(drv)->id_table, o->dev) &&
+	    !rustos_kpi_driver_allowed(drv->name)) {
+		o->drv = drv;
+		return 1;
+	}
+	return 0;
+}
+
+/* kernel.conf was read: probe devices that drivers held back from
+ * (opt-in drivers), and say which stay unbound. */
+void kpi_pci_rescan(void)
+{
+	bus_rescan_devices(&pci_bus_type);
+	for (u32 i = 0; i < kpi_pci_n; i++) {
+		struct kpi_optin o = { .dev = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL };
+
+		if (!o.dev || o.dev->dev.driver || rustos_kpi_pci_claimed(i))
+			continue;
+		bus_for_each_drv(&pci_bus_type, NULL, &o, kpi_find_optin);
+		if (o.drv)
+			dev_info(&o.dev->dev, "%s supports this device but is off by default: add linux.enable=%s to kernel.conf to use it\n",
+				 o.drv->name, o.drv->name);
+	}
+}
+
+int pci_enable_rom(struct pci_dev *pdev)
+{
+	u32 bar = 0;
+
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	if (!(bar & PCI_ROM_ADDRESS_MASK))
+		return -ENOENT;
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar | PCI_ROM_ADDRESS_ENABLE);
+	return 0;
+}
+
+void pci_disable_rom(struct pci_dev *pdev)
+{
+	u32 bar = 0;
+
+	pci_read_config_dword(pdev, PCI_ROM_ADDRESS, &bar);
+	pci_write_config_dword(pdev, PCI_ROM_ADDRESS, bar & ~PCI_ROM_ADDRESS_ENABLE);
+}
+
+/* PCI hotplug is not handled, so there is nothing to ignore. */
+void pci_ignore_hotplug(struct pci_dev *dev)
+{
+	dev->ignore_hotplug = 1;
 }

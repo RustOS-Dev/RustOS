@@ -1,0 +1,47 @@
+# ALSA (M34): the sound core (/dev/snd/*), PCM, controls, timers, jacks,
+# and OSS emulation (/dev/dsp, /dev/mixer) for RustOS's audio tools.
+module: soundcore
+sound/sound_core.c
+module: snd
+sound/core/sound.c
+sound/core/init.c
+sound/core/memory.c
+sound/core/control.c
+sound/core/misc.c
+sound/core/device.c
+sound/core/info.c
+sound/core/info_oss.c
+sound/core/sound_oss.c
+sound/core/vmaster.c
+sound/core/ctljack.c
+sound/core/jack.c
+kpi:sound.c
+module: snd_timer
+sound/core/timer.c
+module: snd_pcm
+cflags: -I@LINUX@/sound/core
+sound/core/pcm.c
+sound/core/pcm_native.c
+sound/core/pcm_lib.c
+sound/core/pcm_misc.c
+sound/core/pcm_memory.c
+sound/core/memalloc.c
+sound/core/pcm_timer.c
+sound/core/pcm_drm_eld.c
+module: snd_hwdep
+sound/core/hwdep.c
+module: snd_rawmidi
+sound/core/rawmidi.c
+module: snd_ctl_led
+sound/core/control_led.c
+module: snd_mixer_oss
+sound/core/oss/mixer_oss.c
+module: snd_pcm_oss
+sound/core/oss/pcm_oss.c
+sound/core/oss/pcm_plugin.c
+sound/core/oss/io.c
+sound/core/oss/copy.c
+sound/core/oss/linear.c
+sound/core/oss/mulaw.c
+sound/core/oss/route.c
+sound/core/oss/rate.c

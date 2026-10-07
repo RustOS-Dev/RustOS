@@ -345,9 +345,29 @@ void __iomem *ioremap_uc(resource_size_t offset, unsigned long size)
 	return (void __iomem *)rustos_kpi_ioremap(offset, size, 0);
 }
 
+void __iomem *ioremap_cache(resource_size_t offset, unsigned long size)
+{
+	return (void __iomem *)rustos_kpi_ioremap(offset, size, 2);
+}
+
 void iounmap(volatile void __iomem *addr)
 {
 	rustos_kpi_iounmap((void *)addr);
+}
+
+/* RAM goes through the direct map; anything else gets a mapping. */
+void *memremap(resource_size_t offset, size_t size, unsigned long flags)
+{
+	if (PHYS_PFN(offset + size - 1) < max_pfn && (flags & MEMREMAP_WB))
+		return __va(offset);
+	return (void __force *)rustos_kpi_ioremap(offset, size, flags & MEMREMAP_WC ? 1 :
+						  flags & MEMREMAP_WB ? 2 : 0);
+}
+
+void memunmap(void *addr)
+{
+	if (!virt_addr_valid(addr))
+		rustos_kpi_iounmap(addr);
 }
 
 /* ------------------------------------------------------- string copies */
@@ -476,6 +496,90 @@ void kmem_cache_free(struct kmem_cache *s, void *objp)
 	kfree(objp);
 }
 
+/*
+ * Sheaves: arrays of objects preallocated so later allocations cannot
+ * fail (the maple tree reserves nodes this way).
+ */
+struct slab_sheaf {
+	unsigned int capacity;
+	unsigned int size;
+	void *objects[];
+};
+
+static int kpi_sheaf_fill(struct kmem_cache *s, gfp_t gfp, struct slab_sheaf *sh,
+			  unsigned int size)
+{
+	while (sh->size < size) {
+		void *obj = kmem_cache_alloc_noprof(s, gfp);
+
+		if (!obj)
+			return -ENOMEM;
+		sh->objects[sh->size++] = obj;
+	}
+	return 0;
+}
+
+struct slab_sheaf *kmem_cache_prefill_sheaf(struct kmem_cache *s, gfp_t gfp, unsigned int size)
+{
+	struct slab_sheaf *sh = kzalloc(struct_size(sh, objects, size), gfp);
+
+	if (!sh)
+		return NULL;
+	sh->capacity = size;
+	if (kpi_sheaf_fill(s, gfp, sh, size)) {
+		kmem_cache_return_sheaf(s, gfp, sh);
+		return NULL;
+	}
+	return sh;
+}
+
+int kmem_cache_refill_sheaf(struct kmem_cache *s, gfp_t gfp, struct slab_sheaf **sheafp,
+			    unsigned int size)
+{
+	struct slab_sheaf *sh = *sheafp, *big;
+
+	if (!sh)
+		return -EINVAL;
+	if (sh->size >= size)
+		return 0;
+	if (sh->capacity < size) {
+		big = kzalloc(struct_size(big, objects, size), gfp);
+		if (!big)
+			return -ENOMEM;
+		big->capacity = size;
+		big->size = sh->size;
+		memcpy(big->objects, sh->objects, sh->size * sizeof(void *));
+		kfree(sh);
+		*sheafp = sh = big;
+	}
+	return kpi_sheaf_fill(s, gfp, sh, size);
+}
+
+void kmem_cache_return_sheaf(struct kmem_cache *s, gfp_t gfp, struct slab_sheaf *sheaf)
+{
+	while (sheaf->size)
+		kmem_cache_free(s, sheaf->objects[--sheaf->size]);
+	kfree(sheaf);
+}
+
+void *kmem_cache_alloc_from_sheaf_noprof(struct kmem_cache *s, gfp_t gfp,
+					 struct slab_sheaf *sheaf)
+{
+	void *obj;
+
+	if (WARN_ON_ONCE(!sheaf->size))
+		return NULL;
+	obj = sheaf->objects[--sheaf->size];
+	if (gfp & __GFP_ZERO)
+		memset(obj, 0, s->size);
+	return obj;
+}
+
+unsigned int kmem_cache_sheaf_size(struct slab_sheaf *sheaf)
+{
+	return sheaf->size;
+}
+
 void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 {
 	for (size_t i = 0; i < size; i++)
@@ -486,7 +590,14 @@ void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 
 unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n)
 {
-	unsigned long left = rustos_kpi_copy_from_user(to, (const void __force *)from, n);
+	unsigned long left;
+
+	/* The kernel buffer of a read()/write() in progress (chrdev.c). */
+	if (kpi_uaccess_kernel((const void __force *)from, n)) {
+		memcpy(to, (const void __force *)from, n);
+		return 0;
+	}
+	left = rustos_kpi_copy_from_user(to, (const void __force *)from, n);
 
 	if (left)
 		memset(to + (n - left), 0, left);
@@ -495,7 +606,48 @@ unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n
 
 unsigned long _copy_to_user(void __user *to, const void *from, unsigned long n)
 {
+	if (kpi_uaccess_kernel((const void __force *)to, n)) {
+		memcpy((void __force *)to, from, n);
+		return 0;
+	}
 	return rustos_kpi_copy_to_user((void __force *)to, from, n);
+}
+
+/* --------------------------------------------------- page protections */
+
+/*
+ * The PAT layout src/mm/mod.rs programs (Linux's): entry 0 WB, 1 WC,
+ * 2 UC-, 3 UC, 4 WB, 5 WP, 6 UC-, 7 WT.
+ */
+uint16_t __cachemode2pte_tbl[_PAGE_CACHE_MODE_NUM] = {
+	[_PAGE_CACHE_MODE_WB] = 0,
+	[_PAGE_CACHE_MODE_WC] = _PAGE_PWT,
+	[_PAGE_CACHE_MODE_UC_MINUS] = _PAGE_PCD,
+	[_PAGE_CACHE_MODE_UC] = _PAGE_PCD | _PAGE_PWT,
+	[_PAGE_CACHE_MODE_WT] = _PAGE_PCD | _PAGE_PWT | _PAGE_PAT,
+	[_PAGE_CACHE_MODE_WP] = _PAGE_PWT | _PAGE_PAT,
+};
+
+uint8_t __pte2cachemode_tbl[8] = {
+	[__pte2cm_idx(0)] = _PAGE_CACHE_MODE_WB,
+	[__pte2cm_idx(_PAGE_PWT)] = _PAGE_CACHE_MODE_WC,
+	[__pte2cm_idx(_PAGE_PCD)] = _PAGE_CACHE_MODE_UC_MINUS,
+	[__pte2cm_idx(_PAGE_PWT | _PAGE_PCD)] = _PAGE_CACHE_MODE_UC,
+	[__pte2cm_idx(_PAGE_PAT)] = _PAGE_CACHE_MODE_WB,
+	[__pte2cm_idx(_PAGE_PWT | _PAGE_PAT)] = _PAGE_CACHE_MODE_WP,
+	[__pte2cm_idx(_PAGE_PCD | _PAGE_PAT)] = _PAGE_CACHE_MODE_UC_MINUS,
+	[__pte2cm_idx(_PAGE_PWT | _PAGE_PCD | _PAGE_PAT)] = _PAGE_CACHE_MODE_WT,
+};
+
+pgprot_t pgprot_writecombine(pgprot_t prot)
+{
+	return __pgprot((pgprot_val(prot) & ~_PAGE_CACHE_MASK) | _PAGE_PWT);
+}
+
+pgprot_t pgprot_writethrough(pgprot_t prot)
+{
+	return __pgprot((pgprot_val(prot) & ~_PAGE_CACHE_MASK) | _PAGE_PCD | _PAGE_PWT |
+			_PAGE_PAT);
 }
 
 void *memdup_user_nul(const void __user *src, size_t len)
@@ -523,4 +675,296 @@ void *memdup_user(const void __user *src, size_t len)
 		return ERR_PTR(-EFAULT);
 	}
 	return p;
+}
+
+/* From mm/slab_common.c. */
+void kfree_sensitive(const void *p)
+{
+	size_t ks;
+	void *mem = (void *)p;
+
+	ks = ksize(mem);
+	if (ks)
+		memzero_explicit(mem, ks);
+	kfree(mem);
+}
+
+/* The direct map covers all RAM; nothing else is a valid linear address. */
+bool __virt_addr_valid(unsigned long x)
+{
+	return x >= page_offset_base && (x - page_offset_base) >> PAGE_SHIFT < max_pfn;
+}
+
+/* is_kernel_rodata(): no Linux object is read-only data here. */
+char __start_rodata[0], __end_rodata[0];
+
+/* Write combining comes from the PAT (ioremap_wc), not MTRRs. */
+int arch_phys_wc_add(unsigned long base, unsigned long size)
+{
+	return 0;
+}
+
+void arch_phys_wc_del(int handle)
+{
+}
+
+int arch_io_reserve_memtype_wc(resource_size_t start, resource_size_t size)
+{
+	return 0;
+}
+
+void arch_io_free_memtype_wc(resource_size_t start, resource_size_t size)
+{
+}
+
+/* ------------------------------------------- vmalloc pages (videobuf2) */
+
+void *vmalloc_user_noprof(unsigned long size)
+{
+	return rustos_kpi_vmalloc(size);	/* zeroed */
+}
+
+struct page *vmalloc_to_page(const void *addr)
+{
+	u64 phys = rustos_kpi_virt_to_phys((u64)addr);
+
+	return phys ? pfn_to_page(phys >> PAGE_SHIFT) : NULL;
+}
+
+unsigned long vmalloc_to_pfn(const void *addr)
+{
+	return rustos_kpi_virt_to_phys((u64)addr) >> PAGE_SHIFT;
+}
+
+static void *kpi_vmap_pages(struct page **pages, unsigned int count)
+{
+	u64 *phys = kmalloc_array(count, sizeof(*phys), GFP_KERNEL);
+	void *v;
+
+	if (!phys)
+		return NULL;
+	for (unsigned int i = 0; i < count; i++)
+		phys[i] = (u64)page_to_pfn(pages[i]) << PAGE_SHIFT;
+	v = rustos_kpi_vmap(phys, count);
+	kfree(phys);
+	return v;
+}
+
+void *vm_map_ram(struct page **pages, unsigned int count, int node)
+{
+	return kpi_vmap_pages(pages, count);
+}
+
+void vm_unmap_ram(const void *mem, unsigned int count)
+{
+	rustos_kpi_vunmap(mem, count);
+}
+
+/* Without SPARSEMEM sections, pfn_valid() is false: user-pointer buffers
+ * (pin_user_pages) are not supported. */
+struct mem_section **mem_section;
+
+int pin_user_pages_fast(unsigned long start, int nr_pages, unsigned int gup_flags,
+			struct page **pages)
+{
+	return -EFAULT;
+}
+
+void unpin_user_pages(struct page **pages, unsigned long npages)
+{
+}
+
+int set_page_dirty_lock(struct page *page)
+{
+	return 0;
+}
+
+/* Per-VMA locks: mappings are set up under the file's own locking. */
+void __vma_start_write(struct vm_area_struct *vma, unsigned int mm_lock_seq)
+{
+}
+
+char *strndup_user(const char __user *s, long n)
+{
+	char *p = kmalloc(n + 1, GFP_KERNEL);
+	long len;
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_user(p, s, n)) {
+		kfree(p);
+		return ERR_PTR(-EFAULT);
+	}
+	p[n] = 0;
+	len = strnlen(p, n);
+	if (len == n) {
+		kfree(p);
+		return ERR_PTR(-EINVAL);
+	}
+	return p;
+}
+
+size_t memweight(const void *ptr, size_t bytes)
+{
+	const u8 *p = ptr;
+	size_t w = 0;
+
+	while (bytes--)
+		w += hweight8(*p++);
+	return w;
+}
+
+/* ----------------------------------------------- more memory (M34 sound) */
+
+void *alloc_pages_exact_noprof(size_t size, gfp_t gfp_mask)
+{
+	struct page *page = alloc_pages(gfp_mask, get_order(size));
+
+	return page ? page_address(page) : NULL;
+}
+
+void free_pages_exact(void *virt, size_t size)
+{
+	if (virt)
+		free_pages((unsigned long)virt, get_order(size));
+}
+
+/* vmap()ed areas and their page counts, for vunmap(). */
+struct kpi_vmap_area {
+	struct list_head list;
+	const void *addr;
+	unsigned int count;
+};
+
+static LIST_HEAD(kpi_vmap_areas);
+static DEFINE_SPINLOCK(kpi_vmap_lock);
+
+void *vmap(struct page **pages, unsigned int count, unsigned long flags, pgprot_t prot)
+{
+	struct kpi_vmap_area *a = kmalloc(sizeof(*a), GFP_KERNEL);
+	void *v;
+
+	if (!a)
+		return NULL;
+	v = kpi_vmap_pages(pages, count);
+	if (!v) {
+		kfree(a);
+		return NULL;
+	}
+	a->addr = v;
+	a->count = count;
+	spin_lock(&kpi_vmap_lock);
+	list_add(&a->list, &kpi_vmap_areas);
+	spin_unlock(&kpi_vmap_lock);
+	return v;
+}
+
+void vunmap(const void *addr)
+{
+	struct kpi_vmap_area *a, *found = NULL;
+
+	spin_lock(&kpi_vmap_lock);
+	list_for_each_entry(a, &kpi_vmap_areas, list) {
+		if (a->addr == addr) {
+			list_del(&a->list);
+			found = a;
+			break;
+		}
+	}
+	spin_unlock(&kpi_vmap_lock);
+	if (found) {
+		rustos_kpi_vunmap(addr, found->count);
+		kfree(found);
+	}
+}
+
+void *vmemdup_user(const void __user *src, size_t len)
+{
+	void *p = kvmalloc(len, GFP_USER);
+
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_user(p, src, len)) {
+		kvfree(p);
+		return ERR_PTR(-EFAULT);
+	}
+	return p;
+}
+
+pgprot_t vm_get_page_prot(vm_flags_t vm_flags)
+{
+	if (vm_flags & VM_SHARED)
+		return (vm_flags & VM_WRITE) ? PAGE_SHARED : PAGE_READONLY;
+	return (vm_flags & VM_WRITE) ? PAGE_COPY : PAGE_READONLY;
+}
+
+/* RAM stays write-back: page attributes of the direct map are not changed. */
+int set_memory_wb(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+int set_memory_wc(unsigned long addr, int numpages)
+{
+	return 0;
+}
+
+pteval_t __default_kernel_pte_mask __read_mostly = ~0;
+
+/* No special SRAM pools (ALSA's "IRAM" buffers fall back to normal pages). */
+void *gen_pool_dma_alloc_align(struct gen_pool *pool, size_t size, dma_addr_t *dma, int align)
+{
+	return NULL;
+}
+
+void gen_pool_free_owner(struct gen_pool *pool, unsigned long addr, size_t size, void **owner)
+{
+}
+
+long strncpy_from_user(char *dst, const char __user *src, long count)
+{
+	long i;
+
+	for (i = 0; i < count; i++) {
+		if (copy_from_user(dst + i, src + i, 1))
+			return -EFAULT;
+		if (!dst[i])
+			return i;
+	}
+	return count;
+}
+
+/* An order-n block becomes 2^n order-0 pages, each with its own count
+ * (TTM splits pool pages before swapping them out). */
+void split_page(struct page *page, unsigned int order)
+{
+	for (unsigned long i = 0; i < (1UL << order); i++) {
+		if (i)
+			set_page_count(&page[i], 1);
+		set_page_private(&page[i], KPI_TAG_PAGES);
+	}
+}
+
+void copy_page(void *to, void *from)
+{
+	memcpy(to, from, PAGE_SIZE);
+}
+
+void *kvrealloc_node_align_noprof(const void *p, size_t size, unsigned long align,
+				  gfp_t flags, int nid)
+{
+	size_t old;
+	void *n;
+
+	if (!is_vmalloc_addr(p))
+		return krealloc_node_align_noprof(p, size, align, flags, nid);
+	old = rustos_kpi_vmalloc_size(p);
+	if (size <= old)
+		return (void *)p;
+	n = kvmalloc_node_align_noprof(size, align, flags, nid);
+	if (n) {
+		memcpy(n, p, old);
+		kvfree(p);
+	}
+	return n;
 }

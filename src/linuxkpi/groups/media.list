@@ -1,0 +1,34 @@
+# Video4Linux (M33): the media controller (/dev/mediaN), the V4L2 core
+# (/dev/videoN) and videobuf2 with vmalloc buffers.
+module: mc
+drivers/media/mc/mc-device.c
+drivers/media/mc/mc-devnode.c
+drivers/media/mc/mc-entity.c
+drivers/media/mc/mc-request.c
+drivers/media/mc/mc-dev-allocator.c
+module: videodev
+drivers/media/v4l2-core/v4l2-dev.c
+drivers/media/v4l2-core/v4l2-ioctl.c
+drivers/media/v4l2-core/v4l2-device.c
+drivers/media/v4l2-core/v4l2-fh.c
+drivers/media/v4l2-core/v4l2-event.c
+drivers/media/v4l2-core/v4l2-subdev.c
+drivers/media/v4l2-core/v4l2-common.c
+drivers/media/v4l2-core/v4l2-ctrls-core.c
+drivers/media/v4l2-core/v4l2-ctrls-api.c
+drivers/media/v4l2-core/v4l2-ctrls-request.c
+drivers/media/v4l2-core/v4l2-ctrls-defs.c
+drivers/media/v4l2-core/v4l2-mc.c
+drivers/media/v4l2-core/v4l2-i2c.c
+drivers/media/v4l2-core/v4l2-dv-timings.c
+module: videobuf2_common
+drivers/media/common/videobuf2/videobuf2-core.c
+drivers/media/common/videobuf2/frame_vector.c
+module: videobuf2_v4l2
+drivers/media/common/videobuf2/videobuf2-v4l2.c
+module: videobuf2_memops
+drivers/media/common/videobuf2/videobuf2-memops.c
+module: videobuf2_vmalloc
+drivers/media/common/videobuf2/videobuf2-vmalloc.c
+module: uvc
+drivers/media/common/uvc.c

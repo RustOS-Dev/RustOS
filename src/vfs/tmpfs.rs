@@ -14,8 +14,8 @@ pub struct TmpFs {
 
 enum Content {
     File(Vec<u8>),
-    /// File contents that live in the kernel image (the initramfs): read in
-    /// place, copied to the heap on the first write.
+    /// File data that lives elsewhere for the whole uptime (the initramfs
+    /// embedded in the kernel image): no copy until the file is written.
     Static(&'static [u8]),
     Dir(BTreeMap<String, Arc<TmpInode>>),
     Symlink(String),
@@ -118,6 +118,15 @@ impl TmpInode {
         }
     }
 
+    /// Make a regular file's contents `data` (not copied; written files
+    /// copy it first).
+    pub fn set_static(&self, data: &'static [u8]) {
+        let mut content = self.content.write();
+        if matches!(&*content, Content::File(_) | Content::Static(_)) {
+            *content = Content::Static(data);
+        }
+    }
+
     /// Attach a stream object (used by devfs-style nodes and FIFOs).
     pub fn set_special(&self, s: Arc<dyn FileLike>) {
         *self.special.lock() = Some(s);
@@ -127,7 +136,10 @@ impl TmpInode {
 impl Inode for TmpInode {
     fn metadata(&self) -> KResult<Metadata> {
         let mut m = *self.meta.lock();
-        if let Some(d) = self.content.read().file_bytes() {
+        if let Content::File(d) = &*self.content.read() {
+            m.size = d.len() as u64;
+            m.blocks = m.size.div_ceil(512);
+        } else if let Content::Static(d) = &*self.content.read() {
             m.size = d.len() as u64;
             m.blocks = m.size.div_ceil(512);
         } else if let Content::Symlink(t) = &*self.content.read() {
@@ -299,18 +311,9 @@ impl Inode for TmpInode {
     }
 
     fn read_at(&self, off: u64, buf: &mut [u8]) -> KResult<usize> {
-        let content = self.content.read();
-        match &*content {
-            Content::File(_) | Content::Static(_) => {
-                let d = content.file_bytes().unwrap_or(&[]);
-                let off = off as usize;
-                if off >= d.len() {
-                    return Ok(0);
-                }
-                let n = buf.len().min(d.len() - off);
-                buf[..n].copy_from_slice(&d[off..off + n]);
-                Ok(n)
-            }
+        match &*self.content.read() {
+            Content::File(d) => read_slice(d, off, buf),
+            Content::Static(d) => read_slice(d, off, buf),
             Content::Dir(_) => Err(EISDIR),
             _ => Err(EINVAL),
         }
@@ -318,7 +321,7 @@ impl Inode for TmpInode {
 
     fn write_at(&self, off: u64, buf: &[u8]) -> KResult<usize> {
         let mut content = self.content.write();
-        content.make_owned()?;
+        own(&mut content)?;
         match &mut *content {
             Content::File(d) => {
                 let off = off as usize;
@@ -339,10 +342,7 @@ impl Inode for TmpInode {
 
     fn truncate(&self, size: u64) -> KResult<()> {
         let mut content = self.content.write();
-        if size == 0 && matches!(*content, Content::Static(_)) {
-            *content = Content::File(Vec::new());
-        }
-        content.make_owned()?;
+        own(&mut content)?;
         match &mut *content {
             Content::File(d) => {
                 d.resize(size as usize, 0);
@@ -448,44 +448,25 @@ fn test_tmpfs_basic_ops() {
     assert_eq!(root.lookup("ln").unwrap().readlink().unwrap(), "/target");
 }
 
-impl Content {
-    /// The bytes of a regular file.
-    fn file_bytes(&self) -> Option<&[u8]> {
-        match self {
-            Content::File(d) => Some(d),
-            Content::Static(d) => Some(d),
-            _ => None,
-        }
+fn read_slice(d: &[u8], off: u64, buf: &mut [u8]) -> KResult<usize> {
+    let off = off as usize;
+    if off >= d.len() {
+        return Ok(0);
     }
-
-    /// Copy in-image contents to the heap before they are modified.
-    fn make_owned(&mut self) -> KResult<()> {
-        if let Content::Static(data) = *self {
-            let mut d = Vec::new();
-            grow(&mut d, data.len())?;
-            d.extend_from_slice(data);
-            *self = Content::File(d);
-        }
-        Ok(())
-    }
+    let n = buf.len().min(d.len() - off);
+    buf[..n].copy_from_slice(&d[off..off + n]);
+    Ok(n)
 }
 
-/// Make `inode`, an empty regular tmpfs file, read `data` in place (for
-/// the initramfs, whose archive is part of the kernel image). Returns false
-/// when `inode` is not such a file.
-pub fn set_static_contents(inode: Arc<dyn Inode>, data: &'static [u8]) -> bool {
-    let any: Arc<dyn core::any::Any + Send + Sync> = inode;
-    let Ok(node) = any.downcast::<TmpInode>() else {
-        return false;
-    };
-    let mut content = node.content.write();
-    match &*content {
-        Content::File(d) if d.is_empty() => {
-            *content = Content::Static(data);
-            true
-        }
-        _ => false,
+/// Turn static file data into an owned buffer before it changes.
+fn own(content: &mut Content) -> KResult<()> {
+    if let Content::Static(d) = content {
+        let mut v = Vec::new();
+        grow(&mut v, d.len())?;
+        v.extend_from_slice(d);
+        *content = Content::File(v);
     }
+    Ok(())
 }
 
 /// Grow a file buffer to at least `end` bytes without eating the kernel

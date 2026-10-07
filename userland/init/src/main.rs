@@ -37,7 +37,7 @@ fn main(_args: Vec<String>) -> i32 {
     ] {
         signal::ignore(s);
     }
-    env::set_var("PATH", "/bin:/sbin:/usr/bin");
+    env::set_var("PATH", "/bin:/sbin:/usr/bin:/usr/local/bin");
     env::set_var("HOME", "/root");
     env::set_var("TERM", "vt100");
     env::set_var("SHELL", "/bin/sh");

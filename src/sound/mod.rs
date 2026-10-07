@@ -662,19 +662,35 @@ impl crate::vfs::FileLike for MixerNode {
 }
 
 /// Probe PCI sound devices.
-pub fn probe(dev: &crate::pci::PciDevice) {
-    if dev.class == 0x04 && dev.subclass == 0x03 {
+pub fn probe(dev: &crate::pci::PciDevice) -> bool {
+    // Linux snd-hda-intel drives HD Audio in linux-sound builds.
+    if dev.class == 0x04 && dev.subclass == 0x03 && !cfg!(feature = "linux-sound") {
         hda::probe(dev);
     } else if dev.vendor_id == crate::pci::ids::VENDOR_REDHAT
         && matches!(dev.device_id, 0x1059 | 0x1019)
     {
         virtio_snd::probe(dev);
+    } else {
+        return false;
     }
+    true
 }
 
 /// /proc/asound/cards.
 pub fn proc_cards() -> String {
     let mut s = String::new();
+    // Linux ALSA's cards (src/linuxkpi/c/sound.c), in linux-sound builds.
+    #[cfg(feature = "linux-sound")]
+    {
+        unsafe extern "C" {
+            fn kpi_sound_cards(buf: *mut u8, len: i32) -> i32;
+        }
+        let mut buf = alloc::vec![0u8; 4096];
+        if crate::linuxkpi::ready() {
+            let n = unsafe { kpi_sound_cards(buf.as_mut_ptr(), buf.len() as i32) };
+            s.push_str(&String::from_utf8_lossy(&buf[..n.max(0) as usize]));
+        }
+    }
     for c in cards() {
         s.push_str(&alloc::format!(
             "{:2} [{}]: /dev/dsp{}\n",

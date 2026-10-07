@@ -1,0 +1,24 @@
+# Linux's MMC core and sdhci-pci through LinuxKPI on QEMU's SDHCI with an
+# SD card (kernel built with `--features linux-mmc`): the card is the RustOS
+# disk mmcblk0. Read the ext4 filesystem on it, write and read back 2 MiB,
+# remount, then reformat it as FAT.
+wait \[block\] mmcblk0: SD 240
+send true
+wait # $ 60
+send dmesg | grep -i "mmc0\|sdhci" | cat
+wait mmc0: new .*SD.* card at address
+wait # $
+send mkdir -p /mnt/sd && mount /dev/mmcblk0 /mnt/sd && ls /mnt/sd
+wait seed
+wait # $
+send ls /mnt/sd/big | grep -c seed-file | sed s/^/entries=/
+wait entries=300
+wait # $
+send seq 1 300000 > /mnt/sd/numbers.txt && sha256sum /mnt/sd/numbers.txt | cut -c1-16 > /tmp/sum1 && cat /tmp/sum1
+wait # $
+send umount /mnt/sd && mount /dev/mmcblk0 /mnt/sd && sha256sum /mnt/sd/numbers.txt | cut -c1-16 > /tmp/sum2 && cmp /tmp/sum1 /tmp/sum2 && echo SD-ROUNDTRIP-OK
+wait SD-ROUNDTRIP-OK 120
+wait # $
+send umount /mnt/sd && mkfs.vfat -n SDCARD /dev/mmcblk0 && mount /dev/mmcblk0 /mnt/sd && echo fat-on-sd > /mnt/sd/hello && umount /mnt/sd && mount /dev/mmcblk0 /mnt/sd && cat /mnt/sd/hello
+wait fat-on-sd\r
+wait # $

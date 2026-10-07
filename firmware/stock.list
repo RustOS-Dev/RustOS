@@ -1,0 +1,122 @@
+# Firmware shipped in every RustOS image (under /lib/firmware), fetched at
+# build time by tools/fetch-firmware.sh from the pinned upstream releases
+# below and checked against these SHA-256 sums. Not committed: the blobs
+# are redistributable under the licences listed with them, which ship too.
+#
+# source  install-name  upstream-path  sha256
+#   lf     = linux-firmware 20260916
+#   regdb  = wireless-regdb master-2026-09-03
+
+# Intel Wi-Fi 6E AX210/AX211/AX201 (RustOS iwlwifi): ucode API 72 + PNVM.
+lf iwlwifi-ty-a0-gf-a0-72.ucode intel/iwlwifi/iwlwifi-ty-a0-gf-a0-72.ucode aab2f7dfddb0db3ecd096910e552ba53f07200179382c2725e29b6b00409cd4f
+lf iwlwifi-ty-a0-gf-a0.pnvm intel/iwlwifi/iwlwifi-ty-a0-gf-a0.pnvm cc4c0de4593292490459f1aa8c1606ea370a0307f5be9089ef99a0aa8e36be7a
+lf iwlwifi-so-a0-gf-a0-72.ucode intel/iwlwifi/iwlwifi-so-a0-gf-a0-72.ucode 69fd0b6f3165da435cb67bdd7fce504978780b69506a8c48a597d5c87bc99e73
+lf iwlwifi-so-a0-gf-a0.pnvm intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm 776606c7b5d0f582b5ec78a591fb1e5e621a6efa670e8261f29114bbf1b0f8d1
+lf iwlwifi-so-a0-hr-b0-72.ucode intel/iwlwifi/iwlwifi-so-a0-hr-b0-72.ucode 9cbe5de12153790e4c3ad2fc54ceaecec6821b229d75ebbca9f37ecf31d5a9db
+lf LICENCE.iwlwifi_firmware LICENSES/LICENCE.iwlwifi_firmware 16d5040c7cf851fc693b7542e20870935b99802533ea1bfd231c377a2305e5c5
+
+# Intel Bluetooth of the same cards (RustOS btusb).
+lf intel/ibt-0041-0041.sfi intel/ibt-0041-0041.sfi 2d891022ded1d2d8b208cc5b7632f3098c761ae099024de971e4158dd5681a9c
+lf intel/ibt-0041-0041.ddc intel/ibt-0041-0041.ddc fe272982577efdc289cfe3e8bedafca607c0b7d6c9df1aab1880e22ef930d077
+lf intel/ibt-0040-0041.sfi intel/ibt-0040-0041.sfi 8dcfb3a7c1592c11c3e80505d21ee78dbde3de0c830d8e3e856371c37717b62c
+lf intel/ibt-0040-0041.ddc intel/ibt-0040-0041.ddc fe272982577efdc289cfe3e8bedafca607c0b7d6c9df1aab1880e22ef930d077
+lf LICENCE.ibt_firmware LICENSES/LICENCE.ibt_firmware 5181b0b51efc79d5acb2c9bb92042878fdbad97a92114d4ab5e32e2b5b52fce4
+
+# MediaTek MT7921/MT7921K (RZ608)/MT7920/MT7922 Wi-Fi and Bluetooth (mt76, M29/M30).
+lf mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin a276c06c2b772adb50b86639d33c82824ff4c21d617feb78caea74c040b873f6
+lf mediatek/WIFI_RAM_CODE_MT7961_1.bin mediatek/WIFI_RAM_CODE_MT7961_1.bin b94217a951518a9c14095765f367bc5dd7698f2dc033941d6f18fc2ebd6a2ab9
+lf mediatek/WIFI_MT7961_patch_mcu_1a_2_hdr.bin mediatek/WIFI_MT7961_patch_mcu_1a_2_hdr.bin a766c4e39815e554c80ce5b1596095ff283a60db93356679fecd6494f71cee23
+lf mediatek/WIFI_RAM_CODE_MT7961_1a.bin mediatek/WIFI_RAM_CODE_MT7961_1a.bin 3edec74ffe341b917e7fa4ddb2b68851411f2416555f10619a5900fa4b141e6c
+lf mediatek/BT_RAM_CODE_MT7961_1_2_hdr.bin mediatek/BT_RAM_CODE_MT7961_1_2_hdr.bin 7a440a0f7404c73a2f03d8cc0475ac9f7fdc931b494dce37705e7d578153dbae
+lf mediatek/WIFI_MT7922_patch_mcu_1_1_hdr.bin mediatek/WIFI_MT7922_patch_mcu_1_1_hdr.bin 7fc9075d6d54b31e0539734614ca971fa52caf41b642a3000c8a4501591a4d98
+lf mediatek/WIFI_RAM_CODE_MT7922_1.bin mediatek/WIFI_RAM_CODE_MT7922_1.bin d100e5e04c324fc8da6302112d1e0b4fac952286447d2419eabcd8fb0a1f5b93
+lf mediatek/BT_RAM_CODE_MT7922_1_1_hdr.bin mediatek/BT_RAM_CODE_MT7922_1_1_hdr.bin 299942dbec7d34af030670ea59f9f7b4fd5c64e738b9e0157d76f4dd3beb190f
+lf mediatek/BT_RAM_CODE_MT7961_1a_2_hdr.bin mediatek/BT_RAM_CODE_MT7961_1a_2_hdr.bin 671d18fd594a73bc4747c1922b17271878c8bb26fa8fd122238e797d52e337e9
+lf mediatek/mt7925/BT_RAM_CODE_MT7925_1_1_hdr.bin mediatek/mt7925/BT_RAM_CODE_MT7925_1_1_hdr.bin be7c18e37221e277baaef853be3a0ba930138ee879f336ff7b185e79ab09a5c9
+lf LICENCE.mediatek LICENSES/LICENCE.mediatek a90d3f66704d85889945fec5525ea77622549da83aced1aac99828383f8f1805
+
+# Wireless regulatory database (cfg80211).
+regdb regulatory.db regulatory.db 7e236caecd939c8ec98be4870bf30422f28ffef2565a38aaaa2d9ddabd0c2641
+regdb regulatory.db.p7s regulatory.db.p7s 50332f0db09b8bcc719235ec4985c27377f2cc2f42abb7b5dcf951866c5a888a
+regdb LICENSE.wireless-regdb LICENSE 678b0df753c86198fc496d1f1033429bbd57f101472132ee7eaaf9f5e0a7fae1
+
+# Ethernet (Linux r8169, r8152, tg3; M32): PHY/MAC patches the drivers
+# load when present. Their terms are in linux-firmware's WHENCE.
+lf rtl_nic/rtl8105e-1.fw rtl_nic/rtl8105e-1.fw 03f7ee92f1a7c1723ac7a7447ae006930c9bb07e1d77c3d12bc70cc0d855bb00
+lf rtl_nic/rtl8106e-1.fw rtl_nic/rtl8106e-1.fw b249074519d87ff8bde17185894333c993f25f747f221305cf69a5d7b4519674
+lf rtl_nic/rtl8106e-2.fw rtl_nic/rtl8106e-2.fw ba4f7ed4bac4768810ba8a6c118457f5912f61a0380aa4fb322093caf52de0ef
+lf rtl_nic/rtl8107e-2.fw rtl_nic/rtl8107e-2.fw edc3a14a76852c411c4af5514dae5d55be37873f56a7563f80db7a76f2dc1ba7
+lf rtl_nic/rtl8125a-3.fw rtl_nic/rtl8125a-3.fw 3f6c328af0ceff5969c729edf0f535e8bb2a9b9e05d15b6be3199a3e6d421b99
+lf rtl_nic/rtl8125b-2.fw rtl_nic/rtl8125b-2.fw 529bf1c25c97ff52b401090d00ff89cc22351012336e5a0c9662728a3ee909ef
+lf rtl_nic/rtl8125bp-2.fw rtl_nic/rtl8125bp-2.fw 70010caccdb0d87461f26d77a15f86615dc970549126cf17db01a7f43baf5287
+lf rtl_nic/rtl8125d-1.fw rtl_nic/rtl8125d-1.fw bc3c82939f02df2f58a17e7354096375001a80a5c1ca3f459c555d5a7d42bf1b
+lf rtl_nic/rtl8125d-2.fw rtl_nic/rtl8125d-2.fw c1cb0d358ca985b0d45584612143fd93613d567064702e265bfb370e99c90e35
+lf rtl_nic/rtl8126a-2.fw rtl_nic/rtl8126a-2.fw 2ffa201aa7dec5e3726e268a10342b175ae8de4fa9f39f535bbbbf5cb8245879
+lf rtl_nic/rtl8126a-3.fw rtl_nic/rtl8126a-3.fw 18ffaf3b873d217bf780503a80f04fe2b03c088ba2d0c2a3d626145cb8e53b26
+lf rtl_nic/rtl8127a-1.fw rtl_nic/rtl8127a-1.fw 6cddd9249565e7c7b900391fdadd356ac06de9b509cd68c5de0842ba90db30e0
+lf rtl_nic/rtl8153a-2.fw rtl_nic/rtl8153a-2.fw 7d4f422ec0e8141576c1b486fe6b7c6ce8ec9ea1f650815fd4058878c038366d
+lf rtl_nic/rtl8153a-3.fw rtl_nic/rtl8153a-3.fw c7099a1b0fc80e02ff7276aacbb08b5771e2f5c763fb76a7a8df3a89d58d8208
+lf rtl_nic/rtl8153a-4.fw rtl_nic/rtl8153a-4.fw 99a05414fc0ae3b99a453d73b5cae90bfa6d371320f78011fc58cb03a33e2a09
+lf rtl_nic/rtl8153b-2.fw rtl_nic/rtl8153b-2.fw 137c9c752e8648ecfcf3b74ffc7d675c098145c222e2969721e6257af31716bc
+lf rtl_nic/rtl8153c-1.fw rtl_nic/rtl8153c-1.fw bbe5f74bd2625b71c9a70e0588472ef670b5eeb65f83b1202cd25b3381720a3f
+lf rtl_nic/rtl8156a-2.fw rtl_nic/rtl8156a-2.fw 7b50f4a307bde7b3f384935537c4d9705457fa42613eb0003ffbc4e19461a1e0
+lf rtl_nic/rtl8156b-2.fw rtl_nic/rtl8156b-2.fw 5a3b21e27305876af8eac4b9bd11a821487b338e4ac1b58b8be8d23467d3f91f
+lf rtl_nic/rtl8168d-1.fw rtl_nic/rtl8168d-1.fw ded779f55b3fc5bb8576b2d2b6c724581c72160b3c2f88e33b42dc6c2c4e70b0
+lf rtl_nic/rtl8168d-2.fw rtl_nic/rtl8168d-2.fw 35dd68c01a7b24f6e554bd2c0b9cf57cf962a826651f66e75ffcea37cf2c3bb9
+lf rtl_nic/rtl8168e-1.fw rtl_nic/rtl8168e-1.fw c38d6818a99336c8e43883bbc136f9fab3b1b470ec0e86c61bf5dac617fe94bd
+lf rtl_nic/rtl8168e-2.fw rtl_nic/rtl8168e-2.fw 0a489929b270df1533645a75d55ff357fd66e42057aa4e198ab738930de39386
+lf rtl_nic/rtl8168e-3.fw rtl_nic/rtl8168e-3.fw 1287fdd82ff2f60d75c9970c108b49cfd11456ad3fe29c9666b8539a35777dbf
+lf rtl_nic/rtl8168f-1.fw rtl_nic/rtl8168f-1.fw ed3794c651d38b807168c7c49431bb8036922b16766588c520a20287f277615d
+lf rtl_nic/rtl8168f-2.fw rtl_nic/rtl8168f-2.fw 5586b2093502f7dec762f23091fa90d6d8731e7d873509072ce2eae23ab8ee99
+lf rtl_nic/rtl8168fp-3.fw rtl_nic/rtl8168fp-3.fw c526c06aa0ab8d9b57ba2b730bb1e40a1c3513f8591e238dceb2e0f45210ed27
+lf rtl_nic/rtl8168g-2.fw rtl_nic/rtl8168g-2.fw f878ec719f78e0b104bc73362a9862611858bec893f58a1b3b289a0a57d71d25
+lf rtl_nic/rtl8168g-3.fw rtl_nic/rtl8168g-3.fw e4d5e62b0a5a097af34c7aa3c55f634fd5be2c232e02c6b983ebd7e699cb27e9
+lf rtl_nic/rtl8168h-2.fw rtl_nic/rtl8168h-2.fw 0b4beab008e308f28296c13188ee23edfeff7d865e398a7ade170495c8cec7e6
+lf rtl_nic/rtl8402-1.fw rtl_nic/rtl8402-1.fw a14adee93b7c7ecc738137d910334761ecf9c64d3addeccbd024a2f902f7f808
+lf rtl_nic/rtl8411-1.fw rtl_nic/rtl8411-1.fw e66a3183787c80987e1e36c9f7d4b2c3cd5d976640b83f462702f914febc4b38
+lf rtl_nic/rtl8411-2.fw rtl_nic/rtl8411-2.fw 80dbdacba4d5dfee46b6c2b4e433f6f2eeb756d29ad46bf2362ba20c8ec594b1
+lf tigon/tg3.bin tigon/tg3.bin 8c2d7ba213e319b88d047fbaa218c9e5d974c8ec1931865580aa120aa59541fa
+lf tigon/tg357766.bin tigon/tg357766.bin 7b99e2110443767f0dd7d18b7db28370f7b3c46ed0701eeceec70a9e72db117b
+lf tigon/tg3_tso.bin tigon/tg3_tso.bin 519197f0b5431733845b9542c5d94972639c6b9475a3091e06aabb0491c8a8ea
+lf tigon/tg3_tso5.bin tigon/tg3_tso5.bin bbe0b8b8e5d53dae4f56675aacbb88f01b473ed7978bcc8b192ecdf39b60ba03
+lf LICENSES/WHENCE WHENCE 9350832c1e9afc35df50fa8b9793b31d60d78ef963152eec903fc0dbc6b4a559
+
+# Realtek Bluetooth (RustOS btusb, M33): patches and configs Linux btrtl loads.
+lf rtl_bt/rtl8723a_fw.bin rtl_bt/rtl8723a_fw.bin 756951ee36e417c0714b00547a6175d5d5decbe1e4cf7585f211019150c7cd10
+lf rtl_bt/rtl8723b_fw.bin rtl_bt/rtl8723b_fw.bin c9c8a9f6ebd90b7449a7e4d38ee39952dc7cc47d6c1d054e42cfbb5e4d818853
+lf rtl_bt/rtl8723d_fw.bin rtl_bt/rtl8723d_fw.bin 6b70723b2db9b658cd9535fe36f1494b4494699e1ad07920c9356f8bd90d9263
+lf rtl_bt/rtl8761a_fw.bin rtl_bt/rtl8761a_fw.bin 581e5e81f5b51a29f475f8a276be95ad3210b3e3065987541c508e7f7a83a462
+lf rtl_bt/rtl8761bu_config.bin rtl_bt/rtl8761bu_config.bin 6c28a3f07c6a30ed208c4b64862a23f02b7d93543ea980edd24df16bab45095f
+lf rtl_bt/rtl8761bu_fw.bin rtl_bt/rtl8761bu_fw.bin 1d7a9597349ad89344fa16c1913d3e39e9a12e966e417ca16871bc79bbe59edb
+lf rtl_bt/rtl8761cu_config.bin rtl_bt/rtl8761cu_config.bin 3142c2732470e4edcdb68edf58cc505b581e38d56b3ec09c64eddcb1d5099507
+lf rtl_bt/rtl8761cu_fw.bin rtl_bt/rtl8761cu_fw.bin 525bfa5ab9a3ed74b788f9ac494467c522a436c1bc5290ebcb05c7f920533c09
+lf rtl_bt/rtl8821a_fw.bin rtl_bt/rtl8821a_fw.bin 3ed5077f8f02ff2b06be257691dc72061efac976cd2dc174057833624c820b9d
+lf rtl_bt/rtl8821c_config.bin rtl_bt/rtl8821c_config.bin 292717b0610ce920f66b734c299d349ea59a4c4400044078d8fc65625f17e382
+lf rtl_bt/rtl8821c_fw.bin rtl_bt/rtl8821c_fw.bin dfe7ef772d078ec09490c02190a32fcd40b3eaf3b040049d8930eb80e6d5743c
+lf rtl_bt/rtl8822b_config.bin rtl_bt/rtl8822b_config.bin ea082136d5285655372e3805cd50d961bd7d42085c6fc1058a115a7e844df9c1
+lf rtl_bt/rtl8822b_fw.bin rtl_bt/rtl8822b_fw.bin eecef2c3b2ff03c3a41292a93a25eca6f4ec38eb4a7491a3651b530be89a04fc
+lf rtl_bt/rtl8822cu_fw.bin rtl_bt/rtl8822cu_fw.bin bb8b1221b62749baebfa3e60271d6d90b1db5e3a480e3255be82c9fb58fe9577
+lf rtl_bt/rtl8851bu_fw.bin rtl_bt/rtl8851bu_fw.bin 7fcf88c00b2548a5ff157102a35722db5e4be655dab1ce8d9bddb6df85f88f24
+lf rtl_bt/rtl8852au_fw.bin rtl_bt/rtl8852au_fw.bin fb52f72e986d4c96dbf7263650d3766abcbcf10c0a4f23a065ba2c388b19c125
+lf rtl_bt/rtl8852btu_fw.bin rtl_bt/rtl8852btu_fw.bin bd162fd3b70e805cf7a8098f22f4ddf5d89da58fafff97d87da1a1e2e0cbeb80
+lf rtl_bt/rtl8852bu_fw.bin rtl_bt/rtl8852bu_fw.bin c2b0d34a4ff8a8ea136993f0dc4ba657522d84231b4094c2a53cda39afc91c57
+lf rtl_bt/rtl8852cu_fw.bin rtl_bt/rtl8852cu_fw.bin 9b8b27741a914c1cecc1ab9837194236890522101a57ba1898eb55f8d538dae0
+lf rtl_bt/rtl8852cu_fw_v2.bin rtl_bt/rtl8852cu_fw_v2.bin d1314df53b8f4282f9db57a727ba77c180bc6fd05bf2c306e960326a4ef48660
+lf rtl_bt/rtl8922au_config.bin rtl_bt/rtl8922au_config.bin 6c28a3f07c6a30ed208c4b64862a23f02b7d93543ea980edd24df16bab45095f
+lf rtl_bt/rtl8922au_fw.bin rtl_bt/rtl8922au_fw.bin 112290ca9dc3985034f572594812f0deb8530dd031686461b55cac43a1c35a79
+lf LICENCE.rtlwifi_firmware.txt LICENSES/LICENCE.rtlwifi_firmware.txt a61351665b4f264f6c631364f85b907d8f8f41f8b369533ef4021765f9f3b62e
+
+# AMD Raphael (Ryzen 7000) integrated GPU (Linux amdgpu, M38): GC 10.3.6,
+# PSP 13.0.5, SDMA 5.2.6, DCN 3.1.5 (DMCUB) and VCN 3.1.2.
+lf amdgpu/gc_10_3_6_ce.bin amdgpu/gc_10_3_6_ce.bin ed5fe8488d16ecc0923ff34afe8aa67177d5e1f3242e1de48ef1643b263ba33b
+lf amdgpu/gc_10_3_6_pfp.bin amdgpu/gc_10_3_6_pfp.bin 042f5d2d223aac6a62b500a47d0d0bf33984200110da0ffca4fe5df9a96571c0
+lf amdgpu/gc_10_3_6_me.bin amdgpu/gc_10_3_6_me.bin 776d2299bc4f3abffd4a7999f5a21a4e38aced8b6b4c199a83610dbabf08176d
+lf amdgpu/gc_10_3_6_mec.bin amdgpu/gc_10_3_6_mec.bin 7003c4a77537e9edaf67064104cd9371fac38a84f71f948349140b28d3c210e8
+lf amdgpu/gc_10_3_6_mec2.bin amdgpu/gc_10_3_6_mec2.bin 7003c4a77537e9edaf67064104cd9371fac38a84f71f948349140b28d3c210e8
+lf amdgpu/gc_10_3_6_rlc.bin amdgpu/gc_10_3_6_rlc.bin acfbac75c0dcfbfe40e222640ef17eb3dc8d206d30bc3863f275f2dd1cb132a5
+lf amdgpu/psp_13_0_5_toc.bin amdgpu/psp_13_0_5_toc.bin 2dfcc2b4d6b7f072a471da3852164560ae709bb563626997c41ef1ef17588bbe
+lf amdgpu/psp_13_0_5_ta.bin amdgpu/psp_13_0_5_ta.bin 088bdb884d7482763b2affa3599e70b0e8dd949457fb69f5604f2557417cea27
+lf amdgpu/sdma_5_2_6.bin amdgpu/sdma_5_2_6.bin 3a163db00eb7e4752be8adbd61cf7dd8f08d924e59a6f798ced7dfcd89f340ed
+lf amdgpu/dcn_3_1_5_dmcub.bin amdgpu/dcn_3_1_5_dmcub.bin c198f520748ed8ac0b8bec04c7d85d2962865c6bbe6c9a6791e661c23750b8d5
+lf amdgpu/vcn_3_1_2.bin amdgpu/vcn_3_1_2.bin 85fc509c1b606ef5f2d99ee6d50221b9707623897d0a91fefa3b8ca9b494df56
+lf LICENSE.amdgpu LICENSES/LICENSE.amdgpu 572872598565dc3513470de971a32bf9db301f47afeef3636345eadae33b2eee

@@ -9,8 +9,19 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * Most drivers are verified only under QEMU. The Intel AX210 Wi-Fi,
   I219/I225/RTL8168 Ethernet and CDC NCM drivers are written against
   reference drivers and specifications but have not yet run on hardware.
-* No GPU acceleration, Thunderbolt management, or
-  suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
+* No GPU acceleration in user space (no Mesa yet), Thunderbolt management,
+  or suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
+* AMD GPUs (Linux amdgpu) are compiled into release images but untested on
+  hardware and off unless `kernel.conf` has `linux.enable=amdgpu`. Without a
+  swap device TTM cannot evict system-memory buffers, resizable BARs are
+  not resized, PCIe atomics are not routed (ROCm-style compute would need
+  them; amdkfd is not built), and HDMI CEC and the ACPI video backlight
+  interface are absent.
+* NVIDIA GPUs (Linux nouveau) are likewise compiled in, untested on
+  hardware and off unless `kernel.conf` has `linux.enable=nouveau`. Their
+  GSP firmware lives on the storage partition, so a drive written without
+  it (or a full storage partition) leaves nouveau without firmware; SVM
+  and the WMI/MXM interface are absent.
 * ATAPI optical drives are detected but not usable.
 
 ## Kernel
@@ -41,7 +52,11 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   first, not preferably the main thread. SIGCONT does not send the
   parent a `CLD_CONTINUED` SIGCHLD; `int3` in user mode is logged rather
   than raising SIGTRAP; no core dumps.
-* Missing system calls: `inotify`, `ptrace`, System V IPC,
+* Files written to tmpfs (`/`, `/tmp`, `/dev/shm`) live on the kernel heap
+  (a quarter of RAM at boot); files from the boot image do not (they stay
+  in the kernel image until written), and memfds use page frames.
+* No OpenGL or Vulkan yet: Weston uses its software (pixman) renderer.
+* Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).
 

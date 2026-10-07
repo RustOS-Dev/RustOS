@@ -109,6 +109,27 @@ fn fpe_code(vector: u64) -> i32 {
 /// Where the kernel image is mapped (PIE, loaded by the bootloader).
 const KERNEL_IMAGE: core::ops::Range<u64> = 0xffff_8000_0000_0000..0xffff_8000_0400_0000;
 
+/// Whether `va` is mapped, by walking the current page tables without
+/// locks (usable from NMI and panic paths, where the mapper lock may be
+/// held).
+fn mapped(va: u64) -> bool {
+    let (frame, _) = x86_64::registers::control::Cr3::read_raw();
+    let mut table = frame.start_address().as_u64();
+    for level in (0..4).rev() {
+        let idx = (va >> (12 + 9 * level)) & 0x1FF;
+        let entry = unsafe { *crate::mm::phys_ptr::<u64>(table + idx * 8) };
+        if entry & 1 == 0 {
+            return false;
+        }
+        // A huge page (2 MiB or 1 GiB) ends the walk.
+        if (level == 1 || level == 2) && entry & 0x80 != 0 {
+            return true;
+        }
+        table = entry & 0x000F_FFFF_FFFF_F000;
+    }
+    true
+}
+
 /// Print stack words that look like kernel code addresses (a heuristic
 /// backtrace; resolve with `addr2line -e rustos 0xOFFSET`).
 fn stack_scan(rsp: u64) {
@@ -119,8 +140,8 @@ fn stack_scan(rsp: u64) {
     let mut shown = 0;
     for i in 0..256u64 {
         let p = rsp + i * 8;
-        // Stop at the end of the page to avoid faulting on a guard page.
-        if i > 0 && p & 0xFFF == 0 && shown > 0 && i > 64 {
+        // Never read an unmapped page (a guard page past the stack).
+        if (i == 0 || p & 0xFFF == 0) && !mapped(p) {
             break;
         }
         let v = unsafe { core::ptr::read_volatile(p as *const u64) };
@@ -145,6 +166,9 @@ fn stack_scan_serial(rsp: u64) {
     // Stay within the current and the next stack page.
     let end = (rsp & !0xFFF) + 0x2000;
     while p < end && shown < 20 {
+        if (p == rsp || p & 0xFFF == 0) && !mapped(p) {
+            break;
+        }
         let v = unsafe { core::ptr::read_volatile(p as *const u64) };
         if KERNEL_IMAGE.contains(&v) {
             out.push_str(&alloc::format!(" {:#x}", v - KERNEL_IMAGE.start));

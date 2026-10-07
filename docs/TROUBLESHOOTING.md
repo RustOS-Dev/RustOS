@@ -76,7 +76,9 @@ the login page.
 
 ## Wi-Fi
 
-**`wifi` says `state=no-firmware`** — install
+**`wifi` says `state=no-firmware`** — the image was built without its stock
+firmware (no network during the build, or `RUSTOS_FIRMWARE=0`; the build
+prints a warning). Rebuild with network access, or install
 `iwlwifi-ty-a0-gf-a0-72.ucode` and `iwlwifi-ty-a0-gf-a0.pnvm` into
 `/storage/lib/firmware` (see [WIFI.md](WIFI.md)); the driver retries on the
 next `wifi` command.

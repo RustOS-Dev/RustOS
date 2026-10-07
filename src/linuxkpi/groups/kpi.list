@@ -13,6 +13,8 @@ kpi:initcalls.c
 kpi:rcu.c
 kpi:firmware.c
 kpi:acpi.c
+kpi:pagepool.c
+kpi:netstubs.c
 # Linux library code used as-is.
 lib/errname.c
 lib/hexdump.c
@@ -26,3 +28,6 @@ lib/iomap.c
 kernel/locking/spinlock.c
 kernel/locking/qspinlock.c
 kernel/locking/qrwlock.c
+# Floating-point code (only run inside kernel_fpu_begin/end).
+cflags: -msse -msse2
+kpi:fputest.c

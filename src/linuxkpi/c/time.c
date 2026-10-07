@@ -381,8 +381,16 @@ ktime_t __hrtimer_get_remaining(const struct hrtimer *timer, bool adjust)
 
 /* ------------------------------------------------------------ workqueues */
 
-#define KPI_WQ_MAX_WORKERS	4
-#define KPI_MAX_RUNNING		64
+/*
+ * Workers per workqueue: ordered queues have one; the others start with
+ * KPI_WQ_MIN_WORKERS and grow up to KPI_WQ_MAX_WORKERS, a worker being
+ * added whenever one takes an item and none is left idle. Like Linux's
+ * worker pools this keeps queued work from starving behind items that
+ * block on it (mac80211's wiphy work holds the lock other items wait on).
+ */
+#define KPI_WQ_MIN_WORKERS	2
+#define KPI_WQ_MAX_WORKERS	64
+#define KPI_MAX_RUNNING		256
 
 struct workqueue_struct {
 	char name[32];
@@ -392,6 +400,8 @@ struct workqueue_struct {
 	wait_queue_head_t more;		/* work arrived */
 	wait_queue_head_t idle;		/* a work item finished */
 	int running;
+	int idle_workers;		/* workers waiting for work */
+	int max_workers;
 };
 
 static DEFINE_RAW_SPINLOCK(kpi_wq_lock);
@@ -420,14 +430,23 @@ static void kpi_worker(void *arg)
 
 	for (;;) {
 		struct work_struct *work = NULL;
+		bool grow;
 		int slot;
 
+		raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+		wq->idle_workers++;
+		raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
 		wait_event(wq->more, !list_empty(&wq->pending));
 		raw_spin_lock_irqsave(&kpi_wq_lock, flags);
+		wq->idle_workers--;
 		if (list_empty(&wq->pending)) {
 			raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
 			continue;
 		}
+		/* Keep a worker free for what gets queued while this runs. */
+		grow = wq->idle_workers == 0 && wq->nr_workers < wq->max_workers;
+		if (grow)
+			wq->nr_workers++;
 		work = list_first_entry(&wq->pending, struct work_struct, entry);
 		list_del_init(&work->entry);
 		for (slot = 0; slot < KPI_MAX_RUNNING && kpi_running_work[slot]; slot++)
@@ -437,6 +456,8 @@ static void kpi_worker(void *arg)
 		clear_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work));
 		wq->running++;
 		raw_spin_unlock_irqrestore(&kpi_wq_lock, flags);
+		if (grow)
+			rustos_kpi_spawn(kpi_worker, wq, wq->name);
 
 		work->func(work);
 
@@ -464,7 +485,8 @@ struct workqueue_struct *alloc_workqueue_noprof(const char *fmt, unsigned int fl
 	INIT_LIST_HEAD(&wq->pending);
 	init_waitqueue_head(&wq->more);
 	init_waitqueue_head(&wq->idle);
-	wq->nr_workers = (flags & __WQ_ORDERED) || max_active == 1 ? 1 : KPI_WQ_MAX_WORKERS;
+	wq->max_workers = (flags & __WQ_ORDERED) || max_active == 1 ? 1 : KPI_WQ_MAX_WORKERS;
+	wq->nr_workers = min(wq->max_workers, KPI_WQ_MIN_WORKERS);
 	for (int i = 0; i < KPI_MAX_WQS; i++) {
 		if (!cmpxchg(&kpi_wqs[i], NULL, wq))
 			break;

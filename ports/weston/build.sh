@@ -8,10 +8,11 @@
 # and modetest (libdrm).
 #
 # Mesa's drivers: softpipe (software GL, also on any KMS display through
-# kms_swrast), virgl (QEMU virtio-gpu 3D), zink (GL on Vulkan), iris
-# (Intel GL), radeonsi (AMD GL, without LLVM), RADV (AMD Vulkan, ACO) and
-# ANV (Intel Vulkan). Not built: llvmpipe and lavapipe (need LLVM ported
-# to RustOS), NVK (needs Rust cross-compiled for RustOS).
+# kms_swrast), virgl (QEMU virtio-gpu 3D), zink (GL on Vulkan: AMD's
+# OpenGL here, on RADV), iris (Intel GL), RADV (AMD Vulkan, ACO) and ANV
+# (Intel Vulkan). Not built: llvmpipe and lavapipe (need LLVM ported to
+# RustOS), radeonsi (needs libelf), NVK (needs Rust cross-compiled for
+# RustOS).
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 #
 # Needs on the build host: meson, ninja, pkg-config, gperf, bison, flex,
@@ -215,7 +216,7 @@ fi
 built mesa || meson_pkg mesa "$(unpack "$SRC/mesa-26.2.4.tar.xz")" \
     -Dplatforms=wayland -Degl=enabled -Dgbm=enabled -Dglx=disabled -Dopengl=true \
     -Dgles1=disabled -Dgles2=enabled -Dglvnd=disabled \
-    -Dgallium-drivers=softpipe,virgl,zink,iris,radeonsi \
+    -Dgallium-drivers=softpipe,virgl,zink,iris \
     -Dvulkan-drivers=amd,intel -Dllvm=disabled -Damd-use-llvm=false \
     -Dmesa-clc=system -Dprecomp-compiler=system -Dintel-rt=disabled \
     -Dvideo-codecs= -Dgallium-va=disabled -Dvalgrind=disabled -Dlibunwind=disabled \

@@ -21,10 +21,10 @@
 # commit. RUSTOS_WESTON_STAGE overrides the weston stage's location.
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 set -e
-# The pin must include edex-comp's `gpu` feature (eDEX-DE a92e98a or later):
-# older commits link libgbm unconditionally.
-COMMIT=3980d323c0976e40f11c6fbc8fdfb970de5944d8
-SHA256=4fd3b26c13cc1c781c67f5524de1245a2b51443f71d47a93cc61522a8f9da545
+# eDEX-DE a92e98a or later: edex-comp builds without libgbm (no `gpu`
+# feature) and renders with pixman.
+COMMIT=7daae7ecec54ace772e77e11343a9cb74203e08e
+SHA256=a7d30db0cd97ad7a7c98e614a3e7e3512335dd1cc8bb4dd8136390dabad80d0c
 TARGET=x86_64-unknown-linux-musl
 BINS="edex-comp edex-de edex-greeter edex-auth"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -52,6 +52,17 @@ else
     tar -xzf "$SRC/edex-de-$COMMIT.tar.gz" -C "$BUILD"
     TREE="$BUILD/eDEX-DE-RS-$COMMIT"
 fi
+# Cargo reads .cargo/config.toml from every directory above the one it
+# runs in, and RustOS's own (build-std, the x86_64-rustos target) breaks
+# a std build for musl ("duplicate lang item"). Build from a copy outside
+# the RustOS tree.
+case "$TREE/" in
+"$ROOT"/*)
+    WORK="$(mktemp -d "${TMPDIR:-/tmp}/edex-de-port.XXXXXX")"
+    trap 'rm -rf "$WORK"' EXIT
+    tar -C "$TREE" --exclude=./target -cf - . | tar -C "$WORK" -xf -
+    TREE="$WORK" ;;
+esac
 
 "$ROOT/tools/build-musl.sh"
 CC="$ROOT/tools/rustos-cc"

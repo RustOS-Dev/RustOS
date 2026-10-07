@@ -103,8 +103,8 @@ fetch https://www.freedesktop.org/software/fontconfig/release/fontconfig-2.15.0.
     63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e "$SRC/fontconfig-2.15.0.tar.xz"
 fetch https://cairographics.org/releases/cairo-1.18.2.tar.xz \
     a62b9bb42425e844cc3d6ddde043ff39dbabedd1542eba57a2eb79f85889d45a "$SRC/cairo-1.18.2.tar.xz"
-fetch https://dri.freedesktop.org/libdrm/libdrm-2.4.124.tar.xz \
-    ac36293f61ca4aafaf4b16a2a7afff312aa4f5c37c9fbd797de9e3c0863ca379 "$SRC/libdrm-2.4.124.tar.xz"
+fetch https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz \
+    ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95 "$SRC/libdrm-2.4.134.tar.xz"
 fetch https://www.freedesktop.org/software/libevdev/libevdev-1.13.3.tar.xz \
     abf1aace86208eebdd5d3550ffded4c8d73bb405b796d51c389c9d0604cbcfbf "$SRC/libevdev-1.13.3.tar.xz"
 fetch https://bitmath.org/code/mtdev/mtdev-1.1.7.tar.bz2 \
@@ -167,7 +167,7 @@ built cairo || meson_pkg cairo "$(unpack "$SRC/cairo-1.18.2.tar.xz")" \
     -Dxlib=disabled -Dxcb=disabled -Dtests=disabled -Dglib=disabled -Dspectre=disabled \
     -Dsymbol-lookup=disabled -Dgtk2-utils=disabled -Dpng=enabled \
     -Dfreetype=enabled -Dfontconfig=enabled -Dzlib=enabled -Dquartz=disabled -Ddwrite=disabled
-built libdrm-gpu || meson_pkg libdrm-gpu "$(unpack "$SRC/libdrm-2.4.124.tar.xz")" \
+built libdrm-gpu || meson_pkg libdrm-gpu "$(unpack "$SRC/libdrm-2.4.134.tar.xz")" \
     -Dintel=disabled -Dradeon=disabled -Damdgpu=enabled -Dnouveau=enabled \
     -Dvmwgfx=disabled -Dfreedreno=disabled -Dvc4=disabled -Detnaviv=disabled \
     -Dexynos=disabled -Domap=disabled -Dtegra=disabled -Dman-pages=disabled \

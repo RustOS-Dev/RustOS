@@ -8,6 +8,13 @@ wait # $
 send svc list --json
 wait \{"name":"tor","description":"Tor anonymity daemon","enabled":false,"state":"stopped","pid":null,"tty":null\}
 wait # $
+# The control socket: anyone may connect, init allows by the caller's
+# SO_PEERCRED uid. Every process runs as root on RustOS (setuid changes
+# nothing), so non-root refusal is covered by crates/svcconf's tests.
+send ls -l /run/svc.sock; test -e /run/svc; echo fifo-dir=$?
+wait srw-rw-rw-
+wait fifo-dir=1
+wait # $
 send svc status nosuch; echo rc=$?
 wait unknown service 'nosuch'
 wait rc=3

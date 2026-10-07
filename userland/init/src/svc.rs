@@ -1,18 +1,23 @@
 //! The service manager: starts the enabled services from /etc/svc (and
 //! /storage/etc/svc), restarts them by their policy with back-off, and
-//! serves `svc` requests from the control FIFO /run/svc/control,
-//! answering in /run/svc/reply.<id> and publishing every state change in
-//! /run/svc/status. See docs/SERVICES.md.
+//! serves `svc` requests on the AF_UNIX socket /run/svc.sock, one request
+//! per connection, allowed by the client's SO_PEERCRED uid. See
+//! docs/SERVICES.md.
 
 use alloc::collections::BTreeMap;
+use rustos_rt::net::{self, Socket};
 use rustos_rt::prelude::*;
 use rustos_rt::{env, fs, io, process, signal};
-use svcconf::{Backoff, Command, Reply, Restart, Service, State, Status};
+use svcconf::{Backoff, Command, Entry, Reply, Request, Response, Restart, Service, State};
 
 /// A service counts as started once it has run this long.
 const STARTUP_MS: u64 = 1_000;
 /// Grace period between SIGTERM and SIGKILL on stop.
 const STOP_TIMEOUT_MS: u64 = 5_000;
+/// A client must send its request within this time.
+const CLIENT_TIMEOUT_MS: u64 = 5_000;
+/// Connections waiting for their request line at most; more are refused.
+const MAX_CLIENTS: usize = 32;
 
 fn now_ms() -> u64 {
     rustos_rt::time::millis()
@@ -63,13 +68,52 @@ impl Unit {
     }
 }
 
+/// What reading a client's connection gave.
+enum Got {
+    Line(String),
+    /// Nothing more yet (EAGAIN).
+    Wait,
+    /// End-of-file, an error or an overlong line: close it.
+    Drop,
+}
+
+/// A connection whose request line has not arrived yet.
+struct Client {
+    sock: Socket,
+    /// The connecting process's uid (SO_PEERCRED).
+    uid: u32,
+    pid: u32,
+    buf: Vec<u8>,
+    deadline: u64,
+}
+
 pub struct Supervisor {
     units: BTreeMap<String, Unit>,
-    /// Read end of the control FIFO, and a write end init keeps open so
-    /// the read end never sees end-of-file.
-    ctl: Option<fs::File>,
-    _ctl_keep: Option<fs::File>,
-    pending: Vec<u8>,
+    /// The listening control socket (non-blocking).
+    listener: Option<Socket>,
+    clients: Vec<Client>,
+}
+
+/// Listen on /run/svc.sock: a non-blocking stream socket anyone may
+/// connect to.
+fn listen() -> rustos_rt::Result<Socket> {
+    let _ = fs::create_dir_all("/run");
+    let _ = fs::remove_file(svcconf::SOCKET);
+    let s = Socket::new(net::AF_UNIX, net::SOCK_STREAM | net::SOCK_NONBLOCK, 0)?;
+    s.bind_raw(&net::unix_addr(svcconf::SOCKET))?;
+    fs::set_permissions(svcconf::SOCKET, 0o666)?;
+    s.listen(64)?;
+    Ok(s)
+}
+
+/// Where `svc enable`/`disable` keep the enabled list: the storage
+/// partition when there is one, else the image's (this boot only).
+fn enabled_dir() -> &'static str {
+    if fs::is_dir("/storage") {
+        svcconf::STORAGE_DIR
+    } else {
+        svcconf::SYSTEM_DIR
+    }
 }
 
 /// Service files: the image's, overridden by the storage partition's.
@@ -232,32 +276,16 @@ fn spawn(conf: &Service) -> Result<i32, String> {
 
 impl Supervisor {
     pub fn new() -> Supervisor {
-        let _ = fs::create_dir_all(svcconf::RUN_DIR);
         let _ = fs::create_dir_all(svcconf::LOG_DIR);
-        let _ = fs::remove_file(svcconf::CONTROL);
-        let (ctl, keep) = match fs::mkfifo(svcconf::CONTROL, 0o600) {
-            Ok(()) => (
-                fs::File::open_with(
-                    svcconf::CONTROL,
-                    fs::O_RDONLY | fs::O_NONBLOCK | fs::O_CLOEXEC,
-                    0,
-                )
-                .ok(),
-                fs::File::open_with(svcconf::CONTROL, fs::O_WRONLY | fs::O_CLOEXEC, 0).ok(),
-            ),
-            Err(e) => {
-                log(&format!("{}: {}", svcconf::CONTROL, e));
-                (None, None)
-            }
-        };
+        let listener = listen()
+            .map_err(|e| alert(&format!("{}: {}", svcconf::SOCKET, e)))
+            .ok();
         let mut s = Supervisor {
             units: BTreeMap::new(),
-            ctl,
-            _ctl_keep: keep,
-            pending: Vec::new(),
+            listener,
+            clients: Vec::new(),
         };
         s.reload();
-        s.write_status();
         s
     }
 
@@ -299,7 +327,6 @@ impl Supervisor {
         for n in order {
             let _ = self.start(&n);
         }
-        self.write_status();
     }
 
     /// Terminals that enabled services run on (no shell is started there).
@@ -367,6 +394,26 @@ impl Supervisor {
             None => u.state = State::Stopped,
         }
         Reply::Ok
+    }
+
+    /// Add `name` to the enabled list or remove it.
+    fn set_enabled(&mut self, name: &str, enable: bool) -> Reply {
+        if !self.units.contains_key(name) {
+            return Reply::Unknown;
+        }
+        let dir = enabled_dir();
+        let path = format!("{}/enabled", dir);
+        let base = fs::read_to_string(&path)
+            .or_else(|_| fs::read_to_string(&format!("{}/enabled", svcconf::SYSTEM_DIR)))
+            .unwrap_or_default();
+        let text = svcconf::edit_enabled(&base, name, enable);
+        if text == base && fs::exists(&path) {
+            return Reply::Ok;
+        }
+        match fs::create_dir_all(dir).and_then(|_| fs::write(&path, text.as_bytes())) {
+            Ok(()) => Reply::Ok,
+            Err(e) => Reply::Error(format!("{}: {}", path, e)),
+        }
     }
 
     fn restart(&mut self, name: &str) -> Reply {
@@ -446,14 +493,12 @@ impl Supervisor {
                 self.units.remove(&name);
             }
         }
-        self.write_status();
         true
     }
 
     /// Timed work: due restarts, start-up completion, stop escalation.
     pub fn tick(&mut self) {
         let now = now_ms();
-        let mut changed = false;
         let due: Vec<String> = self
             .units
             .iter()
@@ -462,7 +507,6 @@ impl Supervisor {
             .collect();
         for n in due {
             self.launch(&n);
-            changed = true;
         }
         for (n, u) in self.units.iter_mut() {
             if u.state == State::Starting
@@ -470,7 +514,6 @@ impl Supervisor {
                 && now.saturating_sub(u.started_at) >= STARTUP_MS
             {
                 u.state = State::Running;
-                changed = true;
             }
             if let (Some(t), Some(pid)) = (u.kill_at, u.pid)
                 && t <= now
@@ -481,9 +524,8 @@ impl Supervisor {
                 u.kill_at = None;
             }
         }
-        if changed {
-            self.write_status();
-        }
+        // Clients that never sent their request.
+        self.clients.retain(|c| c.deadline > now);
     }
 
     /// Milliseconds until the next timed work (None: nothing pending).
@@ -504,63 +546,131 @@ impl Supervisor {
             .min()
     }
 
-    /// The control FIFO's descriptor, for poll.
-    pub fn control_fd(&self) -> Option<i32> {
-        self.ctl.as_ref().map(|f| f.fd())
+    /// Descriptors to poll for input: the control socket and the
+    /// connections waiting for their request.
+    pub fn poll_fds(&self) -> Vec<i32> {
+        self.listener
+            .iter()
+            .map(|l| l.fd())
+            .chain(self.clients.iter().map(|c| c.sock.fd()))
+            .collect()
     }
 
-    /// Serve the requests waiting in the control FIFO.
+    /// Accept new connections and serve the requests that have arrived:
+    /// one line per connection, answered with a [`Response`] before the
+    /// connection is closed.
     pub fn handle_requests(&mut self) {
-        let Some(ctl) = &self.ctl else {
+        let Some(listener) = &self.listener else {
             return;
         };
-        let mut buf = [0u8; 512];
-        while let Ok(n) = ctl.read(&mut buf) {
-            if n == 0 {
-                break;
-            }
-            self.pending.extend_from_slice(&buf[..n]);
-        }
-        while let Some(i) = self.pending.iter().position(|&b| b == b'\n') {
-            let line: Vec<u8> = self.pending.drain(..=i).collect();
-            let line = String::from_utf8_lossy(&line).into_owned();
-            let Some((cmd, name, id)) = svcconf::parse_request(&line) else {
-                log(&format!("bad request: {}", line.trim()));
+        let now = now_ms();
+        while let Ok(sock) = listener.accept4(net::SOCK_NONBLOCK | net::SOCK_CLOEXEC) {
+            if self.clients.len() >= MAX_CLIENTS {
+                log("too many pending svc connections");
                 continue;
+            }
+            // Unknown credentials get the rights of nobody.
+            let cred = sock.peer_cred().unwrap_or(net::Ucred {
+                pid: 0,
+                uid: u32::MAX,
+                gid: u32::MAX,
+            });
+            self.clients.push(Client {
+                sock,
+                uid: cred.uid,
+                pid: cred.pid,
+                buf: Vec::new(),
+                deadline: now + CLIENT_TIMEOUT_MS,
+            });
+        }
+        let mut waiting = Vec::new();
+        for mut c in core::mem::take(&mut self.clients) {
+            let mut chunk = [0u8; 256];
+            let got = loop {
+                match c.sock.recv(&mut chunk) {
+                    Ok(n) if n > 0 => {
+                        c.buf.extend_from_slice(&chunk[..n]);
+                        if let Some(i) = c.buf.iter().position(|&b| b == b'\n') {
+                            c.buf.truncate(i);
+                            break Got::Line(String::from_utf8_lossy(&c.buf).into_owned());
+                        }
+                        if c.buf.len() > svcconf::MAX_REQUEST {
+                            break Got::Drop;
+                        }
+                    }
+                    Err(e) if e.0 == 11 => break Got::Wait,
+                    _ => break Got::Drop,
+                }
             };
-            self.reload();
-            log(&format!("request: {} {}", cmd.as_str(), name));
-            let reply = match cmd {
-                Command::Start => self.start(&name),
-                Command::Stop => self.stop(&name),
-                Command::Restart => self.restart(&name),
-            };
-            self.write_status();
-            let path = svcconf::reply_path(id);
-            let tmp = format!("{}.tmp", path);
-            if fs::write(&tmp, reply.render().as_bytes()).is_ok() {
-                let _ = fs::rename(&tmp, &path);
+            match got {
+                Got::Wait => waiting.push(c),
+                Got::Drop => {}
+                Got::Line(l) => {
+                    let resp = self.serve(&l, c.uid, c.pid);
+                    // The answer is small and the connection's buffer
+                    // empty: it fits without blocking.
+                    let _ = c.sock.send_all(resp.render().as_bytes());
+                }
             }
         }
-        if self.pending.len() > 4096 {
-            self.pending.clear();
-        }
+        self.clients.extend(waiting);
     }
 
-    /// Publish every service's state in /run/svc/status.
-    fn write_status(&self) {
-        let text = svcconf::render_status(self.units.iter().map(|(n, u)| {
-            (
-                n.as_str(),
-                Status {
-                    state: u.state,
-                    pid: u.pid.map(|p| p as u32),
-                },
-            )
-        }));
-        let tmp = format!("{}.tmp", svcconf::STATUS);
-        if fs::write(&tmp, text.as_bytes()).is_ok() {
-            let _ = fs::rename(&tmp, svcconf::STATUS);
+    /// Answer one request from a client running as `uid`.
+    fn serve(&mut self, line: &str, uid: u32, pid: u32) -> Response {
+        let Some(req) = Request::parse(line) else {
+            log(&format!("bad request: {}", line.trim()));
+            return Response::new(Reply::Error(String::from("bad request")));
+        };
+        if !svcconf::permitted(&req, uid) {
+            log(&format!(
+                "denied: {} (uid {}, pid {})",
+                req.render().trim_end(),
+                uid,
+                pid
+            ));
+            return Response::new(Reply::Denied);
         }
+        // Pick up new, changed and removed service files.
+        self.reload();
+        match req {
+            Request::List => Response {
+                reply: Reply::Ok,
+                entries: {
+                    let en = enabled();
+                    self.units.values().map(|u| entry(u, &en)).collect()
+                },
+            },
+            Request::Status(name) => match self.units.get(&name) {
+                Some(u) => Response {
+                    reply: Reply::Ok,
+                    entries: vec![entry(u, &enabled())],
+                },
+                None => Response::new(Reply::Unknown),
+            },
+            Request::Control(cmd, name) => {
+                log(&format!("request: {} {}", cmd.as_str(), name));
+                Response::new(match cmd {
+                    Command::Start => self.start(&name),
+                    Command::Stop => self.stop(&name),
+                    Command::Restart => self.restart(&name),
+                    Command::Enable => self.set_enabled(&name, true),
+                    Command::Disable => self.set_enabled(&name, false),
+                })
+            }
+        }
+    }
+}
+
+/// What `svc` is told about a unit.
+fn entry(u: &Unit, enabled: &[String]) -> Entry {
+    Entry {
+        name: u.conf.name.clone(),
+        description: u.conf.description.clone(),
+        exec: u.conf.exec.clone(),
+        enabled: enabled.contains(&u.conf.name),
+        state: u.state,
+        pid: u.pid.map(|p| p as u32),
+        tty: u.conf.tty.clone(),
     }
 }

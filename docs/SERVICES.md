@@ -4,7 +4,8 @@
 programs such as a desktop greeter — and `svc` lists and controls them.
 It is a small service manager in the spirit of runit or OpenRC: one file
 per service, a list of the ones started at boot, restart policies with
-back-off, and no dependency on D-Bus or sockets.
+back-off, and no dependency on D-Bus: `svc` talks to init over one
+`AF_UNIX` socket.
 
 ## Boot order
 
@@ -54,8 +55,8 @@ is `/var/log/svc/init.log`; failures are also printed on the console.
 
 `/storage/etc/svc/enabled` lists the services started at boot, one name
 per line; when it does not exist, `/etc/svc/enabled` is used. `svc
-enable`/`disable` edit the storage copy (created from the image's list
-the first time), so the choice persists across reboots. Without a
+enable`/`disable` ask init to edit the storage copy (created from the
+image's list the first time), so the choice persists across reboots. Without a
 storage partition they edit `/etc/svc/enabled` for this boot only.
 
 The image ships definitions for services that are not ported yet —
@@ -95,8 +96,11 @@ svc disable NAME
 ```
 
 Exit status: `0` success, `1` error (message on standard error: the
-service failed to start, the service manager is not running, ...), `3`
-unknown service.
+service failed to start, the service manager is not running, `svc:
+permission denied`, ...), `3` unknown service.
+
+Anyone may run `svc list` and `svc status`; `start`, `stop`, `restart`,
+`enable` and `disable` are for root only.
 
 `--json` prints one object per service, as an array for `list`:
 
@@ -117,23 +121,38 @@ eDEX-DE Services panel relies on this format.
 
 ## Control channel
 
-`svc` reads the service files, the enabled list and the state file
-`/run/svc/status` (`NAME STATE PID` per line, rewritten by init on every
-change) directly. `start`, `stop` and `restart` are requests to init:
+init listens on the `AF_UNIX` stream socket `/run/svc.sock` (mode 0666,
+so anyone may connect) from its main loop, which sleeps in `poll()` on
+the socket and the connections waiting for their request and wakes on
+SIGCHLD. Every `svc` subcommand is one connection carrying one request:
 
-* `svc` writes one line, `COMMAND NAME ID`, into the named pipe
-  `/run/svc/control` (mode 0600, so only root can control services),
-  with its pid as `ID`;
-* init reads the pipe from its main loop (which sleeps in `poll()` and
-  wakes on SIGCHLD), acts, and writes `/run/svc/reply.ID` (`ok`,
-  `unknown` or `error MESSAGE`), which `svc` waits for and removes.
+* `svc` connects, writes one line — `list`, `status NAME` or `COMMAND
+  NAME` with `COMMAND` one of `start`, `stop`, `restart`, `enable`,
+  `disable` — and reads until init closes the connection;
+* init takes the client's uid from `SO_PEERCRED` and applies the policy:
+  uid 0 may do everything, other users only `list` and `status`;
+* the answer is a status line, `ok`, `unknown` (no such service),
+  `denied` (not allowed for this uid) or `error MESSAGE`, followed for
+  `list` and `status` by one line per service: `NAME STATE ENABLED PID
+  TTY EXEC DESCRIPTION`, separated by tabs, with `yes`/`no`, `-` for no
+  process or terminal, and `\\`, `\t`, `\n`, `\r` escaped in the text
+  fields.
 
-This uses only what RustOS has today: named `AF_UNIX` sockets are not
-available (`socket(AF_UNIX, ...)` returns `EAFNOSUPPORT`; only
-`socketpair` exists), but FIFOs on tmpfs are. A line written to a pipe in one `write` arrives whole, init keeps a
-write end open so its read end never sees end-of-file, and a stale or
-missing pipe shows up in `svc` as "the service manager is not running".
-The protocol and file formats live in the host-tested `crates/svcconf`.
+init re-reads the service files and the enabled list for every request,
+so `svc` itself reads no files: the state, the enabled list and the
+service definitions all come from init, and `enable`/`disable` are
+applied by init, which keeps the access policy in one place. `start`
+and `restart` then poll `status` until the service runs (up to 5 s),
+`stop` until it has exited. A missing socket or a refused connection
+shows up as "the service manager is not running"; a client that sends
+no request within 5 seconds is disconnected. Requests that change
+something, and refused ones, are logged in `/var/log/svc/init.log`.
+
+The encoding, decoding and the permission decision live in the
+host-tested `crates/svcconf` (`Request`, `Response`, `permitted`).
+RustOS currently runs every process as root (`setuid` changes nothing),
+so the refusal is covered by those unit tests rather than the `svc`
+scenario.
 
 ## Limitations
 

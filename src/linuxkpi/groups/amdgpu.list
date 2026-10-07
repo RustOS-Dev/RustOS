@@ -254,6 +254,7 @@ drivers/gpu/drm/amd/amdgpu/amdgpu_userq.c
 drivers/gpu/drm/amd/amdgpu/amdgpu_cgs.c
 drivers/gpu/drm/amd/amdgpu/amdgpu_job.c
 drivers/gpu/drm/amd/amdgpu/amdgpu_acpi.c
+drivers/gpu/drm/amd/amdgpu/amdgpu_hmm.c
 drivers/gpu/drm/amd/pm/swsmu/smu11/arcturus_ppt.c
 drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
 drivers/gpu/drm/amd/pm/swsmu/smu11/sienna_cichlid_ppt.c

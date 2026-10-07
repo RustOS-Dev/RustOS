@@ -304,6 +304,7 @@ drivers/gpu/drm/amd/amdgpu/amdgpu_gmc.h	GPL-2.0-only (untagged, per Linux COPYIN
 drivers/gpu/drm/amd/amdgpu/amdgpu_gtt_mgr.c	GPL-2.0-only (untagged, per Linux COPYING)	522be4d374c47621b79bf367833cf2c0d5242425e5c41b84d509045ae4357acf
 drivers/gpu/drm/amd/amdgpu/amdgpu_hdp.c	GPL-2.0-only (untagged, per Linux COPYING)	4048131a6d8c60f18e2988a520b539b15095ca44f95dc57c2192ea4683942c6f
 drivers/gpu/drm/amd/amdgpu/amdgpu_hdp.h	GPL-2.0-only (untagged, per Linux COPYING)	94e22a3746c24c2997bb13f90cf6bfd596817625c6cb7f671cfaa8a25668e07d
+drivers/gpu/drm/amd/amdgpu/amdgpu_hmm.c	GPL-2.0-only (untagged, per Linux COPYING)	68268d8bda5d78f615714907af78f4a0d50d6b9bfd0ccabd54fe93cd08f9d061
 drivers/gpu/drm/amd/amdgpu/amdgpu_hmm.h	GPL-2.0-only (untagged, per Linux COPYING)	8e2aad42869c97d135efc521890f4509d44ae6bf2ae81ee49186ca9daa74adb7
 drivers/gpu/drm/amd/amdgpu/amdgpu_i2c.c	GPL-2.0-only (untagged, per Linux COPYING)	ad1cd997bef7c2120618df73821b0e9766814db13d17b4deb16c4386be3d6e9f
 drivers/gpu/drm/amd/amdgpu/amdgpu_i2c.h	GPL-2.0-only (untagged, per Linux COPYING)	cb53c632049c02640fa7f1de61eaddb9c521c7df221b23648b180c71f448d873

@@ -109,6 +109,17 @@ pub trait NetDevice: Send + Sync {
     fn set_mac(&self, _mac: [u8; 6]) -> KResult<()> {
         Err(EOPNOTSUPP)
     }
+    /// The device carries bare IP packets, without a link-layer header or
+    /// address (tunnels such as WireGuard): `transmit` and `receive` take
+    /// and give IP packets, and there is no ARP or DHCP.
+    fn ip_only(&self) -> bool {
+        false
+    }
+    /// The link kind the interface was created with (`ip link add NAME
+    /// type KIND`), reported in IFLA_LINKINFO.
+    fn link_kind(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -190,6 +201,10 @@ impl Iface {
 
     pub fn is_loopback(&self) -> bool {
         self.lo.is_some()
+    }
+    /// A point-to-point interface for bare IP packets (a tunnel).
+    pub fn is_ip_only(&self) -> bool {
+        self.dev.as_ref().is_some_and(|d| d.ip_only())
     }
     pub fn device(&self) -> Option<&Arc<dyn NetDevice>> {
         self.dev.as_ref()
@@ -477,7 +492,7 @@ impl Iface {
         if !self.up {
             return None;
         }
-        if let Some(dev) = self.dev.as_ref() {
+        if let Some(dev) = self.dev.as_ref().filter(|d| !d.ip_only()) {
             // The driver may change its address (SIOCSIFHWADDR, MLO).
             let mac = HardwareAddress::Ethernet(EthernetAddress(dev.mac()));
             if self.iface.hardware_addr() != mac {
@@ -518,12 +533,14 @@ impl Iface {
                 }
                 return None;
             }
+            let ip = dev.ip_only();
             let mut p = Phy {
                 index: self.index,
                 dev: &dev,
+                ip,
                 stats: &mut self.stats,
-                arp: Some(&mut self.arp),
-                ra: Some(&mut self.pending_ra),
+                arp: (!ip).then_some(&mut self.arp),
+                ra: (!ip).then_some(&mut self.pending_ra),
             };
             self.iface.poll(now, &mut p, &mut self.sockets);
         }
@@ -569,6 +586,8 @@ struct Phy<'a> {
     /// Interface index (for packet sockets).
     index: u32,
     dev: &'a Arc<dyn NetDevice>,
+    /// Bare IP packets instead of Ethernet frames (`NetDevice::ip_only`).
+    ip: bool,
     stats: &'a mut Stats,
     arp: Option<&'a mut BTreeMap<[u8; 4], [u8; 6]>>,
     /// Receives router advertisements seen on the wire.
@@ -632,6 +651,7 @@ struct RxTok(Vec<u8>);
 struct TxTok<'a> {
     index: u32,
     dev: &'a Arc<dyn NetDevice>,
+    ip: bool,
     stats: *mut Stats,
 }
 
@@ -647,14 +667,17 @@ impl phy::TxToken for TxTok<'_> {
         let r = f(&mut buf);
         // SAFETY: the stats outlive the token (both borrowed from the Phy).
         let stats = unsafe { &mut *self.stats };
-        if crate::params::NET_DEBUG.load(Ordering::Relaxed) {
+        if crate::params::NET_DEBUG.load(Ordering::Relaxed) && !self.ip {
             crate::println!("[net] tx {}", frame_summary(&buf));
         }
         match self.dev.transmit(&buf) {
             Ok(()) => {
                 stats.tx_packets += 1;
                 stats.tx_bytes += len as u64;
-                packet::tap(self.index, self.dev.mac(), &buf, true);
+                // Packet sockets see Ethernet frames only.
+                if !self.ip {
+                    packet::tap(self.index, self.dev.mac(), &buf, true);
+                }
             }
             Err(_) => stats.tx_errors += 1,
         }
@@ -679,7 +702,7 @@ impl Device for Phy<'_> {
             return None;
         }
         let frame = self.dev.receive()?;
-        if crate::params::NET_DEBUG.load(Ordering::Relaxed) {
+        if crate::params::NET_DEBUG.load(Ordering::Relaxed) && !self.ip {
             crate::println!("[net] rx {}", frame_summary(&frame));
         }
         // Learn neighbours from ARP traffic for /proc/net/arp.
@@ -710,12 +733,15 @@ impl Device for Phy<'_> {
         }
         self.stats.rx_packets += 1;
         self.stats.rx_bytes += frame.len() as u64;
-        packet::tap(self.index, self.dev.mac(), &frame, false);
+        if !self.ip {
+            packet::tap(self.index, self.dev.mac(), &frame, false);
+        }
         Some((
             RxTok(frame),
             TxTok {
                 index: self.index,
                 dev: self.dev,
+                ip: self.ip,
                 stats: self.stats as *mut Stats,
             },
         ))
@@ -728,12 +754,19 @@ impl Device for Phy<'_> {
         Some(TxTok {
             index: self.index,
             dev: self.dev,
+            ip: self.ip,
             stats: self.stats as *mut Stats,
         })
     }
 
     fn capabilities(&self) -> DeviceCapabilities {
         let mut c = DeviceCapabilities::default();
+        if self.ip {
+            c.medium = Medium::Ip;
+            c.max_transmission_unit = self.dev.mtu();
+            c.max_burst_size = Some(32);
+            return c;
+        }
         c.medium = Medium::Ethernet;
         c.max_transmission_unit = self.dev.mtu() + 14;
         c.max_burst_size = Some(32);
@@ -897,34 +930,43 @@ pub fn register_named(dev: Arc<dyn NetDevice>, want: Option<&str>) -> (String, u
         }
     };
     let mac = dev.mac();
-    let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
+    // Tunnels have no link layer: no hardware address, ARP or SLAAC.
+    let ip = dev.ip_only();
+    let mut config = Config::new(if ip {
+        HardwareAddress::Ip
+    } else {
+        HardwareAddress::Ethernet(EthernetAddress(mac))
+    });
     config.random_seed = random_seed();
     // IPv6 stateless autoconfiguration from router advertisements.
-    config.slaac = true;
+    config.slaac = !ip;
     let now = Instant::from_millis(crate::time::millis() as i64);
     let mut stats = Stats::default();
     let mut p = Phy {
         index: 0,
         dev: &dev,
+        ip,
         stats: &mut stats,
         arp: None,
         ra: None,
     };
     let mut iface = Interface::new(config, &mut p, now);
-    // IPv6 link-local address from the MAC (EUI-64).
-    let ll = Ipv6Address::new(
-        0xfe80,
-        0,
-        0,
-        0,
-        u16::from_be_bytes([mac[0] ^ 2, mac[1]]),
-        u16::from_be_bytes([mac[2], 0xff]),
-        u16::from_be_bytes([0xfe, mac[3]]),
-        u16::from_be_bytes([mac[4], mac[5]]),
-    );
-    iface.update_ip_addrs(|a| {
-        let _ = a.push(IpCidr::new(IpAddress::Ipv6(ll), 64));
-    });
+    if !ip {
+        // IPv6 link-local address from the MAC (EUI-64).
+        let ll = Ipv6Address::new(
+            0xfe80,
+            0,
+            0,
+            0,
+            u16::from_be_bytes([mac[0] ^ 2, mac[1]]),
+            u16::from_be_bytes([mac[2], 0xff]),
+            u16::from_be_bytes([0xfe, mac[3]]),
+            u16::from_be_bytes([mac[4], mac[5]]),
+        );
+        iface.update_ip_addrs(|a| {
+            let _ = a.push(IpCidr::new(IpAddress::Ipv6(ll), 64));
+        });
+    }
     let index = net.next_index;
     net.next_index += 1;
     crate::println!(
@@ -941,7 +983,9 @@ pub fn register_named(dev: Arc<dyn NetDevice>, want: Option<&str>) -> (String, u
             .map_or(String::new(), |s| format!(", {} Mbit/s", s))
     );
     let mut ifc = Iface::new(name.clone(), index, Some(dev), None, iface);
-    ifc.dhcp = Some(ifc.sockets.add(new_dhcp4()));
+    if !ip {
+        ifc.dhcp = Some(ifc.sockets.add(new_dhcp4()));
+    }
     net.ifaces.push(ifc);
     drop(g);
     kick();
@@ -1021,7 +1065,7 @@ pub fn unregister(name: &str) {
 pub fn set_dhcp(name: &str, on: bool) -> KResult<()> {
     with(|net| {
         let ifc = net.iface_mut(name).ok_or(ENODEV)?;
-        if ifc.is_loopback() {
+        if ifc.is_loopback() || ifc.is_ip_only() {
             return Err(EINVAL);
         }
         match (on, ifc.dhcp) {

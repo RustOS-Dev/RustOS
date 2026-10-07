@@ -91,9 +91,12 @@ u64 rustos_kpi_random_u64(void);
 
 /* Network devices (src/linuxkpi/net.rs). */
 /* `ether`: 0 for interfaces that carry no Ethernet frames (radiotap
- * monitors), which RustOS's IP stack leaves alone. */
+ * monitors), which RustOS's IP stack leaves alone. `ip`: the interface
+ * carries bare IP packets (tunnels such as WireGuard: no link-layer
+ * header or address). `kind`: the rtnl_link_ops kind it was created
+ * with (`ip link add ... type KIND`), or NULL. */
 u64 rustos_kpi_netdev_register(void *dev, const u8 *mac, u32 mtu, int wireless, int ether,
-			       const char *driver, const char *name);
+			       int ip, const char *kind, const char *driver, const char *name);
 int rustos_kpi_netdev_ifindex(u64 handle);
 /* The interface was opened (1) or closed (0) on the Linux side. */
 void rustos_kpi_netdev_state(u64 handle, int up);
@@ -104,6 +107,16 @@ int rustos_kpi_ifname_free(const char *name);
 void rustos_kpi_netdev_rx(u64 handle, const void *data, u32 len);
 void rustos_kpi_netdev_carrier(u64 handle, int on);
 void rustos_kpi_netdev_mtu(u64 handle, u32 mtu);
+/* An rtnl_link_ops kind can be created from rtnetlink (1) or not (0). */
+void rustos_kpi_rtnl_kind(const char *kind, int add);
+
+/* In-kernel UDP sockets (src/linuxkpi/udp.rs) for UDP tunnels. Addresses
+ * are IPv4 in network order, ports in host order. Received datagrams go
+ * to kpi_udp_rx(ctx, ...) on the socket's thread; sending only queues
+ * (any context). */
+int rustos_kpi_udp_open(u32 addr, u16 port, void *ctx, u64 *handle, u16 *bound);
+int rustos_kpi_udp_send(u64 handle, u32 saddr, u32 daddr, u16 dport, const void *data, u32 len);
+void rustos_kpi_udp_close(u64 handle);	/* waits for the socket's thread */
 
 /* Wall-clock time (src/linuxkpi/sched.rs). */
 u64 rustos_kpi_realtime_ns(void);

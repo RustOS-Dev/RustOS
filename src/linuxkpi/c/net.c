@@ -27,6 +27,7 @@
 #include <linux/utsname.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
+#include <net/rtnetlink.h>
 #include "kpi.h"
 
 DEFINE_PER_CPU_ALIGNED(struct softnet_data, softnet_data);
@@ -1142,6 +1143,20 @@ int eth_validate_addr(struct net_device *dev)
 	return is_valid_ether_addr(dev->dev_addr) ? 0 : -EADDRNOTAVAIL;
 }
 
+/* Tunnels (WireGuard) carry bare IP packets: no link-layer header. */
+static bool kpi_netdev_is_ip(const struct net_device *dev)
+{
+	switch (dev->type) {
+	case ARPHRD_NONE:
+	case ARPHRD_TUNNEL:
+	case ARPHRD_IPGRE:
+	case ARPHRD_RAWIP:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static bool kpi_netdev_is_wireless(struct net_device *dev)
 {
 #if IS_ENABLED(CONFIG_CFG80211)
@@ -1181,7 +1196,8 @@ int dev_alloc_name(struct net_device *dev, const char *name)
 
 int register_netdevice(struct net_device *dev)
 {
-	const char *drv = dev->dev.parent ? dev_driver_string(dev->dev.parent) : "linux";
+	const char *kind = dev->rtnl_link_ops ? dev->rtnl_link_ops->kind : NULL;
+	const char *drv = dev->dev.parent ? dev_driver_string(dev->dev.parent) : kind ?: "linux";
 	int slot = -1, err;
 	u64 handle;
 
@@ -1219,7 +1235,7 @@ int register_netdevice(struct net_device *dev)
 		goto uninit;
 	handle = rustos_kpi_netdev_register(dev, dev->dev_addr, dev->mtu,
 					    kpi_netdev_is_wireless(dev), dev->type == ARPHRD_ETHER,
-					    drv, dev->name);
+					    kpi_netdev_is_ip(dev), kind, drv, dev->name);
 	dev->ifindex = rustos_kpi_netdev_ifindex(handle);
 	kpi_netdevs[slot].dev = dev;
 	kpi_netdevs[slot].handle = handle;
@@ -1468,6 +1484,14 @@ struct net_device *__dev_get_by_name(struct net *net, const char *name)
 	return NULL;
 }
 
+struct net_device *dev_get_by_name(struct net *net, const char *name)
+{
+	struct net_device *dev = __dev_get_by_name(net, name);
+
+	dev_hold(dev);
+	return dev;
+}
+
 void synchronize_net(void)
 {
 	synchronize_rcu();
@@ -1593,8 +1617,14 @@ int kpi_netdev_xmit(struct net_device *dev, const u8 *data, u32 len)
 	skb_reserve(skb, dev->needed_headroom);
 	skb_put_data(skb, data, len);
 	skb_reset_mac_header(skb);
-	skb_set_network_header(skb, ETH_HLEN);
-	skb->protocol = ((const struct ethhdr *)data)->h_proto;
+	if (kpi_netdev_is_ip(dev)) {
+		/* A bare IP packet (RustOS's interface has no link layer). */
+		skb_reset_network_header(skb);
+		skb->protocol = len && (data[0] >> 4) == 6 ? htons(ETH_P_IPV6) : htons(ETH_P_IP);
+	} else {
+		skb_set_network_header(skb, ETH_HLEN);
+		skb->protocol = ((const struct ethhdr *)data)->h_proto;
+	}
 	skb->ip_summed = CHECKSUM_NONE;
 	return __dev_queue_xmit(skb, NULL) == NET_XMIT_SUCCESS ? 0 : -EBUSY;
 }
@@ -1610,7 +1640,11 @@ static void kpi_netif_deliver(struct sk_buff *skb)
 		kpi_kfree_skb(skb);
 		return;
 	}
-	mac = skb_mac_header_was_set(skb) ? skb_mac_header(skb) : skb->data;
+	/* Tunnels hand RustOS the IP packet itself. */
+	if (kpi_netdev_is_ip(dev))
+		mac = skb->data;
+	else
+		mac = skb_mac_header_was_set(skb) ? skb_mac_header(skb) : skb->data;
 	len = skb->len + (skb->data - mac);
 	rustos_kpi_netdev_rx(kpi_netdev_handle(dev), mac, len);
 	kpi_kfree_skb(skb);
@@ -2266,4 +2300,201 @@ int skb_checksum_help(struct sk_buff *skb)
 struct sk_buff *slab_build_skb(void *data)
 {
 	return build_skb(data, 0);
+}
+
+/* ------------------------------------------- link kinds, tunnels (M43) */
+
+/*
+ * rtnl_link_ops: the kinds of link user space can create with RTM_NEWLINK
+ * (`ip link add wg0 type wireguard`). RustOS's rtnetlink (src/net/
+ * rtnetlink.rs) handles NETLINK_ROUTE; it asks for a link of a registered
+ * kind through kpi_rtnl_newlink(), which does what rtnl_newlink_create()
+ * does for a request without device attributes, and removes one through
+ * kpi_rtnl_dellink().
+ */
+#define KPI_MAX_LINK_KINDS 8
+static struct rtnl_link_ops *kpi_link_kinds[KPI_MAX_LINK_KINDS];
+
+int rtnl_link_register(struct rtnl_link_ops *ops)
+{
+	int err = -ENOSPC;
+
+	rtnl_lock();
+	for (int i = 0; i < KPI_MAX_LINK_KINDS; i++) {
+		if (kpi_link_kinds[i] && !strcmp(kpi_link_kinds[i]->kind, ops->kind)) {
+			err = -EEXIST;
+			break;
+		}
+		if (!kpi_link_kinds[i]) {
+			kpi_link_kinds[i] = ops;
+			err = 0;
+			break;
+		}
+	}
+	rtnl_unlock();
+	if (!err)
+		rustos_kpi_rtnl_kind(ops->kind, 1);
+	return err;
+}
+
+void rtnl_link_unregister(struct rtnl_link_ops *ops)
+{
+	LIST_HEAD(kill);
+
+	rustos_kpi_rtnl_kind(ops->kind, 0);
+	rtnl_lock();
+	for (int i = 0; i < KPI_MAX_LINK_KINDS; i++)
+		if (kpi_link_kinds[i] == ops)
+			kpi_link_kinds[i] = NULL;
+	/* As __rtnl_kill_links(): the links of this kind go too. */
+	for (int i = 0; i < KPI_MAX_NETDEVS; i++) {
+		struct net_device *dev = kpi_netdevs[i].dev;
+
+		if (dev && dev->rtnl_link_ops == ops) {
+			if (ops->dellink)
+				ops->dellink(dev, &kill);
+			else
+				unregister_netdevice_queue(dev, &kill);
+		}
+	}
+	unregister_netdevice_many(&kill);
+	rtnl_unlock();
+}
+
+/* RTM_NEWLINK with IFLA_LINKINFO/IFLA_INFO_KIND from RustOS; `name` may be
+ * NULL ("KIND%d"). The link starts down, as in Linux. 0 or -errno. */
+int kpi_rtnl_newlink(const char *kind, const char *name)
+{
+	struct rtnl_newlink_params params = { .src_net = &init_net };
+	struct rtnl_link_ops *ops = NULL;
+	struct net_device *dev;
+	char tmpl[IFNAMSIZ];
+	int err;
+
+	rtnl_lock();
+	for (int i = 0; i < KPI_MAX_LINK_KINDS; i++)
+		if (kpi_link_kinds[i] && !strcmp(kpi_link_kinds[i]->kind, kind))
+			ops = kpi_link_kinds[i];
+	if (!ops) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+	if (!name || !*name) {
+		snprintf(tmpl, sizeof(tmpl), "%s%%d", ops->kind);
+		name = tmpl;
+	} else if (__dev_get_by_name(&init_net, name) || !rustos_kpi_ifname_free(name)) {
+		err = -EEXIST;
+		goto out;
+	}
+	if (ops->alloc) {
+		dev = ops->alloc(NULL, name, NET_NAME_USER, 1, 1);
+		if (IS_ERR(dev)) {
+			err = PTR_ERR(dev);
+			goto out;
+		}
+	} else {
+		dev = alloc_netdev_mqs(ops->priv_size, name, NET_NAME_USER, ops->setup, 1, 1);
+		if (!dev) {
+			err = -ENOMEM;
+			goto out;
+		}
+	}
+	dev->rtnl_link_ops = ops;
+	err = ops->newlink ? ops->newlink(dev, &params, NULL) : register_netdevice(dev);
+	if (err < 0) {
+		free_netdev(dev);
+		goto out;
+	}
+	/* Up only when user space says so (no automatic dev_open). */
+	for (int i = 0; i < KPI_MAX_NETDEVS; i++)
+		if (kpi_netdevs[i].dev == dev)
+			kpi_netdevs[i].opened = true;
+	err = 0;
+out:
+	rtnl_unlock();
+	return err;
+}
+
+/* RTM_DELLINK from RustOS, for links created from rtnetlink. */
+int kpi_rtnl_dellink(int ifindex)
+{
+	struct net_device *dev;
+	LIST_HEAD(kill);
+	int err = 0;
+
+	rtnl_lock();
+	dev = __dev_get_by_index(&init_net, ifindex);
+	if (!dev)
+		err = -ENODEV;
+	else if (!dev->rtnl_link_ops)
+		err = -EOPNOTSUPP;
+	else if (dev->rtnl_link_ops->dellink)
+		dev->rtnl_link_ops->dellink(dev, &kill);
+	else
+		unregister_netdevice_queue(dev, &kill);
+	unregister_netdevice_many(&kill);
+	rtnl_unlock();
+	return err;
+}
+
+/* Threaded NAPI: NAPI already runs in a thread (linux-softirq). */
+void netif_threaded_enable(struct net_device *dev)
+{
+}
+
+/* The flow dissector is not built: probing a transport header finds
+ * nothing (skb_probe_transport_header() then leaves it alone). */
+struct flow_dissector flow_keys_basic_dissector;
+
+bool __skb_flow_dissect(const struct net *net, const struct sk_buff *skb,
+			struct flow_dissector *flow_dissector, void *target_container,
+			const void *data, __be16 proto, int nhoff, int hlen, unsigned int flags)
+{
+	return false;
+}
+
+/* From net/core/skbuff.c. */
+void skb_scrub_packet(struct sk_buff *skb, bool xnet)
+{
+	skb->pkt_type = PACKET_HOST;
+	skb->skb_iif = 0;
+	skb->ignore_df = 0;
+	skb_dst_drop(skb);
+	skb_ext_reset(skb);
+	nf_reset_ct(skb);
+	nf_reset_trace(skb);
+	ipvs_reset(skb);
+	if (!xnet)
+		return;
+	skb->mark = 0;
+	skb_clear_tstamp(skb);
+}
+
+void *pskb_put(struct sk_buff *skb, struct sk_buff *tail, int len)
+{
+	if (tail != skb) {
+		skb->data_len += len;
+		skb->len += len;
+	}
+	return skb_put(tail, len);
+}
+
+/*
+ * skb_cow_data() for the skbs LinuxKPI makes (net/core/skbuff.c handles
+ * frag lists in place): pull everything into a private linear head with
+ * `tailbits` of tailroom; that head is then the only segment and the
+ * trailer.
+ */
+int skb_cow_data(struct sk_buff *skb, int tailbits, struct sk_buff **trailer)
+{
+	if (skb_is_nonlinear(skb) && skb_linearize(skb))
+		return -ENOMEM;
+	if (skb_cloned(skb) || skb_tailroom(skb) < tailbits) {
+		int ntail = max(tailbits - (int)skb_tailroom(skb), 0) + 128;
+
+		if (pskb_expand_head(skb, 0, ntail, GFP_ATOMIC))
+			return -ENOMEM;
+	}
+	*trailer = skb;
+	return 1;
 }

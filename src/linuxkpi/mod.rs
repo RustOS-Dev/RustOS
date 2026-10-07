@@ -18,6 +18,8 @@ pub mod sched;
 pub mod sysfs;
 #[cfg(feature = "linux-serial")]
 pub mod tty;
+#[cfg(feature = "linux-wireguard")]
+pub mod udp;
 #[cfg(feature = "linux-usb")]
 pub mod usb;
 

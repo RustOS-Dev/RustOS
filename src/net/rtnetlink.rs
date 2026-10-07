@@ -1,6 +1,8 @@
 //! NETLINK_ROUTE: links, addresses and routes from RustOS's network
 //! state, for `ip`, wpa_supplicant/hostapd and libnl. Link changes are
-//! announced to RTNLGRP_LINK.
+//! announced to RTNLGRP_LINK. Links of a kind (`ip link add wg0 type
+//! wireguard`) are created and removed by the handler that registered
+//! the kind (`set_link_handler`: LinuxKPI's rtnl_link_ops).
 
 use super::Iface;
 use super::netlink::{
@@ -8,6 +10,7 @@ use super::netlink::{
     error_msg, messages,
 };
 use crate::errno::*;
+use alloc::string::String;
 use alloc::vec::Vec;
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
 
@@ -28,7 +31,12 @@ const IFLA_MTU: u16 = 4;
 const IFLA_TXQLEN: u16 = 13;
 const IFLA_OPERSTATE: u16 = 16;
 const IFLA_LINKMODE: u16 = 17;
+const IFLA_LINKINFO: u16 = 18;
 const IFLA_CARRIER: u16 = 33;
+const IFLA_INFO_KIND: u16 = 1;
+const NLA_F_NESTED: u16 = 0x8000;
+const NLM_F_EXCL: u16 = 0x200;
+const NLM_F_CREATE: u16 = 0x400;
 
 const IFA_ADDRESS: u16 = 1;
 const IFA_LOCAL: u16 = 2;
@@ -43,12 +51,15 @@ const RTA_TABLE: u16 = 15;
 const IFF_UP: u32 = 0x1;
 const IFF_BROADCAST: u32 = 0x2;
 const IFF_LOOPBACK: u32 = 0x8;
+const IFF_POINTOPOINT: u32 = 0x10;
 const IFF_RUNNING: u32 = 0x40;
+const IFF_NOARP: u32 = 0x80;
 const IFF_MULTICAST: u32 = 0x1000;
 const IFF_LOWER_UP: u32 = 0x10000;
 
 const ARPHRD_ETHER: u16 = 1;
 const ARPHRD_LOOPBACK: u16 = 772;
+const ARPHRD_NONE: u16 = 0xfffe;
 const AF_INET: u8 = 2;
 const AF_INET6: u8 = 10;
 const RTNLGRP_LINK: u32 = 1;
@@ -58,9 +69,25 @@ pub fn init() {
     netlink::register_kernel(NETLINK_ROUTE, Some(input), None);
 }
 
+/// Creates a link of a kind (kind, name or None for "KIND%d").
+pub type NewLink = fn(&str, Option<&str>) -> KResult<()>;
+/// Removes a link created by `NewLink` (interface index).
+pub type DelLink = fn(u32) -> KResult<()>;
+
+static LINK_HANDLER: crate::sync::IrqMutex<Option<(NewLink, DelLink)>> =
+    crate::sync::IrqMutex::new(None);
+
+/// Set the handler for RTM_NEWLINK requests with IFLA_INFO_KIND and for
+/// RTM_DELLINK on the links it created.
+pub fn set_link_handler(new: NewLink, del: DelLink) {
+    *LINK_HANDLER.lock() = Some((new, del));
+}
+
 fn flags(ifc: &Iface) -> u32 {
     let mut f = if ifc.is_loopback() {
         IFF_LOOPBACK
+    } else if ifc.is_ip_only() {
+        IFF_POINTOPOINT | IFF_NOARP
     } else {
         IFF_BROADCAST | IFF_MULTICAST
     };
@@ -77,6 +104,8 @@ fn link_msg(ifc: &Iface, ty: u16, nlflags: u16, seq: u32, pid: u32) -> Vec<u8> {
     let mut m = NlMsg::new(ty, nlflags, seq, pid);
     let hatype = if ifc.is_loopback() {
         ARPHRD_LOOPBACK
+    } else if ifc.is_ip_only() {
+        ARPHRD_NONE
     } else {
         ARPHRD_ETHER
     };
@@ -88,11 +117,14 @@ fn link_msg(ifc: &Iface, ty: u16, nlflags: u16, seq: u32, pid: u32) -> Vec<u8> {
     hdr.extend_from_slice(&u32::MAX.to_ne_bytes());
     m.put(&hdr);
     m.attr_str(IFLA_IFNAME, &ifc.name);
-    m.attr(IFLA_ADDRESS, &ifc.mac());
-    m.attr(
-        IFLA_BROADCAST,
-        &if ifc.is_loopback() { [0; 6] } else { [0xff; 6] },
-    );
+    // Tunnels have no link-layer address (addr_len 0).
+    if !ifc.is_ip_only() {
+        m.attr(IFLA_ADDRESS, &ifc.mac());
+        m.attr(
+            IFLA_BROADCAST,
+            &if ifc.is_loopback() { [0; 6] } else { [0xff; 6] },
+        );
+    }
     m.attr_u32(IFLA_MTU, ifc.mtu() as u32);
     m.attr_u32(IFLA_TXQLEN, 1000);
     let running = ifc.up && ifc.link_up();
@@ -100,7 +132,32 @@ fn link_msg(ifc: &Iface, ty: u16, nlflags: u16, seq: u32, pid: u32) -> Vec<u8> {
     m.attr_u8(IFLA_OPERSTATE, if running { 6 } else { 2 });
     m.attr_u8(IFLA_LINKMODE, 0);
     m.attr_u8(IFLA_CARRIER, ifc.link_up() as u8);
+    if let Some(kind) = ifc.device().and_then(|d| d.link_kind()) {
+        let mut info = NlMsg { buf: Vec::new() };
+        info.attr_str(IFLA_INFO_KIND, kind);
+        m.attr(IFLA_LINKINFO | NLA_F_NESTED, &info.buf);
+    }
     m.finish()
+}
+
+/// IFLA_INFO_KIND inside IFLA_LINKINFO, if the request has one.
+fn link_kind(body: &[u8]) -> Option<String> {
+    let info = attrs(body)
+        .into_iter()
+        .find(|(t, _)| *t == IFLA_LINKINFO)?
+        .1;
+    let kind = attrs(info)
+        .into_iter()
+        .find(|(t, _)| *t == IFLA_INFO_KIND)?
+        .1;
+    let kind = core::str::from_utf8(kind).ok()?.trim_end_matches('\0');
+    (!kind.is_empty()).then(|| String::from(kind))
+}
+
+fn ifname(body: &[u8]) -> Option<String> {
+    let name = attrs(body).into_iter().find(|(t, _)| *t == IFLA_IFNAME)?.1;
+    let name = core::str::from_utf8(name).ok()?.trim_end_matches('\0');
+    (!name.is_empty()).then(|| String::from(name))
 }
 
 fn addr_msgs(ifc: &Iface, nlflags: u16, seq: u32, pid: u32) -> Vec<Vec<u8>> {
@@ -211,6 +268,10 @@ fn handle(h: &NlHdr, body: &[u8], pid: u32) -> (Vec<Vec<u8>>, i32) {
     let mut out = Vec::new();
     // A link to bring up or down, done after the lock is released.
     let mut set_up: Option<(alloc::string::String, bool)> = None;
+    // A link to create (kind, name, up) or remove, also done unlocked: the
+    // driver registers or unregisters an interface.
+    let mut create: Option<(String, Option<String>, bool)> = None;
+    let mut delete: Option<u32> = None;
     let r = super::with(|net| -> KResult<()> {
         match h.ty {
             RTM_GETLINK if dump => {
@@ -233,6 +294,17 @@ fn handle(h: &NlHdr, body: &[u8], pid: u32) -> (Vec<Vec<u8>>, i32) {
                 let index = i32::from_ne_bytes(body[4..8].try_into().unwrap());
                 let fl = u32::from_ne_bytes(body[8..12].try_into().unwrap());
                 let change = u32::from_ne_bytes(body[12..16].try_into().unwrap());
+                let exists = target(net, index, &body[16..]).is_some();
+                if h.ty == RTM_NEWLINK && h.flags & NLM_F_CREATE != 0 {
+                    if exists && h.flags & NLM_F_EXCL != 0 {
+                        return Err(EEXIST);
+                    }
+                    if !exists {
+                        let kind = link_kind(&body[16..]).ok_or(EOPNOTSUPP)?;
+                        create = Some((kind, ifname(&body[16..]), fl & IFF_UP != 0));
+                        return Ok(());
+                    }
+                }
                 let ifc = target(net, index, &body[16..]).ok_or(ENODEV)?;
                 // As Linux: flags = change ? (old & ~change) | (new & change) : new;
                 // nothing changes when both are 0.
@@ -251,7 +323,18 @@ fn handle(h: &NlHdr, body: &[u8], pid: u32) -> (Vec<Vec<u8>>, i32) {
                     }
                 }
             }
-            RTM_DELLINK => return Err(EOPNOTSUPP),
+            RTM_DELLINK => {
+                if body.len() < 16 {
+                    return Err(EINVAL);
+                }
+                let index = i32::from_ne_bytes(body[4..8].try_into().unwrap());
+                let ifc = target(net, index, &body[16..]).ok_or(ENODEV)?;
+                // Only links created by kind can go; NICs stay.
+                if ifc.device().and_then(|d| d.link_kind()).is_none() {
+                    return Err(EOPNOTSUPP);
+                }
+                delete = Some(ifc.index);
+            }
             RTM_GETADDR => {
                 for ifc in &net.ifaces {
                     out.extend(addr_msgs(ifc, NLM_F_MULTI, h.seq, pid));
@@ -293,6 +376,21 @@ fn handle(h: &NlHdr, body: &[u8], pid: u32) -> (Vec<Vec<u8>>, i32) {
     let r = match (r, set_up) {
         (Some(Ok(())), Some((name, up))) => Some(super::set_link_up(&name, up)),
         (r, _) => r,
+    };
+    let handler = *LINK_HANDLER.lock();
+    let r = match (r, create, delete) {
+        (Some(Ok(())), Some((kind, name, up)), _) => Some(match handler {
+            Some((new, _)) => new(&kind, name.as_deref()).and_then(|()| match name {
+                Some(n) if up => super::set_link_up(&n, true),
+                _ => Ok(()),
+            }),
+            None => Err(EOPNOTSUPP),
+        }),
+        (Some(Ok(())), _, Some(index)) => Some(match handler {
+            Some((_, del)) => del(index),
+            None => Err(EOPNOTSUPP),
+        }),
+        (r, _, _) => r,
     };
     let err = match r {
         Some(Ok(())) => 0,

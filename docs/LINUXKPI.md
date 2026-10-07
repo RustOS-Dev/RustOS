@@ -159,6 +159,20 @@ The scenarios cover DHCP, ping, and 4 MiB over HTTP both ways, plus unplugging
 the adapter mid-session and plugging it back in. `cdc_ncm` is compiled with
 them; QEMU has no NCM device to test it on.
 
+M43: WireGuard through Linux's own driver (`--features linux-wireguard`, in
+release images):
+`drivers/net/wireguard` with the generic C Curve25519, ChaCha20,
+Poly1305, ChaCha20-Poly1305 and BLAKE2s from `lib/crypto` (the `*_ARCH`
+hooks, which Kconfig turns on for x86-64, are overridden in
+`src/linuxkpi/include` because the kernel has no SIMD) and `lib/siphash.c`.
+`ip link add wg0 type wireguard` creates the interface (RTM_NEWLINK with
+IFLA_INFO_KIND, through the driver's `rtnl_link_ops`), and `wg` (the
+`wireguard-tools` port) configures it over generic netlink. Tunnels are
+RustOS interfaces of bare IP packets (smoltcp `Medium::Ip`), and their
+UDP sockets are RustOS UDP sockets (`c/udptunnel.c`, `src/linuxkpi/udp.rs`).
+The `wireguard` scenario makes two tunnels peers of each other over
+127.0.0.1 and pings through them.
+
 ## Building
 
 ```sh
@@ -198,7 +212,8 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
 - `linux-i2c` adds `i2c`, `linux-phy` adds `phy` (phylib, MDIO, phylink), and `linux-eth` adds `eth` (igb, e1000e, igc, alx, tg3, atlantic, r8169) with both;
 - `linux-serial` adds `tty` and `usbserial` (usb-serial, ftdi_sio, cp210x, ch341, pl2303, option, cdc-acm);
 - `linux-mmc` adds `mmc` (MMC core, SDHCI hosts, the block bridge);
-- `linux-drivers` is the release set (`linux-mt7921`, `linux-eth`, `linux-usbnet`, `linux-serial`, `linux-mmc`).
+- `linux-wireguard` adds `crypto`, `netlink` and `wireguard` (the driver, its library crypto, the UDP tunnel glue);
+- `linux-drivers` is the release set (`linux-mt7921`, `linux-eth`, `linux-usbnet`, `linux-serial`, `linux-mmc`, `linux-wireguard`, and the HID, platform, video, sound and DRM features).
 
 ## How the pieces fit
 
@@ -284,6 +299,9 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
   - Dumps run to completion when requested.
   - Generic netlink, `lib/nlattr.c` and nl80211 are Linux's own.
 - **Namespaces.** A single `init_net`. `pernet_operations` run once, at registration.
+- **Link kinds.** `rtnl_link_register()` tells RustOS's rtnetlink (`src/net/rtnetlink.rs`) about the kind. RTM_NEWLINK with `NLM_F_CREATE` and IFLA_LINKINFO/IFLA_INFO_KIND calls `kpi_rtnl_newlink()`, which allocates the device with the kind's `setup` and calls its `newlink` (as `rtnl_newlink_create()` does, without device-specific attributes). The link starts down. RTM_DELLINK removes links created this way. RTM_GETLINK reports the kind in IFLA_LINKINFO, which `wg` uses to list its interfaces.
+- **Tunnels.** Devices of type `ARPHRD_NONE` (and other headerless types) become RustOS interfaces for bare IP packets: smoltcp's `Medium::Ip`, with no ARP, DHCP, SLAAC or packet-socket taps. Transmitted skbs start at the IP header, and received ones are handed over from `skb->data`.
+- **UDP tunnel sockets.** `udp_sock_create4()` opens a RustOS UDP socket served by a kernel thread (`kpi-udp/PORT`, `src/linuxkpi/udp.rs`). Each datagram becomes an skb with IPv4 and UDP headers in front, given to `encap_rcv()` with bottom halves off. `udp_tunnel_xmit_skb()` queues the payload, and RustOS routes it and chooses the source address. `ip_route_output_flow()` returns one shared route, `inet_confirm_addr()` confirms no source address, and the dst cache caches nothing, so a tunnel never pins a source address. There is no ICMP error for an unreachable inner destination.
 - **Crypto.** `c/crypto.c` implements `ccm(aes)`, `gcm(aes)`, `cmac(aes)` and `ctr(aes)` on `lib/crypto` (AES, AES-GCM, ARC4), behind the AEAD, shash and skcipher APIs mac80211 uses.
 - **Locks shared with Linux.** Rust state that Linux code reaches with preemption off must use `sync::IrqMutex`, as the netlink and packet sockets do.
 

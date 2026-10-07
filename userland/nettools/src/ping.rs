@@ -6,7 +6,7 @@ use rustos_rt::prelude::*;
 use rustos_rt::{signal, time};
 
 fn usage() -> i32 {
-    eprintln!("usage: ping [-c COUNT] [-i INTERVAL] [-W TIMEOUT] [-s SIZE] [-q] HOST");
+    eprintln!("usage: ping [-c COUNT] [-i INTERVAL] [-W TIMEOUT] [-s SIZE] [-I ADDR] [-q] HOST");
     2
 }
 
@@ -17,6 +17,7 @@ pub fn ping(args: &[String]) -> i32 {
     let mut size = 56usize;
     let mut quiet = false;
     let mut host = None;
+    let mut source = None;
     let mut i = 1;
     while i < args.len() {
         let a = args[i].as_str();
@@ -39,6 +40,11 @@ pub fn ping(args: &[String]) -> i32 {
             }
             "-s" => size = val().and_then(|v| v.parse().ok()).unwrap_or(56).min(8192),
             "-q" => quiet = true,
+            // Send from this local address (and its interface).
+            "-I" => match val().and_then(|v| net::Ipv4::parse(&v)) {
+                Some(a) => source = Some(a),
+                None => return usage(),
+            },
             h if !h.starts_with('-') => host = Some(h.to_string()),
             _ => return usage(),
         }
@@ -53,6 +59,11 @@ pub fn ping(args: &[String]) -> i32 {
         Ok(s) => s,
         Err(e) => return err("ping", "socket", e),
     };
+    if let Some(src) = source
+        && let Err(e) = sock.bind(SocketAddr { ip: src, port: 0 })
+    {
+        return err("ping", "bind", e);
+    }
     let _ = sock.set_timeout(wait_ms.max(1));
     println!(
         "PING {} ({}) {}({}) bytes of data.",

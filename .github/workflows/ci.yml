@@ -195,6 +195,12 @@ jobs:
           cargo build --features linux-eth
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
           RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
+      - name: Linux WireGuard (wireguard; two tunnels peered over 127.0.0.1, configured by wg)
+        run: |
+          tools/install-port.sh --initramfs wireguard-tools
+          cargo build --features linux-wireguard
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/wireguard.txt
+          RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/wireguard.txt
       - name: Linux USB serial (usb-serial + ftdi_sio) on RustOS terminals
         run: |
           cargo build --features linux-serial

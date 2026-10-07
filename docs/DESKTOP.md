@@ -38,7 +38,7 @@ system services (svc): seatd, dbus, upower, rustos-nmd; tor when the Privacy pan
 | Audio | PipeWire, WirePlumber (M42) |
 | Battery, power | UPower, the login1 subset (M42) |
 | Accounts, login, lock | `/etc/passwd`, `/storage/etc/shadow` (SHA-512 crypt) through `edex-auth` |
-| WireGuard | `wg` (port) and the kernel driver (LinuxKPI `wireguard` group, after M28) |
+| WireGuard | `wg` (port) and the kernel driver (LinuxKPI `wireguard` group, `--features linux-wireguard`; `ip link add wg0 type wireguard`) |
 
 ## Building it into the image
 

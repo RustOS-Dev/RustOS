@@ -34,10 +34,17 @@ kmem_buckets kmalloc_caches[NR_KMALLOC_TYPES];
 #define KPI_TAG_PAGES		0x4b50000000000000UL	/* "KP": order in low bits */
 #define KPI_TAG_SLAB		0x4b53000000000000UL	/* "KS": class in low bits */
 
+atomic_long_t _totalram_pages;
+/* ZERO_PAGE(): page_address() of it gives this address back. */
+unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)] __page_aligned_bss;
+
 int kpi_mm_init(void)
 {
+	u64 free;
+
 	page_offset_base = rustos_kpi_page_offset();
 	max_pfn = rustos_kpi_max_pfn();
+	atomic_long_set(&_totalram_pages, rustos_kpi_mem_pages(&free));
 	return rustos_kpi_map_zeroed(KPI_VMEMMAP_BASE,
 				     PAGE_ALIGN(max_pfn * sizeof(struct page))) ? -ENOMEM : 0;
 }

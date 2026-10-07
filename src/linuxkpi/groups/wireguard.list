@@ -1,0 +1,34 @@
+# WireGuard (M43): Linux's driver with the library crypto it is built on
+# (generic C: the arch hooks are overridden in src/linuxkpi/include) and
+# LinuxKPI glue for what it needs from Linux's IPv4 stack: in-kernel UDP
+# tunnel sockets on RustOS's UDP, routes, the dst cache, and creating
+# links of a kind from rtnetlink (`ip link add wg0 type wireguard`).
+# Library code (built-in in Linux): ChaCha20, Poly1305, BLAKE2s,
+# Curve25519, ChaCha20-Poly1305 and SipHash.
+lib/crypto/chacha-block-generic.c
+lib/crypto/chacha.c
+lib/crypto/poly1305.c
+lib/crypto/poly1305-donna64.c
+lib/crypto/chacha20poly1305.c
+lib/crypto/blake2s.c
+lib/crypto/curve25519-hacl64.c
+lib/crypto/curve25519.c
+lib/siphash.c
+kpi:udptunnel.c
+# The driver, in its Makefile's order.
+module: wireguard
+cflags: -Dpr_fmt(fmt)=KBUILD_MODNAME"\x3a\x20"fmt
+drivers/net/wireguard/main.c
+drivers/net/wireguard/noise.c
+drivers/net/wireguard/device.c
+drivers/net/wireguard/peer.c
+drivers/net/wireguard/timers.c
+drivers/net/wireguard/queueing.c
+drivers/net/wireguard/send.c
+drivers/net/wireguard/receive.c
+drivers/net/wireguard/socket.c
+drivers/net/wireguard/peerlookup.c
+drivers/net/wireguard/allowedips.c
+drivers/net/wireguard/ratelimiter.c
+drivers/net/wireguard/cookie.c
+drivers/net/wireguard/netlink.c

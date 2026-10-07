@@ -36,6 +36,7 @@ const FEATURES: &[(&str, &[&str])] = &[
     ("LINUX_PHY", &["phy"]),
     ("LINUX_ETH", &["eth"]),
     ("LINUX_MT7921", &["mt7921", "mt7921u"]),
+    ("LINUX_WIREGUARD", &["crypto", "netlink", "wireguard"]),
 ];
 
 pub fn build(root: &Path, out: &Path) {

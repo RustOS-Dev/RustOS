@@ -397,6 +397,10 @@ struct workqueue_struct {
 static DEFINE_RAW_SPINLOCK(kpi_wq_lock);
 static struct work_struct *kpi_running_work[KPI_MAX_RUNNING];
 
+/* Every workqueue, for kpi_wq_dump(). */
+#define KPI_MAX_WQS 128
+static struct workqueue_struct *kpi_wqs[KPI_MAX_WQS];
+
 struct workqueue_struct *system_wq, *system_percpu_wq, *system_highpri_wq, *system_long_wq,
 	*system_unbound_wq, *system_dfl_wq, *system_freezable_wq, *system_power_efficient_wq,
 	*system_freezable_power_efficient_wq, *system_bh_wq, *system_bh_highpri_wq;
@@ -461,9 +465,38 @@ struct workqueue_struct *alloc_workqueue_noprof(const char *fmt, unsigned int fl
 	init_waitqueue_head(&wq->more);
 	init_waitqueue_head(&wq->idle);
 	wq->nr_workers = (flags & __WQ_ORDERED) || max_active == 1 ? 1 : KPI_WQ_MAX_WORKERS;
+	for (int i = 0; i < KPI_MAX_WQS; i++) {
+		if (!cmpxchg(&kpi_wqs[i], NULL, wq))
+			break;
+	}
 	for (int i = 0; i < wq->nr_workers; i++)
 		rustos_kpi_spawn(kpi_worker, wq, wq->name);
 	return wq;
+}
+
+/* sysrq state dump: workqueues with queued or running work. Lock-free
+ * reads: the dump must not wait on a lock a stuck thread holds. */
+void kpi_wq_dump(void);
+void kpi_wq_dump(void)
+{
+	for (int i = 0; i < KPI_MAX_WQS; i++) {
+		struct workqueue_struct *wq = READ_ONCE(kpi_wqs[i]);
+		int queued = 0;
+		struct list_head *p;
+
+		if (!wq)
+			continue;
+		if (raw_spin_trylock(&kpi_wq_lock)) {
+			list_for_each(p, &wq->pending)
+				queued++;
+			raw_spin_unlock(&kpi_wq_lock);
+		} else {
+			queued = -1;
+		}
+		if (queued || READ_ONCE(wq->running))
+			pr_info("[sysrq] workqueue %s: %d queued, %d running\n", wq->name, queued,
+				READ_ONCE(wq->running));
+	}
 }
 
 void destroy_workqueue(struct workqueue_struct *wq)

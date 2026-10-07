@@ -1113,6 +1113,10 @@ pub fn debug_dump() {
         })
         .collect();
     dprint!("[sysrq] wait channels (image offsets) {:?}", chans);
+    #[cfg(feature = "linuxkpi")]
+    if crate::linuxkpi::ready() {
+        crate::linuxkpi::sched::dump_state();
+    }
 }
 
 /// Start the thread that moves keyboard and serial input into the TTY.

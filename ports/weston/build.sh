@@ -1,13 +1,24 @@
 #!/bin/sh
-# Weston (Wayland compositor) with the DRM backend and the pixman (software)
-# renderer, and the libraries under it, built as shared libraries against
-# musl. Installs to /usr/local: weston, weston-terminal and the demo
-# clients, libinput/libseat/libwayland/..., XKB data, a fontconfig setup
-# for the fonts in /usr/share/fonts, and modetest (libdrm).
+# The desktop graphics stack, built as shared libraries against musl:
+# Weston (Wayland compositor) with the DRM backend and both the pixman
+# (software) and GL renderers, Mesa (EGL, GBM, OpenGL ES/GL and Vulkan
+# drivers) and the libraries under them. Installs to /usr/local: weston,
+# weston-terminal, libinput/libseat/libwayland/..., Mesa's libraries and
+# drivers, XKB data, a fontconfig setup for the fonts in /usr/share/fonts,
+# and modetest (libdrm).
+#
+# Mesa's drivers: softpipe (software GL, also on any KMS display through
+# kms_swrast), virgl (QEMU virtio-gpu 3D), zink (GL on Vulkan), iris
+# (Intel GL), radeonsi (AMD GL, without LLVM), RADV (AMD Vulkan, ACO) and
+# ANV (Intel Vulkan). Not built: llvmpipe and lavapipe (need LLVM ported
+# to RustOS), NVK (needs Rust cross-compiled for RustOS).
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 #
-# Needs on the build host: meson, ninja, pkg-config, gperf, bison, python3, hwdata,
-# and expat/libffi development files (for a native wayland-scanner).
+# Needs on the build host: meson, ninja, pkg-config, gperf, bison, flex,
+# python3 with mako, pyyaml and ply, hwdata, glslang-tools, expat/libffi
+# development files (for a native wayland-scanner), and LLVM 18 with
+# clang, libclc and SPIRV-LLVM-Translator development files (Mesa's
+# OpenCL-C kernel compiler, mesa_clc, runs on the host).
 set -e
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$ROOT/tools/port-lib.sh"
@@ -106,6 +117,10 @@ fetch_git https://git.sr.ht/~kennylevinsen/seatd 0.9.1 \
     566ffeb032af42865dc1210e48cec08368059bb9 "$SRC/seatd-0.9.1"
 fetch https://gitlab.freedesktop.org/emersion/libdisplay-info/-/releases/0.2.0/downloads/libdisplay-info-0.2.0.tar.xz \
     5a2f002a16f42dd3540c8846f80a90b8f4bdcd067a94b9d2087bc2feae974176 "$SRC/libdisplay-info-0.2.0.tar.xz"
+fetch https://archive.mesa3d.org/mesa-26.2.4.tar.xz \
+    bce5f7fbebb934373b86c999a064d52fb5065878dc57f287f95346648ec832e9 "$SRC/mesa-26.2.4.tar.xz"
+fetch_git_commit https://gitlab.freedesktop.org/mesa/kmscube.git \
+    f60e50e887d3c49e91ac9b06d8199b36152632fa "$SRC/kmscube-f60e50e"
 fetch https://gitlab.freedesktop.org/wayland/weston/-/releases/14.0.1/downloads/weston-14.0.1.tar.xz \
     a8150505b126a59df781fe8c30c8e6f87da7013e179039eb844a5bbbcc7c79b3 "$SRC/weston-14.0.1.tar.xz"
 
@@ -152,8 +167,8 @@ built cairo || meson_pkg cairo "$(unpack "$SRC/cairo-1.18.2.tar.xz")" \
     -Dxlib=disabled -Dxcb=disabled -Dtests=disabled -Dglib=disabled -Dspectre=disabled \
     -Dsymbol-lookup=disabled -Dgtk2-utils=disabled -Dpng=enabled \
     -Dfreetype=enabled -Dfontconfig=enabled -Dzlib=enabled -Dquartz=disabled -Ddwrite=disabled
-built libdrm || meson_pkg libdrm "$(unpack "$SRC/libdrm-2.4.124.tar.xz")" \
-    -Dintel=disabled -Dradeon=disabled -Damdgpu=disabled -Dnouveau=disabled \
+built libdrm-gpu || meson_pkg libdrm-gpu "$(unpack "$SRC/libdrm-2.4.124.tar.xz")" \
+    -Dintel=disabled -Dradeon=disabled -Damdgpu=enabled -Dnouveau=enabled \
     -Dvmwgfx=disabled -Dfreedreno=disabled -Dvc4=disabled -Detnaviv=disabled \
     -Dexynos=disabled -Domap=disabled -Dtegra=disabled -Dman-pages=disabled \
     -Dvalgrind=disabled -Dcairo-tests=disabled -Dtests=true -Dinstall-test-programs=true
@@ -180,10 +195,41 @@ if ! built seatd; then
         -Dlibseat-builtin=enabled -Dserver=enabled -Dexamples=disabled -Dman-pages=disabled
 fi
 built libdisplay-info || meson_pkg libdisplay-info "$(unpack "$SRC/libdisplay-info-0.2.0.tar.xz")"
+
+# Mesa's build-time tools for the drivers whose shaders are partly OpenCL C
+# (Intel): mesa_clc and the precompiler, built for the host.
+if ! built host-mesa-clc; then
+    d=$(unpack "$SRC/mesa-26.2.4.tar.xz")
+    rm -rf "$BUILD/b-host-mesa"
+    "$MESON" setup "$BUILD/b-host-mesa" "$d" --prefix="$HOST" --buildtype=release \
+        -Dgallium-drivers= -Dvulkan-drivers= -Dplatforms= -Dglx=disabled -Degl=disabled \
+        -Dgbm=disabled -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
+        -Dllvm=enabled -Dshared-llvm=enabled -Dmesa-clc=enabled -Dinstall-mesa-clc=true \
+        -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dbuild-tests=false \
+        -Dvalgrind=disabled -Dlibunwind=disabled -Dzstd=disabled -Dxmlconfig=disabled \
+        >"$BUILD/host-mesa-clc.log" 2>&1 || { tail -30 "$BUILD/host-mesa-clc.log" >&2; exit 1; }
+    ninja -C "$BUILD/b-host-mesa" install >>"$BUILD/host-mesa-clc.log" 2>&1 ||
+        { tail -40 "$BUILD/host-mesa-clc.log" >&2; exit 1; }
+    mark host-mesa-clc
+fi
+built mesa || meson_pkg mesa "$(unpack "$SRC/mesa-26.2.4.tar.xz")" \
+    -Dplatforms=wayland -Degl=enabled -Dgbm=enabled -Dglx=disabled -Dopengl=true \
+    -Dgles1=disabled -Dgles2=enabled -Dglvnd=disabled \
+    -Dgallium-drivers=softpipe,virgl,zink,iris,radeonsi \
+    -Dvulkan-drivers=amd,intel -Dllvm=disabled -Damd-use-llvm=false \
+    -Dmesa-clc=system -Dprecomp-compiler=system -Dintel-rt=disabled \
+    -Dvideo-codecs= -Dgallium-va=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
+    -Dlmsensors=disabled -Dzstd=disabled -Dxmlconfig=enabled -Dbuild-tests=false \
+    -Dandroid-libbacktrace=disabled
+if ! built kmscube; then
+    rm -rf "$BUILD/src/kmscube"
+    cp -r "$SRC/kmscube-f60e50e" "$BUILD/src/kmscube"
+    meson_pkg kmscube "$BUILD/src/kmscube" -Dgstreamer=disabled
+fi
 built weston || meson_pkg weston "$(unpack "$SRC/weston-14.0.1.tar.xz")" \
     -Dbackend-drm=true -Dbackend-headless=true -Dbackend-wayland=false -Dbackend-x11=false \
     -Dbackend-rdp=false -Dbackend-vnc=false -Dbackend-pipewire=false \
-    -Dbackend-drm-screencast-vaapi=false -Drenderer-gl=false -Dxwayland=false \
+    -Dbackend-drm-screencast-vaapi=false -Drenderer-gl=true -Dxwayland=false \
     -Dsystemd=false -Dremoting=false -Dpipewire=false -Dimage-jpeg=false -Dimage-webp=false \
     -Dcolor-management-lcms=false -Dshell-ivi=false -Dshell-kiosk=true -Dshell-desktop=true \
     -Ddemo-clients=false -Dsimple-clients=shm -Dtools=terminal,info -Dtest-junit-xml=false \

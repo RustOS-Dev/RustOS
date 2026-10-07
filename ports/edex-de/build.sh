@@ -3,16 +3,26 @@
 #   bin/edex-comp, edex-de, edex-greeter, edex-auth
 #   share/edex-de/themes, share/applications, libexec/edex-de (Tor helpers)
 #   etc/edex-greeter/greeter.toml
-# Dynamically linked against musl and the desktop libraries of M37-M41
-# (wayland, libxkbcommon, libinput, seatd, libudev-zero, libdrm, Mesa's
-# GBM/EGL, dbus), which tools/cross/pkg-config finds in the sysroot, and
-# the libunwind port's libgcc_s.so.1 (install that port first).
-# Needs Rust with the x86_64-unknown-linux-musl target.
+# Installed under /usr/local (tools/install-port.sh --initramfs edex-de).
+#
+# Built for x86_64-unknown-linux-musl, dynamically linked against musl and
+# the Wayland stack of the weston port's stage (wayland, libxkbcommon,
+# libinput, libseat, libudev-zero, pixman), found through
+# tools/cross/rustos-pkg-config, and the libunwind port's libgcc_s.so.1.
+# Install those two ports first. Needs Rust with the
+# x86_64-unknown-linux-musl target.
+#
+# Until Mesa arrives (M41) there is no GBM/EGL: edex-comp is built without
+# its `gpu` feature and renders with pixman into DRM dumb buffers. edex-de
+# and edex-greeter use wgpu, which loads Vulkan or EGL at run time; they
+# build and install, and draw once Mesa is there.
 #
 # EDEX_SRC=/path/to/eDEX-DE-RS builds that checkout instead of the pinned
-# commit.
+# commit. RUSTOS_WESTON_STAGE overrides the weston stage's location.
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 set -e
+# The pin must include edex-comp's `gpu` feature (eDEX-DE a92e98a or later):
+# older commits link libgbm unconditionally.
 COMMIT=3980d323c0976e40f11c6fbc8fdfb970de5944d8
 SHA256=4fd3b26c13cc1c781c67f5524de1245a2b51443f71d47a93cc61522a8f9da545
 TARGET=x86_64-unknown-linux-musl
@@ -20,6 +30,19 @@ BINS="edex-comp edex-de edex-greeter edex-auth"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$ROOT/tools/port-lib.sh"
 SRC="$1"; BUILD="$2"; DEST="$3"
+
+STAGE="${RUSTOS_WESTON_STAGE:-$ROOT/target/ports/build/weston/stage}"
+if [ ! -d "$STAGE/usr/local/lib/pkgconfig" ]; then
+    echo "edex-de: no weston stage in $STAGE: build the weston port first (tools/install-port.sh --initramfs weston)" >&2
+    exit 1
+fi
+STAGE="$(cd "$STAGE" && pwd)"
+UNWIND="$ROOT/target/ports/libunwind/lib"
+if [ ! -f "$UNWIND/libgcc_s.so.1" ]; then
+    echo "edex-de: build the libunwind port first (tools/install-port.sh --initramfs libunwind)" >&2
+    exit 1
+fi
+
 if [ -n "$EDEX_SRC" ]; then
     TREE="$(cd "$EDEX_SRC" && pwd)"
 else
@@ -29,31 +52,43 @@ else
     tar -xzf "$SRC/edex-de-$COMMIT.tar.gz" -C "$BUILD"
     TREE="$BUILD/eDEX-DE-RS-$COMMIT"
 fi
-if [ -z "$EDEX_PKG_CONFIG" ] && [ ! -x "$ROOT/tools/cross/pkg-config" ]; then
-    echo "edex-de: tools/cross/pkg-config is missing (the desktop libraries arrive with M37)" >&2
-    exit 1
-fi
-UNWIND="$ROOT/target/ports/libunwind/lib"
-if [ ! -f "$UNWIND/libgcc_s.so.1" ]; then
-    echo "edex-de: build the libunwind port first (tools/install-port.sh libunwind)" >&2
-    exit 1
-fi
+
 "$ROOT/tools/build-musl.sh"
 CC="$ROOT/tools/rustos-cc"
-export PKG_CONFIG="${EDEX_PKG_CONFIG:-$ROOT/tools/cross/pkg-config}" PKG_CONFIG_ALLOW_CROSS=1
+LIB="$STAGE/usr/local/lib"
+export PKG_CONFIG="$ROOT/tools/cross/rustos-pkg-config" RUSTOS_STAGE="$STAGE"
+export PKG_CONFIG_ALLOW_CROSS=1
 export CC_x86_64_unknown_linux_musl="$CC"
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="$CC"
-# Dynamic (the libraries above are shared), baseline x86-64, musl's start
-# files from the sysroot (through rustos-cc) rather than Rust's, and
+# Dynamic (the libraries above are shared), baseline x86-64 (the kernel
+# saves FPU state with FXSAVE), musl's start files from the sysroot
+# (through rustos-cc) rather than Rust's, the stage's libraries, and
 # libgcc_s (the unwinder Rust's std needs when dynamically linked).
-export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=-crt-static -C target-cpu=x86-64 -C link-self-contained=no -L $UNWIND"
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=-crt-static -C target-cpu=x86-64 -C link-self-contained=no -L $LIB -C link-arg=-Wl,-rpath-link,$LIB -L $UNWIND"
 export CARGO_TARGET_DIR="$BUILD/target"
 cd "$TREE"
+WANT="${EDEX_BINS:-$BINS}"
+# edex-comp without `gpu`: pixman on dumb buffers, no libgbm/libEGL.
+case " $WANT " in
+*" edex-comp "*)
+    cargo build --release --locked --target $TARGET -p edex-comp --no-default-features ;;
+esac
 PKGS=""
-for b in ${EDEX_BINS:-$BINS}; do PKGS="$PKGS -p $b"; done
-cargo build --release --locked --target $TARGET $PKGS
+for b in $WANT; do [ "$b" = edex-comp ] || PKGS="$PKGS -p $b"; done
+[ -z "$PKGS" ] || cargo build --release --locked --target $TARGET $PKGS
+
 OUT="$BUILD/target/$TARGET/release"
-for b in ${EDEX_BINS:-$BINS}; do
+for b in $WANT; do
+    # Every library a binary needs must come from the stage, musl or libunwind.
+    for lib in $(readelf -d "$OUT/$b" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+        case "$lib" in
+        libc.so|libgcc_s.so.1) ;;
+        *) if [ ! -e "$LIB/$lib" ]; then
+               echo "edex-de: $b needs $lib, which the weston stage does not have" >&2
+               exit 1
+           fi ;;
+        esac
+    done
     strip "$OUT/$b"
     install -D -m 755 "$OUT/$b" "$DEST/bin/$b"
 done

@@ -1,0 +1,71 @@
+# eDEX-DE's compositor (M43 on M37): edex-comp, built without its `gpu`
+# feature, renders with pixman into DRM dumb buffers on Linux bochs DRM
+# (kernel built with --features linux-drivers; tools/install-port.sh
+# --initramfs weston libunwind edex-de). libseat's embedded seat takes the
+# VT and DRM master, libinput finds the PS/2 keyboard and mouse through
+# libudev-zero. `--run weston-terminal` starts only that client (no shell:
+# edex-de needs Mesa, M41), which edex-comp tiles over the whole output in
+# the theme's background. Keys typed with QEMU's sendkey go evdev ->
+# libinput -> edex-comp -> weston-terminal -> pty -> shell, which writes a
+# file the serial shell then reads; `edex-comp state` lists the output and
+# the window, `edex-comp screenshot` renders the output offscreen (pixman),
+# and `edex-comp msg` makes the compositor exit.
+hostrun rm -rf /tmp/rustos-desktop-edex && mkdir -p /tmp/rustos-desktop-edex
+wait # $ 300
+send mkdir -p /tmp/xdg; chmod 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin
+wait # $
+send edex-comp run --run weston-terminal > /tmp/edex.log 2>&1 &
+sleep 45
+# (The bracket keeps the echoed command line from matching the waits.)
+send grep -a -e "output Virtual-1 enabled 1280x80[0] .pixman." -e "rendering with pixma[n]" /tmp/edex.log
+wait output Virtual-1 enabled 1280x800 \(pixman\)
+wait rendering with pixman
+wait # $
+sleep 30
+send edex-comp state
+wait output Virtual-1 1280x800
+wait window 1 \[org.freedesktop.weston.wayland-terminal\] Tiled ws 1 focused
+wait # $
+monitor screendump /tmp/rustos-desktop-edex/edex.ppm
+# The theme background (Tron, #0a0e1a) in the 8-pixel outer gap, the focus
+# border (the theme's accent) around the window geometry, and weston-terminal
+# (its white title bar, black inside) tiled over the rest of the output.
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-desktop-edex/edex.ppm size=1280x800 640,3=10,14,26~12 3,400=10,14,26~12 1279,799=10,14,26~12 6,400=0,224,119~40 640,6=0,224,119~40 300,20=255,255,255~30 16,40=0,0,0~8 1262,775=0,0,0~8 'count:0,0,0>=800000'
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey e
+monitor sendkey d
+monitor sendkey e
+monitor sendkey x
+monitor sendkey minus
+monitor sendkey t
+monitor sendkey y
+monitor sendkey p
+monitor sendkey e
+monitor sendkey d
+monitor sendkey spc
+monitor sendkey shift-dot
+monitor sendkey spc
+monitor sendkey slash
+monitor sendkey t
+monitor sendkey m
+monitor sendkey p
+monitor sendkey slash
+monitor sendkey k
+monitor sendkey ret
+sleep 10
+send cat /tmp/k
+wait edex-typed
+wait # $
+send edex-comp screenshot /tmp/edex-shot.png; echo shot-$?
+wait shot-0
+wait # $
+send edex-comp msg '{"cmd":"exit"}'
+wait # $
+sleep 10
+send true
+wait \[1\]\+ +Done +edex-comp run
+wait # $

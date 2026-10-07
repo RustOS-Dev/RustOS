@@ -137,7 +137,7 @@ tools/install-port.sh --initramfs wireguard-tools
 | `tor` | Tor 0.4.8.17 with OpenSSL 3.0.16, libevent 2.1.12 and zlib 1.3.1, static; GeoIP files in `/usr/local/share/tor` |
 | `tor-pt` | lyrebird 0.6.1 (obfs4) and snowflake-client 2.11.0, static Go builds (needs the host's Go), and Snowflake's default bridge lines |
 | `wireguard-tools` | `wg` 1.0.20250521, static (keys and interface configuration; `wg-quick` needs bash and iproute2) |
-| `edex-de` | eDEX-DE at a pinned commit (`EDEX_SRC=DIR` for a checkout): `edex-comp`, `edex-de`, `edex-greeter`, `edex-auth`, themes, Tor helpers, greeter config; built with Rust for `x86_64-unknown-linux-musl` against the weston port's stage |
+| `edex-de` | eDEX-DE at a pinned commit (`EDEX_SRC=DIR` for a checkout): `edex-comp`, `edex-de`, `edex-greeter`, `edex-auth`, themes, Tor helpers, greeter config; built with Rust for `x86_64-unknown-linux-musl` against the weston port's stage and the `libunwind` port; `edex-comp` without its `gpu` feature (pixman on DRM dumb buffers until Mesa, M41) |
 
 A new port needs a `ports/NAME/build.sh` that takes `SRC_DIR BUILD_DIR
 DEST_DIR`, uses `fetch URL SHA256 FILE` from `tools/port-lib.sh`, builds

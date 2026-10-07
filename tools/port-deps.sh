@@ -29,7 +29,7 @@ dep_openssl() {
 dep_libnl() {
     prefix="$DEPS_ROOT/libnl-$LIBNL"
     if [ ! -f "$prefix/.done" ]; then
-        fetch https://github.com/thom311/libnl/releases/download/libnl3_${LIBNL%%.*}_$(echo "$LIBNL" | cut -d. -f2)_$(echo "$LIBNL" | cut -d. -f3)/libnl-$LIBNL.tar.gz \
+        fetch https://github.com/thom311/libnl/releases/download/libnl${LIBNL%%.*}_$(echo "$LIBNL" | cut -d. -f2)_$(echo "$LIBNL" | cut -d. -f3)/libnl-$LIBNL.tar.gz \
             2a56e1edefa3e68a7c00879496736fdbf62fc94ed3232c0baba127ecfa76874d "$1/libnl-$LIBNL.tar.gz"
         b="$DEPS_ROOT/build/libnl-$LIBNL"
         rm -rf "$b" "$prefix"

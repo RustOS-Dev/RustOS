@@ -86,6 +86,16 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * IPv6: no privacy (temporary) addresses, no DHCPv6 prefix delegation,
   no multicast group management (MLD) beyond what SLAAC needs.
 * No IP forwarding, NAT, firewall, VLANs, bridges or `AF_PACKET` sockets.
+* WireGuard (`linux-wireguard`): IPv4 only (the kernel's Linux side has no
+  IPv6). RustOS picks a tunnel's outer source address and route for each
+  packet: `fwmark`, sticky source addresses and policy routing do not
+  apply, and no ICMP error is sent for an inner destination without a
+  peer. `wg-quick` is not ported (it needs bash and iproute2): configure
+  tunnels with `ip link add NAME type wireguard`, `wg set` and `ip addr`.
+  There is one network namespace, and RustOS routes by destination: traffic
+  between two tunnels on the same machine must name its source (`ping -I`,
+  a bound socket), or it may be routed to the interface that owns the
+  destination address instead of through the tunnel.
 * TLS: client only (TLS 1.2 and 1.3, ECDHE with AES-GCM or
   ChaCha20-Poly1305); no session resumption, client certificates, OCSP or
   revocation checks. HTTPS needs a CA bundle (shipped from the build host)

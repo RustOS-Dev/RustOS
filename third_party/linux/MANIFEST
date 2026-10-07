@@ -4080,6 +4080,36 @@ drivers/net/usb/ipheth.c	GPL-2.0-only (untagged, per Linux COPYING)	9b334be341b1
 drivers/net/usb/r8152.c	GPL-2.0-only	1c29e8a2c21f272c12f7f703b328a8d5818f349c9e1bf2f30d14657c7a0069bb
 drivers/net/usb/rndis_host.c	GPL-2.0-or-later	1612f1b0f6edf406b5b719429cea0da8b31f023397a1c721194b00f53de746e7
 drivers/net/usb/usbnet.c	GPL-2.0-or-later	ed01f2f6f286844decdf974a2e1ca81f87e8fdc753d64b84d44295e0d36c7220
+drivers/net/wireguard/allowedips.c	GPL-2.0	3d2e35390961fb2679be83e11d7fe8a8d7a9cdcf005a2d83e67c80909a1c3942
+drivers/net/wireguard/allowedips.h	GPL-2.0	f0c6b04fecdec4c044184fe487f4ea4e4895a5b36ccf3726465a34d0d94b9dfe
+drivers/net/wireguard/cookie.c	GPL-2.0	4bd6543d73ad6246170f8ab935bd3d1e7d3ebd9dac71243104287484393ff543
+drivers/net/wireguard/cookie.h	GPL-2.0	592744de6e0a3ac2a0b37915024300e063bcfdc9628e163cdc39e95512c00173
+drivers/net/wireguard/device.c	GPL-2.0	b31a61ad10143e7edd95e03cf925b978717c3fdae77c3ea7292b0559f438e61b
+drivers/net/wireguard/device.h	GPL-2.0	c161c36776cd718ea7f9ff23db7648c836665769f0ba5b3ea8b9bf6aacd4e280
+drivers/net/wireguard/main.c	GPL-2.0	d0fec47bb470bd465d2f116f2593fb40f7eb7380444c865b6be1b0b17243dab5
+drivers/net/wireguard/messages.h	GPL-2.0	4dd6d05cca2d03205b872dd82117d72b6e11155cf70682a3c72426a51640a91f
+drivers/net/wireguard/netlink.c	GPL-2.0	9820ed788f16c2f900571d378d184cd2e284cdd95c37ff2445acf2050ab7856e
+drivers/net/wireguard/netlink.h	GPL-2.0	43c3f202bc7f6726b01fad580525b3104c1e83556705b432ed661969ab7ecb4c
+drivers/net/wireguard/noise.c	GPL-2.0	6e5b39ee4e4c1be4c04bf614180b5cc5485306c2623ea8fe5adc391dd3fe28b2
+drivers/net/wireguard/noise.h	GPL-2.0	5f3016fd6a3ee2863a32acab5aa26068145f22563ec0f53dadd1a5a87de1710a
+drivers/net/wireguard/peer.c	GPL-2.0	b6c8cec56849d644c105a86e5d35ac6ba9c9d24984541670daa34c704ff70432
+drivers/net/wireguard/peer.h	GPL-2.0	27bdbf7cda4116dda09f065655f6763bcb56036526f9d227a82d369d2951047f
+drivers/net/wireguard/peerlookup.c	GPL-2.0	485c2160c81c940395241debab01d31f65396578d8202f87c1664c9bfe73cf59
+drivers/net/wireguard/peerlookup.h	GPL-2.0	b66762a9e5f0a5569d55670039686cfe931d12d447959b43e43187d00ace9b44
+drivers/net/wireguard/queueing.c	GPL-2.0	91f96b12aed183fc62b2b448ce91b75a304456d5c1b75a5cfa0e08da01883cff
+drivers/net/wireguard/queueing.h	GPL-2.0	04e7b4f569b008c5c1a59374bbe005450d21ceda959323a46498de0c21fd9e6b
+drivers/net/wireguard/ratelimiter.c	GPL-2.0	8d04c0e1a06853eaf1fe21c7b8c87e3faf936ee3ac0a52b401dfbd84626b2569
+drivers/net/wireguard/ratelimiter.h	GPL-2.0	8117fd61d9395ae0d53d88dcc0d71d60ef7eb4d46de72c5db64b2b76af820a35
+drivers/net/wireguard/receive.c	GPL-2.0	f9d5ef648552eba08fc17020922ca11141d5ba8aab0b0fcef0f1672113ca1f88
+drivers/net/wireguard/selftest/allowedips.c	GPL-2.0	56d74d5a10aca5cadf1bbcee34088f9ff8347d10b8aa8f836033e87db15b6d34
+drivers/net/wireguard/selftest/counter.c	GPL-2.0	2c6922b035665c26a6b351e6a03692d70ded8c65077a05fe86db633071b393f0
+drivers/net/wireguard/selftest/ratelimiter.c	GPL-2.0	735318c87940bbcb7198e92ce59aea0f08e1fea05981150988e13ffb49706c7b
+drivers/net/wireguard/send.c	GPL-2.0	c8acf0badf496f52b036d95c98a6ae53d79ffef35a71511a18dbe121f2f2bfc7
+drivers/net/wireguard/socket.c	GPL-2.0	2613d46210e7c7b9847d44d2503406b0741bcf1bf4bc9903bf6b1d46eeb25fba
+drivers/net/wireguard/socket.h	GPL-2.0	62add5d3bdc42bba0bae9d470e76868bb7beb7621cd9cbfe14200d53584195b4
+drivers/net/wireguard/timers.c	GPL-2.0	366766d46e5b3e7b87bffeb30a6e9c731e852b4348418612b31dc303f817638a
+drivers/net/wireguard/timers.h	GPL-2.0	9a6f8be630cccd86a2a8eef4c58e83fb6884db992ba0f88901f7a5aae44c2d6f
+drivers/net/wireguard/version.h	GPL-2.0-only (untagged, per Linux COPYING)	f888cf2c2fe10db2799b21342b4745f68992cd1c57b3e454091aea6be2543aa4
 drivers/net/wireless/mediatek/mt76/agg-rx.c	ISC	70266b883150f67cfd04436983b83be34cc7863c6ed252d893c3ed2f38865ad0
 drivers/net/wireless/mediatek/mt76/channel.c	ISC	994b4184f05f40f1a5b27f012416fc9769c11959ab515de934cc6f797c2c00a9
 drivers/net/wireless/mediatek/mt76/debugfs.c	ISC	26230b42b03cec516ff48520a56d1ca0517b83a2c7e45a1cb2054051fdfd2f8b
@@ -4258,6 +4288,10 @@ include/crypto/aes.h	GPL-2.0	fd078e770383f64ffa20b4e8f95b69b8f55211ae79e42947e9d
 include/crypto/algapi.h	GPL-2.0-or-later	17b3463b979d89124fef35067d04dc8368fcf29442208650b26e0f0c3e7dfffe
 include/crypto/arc4.h	GPL-2.0+	e43e7020d67065497c17a6fa4a7973394dbd2124c88ddb184aa01b10cd5e2748
 include/crypto/b128ops.h	GPL-2.0-only (untagged, per Linux COPYING)	d16b3147688daea5ec1ea008b622c4bb9fe7afe19f990f5f303c1812995adee9
+include/crypto/blake2s.h	GPL-2.0 OR MIT	30553fa8e5a20b79c5fb926df446e3b24e1301df29b4f6f8b4160f766ea1b500
+include/crypto/chacha.h	GPL-2.0	505f25eaf6a60e8b0afd21c4f178119de92233c513ca7b6ec21d82e869fc199d
+include/crypto/chacha20poly1305.h	GPL-2.0 OR MIT	bee0bcc388e8dce25dad0c53c57e8e423a638f3cc7fe3d1b4fd55ce8db0590b9
+include/crypto/curve25519.h	GPL-2.0 OR MIT	53dbecd643d467c7ecacd69f91a2698378e006cb104e0bf1b69ab70fc00ec20b
 include/crypto/gcm.h	GPL-2.0-only (untagged, per Linux COPYING)	90e62d1dcfe74d522a421867efad44f4e223121730c69fc0c0e0914512da7d7e
 include/crypto/gf128mul.h	GPL-2.0-only (untagged, per Linux COPYING)	c183ea1640b954a84baca7b7e2795d8172d760ab91609313820adacb472dc97e
 include/crypto/ghash.h	GPL-2.0	5a72b8cabcb6f9b4688f2dfdd390fb485ecfd771a7808e88275895f343ad98ef
@@ -4266,7 +4300,9 @@ include/crypto/hmac.h	GPL-2.0	a443de971df651e434ab3864023c85ab08727f71f5cd7056df
 include/crypto/internal/aead.h	GPL-2.0-or-later	a3ef50741ecec4cb5784a5add22890c7ee010fe534ba31302ed94c28bcc5cf6e
 include/crypto/internal/cipher.h	GPL-2.0-or-later	b57ff547562f11e568dff981e17f4a9f7c49d95f5e8f463213488735268a8d3b
 include/crypto/internal/hash.h	GPL-2.0-or-later	deaf9e08b398943c132be408394d9e6a102f48f08e5cae7741a43062ffed5281
+include/crypto/internal/poly1305.h	GPL-2.0	14672500e38da1847c476f7b47379daa1c103019ec92dda166fca3d6546b450b
 include/crypto/internal/skcipher.h	GPL-2.0-or-later	ec78e38ae6927e792903fd0e8cd378692750427ee5b7905bedd05adf21fc1459
+include/crypto/poly1305.h	GPL-2.0	e4439e7ef2eb9e2900804fc550d51609d599303d3277e766564969f9559e45d7
 include/crypto/scatterwalk.h	GPL-2.0-or-later	158b236983097c94c3499febfd067ff05f8275030597ea40dbf0be2d05e20e77
 include/crypto/sha1.h	GPL-2.0	0499f880e8b9fc18bb6641f4798d7151af6c4a606711f2d24c471b9bfd039a9f
 include/crypto/sha2.h	GPL-2.0	4e641bbd195343894bf8f3ba071078c10d375ebbd5503b28bc78bc42618dbb2d
@@ -4587,6 +4623,7 @@ include/linux/hwspinlock.h	GPL-2.0	7f61c149addf4ac7a17e25169a403ab44e909754d7d1d
 include/linux/i2c-algo-bit.h	GPL-2.0+	a00e2d04ea903270c504fdcc32b5287e6b412d48f11251f51c8d91cdaa18701d
 include/linux/i2c-smbus.h	GPL-2.0-or-later	24fd8b1ee651bedbe3d2dcb84b79c6edbc6ccae2a512e188c9c3c46d0caa63bb
 include/linux/i2c.h	GPL-2.0-or-later	f36f4c56bd2d85d314687efcc03a8451d9a4e1ac53b45834030c645672e91867
+include/linux/icmp.h	GPL-2.0-or-later	3a30dc1f46781f4b31a9944fd6aea22ffd2f87b6360da3850a14b9ece2c18b8b
 include/linux/icmpv6.h	GPL-2.0	044924b4c63d5c64e088921d5db5170a640d0c18a706d234be79bf75878108b9
 include/linux/idr.h	GPL-2.0-only	8f4de38006634e185c936a8844c49c1e2b75d43305783bcb8bc4000298d9b6ef
 include/linux/ieee80211-eht.h	GPL-2.0-only	36c131e14a1032aaef0e43e27369c2ce69a1c2d131b311615da14db89abc8f2a
@@ -4599,10 +4636,12 @@ include/linux/ieee80211.h	GPL-2.0-only	8d6eb6ab3ed76eba2638fc327287b57c399754bfc
 include/linux/if_arp.h	GPL-2.0-or-later	ddacf4e766ba4d76a8bd8e8977e4dd8110be986ecde09d78b002d7ada2b0b1d3
 include/linux/if_ether.h	GPL-2.0-or-later	671b53b2ac40ce16f146a55dac21ddf4c2c2186490b7b0ffff4e7ddb97122734
 include/linux/if_link.h	GPL-2.0	dcaa25803f15447a5f9b50796c50ebda82a174b9b67a2061df56b3564aac2256
+include/linux/if_tunnel.h	GPL-2.0	a3c02ec23721f2fcec9ff514ba98b77444f722dee4679c44c68bed3c8f963fc7
 include/linux/if_vlan.h	GPL-2.0-or-later	f028c520af18caa908a5a1d57c198c1eecbbe725f1ed7590b9650e22453b84be
 include/linux/in.h	GPL-2.0-or-later	bba74fc5fba233945fd15192476f9f106d611a004374045cf8c42431876a359d
 include/linux/in6.h	GPL-2.0-or-later	40ddb27f4fa4f4526cdaedcbb6611133448b66fac8830b055ee6a6b11a116a42
 include/linux/indirect_call_wrapper.h	GPL-2.0	343b3deb2db66dd964521f9c797ff7b870d6542da2a548fd3592491da7c4ffef
+include/linux/inet.h	GPL-2.0-or-later	b55afc51640e7dc403ef205c803fb0215c181257169debc3d844a79a249c095a
 include/linux/inetdevice.h	GPL-2.0	a35d20109920e217118881d885352b83367c3927945b73ec210f631ad4725e1c
 include/linux/init.h	GPL-2.0	d932beb0f7ac42f6e77e0b1f7caf58c54e72184fa08dff510f4ecd0cff7dcd35
 include/linux/input.h	GPL-2.0-only	0ea23113b55ae364d6c861f48430a5e7f36b64f443c32c3826534b51575a0420
@@ -4759,6 +4798,7 @@ include/linux/net_tstamp.h	GPL-2.0	643476801e936baac42156d0f71a018a447ba6637e17d
 include/linux/netdev_features.h	GPL-2.0-or-later	d0ac20d98594311f8565fe954de1086201f000372a3fc4264c9de7483cde116a
 include/linux/netdevice.h	GPL-2.0-or-later	e172bdce06277d2982c7ced8abb0f872d4f2aa4bbc5c41e4960fbf522bc974e4
 include/linux/netdevice_xmit.h	GPL-2.0-or-later	809193a59a470383a63622175cf3122582c48a4b26581cb392cde8520c8c0d81
+include/linux/netfilter.h	GPL-2.0	97a644079e60fc386a8aee3b3900cc7d68450dac3f0841134817c293e20420f3
 include/linux/netfilter_defs.h	GPL-2.0	dc258e2b61edf1259ed084b2e4d6de3727006142f1ec9a8dc76a460e190b261e
 include/linux/netlink.h	GPL-2.0	a3306386f5a5a9af16b12a1701dc362d3d3ac6e239b31b1df506ac6448bc88d6
 include/linux/node.h	GPL-2.0	032265a3aa63252b739282a5ddc42e2a9d1494b3a8d35ad2763f97d208e1df1c
@@ -4958,6 +4998,7 @@ include/linux/signal.h	GPL-2.0	f6b75a1b35c5fb2b0e5994964ce75ef30bcdd0a4d412f8755
 include/linux/signal_types.h	GPL-2.0	cb4773aeeaf5521855e63b4449bc41a09d00f59650cf678868ac96755c2f5dba
 include/linux/siphash.h	(GPL-2.0-only OR BSD-3-Clause)	180953494ea6728a626389d256f5fe2d44920c670353287e3644734c21766aa5
 include/linux/sizes.h	GPL-2.0-only	a21721bd920547c0f47e618810fbb71eddc312f3d405c40f02ee980a98d10b88
+include/linux/skb_array.h	GPL-2.0-or-later	48a158b44556ad147e43cae2061004e4a0c49ebc58d8b4664ae74c429bc96081
 include/linux/skbuff.h	GPL-2.0-or-later	afac233aa11f133cb7b64f6976d9e384cdf6b93ef3cc1231a5b88db5327bac17
 include/linux/slab.h	GPL-2.0	d3a7999286cbba4e0bb51db023dd5926ce13a355a574e4bbe86d638e6183fed1
 include/linux/smp.h	GPL-2.0	dd6b3256853cc4183cf7e94324cdbcc3634502ee4b2c91ff1a1c888cf69bfdb2
@@ -5153,6 +5194,8 @@ include/net/dropreason-core.h	GPL-2.0-or-later	6df629659692017754e878cb45e874415
 include/net/dropreason.h	GPL-2.0-or-later	2edc548ff1ca0758fa94b384193e9ab9ec5f87b7ef642d6a05aa5e819ecb4305
 include/net/dsfield.h	GPL-2.0	bf42b1ae18ebfe3cb05f50f110c3e3ca6c6d020ffd9f9fe476c742fb88ec4c6b
 include/net/dst.h	GPL-2.0	a8a1031a2856f900bb3090e6f0a5828ba1ac471b9d0913aeb73ee36537a18405
+include/net/dst_cache.h	GPL-2.0	6e1ffca024d961b35d4ba9c485b2d50d566d625fd817ba8e3c1ad0670a3c800e
+include/net/dst_metadata.h	GPL-2.0	19f894f057efb4eb39cf212a9353fa65f859f4a7502ca97cda410df216b5f14a
 include/net/dst_ops.h	GPL-2.0	388f5247da499afef3ae4f1a7f7ad779192aa31a071355bbb6d50e188e3ae524
 include/net/eee.h	GPL-2.0-only	20b4005673ddb8e0a0bbd5aa439c87d68dbafa92b6897b332d64453fca30efe7
 include/net/fib_notifier.h	GPL-2.0-only (untagged, per Linux COPYING)	41a2942fd6301d5226999fbfeacf8a6b38e66fed1aa515d23f644ddca8a50cc9
@@ -5166,6 +5209,7 @@ include/net/gen_stats.h	GPL-2.0	bd8e9e6fd81010a2a49e6df4856d9d75c81f81e0784a1749
 include/net/genetlink.h	GPL-2.0	8d0e268cf11a8cbfff6ee166e47dc7b2c36fc29b55f329666b63914d2207db2d
 include/net/gro_cells.h	GPL-2.0	476061825313b59d737c510557ad1df2d84b00eecf205c150478d5cbf5602479
 include/net/gso.h	GPL-2.0-or-later	d52b9d5a6a1eb54d644816ade7b36ac2aa5633a4604ef05754314b9cde48a7e1
+include/net/icmp.h	GPL-2.0-or-later	4fb8298113f0099541aab6f7e13fe0f2ad05627fd4544c8803d0d5cbb065b2f5
 include/net/ieee80211_radiotap.h	GPL-2.0-only (untagged, per Linux COPYING)	eb089b67149c1ef933b48ce38d471f13189eba7092e8593ce0c8771554073f81
 include/net/if_inet6.h	GPL-2.0-or-later	f9221a2aa73cbcb4fbb5f2126524aa911370051dfaa0120d69acedbe4c5456a6
 include/net/inet_connection_sock.h	GPL-2.0-or-later	c5c7b1893fe30c20878a8b6d790a2496221fb3cb93d57de8d0113d3b82718ca3
@@ -5179,12 +5223,14 @@ include/net/ip.h	GPL-2.0-or-later	bc1cf1b46fd51c372d93541ed8b45382b650752cfc1032
 include/net/ip6_checksum.h	GPL-2.0-or-later	89975c0f2c3bff2e740cbe5d97012b3b64bd2d451151ccfb5f14c8367bfa5564
 include/net/ip6_fib.h	GPL-2.0-or-later	65bd82ba5e84edff783d2113197043c15f47e39465ab02498cc126cd03475e4d
 include/net/ip_fib.h	GPL-2.0-or-later	aaf51b5d1e04d5f9b287ecfc89c8ab24c39d767faef6101754e00410576338c2
+include/net/ip_tunnels.h	GPL-2.0	29ab8d79beef48ba9560ed6df2b9b40be2e60977a668f6e63452df9ce391c177
 include/net/ipv6.h	GPL-2.0-or-later	8e51f13b7c228fa9dd6a3977c44ef4c5ee5b103ea62d791ef6bd0059a82ec3a3
 include/net/ipv6_stubs.h	GPL-2.0	4221fa0024c3ad41074edcdc0f7aaa38fa5cdd2ecc4c6532cff212e4ee407d1c
 include/net/iw_handler.h	GPL-2.0	b37b34351bad41d45fec1e3f968f311240e0c188d7a0975a78a6261073de7203
 include/net/l3mdev.h	GPL-2.0-or-later	2233c6431b06e5e3b7d9d2e9e94e55cdcd1270b67c9f05601355c8aa48fb558a
 include/net/lwtunnel.h	GPL-2.0	d81b261db96648cf3562d2eac9952155c23f3f870a51a343e6ad6128493758bc
 include/net/mac80211.h	GPL-2.0-only	43b4be700a0aa3d5b4e5ac3483db02d2506ba637e2686343b053a1d05949067f
+include/net/macsec.h	GPL-2.0+	b5975655c1b51d04084ecc10be90a03315e555a910e235c919139a026bd28c51
 include/net/ndisc.h	GPL-2.0	d7b33760c907b814f4367c07023991a4f211665fc270608dee694c871ef81a6d
 include/net/neighbour.h	GPL-2.0	21768f082160013de1fad0eed982acf7179e1eab8a5be2925ad97dd3a9550a5f
 include/net/neighbour_tables.h	GPL-2.0	fff70aea93b51c829e14632ff7f7d3af1aefe2ae865817de5fd204f49880e1d6
@@ -5233,6 +5279,8 @@ include/net/snmp.h	GPL-2.0-or-later	6969cde1e8c458d8b799a488e9c0069eb2d5aa68f55e
 include/net/sock.h	GPL-2.0-or-later	9a64c84487d0d369ac98918dc039e3991b561aa54f37f36584d14b29c1cda8a0
 include/net/tcp_states.h	GPL-2.0-or-later	8a41dab66aa79bd0b185da5bbb9b4c72ad7f3efb11bf75d894a80f4273f9766c
 include/net/timewait_sock.h	GPL-2.0-or-later	1af0f59306a678196f2a713aa3d3e4a02d4c6b6a96639ee80bcd78be43226919
+include/net/udp.h	GPL-2.0-or-later	c23d10463d4f4b1297334cd506a9a77f24efab9c5e3a1034514973601383ce06
+include/net/udp_tunnel.h	GPL-2.0	e0f09864b4d56579c8dd308422e7d2740045fb64bc567f07af890f8b181a449f
 include/net/xdp.h	GPL-2.0-only	2274f74651cb6d9971f57a1dee2ebb29f82d50fb75cdccd5a169ec92d151f3ac
 include/net/xdp_priv.h	GPL-2.0	9bbb015f3acbff8868bd45b22314bc466ec1ee7d268657bf4b5800271fc371a6
 include/net/xdp_sock.h	GPL-2.0	355e16cb98a6e39438d48582b2b456dc15adb37792d1cacc93576d7c8c9e8371
@@ -5353,6 +5401,7 @@ include/uapi/linux/dqblk_xfs.h	LGPL-2.1+ WITH Linux-syscall-note	5fd24b79fce2c9a
 include/uapi/linux/elf-em.h	GPL-2.0 WITH Linux-syscall-note	e72cca577a97d1fccc7f4e5d37b39b401a527a97f02e589255c247b63cb227d2
 include/uapi/linux/elf.h	GPL-2.0 WITH Linux-syscall-note	6264e8d45a1be1852bdac5481420f2df4df071e6da3918af01f84bbe9bfc7e07
 include/uapi/linux/errno.h	GPL-2.0-only (untagged, per Linux COPYING)	a47fb2f49bce0546a1e88805cec954338abb1b2ac87de042166e8e3a74b23261
+include/uapi/linux/errqueue.h	GPL-2.0 WITH Linux-syscall-note	63c6dc8ef37bdeaa09150c49e9a8d1ca4a67db6b7ea37cd9ab1c2d2c4cb33d4b
 include/uapi/linux/ethtool.h	GPL-2.0 WITH Linux-syscall-note	8c83076d612c76f2a4f3bcef4ad8de510424ba70951b94bf1173400bf6be1bd6
 include/uapi/linux/ethtool_netlink.h	GPL-2.0-only WITH Linux-syscall-note	275fc85d629a5adfc6b43fe74be92102d00241dacb47bfe60688995e0690bd51
 include/uapi/linux/ethtool_netlink_generated.h	((GPL-2.0 WITH Linux-syscall-note) OR BSD-3-Clause)	94f3ee536dda76ddb9209fd91dab235a3b8e227b1fe189c707c7d3b992f6993b
@@ -5372,6 +5421,7 @@ include/uapi/linux/hid.h	GPL-2.0+ WITH Linux-syscall-note	bcdae993778fd1edec2cd4
 include/uapi/linux/hiddev.h	GPL-2.0+ WITH Linux-syscall-note	476cabaaada97acd03444b9d0ae28f975c9d0312f884529020c7cc1acdb56e4d
 include/uapi/linux/hidraw.h	GPL-2.0 WITH Linux-syscall-note	9bca623c49315e827c98840d9fbaa8e44e406d902d471641c93bd0acd63bd345
 include/uapi/linux/i2c.h	GPL-2.0+ WITH Linux-syscall-note	8b4f0e08de273edb14e2ae289c8988fac2f025564cdda7d9323ef6a90ca0cbaa
+include/uapi/linux/icmp.h	GPL-2.0+ WITH Linux-syscall-note	485801994ca3e9b02fd6ee00dc346bab3b515fa8e66a86afa48be9542f341dca
 include/uapi/linux/icmpv6.h	GPL-2.0 WITH Linux-syscall-note	3931cf259cb038e4376478cbafcfd321708feae642549eee0ecb96d61158458f
 include/uapi/linux/if.h	GPL-2.0+ WITH Linux-syscall-note	7fb6b621b61c3e9794dfe0a3295df700c04ddaf2d2aaab4753a2426646a7b307
 include/uapi/linux/if_addr.h	GPL-2.0 WITH Linux-syscall-note	a8763bdd4e82cae43e9cf136acf1bebb7f79057821dc2e9aa37c93bfbdfbd9d7
@@ -5379,7 +5429,9 @@ include/uapi/linux/if_arp.h	GPL-2.0+ WITH Linux-syscall-note	be4336c5d79350d7460
 include/uapi/linux/if_bonding.h	GPL-1.0+ WITH Linux-syscall-note	e2076105029c5a2b9381e8139581c79484f344ff8789763751990d1a8156bc30
 include/uapi/linux/if_ether.h	GPL-2.0+ WITH Linux-syscall-note	4a352ac1313b891cf8028eab09077baba664a99cdf33025ccd8ba548e19f02a5
 include/uapi/linux/if_link.h	GPL-2.0 WITH Linux-syscall-note	39e4683142ae154756c5e55177e92dc48fda6ba50c4cded952a78159c0ed834c
+include/uapi/linux/if_macsec.h	GPL-2.0+ WITH Linux-syscall-note	b9214ff77a66ee50dadfdee7f31c45f8e16ffb355e64f6e27fbddadcedd92e8c
 include/uapi/linux/if_packet.h	GPL-2.0 WITH Linux-syscall-note	0b4e076f669ce3fdc8d8a671d117e5ca7b859672ed9af675bf813cc9696c64d6
+include/uapi/linux/if_tunnel.h	GPL-2.0 WITH Linux-syscall-note	c8e1a9d3ae015491e3126e095dd1ec1f9c5b651e521a2e3a566164e2207fd147
 include/uapi/linux/if_vlan.h	GPL-2.0+ WITH Linux-syscall-note	c9999204efe10b1455ee3d77d6e1557f20163b447cc55ad9e28d7affc9c70bba
 include/uapi/linux/if_xdp.h	GPL-2.0 WITH Linux-syscall-note	fc1bace61efb492ba7ce2bd2ff627befe779146fd9ea15173848572bf16da780
 include/uapi/linux/in.h	GPL-2.0+ WITH Linux-syscall-note	b88e96f1de54fac16537d21160c5c76efb17276e4b6033fdaee431d380f26107
@@ -5508,6 +5560,7 @@ include/uapi/linux/virtio_ids.h	GPL-2.0-only (untagged, per Linux COPYING)	e9957
 include/uapi/linux/virtio_pci.h	GPL-2.0-only (untagged, per Linux COPYING)	da0a0393323c95b3e4e0404f113944c392fc644031b177fae283ddc752e34545
 include/uapi/linux/virtio_ring.h	GPL-2.0-only (untagged, per Linux COPYING)	57fd059ebd45422fce646bc81d9c6a148f6d9dc15354573f389d53264dec193c
 include/uapi/linux/virtio_types.h	GPL-2.0-only (untagged, per Linux COPYING)	3a6bf6debdb7873b234ca57693a61a77b6b43c68b90d60bfc14ae5fcce5d6d09
+include/uapi/linux/wireguard.h	(GPL-2.0 WITH Linux-syscall-note) OR MIT	f4358de6b3645f6afd8f06011887598b4595254d5c2896630f1c11a8cec9cb0e
 include/uapi/linux/wireless.h	GPL-2.0 WITH Linux-syscall-note	e1e430ccbd3be73efc5cd224815606c26ef59a373c269a3a2946de1d1d40f585
 include/uapi/linux/xattr.h	GPL-2.0 WITH Linux-syscall-note	d32560f914b4b70448b980cb774181e03af9824a0c65acbfe628a51af0813b89
 include/uapi/linux/xfrm.h	GPL-2.0 WITH Linux-syscall-note	4f8ef03fccbe1d484aaee21d9c29fee7d940075ebf6af5419bd9cbca100e2cce
@@ -5568,8 +5621,16 @@ lib/cmdline.c	GPL-2.0-only	18d94acd858d0cfbdbe4b4a6b06d14402c8ef12065fa9eda8a69a
 lib/crypto/aes.c	GPL-2.0	a45b30fad00235567d2823e5957cc15b729f67ba8aff1a70fa6c665f1dda98ff
 lib/crypto/aesgcm.c	GPL-2.0	279448b05110210791e82217c7f7c888dd2b4be3fee246082daa5cebd0267cd6
 lib/crypto/arc4.c	GPL-2.0-or-later	a97ffacf50a4d260a7446fda6d4339b034144148110edd22c5977e22c744ca22
+lib/crypto/blake2s.c	GPL-2.0 OR MIT	e66b61af8272f1a72821ce02caa2c92748cdbb74e1ed6d3a41809b61484a5515
+lib/crypto/chacha-block-generic.c	GPL-2.0-or-later	13010486549e2db6abf794b84a215cc0922a03b2fa65875155021d2e2f4f1731
+lib/crypto/chacha.c	GPL-2.0-or-later	bb287155933d93cbf5a55fb0ce67a54c75d23fea95a01dfab136e4823418b977
+lib/crypto/chacha20poly1305.c	GPL-2.0 OR MIT	effb44b68dfe0135d6d0bd6a4bd0426435c8857355b1ec03580491b86f83e14d
+lib/crypto/curve25519-hacl64.c	GPL-2.0 OR MIT	c81528a1c70ad67bdde540830f8d27a5bf18b372b216f96562600b31a790df6a
+lib/crypto/curve25519.c	GPL-2.0 OR MIT	986b0326a904126a6c62a15dababbf3f59c192d65125a4891633374160e6d84c
 lib/crypto/gf128mul.c	GPL-2.0-only (untagged, per Linux COPYING)	496b07c35e65f1aa676ee25c95943d690d13ed459c42e8468617945a35d1b0fa
 lib/crypto/memneq.c	GPL-2.0-only (untagged, per Linux COPYING)	735fd036271ceb873a5d7dcf315bb1f7dcc22468a2af3f02f040ad55fc1a8233
+lib/crypto/poly1305-donna64.c	GPL-2.0 OR MIT	d3bb54a1338227e708aeda13f2b0af6e74eb959a84d0e28e56ae3e28cdbd4b58
+lib/crypto/poly1305.c	GPL-2.0-or-later	048fedbb0ed3860b128b144079e5034df8444eb3aaad6d7b071b975a85786f65
 lib/crypto/sha256.c	GPL-2.0-or-later	8251f9842b3299ca06ec2afafcdb9ba92fef0a13ff303da3ee1134f8141fb745
 lib/crypto/utils.c	GPL-2.0-or-later	922a287877e90ae83ff672347a8a41542d4eba75a2f9d2a69466e773ba33426a
 lib/ctype.c	GPL-2.0	1675d7654e76e66979b031d05570f73438f1f3808fca8c6f1d51274181ad2d59
@@ -5599,6 +5660,7 @@ lib/rbtree.c	GPL-2.0-or-later	4bb8e833493fbf6c6060601c6a5b48e8fcbe6283ec376e241b
 lib/rhashtable.c	GPL-2.0-only	ced93eb946d8dfbe6661282e6a1b11b707a96ab04d8702eacc2860860862644b
 lib/scatterlist.c	GPL-2.0-only	f3edcdb42381918defa8378b34553a3db14e83f77889839251bfc85318e84479
 lib/seq_buf.c	GPL-2.0	7ffaa2b3cdf9b3c70b704c935a95375b196eaaef46e482257da03a1bbbca4415
+lib/siphash.c	(GPL-2.0-only OR BSD-3-Clause)	0810315533525d0c25528a72a0c7a086b37fcdbb39b3460ab6bc85fe11778a10
 lib/sort.c	GPL-2.0	170c3d659431e12106045d72228e0998006a7b5f7e1be6737ef2658554f870b6
 lib/string.c	GPL-2.0	031f6380fe1f5677acfb335e32984d151caaca99612584023c96be2c45ce38e8
 lib/string_helpers.c	GPL-2.0-only	33bda05f2ca615fc79b5952ed7c73aa8f514f84de20b2932dea782e12e791b15

@@ -16,6 +16,7 @@
 #include <asm/iosf_mbi.h>
 #include <linux/kernel.h>
 #include <linux/limits.h>
+#include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/random.h>
 #include <linux/refcount.h>
@@ -102,6 +103,27 @@ u64 get_random_u64(void)
 u32 __get_random_u32_below(u32 ceil)
 {
 	return ((u64)get_random_u32() * ceil) >> 32;
+}
+
+/* RustOS's generator is seeded before any driver runs (RDRAND/RDSEED). */
+bool rng_is_initialized(void)
+{
+	return true;
+}
+
+int wait_for_random_bytes(void)
+{
+	return 0;
+}
+
+/* MODULE_VERSION() in built-in code (there is no /sys/module). */
+ssize_t __modver_version_show(const struct module_attribute *mattr, struct module_kobject *mk,
+			      char *buf)
+{
+	const struct module_version_attribute *vattr =
+		container_of_const(mattr, struct module_version_attribute, mattr);
+
+	return sysfs_emit(buf, "%s\n", vattr->version);
 }
 
 /* From lib/refcount.c. */

@@ -254,7 +254,6 @@ struct task_struct *pid_task(struct pid *pid, enum pid_type type)
 
 /* ------------------------------------------------------- memory, folios */
 
-atomic_long_t _totalram_pages;
 DEFINE_STATIC_KEY_FALSE(init_on_free);
 
 void si_meminfo(struct sysinfo *val)
@@ -400,7 +399,6 @@ static int __init kpi_cpu_info_init(void)
 {
 	u32 eax, ebx, ecx, edx, fam, model;
 	struct cpuinfo_x86 c = {};
-	u64 free;
 
 	cpuid(0, &eax, &ebx, &ecx, &edx);
 	c.cpuid_level = eax;
@@ -434,7 +432,6 @@ static int __init kpi_cpu_info_init(void)
 	boot_cpu_data.x86_model = c.x86_model;
 	boot_cpu_data.x86_stepping = c.x86_stepping;
 	__num_cores_per_package = rustos_kpi_cpu_count();
-	atomic_long_set(&_totalram_pages, rustos_kpi_mem_pages(&free));
 	return 0;
 }
 core_initcall(kpi_cpu_info_init);

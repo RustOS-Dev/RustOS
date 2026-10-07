@@ -70,8 +70,11 @@ linux-eth = ["linux-i2c", "linux-phy"]
 # MediaTek MT7921/MT7921K/MT7920/MT7922 Wi-Fi (Linux mt76): PCIe, and the
 # MT7921AU USB adapters.
 linux-mt7921 = ["linux-wifi", "linux-usb"]
+# WireGuard tunnels through Linux's driver (M43): `ip link add wg0 type
+# wireguard`, configured by `wg` over generic netlink.
+linux-wireguard = ["linuxkpi"]
 # The Linux drivers release images ship (write_to_drive.sh builds with it).
-linux-drivers = ["linux-mt7921", "linux-eth", "linux-usbnet", "linux-serial", "linux-mmc", "linux-hid", "linux-platform", "linux-video", "linux-sound", "linux-drm-sysfb", "linux-drm-bochs", "linux-drm-virtio"]
+linux-drivers = ["linux-mt7921", "linux-eth", "linux-usbnet", "linux-serial", "linux-mmc", "linux-hid", "linux-platform", "linux-video", "linux-sound", "linux-drm-sysfb", "linux-drm-bochs", "linux-drm-virtio", "linux-wireguard"]
 
 [dependencies]
 bootloader_api = "0.11"

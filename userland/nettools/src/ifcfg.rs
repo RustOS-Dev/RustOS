@@ -25,8 +25,13 @@ fn show_iface(i: &IfInfo, brief: bool) {
     if i.up {
         flags.push("UP");
     }
+    // Tunnels (WireGuard) have no link-layer address.
+    let tunnel = i.driver != "loopback" && i.mac == "00:00:00:00:00:00";
     if i.driver == "loopback" {
         flags.push("LOOPBACK");
+    } else if tunnel {
+        flags.push("POINTOPOINT");
+        flags.push("NOARP");
     } else {
         flags.push("BROADCAST");
         flags.push("MULTICAST");
@@ -41,7 +46,9 @@ fn show_iface(i: &IfInfo, brief: bool) {
         flags.join(","),
         i.mtu
     );
-    if i.driver != "loopback" {
+    if tunnel {
+        println!("    link/none driver {}", i.driver);
+    } else if i.driver != "loopback" {
         println!(
             "    link/ether {} driver {}{}",
             i.mac,
@@ -85,6 +92,9 @@ pub fn ip(args: &[String]) -> i32 {
                     }
                 }
                 0
+            }
+            Some(op @ ("add" | "del" | "delete")) if obj == "l" || obj == "link" => {
+                link_add_del(op == "add", &rest[1..])
             }
             Some("add") | Some("del") => {
                 let Some(cidr) = rest.get(1).and_then(|c| net::parse_cidr(c, 24)) else {
@@ -130,7 +140,105 @@ pub fn ip(args: &[String]) -> i32 {
         "n" | "neigh" => arp(&[]),
         _ => {
             eprintln!("usage: ip [-br] {{addr|link|route|neigh}} [show|add|del|set] ...");
+            eprintln!("       ip link add [name] NAME type KIND | ip link del NAME");
             1
+        }
+    }
+}
+
+/// ip link add [name] NAME type KIND | ip link del [dev] NAME: an
+/// RTM_NEWLINK (with IFLA_LINKINFO/IFLA_INFO_KIND) or RTM_DELLINK request.
+fn link_add_del(add: bool, a: &[&str]) -> i32 {
+    let mut name = None;
+    let mut kind = None;
+    let mut k = 0;
+    while k < a.len() {
+        match a[k] {
+            "name" | "dev" => {
+                k += 1;
+                name = a.get(k).copied();
+            }
+            "type" => {
+                k += 1;
+                kind = a.get(k).copied();
+            }
+            w if name.is_none() => name = Some(w),
+            w => {
+                eprintln!("ip link: unknown argument '{}'", w);
+                return 1;
+            }
+        }
+        k += 1;
+    }
+    let Some(name) = name else {
+        eprintln!("usage: ip link add [name] NAME type KIND | ip link del [dev] NAME");
+        return 1;
+    };
+    if add && kind.is_none() {
+        eprintln!("ip link add: missing 'type KIND'");
+        return 1;
+    }
+    match rtnl_link(add, name, kind) {
+        Ok(()) => 0,
+        Err(e) => err("ip link", name, e),
+    }
+}
+
+fn nl_attr(buf: &mut Vec<u8>, ty: u16, data: &[u8]) {
+    buf.extend_from_slice(&((4 + data.len()) as u16).to_ne_bytes());
+    buf.extend_from_slice(&ty.to_ne_bytes());
+    buf.extend_from_slice(data);
+    while buf.len() % 4 != 0 {
+        buf.push(0);
+    }
+}
+
+fn rtnl_link(add: bool, name: &str, kind: Option<&str>) -> Result<(), rustos_rt::Error> {
+    const AF_NETLINK: u16 = 16;
+    const SOCK_RAW: u32 = 3;
+    const NETLINK_ROUTE: u32 = 0;
+    const RTM_NEWLINK: u16 = 16;
+    const RTM_DELLINK: u16 = 17;
+    const NLMSG_ERROR: u16 = 2;
+    // NLM_F_REQUEST | NLM_F_ACK, plus NLM_F_CREATE | NLM_F_EXCL to add.
+    let flags: u16 = if add {
+        0x1 | 0x4 | 0x400 | 0x200
+    } else {
+        0x1 | 0x4
+    };
+    let sock = net::Socket::new(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)?;
+    let mut m = vec![0u8; 16];
+    m[4..6].copy_from_slice(&(if add { RTM_NEWLINK } else { RTM_DELLINK }).to_ne_bytes());
+    m[6..8].copy_from_slice(&flags.to_ne_bytes());
+    m[8..12].copy_from_slice(&1u32.to_ne_bytes());
+    // struct ifinfomsg: family, type, index (by name), flags, change.
+    m.extend_from_slice(&[0u8; 16]);
+    let mut n = name.as_bytes().to_vec();
+    n.push(0);
+    nl_attr(&mut m, 3 /* IFLA_IFNAME */, &n);
+    if let Some(kind) = kind {
+        let mut info = Vec::new();
+        let mut k = kind.as_bytes().to_vec();
+        k.push(0);
+        nl_attr(&mut info, 1 /* IFLA_INFO_KIND */, &k);
+        nl_attr(&mut m, 18 | 0x8000 /* IFLA_LINKINFO, nested */, &info);
+    }
+    let len = m.len() as u32;
+    m[0..4].copy_from_slice(&len.to_ne_bytes());
+    sock.send(&m)?;
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = sock.recv(&mut buf)?;
+        if n < 20 {
+            return Err(rustos_rt::Error(5)); // EIO
+        }
+        if u16::from_ne_bytes([buf[4], buf[5]]) == NLMSG_ERROR {
+            let e = i32::from_ne_bytes([buf[16], buf[17], buf[18], buf[19]]);
+            return if e == 0 {
+                Ok(())
+            } else {
+                Err(rustos_rt::Error(-e))
+            };
         }
     }
 }

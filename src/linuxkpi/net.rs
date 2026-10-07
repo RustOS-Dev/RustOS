@@ -1,9 +1,11 @@
 //! Linux `net_device`s as RustOS network interfaces
 //! (src/linuxkpi/c/net.c). Transmit calls the driver's `ndo_start_xmit`;
 //! frames the driver receives through NAPI are queued here for the RustOS
-//! network thread, which pulls them with `receive()`.
+//! network thread, which pulls them with `receive()`. Tunnels (WireGuard)
+//! are IP-only interfaces, and the kinds of link Linux drivers register
+//! (rtnl_link_ops) can be created from rtnetlink.
 
-use crate::errno::{EAGAIN, KResult};
+use crate::errno::{EAGAIN, EOPNOTSUPP, KResult};
 use crate::net::{IfKind, NetDevice};
 use crate::sync::Mutex;
 use alloc::collections::{BTreeMap, VecDeque};
@@ -24,6 +26,10 @@ unsafe extern "C" {
     fn kpi_netdev_set_up(dev: *mut c_void, up: c_int) -> c_int;
     /// ndo_set_mac_address(); 0 or -errno.
     fn kpi_netdev_set_mac(dev: *mut c_void, mac: *const u8) -> c_int;
+    /// Create a link of a registered rtnl_link_ops kind; 0 or -errno.
+    fn kpi_rtnl_newlink(kind: *const c_char, name: *const c_char) -> c_int;
+    /// Remove a link created by kind; 0 or -errno.
+    fn kpi_rtnl_dellink(ifindex: c_int) -> c_int;
 }
 
 /// Frames waiting for the network thread, per interface (bounded).
@@ -36,6 +42,9 @@ struct LinuxNetDev {
     index: AtomicU32,
     mtu: AtomicU32,
     wireless: bool,
+    /// Bare IP packets (a tunnel), not Ethernet frames.
+    ip: bool,
+    kind: Option<&'static str>,
     carrier: AtomicBool,
     rx: Mutex<VecDeque<Vec<u8>>>,
 }
@@ -59,6 +68,12 @@ impl NetDevice for LinuxNetDev {
     }
     fn driver(&self) -> &'static str {
         self.driver
+    }
+    fn ip_only(&self) -> bool {
+        self.ip
+    }
+    fn link_kind(&self) -> Option<&'static str> {
+        self.kind
     }
     fn transmit(&self, frame: &[u8]) -> KResult<()> {
         match unsafe {
@@ -102,6 +117,20 @@ fn c_str(p: *const c_char) -> Option<String> {
     (!p.is_null()).then(|| String::from(unsafe { core::ffi::CStr::from_ptr(p) }.to_string_lossy()))
 }
 
+/// Names Linux code hands over that live as long as the kernel (driver
+/// names, link kinds), interned so each is leaked once.
+static NAMES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+fn intern(s: String) -> &'static str {
+    let mut names = NAMES.lock();
+    if let Some(n) = names.iter().find(|n| **n == s) {
+        return n;
+    }
+    let n: &'static str = alloc::boxed::Box::leak(s.into_boxed_str());
+    names.push(n);
+    n
+}
+
 /// Register a Linux net_device under `name` (chosen by dev_alloc_name());
 /// returns a handle for the other calls.
 #[unsafe(no_mangle)]
@@ -111,16 +140,15 @@ extern "C" fn rustos_kpi_netdev_register(
     mtu: u32,
     wireless: c_int,
     ether: c_int,
+    ip: c_int,
+    kind: *const c_char,
     driver: *const c_char,
     name: *const c_char,
 ) -> u64 {
     let mut m = [0u8; 6];
     m.copy_from_slice(unsafe { core::slice::from_raw_parts(mac, 6) });
     // Driver names are string literals in the driver's module; keep a copy.
-    let drv: &'static str = match c_str(driver) {
-        Some(s) => alloc::boxed::Box::leak(s.into_boxed_str()),
-        None => "linux",
-    };
+    let drv: &'static str = c_str(driver).map_or("linux", intern);
     let nd = Arc::new(LinuxNetDev {
         dev: dev as usize,
         driver: drv,
@@ -128,6 +156,8 @@ extern "C" fn rustos_kpi_netdev_register(
         index: AtomicU32::new(0),
         mtu: AtomicU32::new(mtu),
         wireless: wireless != 0,
+        ip: ip != 0,
+        kind: c_str(kind).map(intern),
         carrier: AtomicBool::new(false),
         rx: Mutex::new(VecDeque::new()),
     });
@@ -181,6 +211,56 @@ extern "C" fn rustos_kpi_net_kick() {
 #[unsafe(no_mangle)]
 extern "C" fn rustos_kpi_ifname_free(name: *const c_char) -> c_int {
     c_str(name).is_some_and(|n| crate::net::name_free(&n)) as c_int
+}
+
+// ---------------------------------------------------------- link kinds
+
+/// rtnl_link_ops kinds Linux drivers registered.
+static KINDS: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+fn c_string(s: &str) -> Vec<u8> {
+    let mut v: Vec<u8> = s.bytes().filter(|&b| b != 0).collect();
+    v.push(0);
+    v
+}
+
+fn newlink(kind: &str, name: Option<&str>) -> KResult<()> {
+    if !KINDS.lock().contains(&kind) {
+        return Err(EOPNOTSUPP);
+    }
+    let kind = c_string(kind);
+    let name = name.map(c_string);
+    let r = unsafe {
+        kpi_rtnl_newlink(
+            kind.as_ptr().cast(),
+            name.as_ref()
+                .map_or(core::ptr::null(), |n| n.as_ptr().cast()),
+        )
+    };
+    match r {
+        0 => Ok(()),
+        e => Err(crate::errno::Errno(-e)),
+    }
+}
+
+fn dellink(index: u32) -> KResult<()> {
+    match unsafe { kpi_rtnl_dellink(index as c_int) } {
+        0 => Ok(()),
+        e => Err(crate::errno::Errno(-e)),
+    }
+}
+
+/// rtnl_link_register()/rtnl_link_unregister() of a kind.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_rtnl_kind(kind: *const c_char, add: c_int) {
+    let Some(kind) = c_str(kind) else { return };
+    let kind = intern(kind);
+    let mut kinds = KINDS.lock();
+    kinds.retain(|k| *k != kind);
+    if add != 0 {
+        kinds.push(kind);
+        crate::net::rtnetlink::set_link_handler(newlink, dellink);
+    }
 }
 
 // ------------------------------------------------------------- netlink

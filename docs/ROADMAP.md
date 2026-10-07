@@ -193,7 +193,7 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] large and multithreaded programs: exec streams segments from the file (no whole-file copy in the kernel heap), and a process's address space is freed only after its last thread is gone
   - [x] Linux signal frames (siginfo, ucontext, sigaltstack) and per-thread signal masks and pending sets, `rt_sigtimedwait`; Go programs run (static Go 1.24 binaries: goroutines, async preemption via SIGURG, nil-pointer panics recovered from SIGSEGV; `kapitest sigframes`, `musl-libctest`)
   - [ ] `edex-de` port built against the weston stage and booted (`linux/desktop-edex` scenario); eDEX's shell and greeter render with wgpu and wait for Mesa (M41), edex-comp renders with pixman until then
-  - [ ] LinuxKPI `wireguard` group (`drivers/net/wireguard`, `lib/crypto` curve25519/chacha20poly1305/blake2s, `udp_tunnel`) behind `linux-wireguard`, on M28's netdev and genetlink glue
+  - [x] LinuxKPI `wireguard` group (`drivers/net/wireguard`, `lib/crypto` curve25519/chacha20poly1305/blake2s generic C, `lib/siphash`) behind `linux-wireguard`, on M28's netdev and genetlink glue: `ip link add wg0 type wireguard` (RTM_NEWLINK with IFLA_INFO_KIND through `rtnl_link_ops`), `wg` over generic netlink, tunnels as bare-IP interfaces (smoltcp `Medium::Ip`), UDP tunnel sockets on RustOS UDP (`c/udptunnel.c`, `src/linuxkpi/udp.rs`); the `wireguard` scenario peers two tunnels over 127.0.0.1 (handshake, ping through the tunnel, transfer counters on both ends)
   - [ ] privilege broker for the desktop's system actions (`svc`, Tor helpers, backlight) once sessions run as ordinary users
 
 ## Context

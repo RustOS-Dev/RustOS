@@ -1,0 +1,89 @@
+# Linux 6.18's WireGuard driver through LinuxKPI (kernel built with
+# `--features linux-wireguard`, `wg` from the wireguard-tools port:
+# tools/install-port.sh --initramfs wireguard-tools).
+#
+# Two tunnels in one system are peers of each other over 127.0.0.1:
+# wg0 (10.9.0.1/24, port 51820) and wg1 (10.9.0.2/24, port 51821). They
+# are created with `ip link add ... type wireguard` (RTM_NEWLINK with
+# IFLA_INFO_KIND) and configured by `wg` over generic netlink. Traffic
+# from wg0's address to wg1's must go through the tunnel: `ping -I
+# 10.9.0.1` sends from wg0's interface, wg0 encrypts it to wg1's UDP
+# port, wg1 decrypts it and RustOS answers on wg1, whose reply goes back
+# through the tunnel the same way. The handshake, the transfer counters of
+# both ends and the reply all prove the data path.
+wait # $ 240
+send wg genkey > /tmp/k0 && wg genkey > /tmp/k1 && wg pubkey < /tmp/k0 > /tmp/p0 && wg pubkey < /tmp/k1 > /tmp/p1 && wc -c /tmp/p0 /tmp/p1
+wait 45 /tmp/p1
+wait # $
+send ip link add wg0 type wireguard && ip link add wg1 type wireguard && echo LINKS-"OK"
+wait LINKS-OK
+wait # $
+send ip link show dev wg0
+wait wg0: <POINTOPOINT,NOARP> mtu 1420 30
+wait link/none driver wireguard
+wait # $
+# A second link of the same name is refused (NLM_F_EXCL).
+send ip link add wg0 type wireguard; echo st=$?
+wait st=1
+wait # $
+send wg set wg0 listen-port 51820 private-key /tmp/k0 peer $(cat /tmp/p1) allowed-ips 10.9.0.2/32 endpoint 127.0.0.1:51821 && echo SET0-"OK"
+wait SET0-OK
+wait # $
+send wg set wg1 listen-port 51821 private-key /tmp/k1 peer $(cat /tmp/p0) allowed-ips 10.9.0.1/32 endpoint 127.0.0.1:51820 && echo SET1-"OK"
+wait SET1-OK
+wait # $
+send ip addr add 10.9.0.1/24 dev wg0 && ip addr add 10.9.0.2/24 dev wg1 && ip link set wg0 up && ip link set wg1 up && echo UP-"OK"
+wait UP-OK
+wait # $
+# wg enumerates WireGuard links through RTM_GETLINK (IFLA_LINKINFO).
+send wg show interfaces
+wait wg0 wg1
+wait # $
+send wg show wg0 | cat
+wait listening port: 51820
+wait allowed ips: 10\.9\.0\.2/32
+wait # $
+send [ "$(wg show wg0 public-key)" = "$(cat /tmp/p0)" ] && echo PUBKEY-"OK"
+wait PUBKEY-OK
+wait # $
+# No traffic yet: no handshake, nothing transferred.
+send echo xfer=$(wg show wg0 transfer | cut -f2)/$(wg show wg0 transfer | cut -f3)
+wait xfer=0/0
+wait # $
+send ping -c 3 -i 0.3 -I 10.9.0.1 10.9.0.2
+wait bytes from 10\.9\.0\.2: icmp_seq=
+wait 3 packets transmitted, 3 received
+wait # $
+send [ $(wg show wg0 latest-handshakes | cut -f2) -gt 0 ] && echo HANDSHAKE0-"OK"
+wait HANDSHAKE0-OK
+wait # $
+send [ $(wg show wg1 latest-handshakes | cut -f2) -gt 0 ] && echo HANDSHAKE1-"OK"
+wait HANDSHAKE1-OK
+wait # $
+send wg show wg0 | cat
+wait latest handshake: .*ago
+wait transfer: .* received, .* sent
+wait # $
+# Both ends count the tunnelled traffic, and more traffic counts more.
+send wg show wg0 transfer | cut -f2 > /tmp/rx1; wg show wg1 transfer | cut -f3 > /tmp/tx1; cat /tmp/rx1 /tmp/tx1
+wait # $
+send ping -c 5 -i 0.2 -s 1000 -I 10.9.0.1 10.9.0.2 | grep transmitted | cat
+wait 5 packets transmitted, 5 received
+wait # $
+send r1=$(cat /tmp/rx1); r2=$(wg show wg0 transfer | cut -f2); t1=$(cat /tmp/tx1); t2=$(wg show wg1 transfer | cut -f3); echo rx $r1 to $r2 tx $t1 to $t2; [ $r1 -gt 0 ] && [ $r2 -gt $((r1 + 5000)) ] && [ $t2 -gt $((t1 + 5000)) ] && echo COUNTERS-"OK"
+wait COUNTERS-OK
+wait # $
+# The interfaces count the inner packets.
+send cat /proc/net/dev | grep wg | cat
+wait wg0:
+wait # $
+# Without wg1's peer entry for wg0, wg1 drops wg0's packets: no reply.
+send wg set wg1 peer $(cat /tmp/p0) remove && ping -c 2 -i 0.3 -W 1 -I 10.9.0.1 10.9.0.2 | grep transmitted | cat
+wait 2 packets transmitted, 0 received
+wait # $
+send ip link del wg1 && ip link del wg0 && ip link | grep -c wg | sed s/^/links=/
+wait links=0
+wait # $
+send dmesg | grep -c WARNING | sed s/^/warnings=/
+wait warnings=0
+wait # $

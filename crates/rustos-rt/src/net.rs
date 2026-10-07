@@ -867,7 +867,8 @@ pub fn interfaces() -> Vec<IfInfo> {
     data.lines()
         .filter_map(|l| {
             let f: Vec<&str> = l.split_whitespace().collect();
-            if f.len() < 10 {
+            // Interfaces without addresses (a new tunnel) end at field 9.
+            if f.len() < 9 {
                 return None;
             }
             Some(IfInfo {

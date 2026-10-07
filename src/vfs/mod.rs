@@ -295,6 +295,11 @@ pub trait FileLike: Send + Sync + Any {
     fn size(&self) -> Option<u64> {
         None
     }
+    /// Objects that keep their own file position (Linux files with an
+    /// `llseek`): the new position, or `None` to use the generic seek.
+    fn seek(&self, _off: i64, _whence: u32) -> Option<KResult<u64>> {
+        None
+    }
     /// Called when the last descriptor referring to the object closes.
     fn close(&self) {}
     /// Device nodes: the object an `open()` of the node returns, if not
@@ -485,6 +490,11 @@ impl File {
 
     /// `whence`: 0 = SET, 1 = CUR, 2 = END.
     pub fn seek(&self, off: i64, whence: u32) -> KResult<u64> {
+        if let FileObject::Stream(s) = &self.object
+            && let Some(r) = s.seek(off, whence)
+        {
+            return r;
+        }
         let size = match &self.object {
             FileObject::Inode(i) => i.metadata()?.size,
             FileObject::Stream(s) => match s.size() {

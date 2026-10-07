@@ -256,6 +256,24 @@ ssize_t kpi_file_write(struct file *file, const char *buf, size_t len, int nonbl
 	return r;
 }
 
+/*
+ * lseek: 0 with the new position in *out, 1 when the file has no llseek
+ * (RustOS then seeks generically), or a negative errno. dma-buf's llseek
+ * reports the buffer size for SEEK_END, which Mesa uses on imports.
+ */
+int kpi_file_llseek(struct file *file, long long off, int whence, long long *out)
+{
+	loff_t r;
+
+	if (!file->f_op->llseek)
+		return 1;
+	r = file->f_op->llseek(file, off, whence);
+	if (r < 0)
+		return (int)r;
+	*out = r;
+	return 0;
+}
+
 long kpi_file_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	if (file->f_op->unlocked_ioctl)

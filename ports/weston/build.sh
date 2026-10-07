@@ -101,16 +101,16 @@ fetch https://github.com/libffi/libffi/releases/download/v3.4.6/libffi-3.4.6.tar
     b0dea9df23c863a7a50e825440f3ebffabd65df1497108e5d437747843895a4e "$SRC/libffi-3.4.6.tar.gz"
 fetch https://github.com/libexpat/libexpat/releases/download/R_2_6_4/expat-2.6.4.tar.xz \
     a695629dae047055b37d50a0ff4776d1d45d0a4c842cf4ccee158441f55ff7ee "$SRC/expat-2.6.4.tar.xz"
-fetch https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.23.1/downloads/wayland-1.23.1.tar.xz \
-    864fb2a8399e2d0ec39d56e9d9b753c093775beadc6022ce81f441929a81e5ed "$SRC/wayland-1.23.1.tar.xz"
-fetch https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.41/downloads/wayland-protocols-1.41.tar.xz \
-    2786b6b1b79965e313f2c289c12075b9ed700d41844810c51afda10ee329576b "$SRC/wayland-protocols-1.41.tar.xz"
-fetch https://xkbcommon.org/download/libxkbcommon-1.7.0.tar.xz \
-    65782f0a10a4b455af9c6baab7040e2f537520caa2ec2092805cdfd36863b247 "$SRC/libxkbcommon-1.7.0.tar.xz"
+fetch https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.26.0/downloads/wayland-1.26.0.tar.xz \
+    64176eaa46e4969903e286f8e5ef8331affc17fdf03ac9b58381d2b23162b7a3 "$SRC/wayland-1.26.0.tar.xz"
+fetch https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.49/downloads/wayland-protocols-1.49.tar.xz \
+    ec4c8f74942d6dff7ace8b4ce4764f0ef9ff618a935d974ea77edee2ad240b14 "$SRC/wayland-protocols-1.49.tar.xz"
+fetch_git https://github.com/xkbcommon/libxkbcommon xkbcommon-1.13.2 \
+    d1442aaa6b635551182e83c3b55037f4c118c962 "$SRC/libxkbcommon-1.13.2"
 fetch https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-config-2.43.tar.xz \
     c810f362c82a834ee89da81e34cd1452c99789339f46f6037f4b9e227dd06c01 "$SRC/xkeyboard-config-2.43.tar.xz"
-fetch https://www.x.org/releases/individual/lib/pixman-0.44.2.tar.xz \
-    50baf820dde0c5ff9714d03d2df4970f606a3d3b1024f5404c0398a9821cc4b0 "$SRC/pixman-0.44.2.tar.xz"
+fetch https://www.x.org/releases/individual/lib/pixman-0.46.4.tar.xz \
+    a098c33924754ad43f981b740f6d576c70f9ed1006e12221b1845431ebce1239 "$SRC/pixman-0.46.4.tar.xz"
 fetch https://zlib.net/fossils/zlib-1.3.1.tar.gz \
     9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23 "$SRC/zlib-1.3.1.tar.gz"
 fetch https://download.sourceforge.net/libpng/libpng-1.6.44.tar.xz \
@@ -150,7 +150,7 @@ fetch https://gitlab.freedesktop.org/wayland/weston/-/releases/14.0.1/downloads/
 
 # A native wayland-scanner (it runs on the build host).
 if ! built host-wayland; then
-    d=$(unpack "$SRC/wayland-1.23.1.tar.xz")
+    d=$(unpack "$SRC/wayland-1.26.0.tar.xz")
     rm -rf "$BUILD/b-host-wayland"
     "$MESON" setup "$BUILD/b-host-wayland" "$d" --prefix="$HOST" -Dlibraries=false \
         -Ddocumentation=false -Dtests=false -Ddtd_validation=false >"$BUILD/host-wayland.log" 2>&1
@@ -164,16 +164,20 @@ built libffi || autotools_pkg libffi "$(unpack "$SRC/libffi-3.4.6.tar.gz")" \
     --disable-docs --disable-multi-os-directory --disable-static
 built expat || autotools_pkg expat "$(unpack "$SRC/expat-2.6.4.tar.xz")" \
     --without-docbook --without-examples --without-tests --disable-static
-built wayland || meson_pkg wayland "$(unpack "$SRC/wayland-1.23.1.tar.xz")" \
+built wayland || meson_pkg wayland "$(unpack "$SRC/wayland-1.26.0.tar.xz")" \
     -Dscanner=false -Ddocumentation=false -Dtests=false -Ddtd_validation=false
 built wayland-protocols || meson_pkg wayland-protocols \
-    "$(unpack "$SRC/wayland-protocols-1.41.tar.xz")" -Dtests=false
+    "$(unpack "$SRC/wayland-protocols-1.49.tar.xz")" -Dtests=false
 built xkeyboard-config || meson_pkg xkeyboard-config \
     "$(unpack "$SRC/xkeyboard-config-2.43.tar.xz")" -Dxorg-rules-symlinks=false -Dnls=false
-built libxkbcommon || meson_pkg libxkbcommon "$(unpack "$SRC/libxkbcommon-1.7.0.tar.xz")" \
+if ! built libxkbcommon; then
+    rm -rf "$BUILD/src/libxkbcommon"
+    cp -r "$SRC/libxkbcommon-1.13.2" "$BUILD/src/libxkbcommon"
+    meson_pkg libxkbcommon "$BUILD/src/libxkbcommon" \
     -Denable-x11=false -Denable-docs=false -Denable-tools=false -Denable-xkbregistry=false \
     -Denable-wayland=false -Dxkb-config-root=/usr/local/share/X11/xkb
-built pixman || meson_pkg pixman "$(unpack "$SRC/pixman-0.44.2.tar.xz")" \
+fi
+built pixman || meson_pkg pixman "$(unpack "$SRC/pixman-0.46.4.tar.xz")" \
     -Dtests=disabled -Ddemos=disabled -Dgtk=disabled -Dlibpng=disabled -Dopenmp=disabled
 if ! built zlib; then
     d=$(unpack "$SRC/zlib-1.3.1.tar.gz")

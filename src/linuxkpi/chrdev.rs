@@ -19,6 +19,7 @@ unsafe extern "C" {
     fn kpi_chrdev_open(devt: u32, flags: c_uint, out: *mut *mut c_void) -> c_int;
     fn kpi_file_read(file: *mut c_void, buf: *mut u8, len: usize, nonblock: c_int) -> isize;
     fn kpi_file_write(file: *mut c_void, buf: *const u8, len: usize, nonblock: c_int) -> isize;
+    fn kpi_file_llseek(file: *mut c_void, off: i64, whence: c_int, out: *mut i64) -> c_int;
     fn kpi_file_ioctl(file: *mut c_void, cmd: c_uint, arg: u64) -> c_long;
     fn kpi_file_poll(file: *mut c_void, waitq: *const c_void) -> c_uint;
     fn kpi_file_mmap(
@@ -112,6 +113,16 @@ impl FileLike for LinuxFile {
     fn ioctl(&self, cmd: u64, arg: u64) -> KResult<i64> {
         let r = unsafe { kpi_file_ioctl(self.ptr(), cmd as c_uint, arg) } as i64;
         if r < 0 { Err(errno(r)) } else { Ok(r) }
+    }
+
+    fn seek(&self, off: i64, whence: u32) -> Option<KResult<u64>> {
+        let mut pos = 0i64;
+        let r = unsafe { kpi_file_llseek(self.ptr(), off, whence as c_int, &mut pos) };
+        match r {
+            0 => Some(Ok(pos as u64)),
+            1 => None,
+            e => Some(Err(errno(e as i64))),
+        }
     }
 
     fn stat(&self) -> KResult<Metadata> {

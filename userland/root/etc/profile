@@ -1,5 +1,6 @@
 export PATH=/bin:/sbin:/usr/bin:/usr/local/bin
 export HOME=/root
+export XDG_CONFIG_DIRS=/usr/local/etc/xdg:/etc/xdg
 export PS1='\u@\h:\w\$ '
 alias ll='ls -l'
 alias la='ls -la'

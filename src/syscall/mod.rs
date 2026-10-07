@@ -104,6 +104,7 @@ pub mod nr {
     pub const FLOCK: u64 = 73;
     pub const FSYNC: u64 = 74;
     pub const FDATASYNC: u64 = 75;
+    pub const FADVISE64: u64 = 221;
     pub const TRUNCATE: u64 = 76;
     pub const FTRUNCATE: u64 = 77;
     pub const FALLOCATE: u64 = 285;
@@ -382,6 +383,8 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         DUP3 => v(fs::dup3(a[0] as i32, a[1] as i32, a[2] as u32, false)),
         FCNTL => v(fs::fcntl(a[0] as i32, a[1] as u32, a[2])),
         FLOCK => Ok(Ret::Value(0)),
+        // Advice only; the page cache does its own readahead.
+        FADVISE64 => Ok(Ret::Value(0)),
         FSYNC | FDATASYNC => v(fs::fsync(a[0] as i32)),
         SYNC => {
             crate::mm::pagecache::sync_all();

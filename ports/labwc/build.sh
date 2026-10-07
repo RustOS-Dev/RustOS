@@ -21,7 +21,9 @@ mkdir -p "$STAGE" "$STAMPS"
 # This port's stage starts as a copy of weston's, so everything is found
 # in one place and this port's output is what it adds.
 if [ ! -f "$STAMPS/base" ]; then
-    rm -rf "$STAGE"
+    # A new base invalidates everything built on the old one.
+    rm -rf "$STAGE" "$STAMPS"
+    mkdir -p "$STAMPS"
     cp -a "$BASE/stage" "$STAGE"
     find "$STAGE" -type f > "$BUILD/base-files"
     touch "$STAMPS/base"
@@ -82,8 +84,8 @@ fetch https://github.com/harfbuzz/harfbuzz/releases/download/14.6.0/harfbuzz-14.
     d07a007327277708a2a73ae437887cdbaf282937f6d03ca5467723e9099af586 "$SRC/harfbuzz-14.6.0.tar.xz"
 fetch https://github.com/fribidi/fribidi/releases/download/v1.0.17/fribidi-1.0.17.tar.xz \
     6949dcde27d41cebad1fd741fcafc36d55a1020d2d872d4a6eb3914caabbada2 "$SRC/fribidi-1.0.17.tar.xz"
-fetch https://download.gnome.org/sources/pango/1.58/pango-1.58.2.tar.xz \
-    342385b6ca3b7c73455d7c80a13b7dbe4489e00bc3bd4c5bd6ed4dce421e374a "$SRC/pango-1.58.2.tar.xz"
+fetch https://download.gnome.org/sources/pango/1.56/pango-1.56.4.tar.xz \
+    17065e2fcc5f5a5bdbffc884c956bfc7c451a96e8c4fb2f8ad837c6413cb5a01 "$SRC/pango-1.56.4.tar.xz"
 fetch https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz \
     98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821 "$SRC/libxml2-2.15.4.tar.xz"
 fetch https://gitlab.freedesktop.org/wlroots/wlroots/-/releases/0.20.1/downloads/wlroots-0.20.1.tar.gz \
@@ -110,12 +112,13 @@ built harfbuzz || meson_pkg harfbuzz "$(unpack "$SRC/harfbuzz-14.6.0.tar.xz")" \
     -Dbenchmark=disabled
 built fribidi || meson_pkg fribidi "$(unpack "$SRC/fribidi-1.0.17.tar.xz")" \
     -Ddocs=false -Dtests=false -Dbin=false
-built pango || meson_pkg pango "$(unpack "$SRC/pango-1.58.2.tar.xz")" \
+built pango || meson_pkg pango "$(unpack "$SRC/pango-1.56.4.tar.xz")" \
     -Dintrospection=disabled -Ddocumentation=false -Dbuild-testsuite=false \
     -Dbuild-examples=false -Dxft=disabled -Dcairo=enabled -Dfontconfig=enabled \
     -Dfreetype=enabled -Dlibthai=disabled -Dsysprof=disabled
 built libxml2 || meson_pkg libxml2 "$(unpack "$SRC/libxml2-2.15.4.tar.xz")" \
-    -Dpython=disabled -Dicu=disabled -Dzlib=enabled -Dlzma=disabled -Dhttp=disabled
+    -Dpython=disabled -Dicu=disabled -Dzlib=enabled -Dhttp=disabled -Ddocs=disabled \
+    -Dreadline=disabled -Dhistory=disabled
 built wlroots || meson_pkg wlroots "$(unpack "$SRC/wlroots-0.20.1.tar.gz")" \
     -Dxwayland=disabled -Dbackends=drm,libinput -Drenderers=gles2 -Dallocators=gbm \
     -Dsession=enabled -Dexamples=false -Dxcb-errors=disabled -Dcolor-management=disabled \

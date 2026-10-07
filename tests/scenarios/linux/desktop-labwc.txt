@@ -1,0 +1,55 @@
+# labwc (M42): a wlroots compositor with the DRM backend and the GLES2
+# renderer (Mesa softpipe through EGL on GBM) on Linux bochs DRM, with foot
+# as the terminal. Kernel built with --features linux-drivers; the weston
+# and labwc ports staged with tools/install-port.sh --initramfs. labwc's
+# default autostart (ports/labwc/autostart) opens foot; keys typed with
+# QEMU's sendkey go evdev -> libinput -> labwc -> foot -> pty -> shell,
+# which writes a file the serial shell then reads.
+hostrun rm -rf /tmp/rustos-labwc && mkdir -p /tmp/rustos-labwc
+wait # $ 240
+send mkdir -p /tmp/xdg; chmod 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin WLR_RENDERER_ALLOW_SOFTWARE=1; labwc -d >/tmp/labwc.log 2>&1 &
+sleep 60
+send grep -a -e "Successfully loaded libseat" -e "Using software rendering" -e "Modesetting with" -e "run session script" /tmp/labwc.log
+wait Successfully loaded libseat
+wait Using software rendering
+wait Modesetting with
+wait 1280x800 @ 74
+wait autostart
+wait # $
+send ps | grep -c foot
+wait 1
+wait # $
+monitor screendump /tmp/rustos-labwc/desktop.ppm
+# The background (black), foot's window (dark grey) and its title bar.
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-labwc/desktop.ppm size=1280x800 'count:0,0,0>=300000' 'count:36,36,36>=250000' 600,400=36,36,36~6 450,152=225,224,222~30
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey l
+monitor sendkey a
+monitor sendkey b
+monitor sendkey w
+monitor sendkey c
+monitor sendkey minus
+monitor sendkey t
+monitor sendkey y
+monitor sendkey p
+monitor sendkey e
+monitor sendkey d
+monitor sendkey spc
+monitor sendkey shift-dot
+monitor sendkey spc
+monitor sendkey slash
+monitor sendkey t
+monitor sendkey m
+monitor sendkey p
+monitor sendkey slash
+monitor sendkey k
+monitor sendkey ret
+sleep 5
+send cat /tmp/k
+wait labwc-typed
+wait # $
+monitor screendump /tmp/rustos-labwc/typed.ppm

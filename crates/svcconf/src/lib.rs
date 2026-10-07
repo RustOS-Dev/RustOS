@@ -1,6 +1,6 @@
 //! Service definitions for init's service manager and the `svc` tool:
-//! the `/etc/svc/NAME.conf` format, the enabled list, the state file
-//! init publishes, the control protocol, restart back-off and the JSON
+//! the `/etc/svc/NAME.conf` format, the enabled list, the control
+//! protocol and its access policy, restart back-off and the JSON
 //! that `svc --json` prints.
 //!
 //! A service file is `key=value` lines (`#` comments):
@@ -27,21 +27,13 @@ use alloc::vec::Vec;
 pub const SYSTEM_DIR: &str = "/etc/svc";
 /// Service files on the storage partition; they override the image's.
 pub const STORAGE_DIR: &str = "/storage/etc/svc";
-/// Runtime directory: control FIFO, state file and replies.
-pub const RUN_DIR: &str = "/run/svc";
-/// Named pipe init reads requests from.
-pub const CONTROL: &str = "/run/svc/control";
-/// State of every known service, rewritten by init on each change.
-pub const STATUS: &str = "/run/svc/status";
+/// The control socket init listens on (`AF_UNIX`, `SOCK_STREAM`, mode
+/// 0666: anyone may connect, [`permitted`] decides what they may do).
+pub const SOCKET: &str = "/run/svc.sock";
 /// Standard output and error of services without a terminal.
 pub const LOG_DIR: &str = "/var/log/svc";
 /// init's own service log.
 pub const INIT_LOG: &str = "/var/log/svc/init.log";
-
-/// Path of the reply init writes for request `id`.
-pub fn reply_path(id: u32) -> String {
-    format!("{}/reply.{}", RUN_DIR, id)
-}
 
 /// Path of the log file of service `name`.
 pub fn log_path(name: &str) -> String {
@@ -296,50 +288,17 @@ pub fn start_order<'a>(wanted: &[String], deps: impl Fn(&str) -> Vec<String> + '
 }
 
 // ---------------------------------------------------------------------------
-// State file
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Status {
-    pub state: State,
-    pub pid: Option<u32>,
-}
-
-/// The state file: `NAME STATE PID` per line (`-` for no process).
-pub fn render_status<'a>(entries: impl Iterator<Item = (&'a str, Status)>) -> String {
-    let mut s = String::new();
-    for (name, st) in entries {
-        s.push_str(&format!(
-            "{} {} {}\n",
-            name,
-            st.state.as_str(),
-            st.pid.map_or(String::from("-"), |p| p.to_string())
-        ));
-    }
-    s
-}
-
-pub fn parse_status(text: &str) -> Vec<(String, Status)> {
-    text.lines()
-        .filter_map(|l| {
-            let mut f = l.split_whitespace();
-            let name = f.next()?;
-            let state = State::parse(f.next()?)?;
-            let pid = f.next().and_then(|p| p.parse().ok());
-            Some((name.to_string(), Status { state, pid }))
-        })
-        .collect()
-}
-
-// ---------------------------------------------------------------------------
 // Control protocol
 // ---------------------------------------------------------------------------
 
+/// Actions that change services; only root may request them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
     Start,
     Stop,
     Restart,
+    Enable,
+    Disable,
 }
 
 impl Command {
@@ -348,6 +307,8 @@ impl Command {
             Command::Start => "start",
             Command::Stop => "stop",
             Command::Restart => "restart",
+            Command::Enable => "enable",
+            Command::Disable => "disable",
         }
     }
 
@@ -356,29 +317,63 @@ impl Command {
             "start" => Some(Command::Start),
             "stop" => Some(Command::Stop),
             "restart" => Some(Command::Restart),
+            "enable" => Some(Command::Enable),
+            "disable" => Some(Command::Disable),
             _ => None,
         }
     }
 }
 
-/// A request line: `COMMAND NAME ID` (ID: the client's pid, which names
-/// the reply file).
-pub fn request_line(cmd: Command, name: &str, id: u32) -> String {
-    format!("{} {} {}\n", cmd.as_str(), name, id)
+/// Longest request line init reads (longer ones are dropped).
+pub const MAX_REQUEST: usize = 256;
+
+/// One request: a line `list`, `status NAME` or `COMMAND NAME`, sent on
+/// a fresh connection to [`SOCKET`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Request {
+    List,
+    Status(String),
+    Control(Command, String),
 }
 
-pub fn parse_request(line: &str) -> Option<(Command, String, u32)> {
-    let mut f = line.split_whitespace();
-    let cmd = Command::parse(f.next()?)?;
-    let name = f.next()?;
-    let id = f.next()?.parse().ok()?;
-    (valid_name(name) && f.next().is_none()).then(|| (cmd, name.to_string(), id))
+impl Request {
+    pub fn render(&self) -> String {
+        match self {
+            Request::List => String::from("list\n"),
+            Request::Status(n) => format!("status {}\n", n),
+            Request::Control(c, n) => format!("{} {}\n", c.as_str(), n),
+        }
+    }
+
+    pub fn parse(line: &str) -> Option<Request> {
+        let mut f = line.split_whitespace();
+        let req = match (f.next()?, f.next()) {
+            ("list", None) => Request::List,
+            ("status", Some(n)) => Request::Status(n.to_string()),
+            (c, Some(n)) => Request::Control(Command::parse(c)?, n.to_string()),
+            _ => return None,
+        };
+        let name_ok = match &req {
+            Request::List => true,
+            Request::Status(n) | Request::Control(_, n) => valid_name(n),
+        };
+        (name_ok && f.next().is_none()).then_some(req)
+    }
 }
 
+/// The access policy, decided by init from the client's `SO_PEERCRED`
+/// uid: root may do everything, other users may only look.
+pub fn permitted(req: &Request, uid: u32) -> bool {
+    uid == 0 || matches!(req, Request::List | Request::Status(_))
+}
+
+/// The first line of an answer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reply {
     Ok,
     Unknown,
+    /// The client may not make this request ([`permitted`]).
+    Denied,
     Error(String),
 }
 
@@ -387,6 +382,7 @@ impl Reply {
         match self {
             Reply::Ok => String::from("ok\n"),
             Reply::Unknown => String::from("unknown\n"),
+            Reply::Denied => String::from("denied\n"),
             Reply::Error(m) => format!("error {}\n", m.replace('\n', " ")),
         }
     }
@@ -396,10 +392,144 @@ impl Reply {
         match s {
             "ok" => Some(Reply::Ok),
             "unknown" => Some(Reply::Unknown),
+            "denied" => Some(Reply::Denied),
             _ => s
                 .strip_prefix("error ")
                 .map(|m| Reply::Error(m.to_string())),
         }
+    }
+}
+
+/// What init reports about one service (`list`, `status`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Entry {
+    pub name: String,
+    pub description: String,
+    pub exec: String,
+    pub enabled: bool,
+    pub state: State,
+    pub pid: Option<u32>,
+    pub tty: Option<String>,
+}
+
+/// Escape a field: backslash, tab, CR and newline.
+fn escape(s: &str) -> String {
+    let mut o = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => o.push_str("\\\\"),
+            '\t' => o.push_str("\\t"),
+            '\n' => o.push_str("\\n"),
+            '\r' => o.push_str("\\r"),
+            c => o.push(c),
+        }
+    }
+    o
+}
+
+fn unescape(s: &str) -> Option<String> {
+    let mut o = String::with_capacity(s.len());
+    let mut it = s.chars();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            o.push(c);
+            continue;
+        }
+        o.push(match it.next()? {
+            '\\' => '\\',
+            't' => '\t',
+            'n' => '\n',
+            'r' => '\r',
+            _ => return None,
+        });
+    }
+    Some(o)
+}
+
+impl Entry {
+    pub fn info(&self) -> Info<'_> {
+        Info {
+            name: &self.name,
+            description: &self.description,
+            enabled: self.enabled,
+            state: self.state,
+            pid: self.pid,
+            tty: self.tty.as_deref(),
+        }
+    }
+
+    /// `NAME STATE ENABLED PID TTY EXEC DESCRIPTION`, tab-separated, with
+    /// `yes`/`no` and `-` for no process or terminal; text fields escaped.
+    pub fn render(&self) -> String {
+        format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            escape(&self.name),
+            self.state.as_str(),
+            if self.enabled { "yes" } else { "no" },
+            self.pid.map_or(String::from("-"), |p| p.to_string()),
+            self.tty.as_deref().unwrap_or("-"),
+            escape(&self.exec),
+            escape(&self.description),
+        )
+    }
+
+    pub fn parse(line: &str) -> Option<Entry> {
+        let f: Vec<&str> = line.trim_end_matches('\n').split('\t').collect();
+        let [name, state, enabled, pid, tty, exec, description] = f.as_slice() else {
+            return None;
+        };
+        Some(Entry {
+            name: unescape(name).filter(|n| valid_name(n))?,
+            description: unescape(description)?,
+            exec: unescape(exec)?,
+            enabled: match *enabled {
+                "yes" => true,
+                "no" => false,
+                _ => return None,
+            },
+            state: State::parse(state)?,
+            pid: match *pid {
+                "-" => None,
+                p => Some(p.parse().ok()?),
+            },
+            tty: match *tty {
+                "-" => None,
+                t => Some(t.to_string()),
+            },
+        })
+    }
+}
+
+/// A complete answer, sent before init closes the connection: the
+/// [`Reply`] line, then (for `list` and `status`) one [`Entry`] line per
+/// service, sorted by name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Response {
+    pub reply: Reply,
+    pub entries: Vec<Entry>,
+}
+
+impl Response {
+    pub fn new(reply: Reply) -> Response {
+        Response {
+            reply,
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn render(&self) -> String {
+        let mut s = self.reply.render();
+        for e in &self.entries {
+            s.push_str(&e.render());
+        }
+        s
+    }
+
+    pub fn parse(text: &str) -> Option<Response> {
+        let mut lines = text.lines();
+        let reply = Reply::parse(lines.next()?)?;
+        let entries = lines.map(Entry::parse).collect::<Option<Vec<Entry>>>()?;
+        Some(Response { reply, entries })
     }
 }
 
@@ -609,47 +739,133 @@ mod tests {
     }
 
     #[test]
-    fn status_round_trip() {
-        let e = [
+    fn requests() {
+        let cases = [
+            (Request::List, "list\n"),
+            (Request::Status("tor".into()), "status tor\n"),
             (
-                "tor",
-                Status {
-                    state: State::Running,
-                    pid: Some(42),
-                },
+                Request::Control(Command::Restart, "getty@tty2".into()),
+                "restart getty@tty2\n",
             ),
+            (Request::Control(Command::Enable, "x".into()), "enable x\n"),
             (
-                "dbus",
-                Status {
-                    state: State::Failed,
-                    pid: None,
-                },
+                Request::Control(Command::Disable, "x".into()),
+                "disable x\n",
             ),
+            (Request::Control(Command::Start, "x".into()), "start x\n"),
+            (Request::Control(Command::Stop, "x".into()), "stop x\n"),
         ];
-        let t = render_status(e.iter().map(|(n, s)| (*n, *s)));
-        assert_eq!(t, "tor running 42\ndbus failed -\n");
-        let p = parse_status(&t);
-        assert_eq!(p[0], ("tor".into(), e[0].1));
-        assert_eq!(p[1], ("dbus".into(), e[1].1));
+        for (r, l) in cases {
+            assert_eq!(r.render(), l);
+            assert_eq!(Request::parse(l), Some(r));
+        }
+        for bad in [
+            "",
+            "list tor",
+            "status",
+            "status ../x",
+            "start",
+            "start a b",
+            "halt tor",
+            "start -rf",
+            "list\0",
+        ] {
+            assert_eq!(Request::parse(bad), None, "{:?}", bad);
+        }
     }
 
     #[test]
-    fn protocol() {
-        let l = request_line(Command::Restart, "tor", 77);
-        assert_eq!(l, "restart tor 77\n");
-        assert_eq!(
-            parse_request(&l),
-            Some((Command::Restart, "tor".into(), 77))
-        );
-        assert_eq!(parse_request("start ../x 1"), None);
-        assert_eq!(parse_request("halt tor 1"), None);
+    fn policy() {
+        let look = [Request::List, Request::Status("tor".into())];
+        let change = [
+            Command::Start,
+            Command::Stop,
+            Command::Restart,
+            Command::Enable,
+            Command::Disable,
+        ]
+        .map(|c| Request::Control(c, "tor".into()));
+        for r in look.iter().chain(change.iter()) {
+            assert!(permitted(r, 0), "{:?}", r);
+        }
+        for uid in [1, 1000, 65534, u32::MAX] {
+            for r in &look {
+                assert!(permitted(r, uid));
+            }
+            for r in &change {
+                assert!(!permitted(r, uid), "{:?} as {}", r, uid);
+            }
+        }
+    }
+
+    #[test]
+    fn replies() {
         for r in [
             Reply::Ok,
             Reply::Unknown,
+            Reply::Denied,
             Reply::Error("no such file".into()),
         ] {
             assert_eq!(Reply::parse(&r.render()), Some(r));
         }
+        assert_eq!(Reply::Error("a\nb".into()).render(), "error a b\n");
+        assert_eq!(Reply::parse("maybe"), None);
+    }
+
+    #[test]
+    fn responses() {
+        let tor = Entry {
+            name: "tor".into(),
+            description: "Tor anonymity daemon".into(),
+            exec: "/usr/bin/tor -f /etc/tor/torrc".into(),
+            enabled: false,
+            state: State::Stopped,
+            pid: None,
+            tty: None,
+        };
+        let edex = Entry {
+            name: "edex".into(),
+            description: "tab\there, \\ back\nslash\r".into(),
+            exec: "printf 'a\tb\\n'".into(),
+            enabled: true,
+            state: State::Running,
+            pid: Some(42),
+            tty: Some("tty1".into()),
+        };
+        assert_eq!(
+            tor.render(),
+            "tor\tstopped\tno\t-\t-\t/usr/bin/tor -f /etc/tor/torrc\tTor anonymity daemon\n"
+        );
+        assert_eq!(edex.render().matches('\t').count(), 6);
+        assert_eq!(edex.render().matches('\n').count(), 1);
+        let r = Response {
+            reply: Reply::Ok,
+            entries: vec![edex.clone(), tor.clone()],
+        };
+        assert_eq!(Response::parse(&r.render()), Some(r));
+        // An empty description survives; the entry feeds the JSON.
+        let empty = Entry {
+            description: String::new(),
+            ..tor.clone()
+        };
+        assert_eq!(Entry::parse(&empty.render()), Some(empty));
+        assert_eq!(
+            edex.info().to_json(),
+            r#"{"name":"edex","description":"tab\there, \\ back\nslash\r","enabled":true,"state":"running","pid":42,"tty":"tty1"}"#
+        );
+        for r in [Reply::Unknown, Reply::Denied, Reply::Error("x".into())] {
+            let resp = Response::new(r);
+            assert_eq!(Response::parse(&resp.render()), Some(resp));
+        }
+        // Malformed answers are rejected.
+        assert_eq!(Response::parse(""), None);
+        assert_eq!(Response::parse("ok\ntor\tstopped\n"), None);
+        assert_eq!(Response::parse("ok\ntor\tasleep\tno\t-\t-\tx\ty\n"), None);
+        assert_eq!(Response::parse("ok\ntor\tstopped\tno\tx\t-\tx\ty\n"), None);
+        assert_eq!(
+            Response::parse("ok\ntor\tstopped\tno\t-\t-\t\\q\ty\n"),
+            None
+        );
     }
 
     #[test]

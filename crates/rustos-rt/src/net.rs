@@ -19,6 +19,7 @@ pub const IPPROTO_UDP: u32 = 17;
 pub const SOL_SOCKET: u32 = 1;
 pub const SO_REUSEADDR: u32 = 2;
 pub const SO_BROADCAST: u32 = 6;
+pub const SO_PEERCRED: u32 = 17;
 pub const SO_RCVTIMEO: u32 = 20;
 pub const SO_SNDTIMEO: u32 = 21;
 
@@ -213,6 +214,15 @@ struct SockaddrIn6 {
     scope: u32,
 }
 
+/// Credentials of the process at the other end of an `AF_UNIX` socket
+/// (`SO_PEERCRED`): taken when it connected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ucred {
+    pub pid: u32,
+    pub uid: u32,
+    pub gid: u32,
+}
+
 /// A socket descriptor, closed on drop.
 pub struct Socket {
     fd: i32,
@@ -341,6 +351,16 @@ impl Socket {
         Ok((Socket { fd: fd as i32 }, sa.to()))
     }
 
+    /// accept4(2) with `flags` (`SOCK_NONBLOCK`, `SOCK_CLOEXEC`), not
+    /// reporting the peer's address (for `AF_UNIX` listeners).
+    pub fn accept4(&self, flags: u32) -> Result<Socket> {
+        let fd = sys::check(sys::syscall(
+            nr::ACCEPT4,
+            &[self.fd as usize, 0, 0, flags as usize],
+        ))?;
+        Ok(Socket { fd: fd as i32 })
+    }
+
     pub fn send(&self, buf: &[u8]) -> Result<usize> {
         sys::check(sys::syscall(
             nr::SENDTO,
@@ -414,6 +434,36 @@ impl Socket {
             ],
         ))
         .map(|_| ())
+    }
+
+    /// getsockopt(2) into `val`; returns the option's length.
+    pub fn get_option(&self, level: u32, name: u32, val: &mut [u8]) -> Result<usize> {
+        let mut len = val.len() as u32;
+        sys::check(sys::syscall(
+            nr::GETSOCKOPT,
+            &[
+                self.fd as usize,
+                level as usize,
+                name as usize,
+                val.as_mut_ptr() as usize,
+                &mut len as *mut u32 as usize,
+            ],
+        ))?;
+        Ok(len as usize)
+    }
+
+    /// The peer's credentials (`SO_PEERCRED`, `AF_UNIX` only).
+    pub fn peer_cred(&self) -> Result<Ucred> {
+        let mut b = [0u8; 12];
+        if self.get_option(SOL_SOCKET, SO_PEERCRED, &mut b)? < 12 {
+            return Err(Error(22));
+        }
+        let f = |i: usize| u32::from_ne_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
+        Ok(Ucred {
+            pid: f(0),
+            uid: f(4),
+            gid: f(8),
+        })
     }
 
     /// Receive timeout in milliseconds (0 = none).

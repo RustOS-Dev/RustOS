@@ -114,8 +114,9 @@ fn main(_args: Vec<String>) -> i32 {
             io::flush();
         }
 
-        // Sleep until a child exits (SIGCHLD interrupts poll), a request
-        // arrives or timed service work is due.
+        // Sleep until a child exits (SIGCHLD interrupts poll), a `svc`
+        // client connects or sends its request, or timed service work is
+        // due.
         let mut timeout = services
             .next_timeout()
             .unwrap_or(MAX_WAIT_MS)
@@ -124,13 +125,13 @@ fn main(_args: Vec<String>) -> i32 {
             timeout = timeout.min(console_retry.saturating_sub(rustos_rt::time::millis()));
         }
         let mut fds: Vec<io::PollFd> = services
-            .control_fd()
+            .poll_fds()
+            .into_iter()
             .map(|fd| io::PollFd {
                 fd,
                 events: io::POLLIN,
                 revents: 0,
             })
-            .into_iter()
             .collect();
         if fds.is_empty() {
             rustos_rt::time::sleep_ms(timeout);

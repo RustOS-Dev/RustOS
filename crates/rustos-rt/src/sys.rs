@@ -86,6 +86,7 @@ pub mod nr {
     pub const CLOCK_GETTIME: usize = 228;
     pub const EXIT_GROUP: usize = 231;
     pub const UTIMENSAT: usize = 280;
+    pub const ACCEPT4: usize = 288;
     pub const PIPE2: usize = 293;
     pub const GETRANDOM: usize = 318;
 }

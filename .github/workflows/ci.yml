@@ -225,6 +225,17 @@ jobs:
           tools/install-port.sh --initramfs weston
           cargo build --features linux-drivers
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop.txt
+      - name: eDEX compositor on the Wayland stack (desktop-edex)
+        run: |
+          # The edex-de port builds the pinned eDEX-DE commit (EDEX_SRC=DIR for
+          # a checkout) with the default toolchain, for musl, against the
+          # weston stage of the step above; edex-comp renders with pixman.
+          (cd "$RUNNER_TEMP" && rustup target add x86_64-unknown-linux-musl)
+          tools/install-port.sh --initramfs libunwind
+          tools/install-port.sh --initramfs edex-de
+          cargo build --features linux-drivers
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop-edex.txt
+          rm -rf target/ports/build/edex-de
       - name: Desktop kernel features (desktop-kernel)
         run: |
           cargo build --features linux-drivers

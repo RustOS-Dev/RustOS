@@ -5,13 +5,22 @@
 settings) on its own Wayland compositor, `edex-comp`, built with Smithay. It is milestone **M43**
 in [ROADMAP.md](ROADMAP.md).
 
-Status: the RustOS side that does not need graphics is done (CPU-time accounting, the `svc`
-service manager, Linux signal frames for Go and Rust programs, the ports below except `edex-de`
-itself). In an image with those ports under QEMU, `tor` checks its configuration, `wg` makes keys,
-`lyrebird` and `snowflake-client` start, and a dynamically linked Rust program unwinds a panic
-through the `libunwind` port. eDEX-DE builds for RustOS once M37 supplies the desktop libraries
-and runs once the graphics milestones (M35–M42) are in. What it needs from RustOS, call by call,
-is listed in eDEX-DE's
+Status:
+
+* **The compositor runs.** `edex-comp` builds against the M37 Wayland stack (the weston port's
+  stage) and runs on Linux DRM (`--features linux-drivers`; tested on QEMU's bochs) with
+  libseat's builtin seat, libinput and libudev-zero. Without Mesa it is built without its `gpu`
+  feature and renders with **pixman** into DRM dumb buffers. The `desktop-edex` scenario runs it
+  with `weston-terminal`, tiles the window, types into it and screendumps the result.
+* **The shell and the greeter wait for Mesa (M41).** `edex-de` and `edex-greeter` build and are
+  installed, but draw with wgpu (Vulkan, or GLES through EGL). The `edex` service starts
+  `edex-comp --greeter`, whose login screen is `edex-greeter`, so it waits for M41 too.
+* The RustOS side that does not need graphics is done: CPU-time accounting, the `svc` service
+  manager, Linux signal frames for Go and Rust programs, and the ports below. In an image with them,
+  `tor` checks its configuration, `wg` makes keys, `lyrebird` and `snowflake-client` start, and a
+  dynamically linked Rust program unwinds a panic through the `libunwind` port.
+
+What eDEX-DE needs from RustOS, call by call, is listed in eDEX-DE's
 [docs/rustos.md](https://github.com/RustOS-Dev/eDEX-DE-RS/blob/master/docs/rustos.md).
 
 ## What runs
@@ -26,8 +35,8 @@ system services (svc): seatd, dbus, upower, rustos-nmd; tor when the Privacy pan
 
 | eDEX-DE feature | RustOS piece |
 |---|---|
-| Outputs, rendering | DRM/KMS (M35, M38–M40), Mesa GBM/EGL (M41; softpipe from M37) |
-| Seat, VT switching | M36 VT switching and DRM master handover, seatd (M42) |
+| Outputs, rendering | DRM/KMS (M35, M38–M40); pixman on dumb buffers now, Mesa GBM/EGL from M41 |
+| Seat, VT switching | M36 VT switching and DRM master handover, libseat's builtin seat (M37), seatd (M42) |
 | Input | evdev, libinput, libxkbcommon (M37) |
 | Wayland clients, shared buffers | `AF_UNIX` with `SCM_RIGHTS`, memfd (M36) |
 | Live configuration reload | inotify (M36) |
@@ -54,12 +63,31 @@ tools/install-port.sh --initramfs jetbrains-mono-nerd
 cargo build --features linux-drivers          # DRM (bochs, virtio-gpu, simpledrm) and HID
 ```
 
-`edex-de` builds against the weston port's stage (`target/ports/build/weston/stage`, through
-`tools/cross/rustos-pkg-config`) and links with `tools/rustos-cc`. The Privacy panel's ports are
+`edex-de` builds against the weston port's stage (`target/ports/build/weston/stage`, or
+`RUSTOS_WESTON_STAGE`, through `tools/cross/rustos-pkg-config`), links with `tools/rustos-cc` and
+`libgcc_s.so.1` from the `libunwind` port, and fails if a binary needs a library the stage does not
+have. `edex-comp` is built with `--no-default-features` (pixman; no GBM or EGL); `edex-comp` needs
+`libwayland-server`, `libxkbcommon`, `libinput`, `libseat`, `libudev` and `libpixman-1`. The Privacy panel's ports are
 optional: `tor`, `tor-pt` and `wireguard-tools`. Together they add about 80 MB to the image: Tor
 with its GeoIP files (28 MB), the Go pluggable transports (33 MB); the fonts are 19 MB.
 
 ## Turning it on
+
+Today (M37, no Mesa): the compositor with a Wayland client of your choice, from a console, like
+Weston:
+
+```sh
+mkdir -p /tmp/xdg; chmod 700 /tmp/xdg
+export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin
+edex-comp run --run weston-terminal > /tmp/edex.log 2>&1 &
+edex-comp state                       # outputs and windows
+edex-comp msg '{"cmd":"exit"}'
+```
+
+`--run` starts only the given programs, not the eDEX session (the shell, D-Bus, PipeWire);
+windows tile over the whole output, on the theme's background. `SUPER+Shift+Q` closes a window.
+
+Once Mesa is in (M41) and the desktop services (M42), the full desktop with its login screen:
 
 ```sh
 svc enable seatd && svc enable dbus && svc enable upower && svc enable rustos-nmd
@@ -72,20 +100,31 @@ The `edex` service runs on tty1, where the serial console's shell also runs; use
 ## Until users are separate
 
 RustOS runs everything as uid 0 today, and eDEX-DE's session does too: the shell calls `svc`
-(whose control FIFO is root-only), the Tor helpers in `/usr/libexec/edex-de` (they write
+(whose control FIFO is root-only), the Tor helpers in `/usr/local/libexec/edex-de` (they write
 `/storage/etc/tor`) and writes the backlight directly. When sessions run as ordinary users these
 go through a small privilege broker (an open M43 item), and `edex-auth` is installed set-uid root;
 it already only lets callers change their own account.
 
 ## Testing
 
-eDEX-DE's own unit tests run on a Linux host (its CI). On RustOS, once M42 is in, a
-`desktop-edex` scenario (QEMU with virtio-gpu) will:
+eDEX-DE's own unit tests run on a Linux host (its CI). On RustOS, the
+`tests/scenarios/linux/desktop-edex.txt` scenario (QEMU's standard VGA, Linux bochs DRM, a kernel
+built with `--features linux-drivers` and the weston, libunwind and edex-de ports installed with
+`--initramfs`):
 
-1. enable seatd, dbus and `edex`, boot, and wait for `edex-comp` in `svc status edex --json`;
-2. log in at the greeter with `sendkey` (user `root`, empty password);
-3. check `edex-comp state` lists the output and `edex-de ipc state` reports a configured canvas and
-   `"compositor": {"connected": true}`;
-4. open a terminal window (`SUPER+Shift+Return`) and check it is tiled inside the app area;
-5. compare a `screendump` region against the theme's colours;
-6. lock (`SUPER+Alt+L`), unlock, and log out.
+1. starts `edex-comp run --run weston-terminal` with `LIBSEAT_BACKEND=builtin` and waits for
+   `rendering with pixman` and `output Virtual-1 enabled 1280x800 (pixman)` in its log;
+2. checks `edex-comp state` lists the output and the `weston-terminal` window, tiled and focused;
+3. checks a `screendump`: the theme's background in the outer gap, the focus border in the
+   theme's accent, the terminal over the rest of the output;
+4. types `echo edex-typed > /tmp/k` with `sendkey` and reads the file on the serial console;
+5. makes edex-comp exit with `edex-comp msg '{"cmd":"exit"}'`.
+
+```sh
+python3 tools/qemu-console-test.py target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop-edex.txt
+```
+
+Once Mesa (M41) and M42 are in, a `desktop-edex-session` scenario will also enable seatd, dbus and
+`edex`, log in at the greeter with `sendkey`, check `edex-de ipc state` (`"compositor":
+{"connected": true}`), open a terminal window with `SUPER+Shift+Return`, compare the shell's
+colours, and lock, unlock and log out.

@@ -1113,6 +1113,7 @@ pub fn debug_dump() {
         })
         .collect();
     dprint!("[sysrq] wait channels (image offsets) {:?}", chans);
+    crate::syscall::event::dump_epolls();
     #[cfg(feature = "linuxkpi")]
     if crate::linuxkpi::ready() {
         crate::linuxkpi::sched::dump_state();

@@ -500,18 +500,57 @@ impl FileLike for Epoll {
     }
 }
 
+/// Every epoll instance with its creator, for state dumps.
+static EPOLLS: Mutex<Vec<(u32, Weak<Epoll>)>> = Mutex::new(Vec::new());
+
 pub fn epoll_create1(flags: u32) -> SysResult {
     if flags & !vfs::O_CLOEXEC != 0 {
         return Err(EINVAL);
     }
-    install(
-        Arc::new(Epoll {
-            items: Mutex::new(BTreeMap::new()),
-            wq: WaitQueue::new(),
-        }),
-        flags & vfs::O_CLOEXEC,
-        "anon_inode:[eventpoll]",
-    )
+    let ep = Arc::new(Epoll {
+        items: Mutex::new(BTreeMap::new()),
+        wq: WaitQueue::new(),
+    });
+    {
+        let mut all = EPOLLS.lock();
+        all.retain(|(_, w)| w.strong_count() > 0);
+        all.push((cur()?.pid, Arc::downgrade(&ep)));
+    }
+    install(ep, flags & vfs::O_CLOEXEC, "anon_inode:[eventpoll]")
+}
+
+/// State dump: each epoll instance's interests, with their current
+/// readiness and whether the interest's wake hook is still registered.
+/// A ready interest of an epoll its owner sleeps on is a lost wake-up.
+pub fn dump_epolls() {
+    let Some(all) = EPOLLS.try_lock() else {
+        crate::serial_println!("[sysrq] epoll list locked");
+        return;
+    };
+    for (pid, w) in all.iter() {
+        let Some(ep) = w.upgrade() else { continue };
+        let Some(items) = ep.items.try_lock() else {
+            crate::serial_println!("[sysrq] epoll of pid {} locked", pid);
+            continue;
+        };
+        let mut line = alloc::format!("[sysrq] epoll pid {} waiters-hooks:", pid);
+        for ((fd, _), it) in items.iter() {
+            let ready = it
+                .file
+                .upgrade()
+                .map(|f| f.poll() as u32 & (it.events | EPOLLERR | EPOLLHUP))
+                .unwrap_or(0);
+            line.push_str(&alloc::format!(
+                " {}:ev{:#x}/r{:#x}/h{}{}",
+                fd,
+                it.events & 0xffff,
+                ready,
+                Arc::strong_count(&it.hook) - 1,
+                if it.disabled { "/off" } else { "" }
+            ));
+        }
+        crate::serial_println!("{}", line);
+    }
 }
 
 pub fn epoll_ctl(epfd: i32, op: u32, fd: i32, event: u64) -> SysResult {

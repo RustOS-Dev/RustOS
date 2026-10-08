@@ -4,7 +4,7 @@
 //! through either `syscall` or `int 0x80`. The result (or `-errno`) is
 //! returned in rax.
 
-mod event;
+pub(crate) mod event;
 pub mod fdobj;
 mod fs;
 mod mem;

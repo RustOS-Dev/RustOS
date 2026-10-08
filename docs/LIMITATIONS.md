@@ -48,6 +48,9 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   in the kernel image until written), and memfds use page frames.
 * OpenGL is GLES through EGL (no GLX or desktop libGL); without a supported
   GPU it is softpipe, so GL clients and Weston's GL renderer are slow.
+* Xwayland runs without GLX and, on softpipe, without glamor (X clients
+  draw in software); labwc needs `WLR_RENDERER_ALLOW_SOFTWARE=1` to use
+  softpipe, otherwise it falls back to its pixman renderer.
 * Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

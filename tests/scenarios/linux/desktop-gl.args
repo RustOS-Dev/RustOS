@@ -1,0 +1,3 @@
+# The desktop ports in the boot image leave little of the default 512 MiB
+# (QEMU takes the last -m).
+-m 1536M

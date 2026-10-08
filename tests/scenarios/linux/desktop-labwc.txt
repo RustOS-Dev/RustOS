@@ -57,9 +57,11 @@ monitor screendump /tmp/rustos-labwc/typed.ppm
 # xhello (ports/labwc/xhello.c) opens a blue 400x300 window.
 send DISPLAY=:0 xhello >/tmp/xhello.log 2>&1 &
 sleep 40
-send cat /tmp/xhello.log
+send cat /tmp/xhello.log; grep -a -i -e xwm -e xwayland /tmp/labwc.log | tail -n 15
 wait xhello: connected, vendor The X.Org Foundation
 wait xhello: mapped
 wait # $
+# labwc composites the new window on its next (software-rendered) frame.
+sleep 15
 monitor screendump /tmp/rustos-labwc/xwayland.ppm
 hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-labwc/xwayland.ppm 'count:32,96,192>=100000'

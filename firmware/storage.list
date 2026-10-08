@@ -32,6 +32,65 @@ lf nvidia/gb202/gsp/fmc-570.144.bin nvidia/gb202/gsp/fmc-570.144.bin cb59a35c1d4
 lf nvidia/tu102/gsp/gsp-570.144.bin nvidia/tu102/gsp/gsp-570.144.bin 3052aee2872182a14d8d7c069e3a14fe4642405894b24692c4aca4101dfb1809
 lf nvidia/ga102/gsp/gsp-570.144.bin nvidia/ga102/gsp/gsp-570.144.bin a8c3ebeed280323aedb51c061f321e73379cce7a9ae643a33dd03915df027f7f
 lf LICENCE.nvidia LICENSES/LICENCE.nvidia bc5225a57f49c5249dcf238e4ae6437811677a2a8a7f579c3d839e058653ee44
+# Intel GPUs (i915 and xe, M40): GuC/HuC/GSC microcontroller and display
+# DMC firmware for Skylake through Panther Lake and Battlemage, as the
+# drivers request it (15 MiB).
+lf i915/adlp_dmc.bin i915/adlp_dmc.bin 3516de2e134ddcf3b319c75d2e437779fecbd58cbb77234bd6f297c544e92ccb
+lf i915/adlp_dmc_ver2_16.bin i915/adlp_dmc_ver2_16.bin 2da482ea46a40e54c9ca3b54185959177f393eff98ece21acdac7eb6cacb0fcb
+lf i915/adlp_guc_69.0.3.bin i915/adlp_guc_69.0.3.bin d0a84c4b0f4f392761ae4eaabd6113d684317e9d603255f702a68faf4c188cee
+lf i915/adlp_guc_70.1.1.bin i915/adlp_guc_70.1.1.bin c8b59750299ebb54a9027e9bf925ebe3fd20e6185cf73a903de52aecdb8af31d
+lf i915/adlp_guc_70.bin i915/adlp_guc_70.bin b7a800cbdcdf687e7b1c81f3316d040ab75fa3e5c698ebc356f077af17462ef8
+lf i915/adls_dmc_ver2_01.bin i915/adls_dmc_ver2_01.bin 96e426ed7e80f0cc6644ada1928f4d02b163ff59b14b2339aa28a374d65a5b19
+lf i915/bmg_dmc.bin i915/bmg_dmc.bin 76e3ec6ea3a53ce727e43b84f5ea14c55400a2d118dac356d4e12a3cfac06b4d
+lf i915/bxt_dmc_ver1_07.bin i915/bxt_dmc_ver1_07.bin b4036e7698130c7a59637e543f6c614495c7076666104a2079d011f0923455f5
+lf i915/bxt_guc_70.1.1.bin i915/bxt_guc_70.1.1.bin 7be275f5dc7595923fb2f671d72a1a6b2cf9c2c6f703fbf90f6520c273dfd1bf
+lf i915/bxt_huc_2.0.0.bin i915/bxt_huc_2.0.0.bin d68cae0933f5314781e67ac195e5db660fa6350c4030dbee094a724e84d5a9a1
+lf i915/cml_guc_70.1.1.bin i915/cml_guc_70.1.1.bin d7a78a1baf3ea1041c0f79b5b4e7e8a87b0312b6af5bb19109401c1d66f49867
+lf i915/cml_huc_4.0.0.bin i915/cml_huc_4.0.0.bin fc351dc972f8953a480e28fb64c2f1cea43387e55e8c7307553a059f6ed8b287
+lf i915/dg1_dmc_ver2_02.bin i915/dg1_dmc_ver2_02.bin 89576b82489737ae1b4cd057f471363a75baeb7590d76a15e17895ad38e6c09d
+lf i915/dg1_guc_70.bin i915/dg1_guc_70.bin 967e94b887024351aa363f882d3cbd0bf5fc4f5f47fd113faf8c19fb565c21a9
+lf i915/dg1_huc.bin i915/dg1_huc.bin ee9a00ca754931ab045e2e3e862e7b33c9ba87f6ae90aa18335b7a7a7ee87d16
+lf i915/dg2_dmc_ver2_08.bin i915/dg2_dmc_ver2_08.bin cac5204087bba70a81c53778846340e57a4e35e5959b7b42006969f6e5f45466
+lf i915/dg2_guc_70.bin i915/dg2_guc_70.bin e6e3f8b4480ba976c89c491ac736d6ce41fa82e0cf5726d0763142da3fe8a63b
+lf i915/dg2_huc_gsc.bin i915/dg2_huc_gsc.bin 045db8407373e0d688f17fc5e75621d7d0b7bdeb6eb67ba36c656aec145fe8fb
+lf i915/ehl_guc_70.1.1.bin i915/ehl_guc_70.1.1.bin 84f2856785d9c5d8d8177c23b8218a79e0fc670464d5bb52b79e2a22c1fafacd
+lf i915/ehl_huc_9.0.0.bin i915/ehl_huc_9.0.0.bin 94e0df9fc94249b250806591a4d60ff395c7ab1b755246fb5eaf6ff2ffd7f774
+lf i915/glk_dmc_ver1_04.bin i915/glk_dmc_ver1_04.bin 412d3a3ed68908b983ff16cfe496e969c9fd31f94283e0872d7e5413c7bee504
+lf i915/glk_guc_70.1.1.bin i915/glk_guc_70.1.1.bin fabb131fc0d66604703f3466cc3e25c63de93af34b5915cc2cd04ef61f8c72ea
+lf i915/glk_huc_4.0.0.bin i915/glk_huc_4.0.0.bin cb9c89eba34c4233601fe8194bf2acd75e11586bf17933963f3325084c57568e
+lf i915/icl_dmc_ver1_09.bin i915/icl_dmc_ver1_09.bin aafad1967679baa36e971e5331da73eea31c68239416432df83e71332755dc01
+lf i915/icl_guc_70.1.1.bin i915/icl_guc_70.1.1.bin 2a785229309a4d895098eb33dce4f4a2e3c189f233600bc78e534c5c93873dac
+lf i915/icl_huc_9.0.0.bin i915/icl_huc_9.0.0.bin d488084ad71772ed77708ee0930433e1aa96caea354aa40b80a9610291618880
+lf i915/kbl_dmc_ver1_04.bin i915/kbl_dmc_ver1_04.bin 2cde41c3e5ad181423bcc3e98ff9c49f743c88f18646af4d0b3c3a9664b831a1
+lf i915/kbl_guc_70.1.1.bin i915/kbl_guc_70.1.1.bin 497bb8b2b90086aa681f90c917e89d7c6299fc096b1d89369d49d24d467a1112
+lf i915/kbl_huc_4.0.0.bin i915/kbl_huc_4.0.0.bin 8bc643aa06a173c2969ac5946e9183544521048985d53e7148b85a898e85d10f
+lf i915/mtl_dmc.bin i915/mtl_dmc.bin 1b3b826195d50fae6611d29e0eb348e641a3ada3e0436ee0b987124f47a0e0db
+lf i915/mtl_gsc_1.bin i915/mtl_gsc_1.bin 01e8e2bb0eae90e3b4471703bb04d1bd13adb43373480fb10be6f101b877e0f3
+lf i915/mtl_guc_70.bin i915/mtl_guc_70.bin 7794f0b6abe5fcd9c6f47035dafe2199f30a6e7d230bd5a53fbf8005a60e5911
+lf i915/mtl_huc_gsc.bin i915/mtl_huc_gsc.bin 3ea23f39e946122d1446565d1a07c0866bf3e3c8819b43134925371d877ca4cd
+lf i915/rkl_dmc_ver2_03.bin i915/rkl_dmc_ver2_03.bin 139ce0eb873a13679a4685463cdacf6d247073ce286c8a5bca443ef1d17ee2ac
+lf i915/skl_dmc_ver1_27.bin i915/skl_dmc_ver1_27.bin d3b6dc1a39bb2aeb37a1179f2b4e8145c24986da78c533571a5712dc91ec3f61
+lf i915/skl_guc_70.1.1.bin i915/skl_guc_70.1.1.bin ccb6e2abf19a88c1ab0fc09f5340a6ff85d52548340031c4e04088d9fc9dc2ce
+lf i915/skl_huc_2.0.0.bin i915/skl_huc_2.0.0.bin c7a1dce013050f823471de2cdc5f0170b1acf8c811ca8c8da41e35f526bcb1d7
+lf i915/tgl_dmc_ver2_12.bin i915/tgl_dmc_ver2_12.bin 3c013ef0ad96ba73aee8e5bd04a8e27cc9b1c6e9183b1a83ce124485f325afca
+lf i915/tgl_guc_69.0.3.bin i915/tgl_guc_69.0.3.bin 2a099af887a3289402220df0aa9741948e48d641909c69a68167c49da9d62e91
+lf i915/tgl_guc_70.1.1.bin i915/tgl_guc_70.1.1.bin 5ab0e417fba5ec7588384e21556b30355300d450a35e06ebb94821c012611d77
+lf i915/tgl_guc_70.bin i915/tgl_guc_70.bin 2f1f57a1b23d186f2592318d1e07a1365968932841ccb3e7177c516ba006e2f6
+lf i915/tgl_huc.bin i915/tgl_huc.bin dbb1316bac13a76427ffa7827e52b5b9affe8a4cadd23dc22e2a54e35c53bdad
+lf i915/tgl_huc_7.9.3.bin i915/tgl_huc_7.9.3.bin dbb1316bac13a76427ffa7827e52b5b9affe8a4cadd23dc22e2a54e35c53bdad
+lf i915/xe2lpd_dmc.bin i915/xe2lpd_dmc.bin eb6f1283f714b9a8af3492802d1478e774e7795e09d75b56865ddaca3ae07abc
+lf i915/xe3lpd_3002_dmc.bin i915/xe3lpd_3002_dmc.bin dbc2923b62a6fc9663b928719dd0504df6adba85a0f5b49e1482b7afbc4b36b7
+lf i915/xe3lpd_dmc.bin i915/xe3lpd_dmc.bin be1d24f6262aef0a4b8a69e739d2025df2ba7e924a1697b20f5ab59a7977fc71
+lf xe/bmg_guc_70.bin xe/bmg_guc_70.bin de81c75f46a127c33cd59f604d800e9ffc7ed3495967ba0d8767cd6985ab398b
+lf xe/bmg_huc.bin xe/bmg_huc.bin 747452aa8c4ed7760c68a80f3d913eafde9304d6f4db481e3f2aebb0a818bf15
+lf xe/lnl_gsc_1.bin xe/lnl_gsc_1.bin b9a28846de2df43e8464cb783f965efe3a20df54da26392576583a4e0f4bbef1
+lf xe/lnl_guc_70.bin xe/lnl_guc_70.bin 0583117763d2721b1b3a96c84d610229c18e644dce3a624b4e0ccc32952f5eaa
+lf xe/lnl_huc.bin xe/lnl_huc.bin 320e765cbe42b0f5f95333794a6a00a4e67246d6ad8393b59b64efdc3506cfe9
+lf xe/ptl_guc_70.bin xe/ptl_guc_70.bin ac42861c62b69f19923d9a69d971fb849921585a01924e14c0e8ac679d7cde81
+lf xe/ptl_huc.bin xe/ptl_huc.bin 93e9aaf15362630441042a31fe864f9e4df76b401ada91de6df64e0f6b8adbca
+lf LICENSE.i915 LICENSES/LICENSE.i915 8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
+lf LICENSE.xe LICENSES/LICENSE.xe 26b3c946f1f378ff25bb3bb7c365d108a2bc0bf08619e5e08bc0e4f9aaa6ee1e
+
 link nvidia/tu116/gsp/gen_bootloader-570.144.bin nvidia/tu102/gsp/gen_bootloader-570.144.bin
 link nvidia/tu116/gsp/bootloader-570.144.bin nvidia/tu102/gsp/bootloader-570.144.bin
 link nvidia/ga100/gsp/gen_bootloader-570.144.bin nvidia/tu102/gsp/gen_bootloader-570.144.bin

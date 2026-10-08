@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- RustOS default labwc configuration (copy to ~/.config/labwc to change). -->
+<labwc_config>
+  <core>
+    <decoration>server</decoration>
+  </core>
+  <theme>
+    <name></name>
+    <cornerRadius>6</cornerRadius>
+    <font place="ActiveWindow"><name>DejaVu Sans</name><size>10</size></font>
+    <font place="MenuItem"><name>DejaVu Sans</name><size>10</size></font>
+  </theme>
+  <keyboard>
+    <default />
+    <keybind key="W-Return"><action name="Execute" command="foot" /></keybind>
+    <keybind key="A-Return"><action name="Execute" command="foot" /></keybind>
+    <keybind key="W-q"><action name="Close" /></keybind>
+    <keybind key="A-Tab"><action name="NextWindow" /></keybind>
+  </keyboard>
+  <mouse>
+    <default />
+  </mouse>
+</labwc_config>

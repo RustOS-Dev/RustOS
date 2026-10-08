@@ -1,13 +1,25 @@
 #!/bin/sh
-# Weston (Wayland compositor) with the DRM backend and the pixman (software)
-# renderer, and the libraries under it, built as shared libraries against
-# musl. Installs to /usr/local: weston, weston-terminal and the demo
-# clients, libinput/libseat/libwayland/..., XKB data, a fontconfig setup
-# for the fonts in /usr/share/fonts, and modetest (libdrm).
+# The desktop graphics stack, built as shared libraries against musl:
+# Weston (Wayland compositor) with the DRM backend and both the pixman
+# (software) and GL renderers, Mesa (EGL, GBM, OpenGL ES/GL and Vulkan
+# drivers) and the libraries under them. Installs to /usr/local: weston,
+# weston-terminal, libinput/libseat/libwayland/..., Mesa's libraries and
+# drivers, XKB data, a fontconfig setup for the fonts in /usr/share/fonts,
+# and modetest (libdrm).
+#
+# Mesa's drivers: softpipe (software GL, also on any KMS display through
+# kms_swrast), virgl (QEMU virtio-gpu 3D), zink (GL on Vulkan: AMD's
+# OpenGL here, on RADV), iris (Intel GL), RADV (AMD Vulkan, ACO) and ANV
+# (Intel Vulkan). Not built: llvmpipe and lavapipe (need LLVM ported to
+# RustOS), radeonsi (needs libelf), NVK (needs Rust cross-compiled for
+# RustOS).
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 #
-# Needs on the build host: meson, ninja, pkg-config, gperf, bison, python3, hwdata,
-# and expat/libffi development files (for a native wayland-scanner).
+# Needs on the build host: meson, ninja, pkg-config, gperf, bison, flex,
+# python3 with mako, pyyaml and ply, hwdata, glslang-tools, expat/libffi
+# development files (for a native wayland-scanner), and LLVM 18 with
+# clang, libclc and SPIRV-LLVM-Translator development files (Mesa's
+# OpenCL-C kernel compiler, mesa_clc, runs on the host).
 set -e
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$ROOT/tools/port-lib.sh"
@@ -55,6 +67,23 @@ meson_pkg() {
     echo "weston port: $name" >&2
 }
 
+# cmake_pkg NAME SRCDIR [CMAKE OPTIONS...]: cross-build and stage a CMake project.
+cmake_pkg() {
+    name="$1"; dir="$2"; shift 2
+    b="$BUILD/b-$name"
+    rm -rf "$b"
+    PKG_CONFIG="$ROOT/tools/cross/rustos-pkg-config" cmake -G Ninja -S "$dir" -B "$b" \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+        -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$ROOT/tools/rustos-c++" \
+        -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_FIND_ROOT_PATH="$STAGE/usr/local" -DCMAKE_PREFIX_PATH="$STAGE/usr/local" \
+        "$@" >"$BUILD/$name.log" 2>&1 || { tail -30 "$BUILD/$name.log" >&2; exit 1; }
+    ninja -C "$b" >>"$BUILD/$name.log" 2>&1 || { tail -40 "$BUILD/$name.log" >&2; exit 1; }
+    DESTDIR="$STAGE" ninja -C "$b" install >>"$BUILD/$name.log" 2>&1
+    mark "$name"
+    echo "weston port: $name" >&2
+}
+
 # autotools_pkg NAME SRCDIR [CONFIGURE OPTIONS...]
 autotools_pkg() {
     name="$1"; dir="$2"; shift 2
@@ -92,8 +121,8 @@ fetch https://www.freedesktop.org/software/fontconfig/release/fontconfig-2.15.0.
     63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e "$SRC/fontconfig-2.15.0.tar.xz"
 fetch https://cairographics.org/releases/cairo-1.18.2.tar.xz \
     a62b9bb42425e844cc3d6ddde043ff39dbabedd1542eba57a2eb79f85889d45a "$SRC/cairo-1.18.2.tar.xz"
-fetch https://dri.freedesktop.org/libdrm/libdrm-2.4.124.tar.xz \
-    ac36293f61ca4aafaf4b16a2a7afff312aa4f5c37c9fbd797de9e3c0863ca379 "$SRC/libdrm-2.4.124.tar.xz"
+fetch https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz \
+    ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95 "$SRC/libdrm-2.4.134.tar.xz"
 fetch https://www.freedesktop.org/software/libevdev/libevdev-1.13.3.tar.xz \
     abf1aace86208eebdd5d3550ffded4c8d73bb405b796d51c389c9d0604cbcfbf "$SRC/libevdev-1.13.3.tar.xz"
 fetch https://bitmath.org/code/mtdev/mtdev-1.1.7.tar.bz2 \
@@ -106,6 +135,16 @@ fetch_git https://git.sr.ht/~kennylevinsen/seatd 0.9.1 \
     566ffeb032af42865dc1210e48cec08368059bb9 "$SRC/seatd-0.9.1"
 fetch https://gitlab.freedesktop.org/emersion/libdisplay-info/-/releases/0.2.0/downloads/libdisplay-info-0.2.0.tar.xz \
     5a2f002a16f42dd3540c8846f80a90b8f4bdcd067a94b9d2087bc2feae974176 "$SRC/libdisplay-info-0.2.0.tar.xz"
+fetch https://archive.mesa3d.org/mesa-26.2.4.tar.xz \
+    bce5f7fbebb934373b86c999a064d52fb5065878dc57f287f95346648ec832e9 "$SRC/mesa-26.2.4.tar.xz"
+fetch_git https://github.com/KhronosGroup/Vulkan-Headers v1.4.365 \
+    c46850864f4661461b0f6cb9922c058ffea4915e "$SRC/Vulkan-Headers-1.4.365"
+fetch_git https://github.com/KhronosGroup/Vulkan-Loader v1.4.365 \
+    f866657ff687a36d767cd7783bab800e31ebafaa "$SRC/Vulkan-Loader-1.4.365"
+fetch_git https://github.com/KhronosGroup/Vulkan-Tools v1.4.365 \
+    f13d435dd50dc616db0c10e7bac87cd3aa7c82e3 "$SRC/Vulkan-Tools-1.4.365"
+fetch_git_commit https://gitlab.freedesktop.org/mesa/kmscube.git \
+    f60e50e887d3c49e91ac9b06d8199b36152632fa "$SRC/kmscube-f60e50e"
 fetch https://gitlab.freedesktop.org/wayland/weston/-/releases/14.0.1/downloads/weston-14.0.1.tar.xz \
     a8150505b126a59df781fe8c30c8e6f87da7013e179039eb844a5bbbcc7c79b3 "$SRC/weston-14.0.1.tar.xz"
 
@@ -152,8 +191,8 @@ built cairo || meson_pkg cairo "$(unpack "$SRC/cairo-1.18.2.tar.xz")" \
     -Dxlib=disabled -Dxcb=disabled -Dtests=disabled -Dglib=disabled -Dspectre=disabled \
     -Dsymbol-lookup=disabled -Dgtk2-utils=disabled -Dpng=enabled \
     -Dfreetype=enabled -Dfontconfig=enabled -Dzlib=enabled -Dquartz=disabled -Ddwrite=disabled
-built libdrm || meson_pkg libdrm "$(unpack "$SRC/libdrm-2.4.124.tar.xz")" \
-    -Dintel=disabled -Dradeon=disabled -Damdgpu=disabled -Dnouveau=disabled \
+built libdrm-gpu || meson_pkg libdrm-gpu "$(unpack "$SRC/libdrm-2.4.134.tar.xz")" \
+    -Dintel=disabled -Dradeon=disabled -Damdgpu=enabled -Dnouveau=enabled \
     -Dvmwgfx=disabled -Dfreedreno=disabled -Dvc4=disabled -Detnaviv=disabled \
     -Dexynos=disabled -Domap=disabled -Dtegra=disabled -Dman-pages=disabled \
     -Dvalgrind=disabled -Dcairo-tests=disabled -Dtests=true -Dinstall-test-programs=true
@@ -180,10 +219,53 @@ if ! built seatd; then
         -Dlibseat-builtin=enabled -Dserver=enabled -Dexamples=disabled -Dman-pages=disabled
 fi
 built libdisplay-info || meson_pkg libdisplay-info "$(unpack "$SRC/libdisplay-info-0.2.0.tar.xz")"
+
+# Mesa's build-time tools for the drivers whose shaders are partly OpenCL C
+# (Intel): mesa_clc and the precompiler, built for the host.
+if ! built host-mesa-clc; then
+    d=$(unpack "$SRC/mesa-26.2.4.tar.xz")
+    rm -rf "$BUILD/b-host-mesa"
+    "$MESON" setup "$BUILD/b-host-mesa" "$d" --prefix="$HOST" --buildtype=release \
+        -Dgallium-drivers= -Dvulkan-drivers= -Dplatforms= -Dglx=disabled -Degl=disabled \
+        -Dgbm=disabled -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
+        -Dllvm=enabled -Dshared-llvm=enabled -Dmesa-clc=enabled -Dinstall-mesa-clc=true \
+        -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dbuild-tests=false \
+        -Dvalgrind=disabled -Dlibunwind=disabled -Dzstd=disabled -Dxmlconfig=disabled \
+        >"$BUILD/host-mesa-clc.log" 2>&1 || { tail -30 "$BUILD/host-mesa-clc.log" >&2; exit 1; }
+    ninja -C "$BUILD/b-host-mesa" install >>"$BUILD/host-mesa-clc.log" 2>&1 ||
+        { tail -40 "$BUILD/host-mesa-clc.log" >&2; exit 1; }
+    mark host-mesa-clc
+fi
+built mesa || meson_pkg mesa "$(unpack "$SRC/mesa-26.2.4.tar.xz")" \
+    -Dplatforms=wayland -Degl=enabled -Dgbm=enabled -Dglx=disabled -Dopengl=true \
+    -Dgles1=disabled -Dgles2=enabled -Dglvnd=disabled \
+    -Dgallium-drivers=softpipe,virgl,zink,iris \
+    -Dvulkan-drivers=amd,intel -Dllvm=disabled -Damd-use-llvm=false \
+    -Dmesa-clc=system -Dprecomp-compiler=system -Dintel-rt=disabled \
+    -Dvideo-codecs= -Dgallium-va=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
+    -Dlmsensors=disabled -Dzstd=disabled -Dxmlconfig=enabled -Dbuild-tests=false \
+    -Dandroid-libbacktrace=disabled
+# The Vulkan loader (libvulkan.so.1: Vulkan applications, and zink, which
+# runs OpenGL on RADV/ANV) and vulkaninfo.
+built vulkan-headers || cmake_pkg vulkan-headers "$SRC/Vulkan-Headers-1.4.365"
+built vulkan-loader || cmake_pkg vulkan-loader "$SRC/Vulkan-Loader-1.4.365" \
+    -DBUILD_WSI_XCB_SUPPORT=OFF -DBUILD_WSI_XLIB_SUPPORT=OFF -DBUILD_WSI_XLIB_XRANDR_SUPPORT=OFF \
+    -DBUILD_WSI_WAYLAND_SUPPORT=ON -DBUILD_TESTS=OFF -DUSE_GAS=OFF \
+    -DVulkanHeaders_DIR="$STAGE/usr/local/share/cmake/VulkanHeaders"
+built vulkaninfo || cmake_pkg vulkaninfo "$SRC/Vulkan-Tools-1.4.365" \
+    -DBUILD_CUBE=OFF -DBUILD_ICD=OFF -DBUILD_VULKANINFO=ON -DBUILD_TESTS=OFF \
+    -DBUILD_WSI_XCB_SUPPORT=OFF -DBUILD_WSI_XLIB_SUPPORT=OFF -DBUILD_WSI_WAYLAND_SUPPORT=ON \
+    -DBUILD_WSI_DIRECTFB_SUPPORT=OFF \
+    -DVulkanHeaders_DIR="$STAGE/usr/local/share/cmake/VulkanHeaders"
+if ! built kmscube; then
+    rm -rf "$BUILD/src/kmscube"
+    cp -r "$SRC/kmscube-f60e50e" "$BUILD/src/kmscube"
+    meson_pkg kmscube "$BUILD/src/kmscube" -Dgstreamer=disabled
+fi
 built weston || meson_pkg weston "$(unpack "$SRC/weston-14.0.1.tar.xz")" \
     -Dbackend-drm=true -Dbackend-headless=true -Dbackend-wayland=false -Dbackend-x11=false \
     -Dbackend-rdp=false -Dbackend-vnc=false -Dbackend-pipewire=false \
-    -Dbackend-drm-screencast-vaapi=false -Drenderer-gl=false -Dxwayland=false \
+    -Dbackend-drm-screencast-vaapi=false -Drenderer-gl=true -Dxwayland=false \
     -Dsystemd=false -Dremoting=false -Dpipewire=false -Dimage-jpeg=false -Dimage-webp=false \
     -Dcolor-management-lcms=false -Dshell-ivi=false -Dshell-kiosk=true -Dshell-desktop=true \
     -Ddemo-clients=false -Dsimple-clients=shm -Dtools=terminal,info -Dtest-junit-xml=false \

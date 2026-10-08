@@ -6,6 +6,8 @@ module: gpu_lib
 lib/uuid.c
 lib/seq_buf.c
 kernel/time/timeconv.c
+lib/math/int_sqrt.c
+mm/mempool.c
 module: ttm
 drivers/gpu/drm/ttm/ttm_tt.c
 drivers/gpu/drm/ttm/ttm_bo.c
@@ -37,6 +39,7 @@ module: drm
 drivers/gpu/buddy.c
 drivers/gpu/drm/drm_buddy.c
 drivers/gpu/drm/drm_panel_backlight_quirks.c
+drivers/gpu/drm/drm_mipi_dsi.c
 drivers/gpu/drm/drm_exec.c
 drivers/gpu/drm/drm_suballoc.c
 drivers/gpu/drm/drm_gem_ttm_helper.c

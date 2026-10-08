@@ -183,7 +183,11 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] nouveau compiled from Linux (`linux-drm-nouveau`, list generated from its Kbuild); in release images, opt-in with `linux.enable=nouveau`; GSP-RM 570.144 for Turing through Blackwell GB20x on the storage partition (`firmware/storage.list`, `.links` for linux-firmware's symlinks); `tools/vfio-run.sh`. Compiled, untested on hardware
   - [ ] Bring-up on the RTX 5070 (GB205) through VFIO: needs hardware
 - [ ] **M40** Intel GPUs (i915, xe)
+  - [x] i915 with display (Gen9 to Meteor Lake) and xe without display compiled from Linux (lists generated, xe via `--alias`); i915 in release images, opt-in with `linux.enable=i915`; GuC/HuC/GSC/DMC firmware on the storage partition; stolen memory from GGC/BDSM. Compiled, untested on hardware
+  - [ ] Bring-up on Intel hardware: needs hardware
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
+  - [x] Mesa 26.2 in `ports/weston`: EGL (GBM, Wayland), GLES 3.1, softpipe through kms_swrast on any KMS display (`gl-kmscube`), Weston's GL renderer (`desktop-gl`); virgl, zink, iris, RADV and ANV built (host `mesa_clc` for Intel); Vulkan loader and `vulkaninfo` (`gl-kmscube`). GPU drivers untested on hardware
+  - [ ] Not built: llvmpipe/lavapipe (LLVM not ported), radeonsi (libelf; AMD OpenGL is zink on RADV), NVK (Rust not cross-built for RustOS), desktop GL through GLX/glvnd
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
 - [ ] **M43** eDEX desktop: [eDEX-DE](https://github.com/RustOS-Dev/eDEX-DE-RS) (its own Smithay compositor `edex-comp`, shell, greeter, `edex-auth`) as the RustOS desktop; needs M36, M37, M41 and M42's seatd, D-Bus, PipeWire, UPower, login1 subset and `rustos-nmd` ([DESKTOP.md](DESKTOP.md))
   - [x] CPU-time accounting: per-CPU user/nice/system/idle/irq/softirq ticks, per-thread and per-process utime/stime with reaped children, Linux-format `/proc/stat`, `/proc/[pid]/stat` times, `/proc/uptime` idle, `/proc/loadavg` (5 s fixed-point EWMA), real `getrusage`/`times`/`wait4` rusage and CPU-time clocks (`kapitest cputime`)

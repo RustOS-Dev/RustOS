@@ -57,7 +57,11 @@ linux-drm-amd = ["linux-drm", "linux-i2c"]
 # kernel.conf linux.enable=<driver> until they have run on hardware.
 # NVIDIA GPUs through Linux nouveau (M39): compiled, untested on hardware.
 linux-drm-nouveau = ["linux-drm", "linux-i2c"]
-linux-gpu = ["linux-drm-amd", "linux-drm-nouveau"]
+# Intel GPUs through Linux i915 (M40): compiled, untested on hardware.
+linux-drm-i915 = ["linux-drm", "linux-i2c"]
+# Intel Xe2 GPUs through Linux xe, without display (M40): compiled only.
+linux-drm-xe = ["linux-drm", "linux-i2c"]
+linux-gpu = ["linux-drm-amd", "linux-drm-nouveau", "linux-drm-i915"]
 # SD/MMC cards on SDHCI hosts (PCI, ACPI) with Linux's MMC core: mmcblkN.
 linux-mmc = ["linuxkpi"]
 # Linux I2C core (adapters, ACPI-enumerated clients, bit-banging).

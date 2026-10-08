@@ -15,8 +15,10 @@
 #include <linux/gpio/driver.h>
 #include <linux/gpio/machine.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/machine.h>
 #include <linux/pinctrl/devinfo.h>
 #include <drm/drm_panel.h>
+#include <video/nomodeset.h>
 #include "kpi.h"
 
 /* drivers/base/pinctrl.c: devices have no pin control states (ACPI
@@ -223,4 +225,30 @@ void __weak clk_disable(struct clk *clk)
 unsigned long __weak clk_get_rate(struct clk *clk)
 {
 	return 0;
+}
+
+int __weak gpiod_set_value(struct gpio_desc *desc, int value)
+{
+	return -EINVAL;
+}
+
+struct pinctrl *__weak devm_pinctrl_get(struct device *dev)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+void __weak devm_pinctrl_put(struct pinctrl *p)
+{
+}
+
+int __weak pinctrl_register_mappings(const struct pinctrl_map *map, unsigned int num_maps)
+{
+	return 0;
+}
+
+/* drivers/video/nomodeset.c (DRM builds): without DRM, GPU drivers are
+ * not restricted to firmware framebuffers. HDA's i915 audio link asks. */
+bool __weak video_firmware_drivers_only(void)
+{
+	return false;
 }

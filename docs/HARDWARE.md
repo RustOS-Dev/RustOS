@@ -93,6 +93,8 @@ devices are cached (write-back buffer cache, `sync`).
 | virtio-gpu through Linux virtio-gpu (2D), in release images | CI (`drm-virtio`) |
 | AMD GPUs through Linux amdgpu with the display core (DC), RDNA1+ and Vega APUs (`DRM_AMDGPU_SI`/`CIK` off), in release images; firmware for the Raphael iGPU (Ryzen 7000, `1002:164e`) ships | compiled, **untested on hardware**; off by default: binds only with `linux.enable=amdgpu` in `kernel.conf` |
 | NVIDIA GPUs through Linux nouveau with GSP-RM 570.144: Turing, Ampere, Ada and Blackwell GB20x (RTX 5070 = GB205, `10de:2f04`), in release images; GSP firmware (about 90 MB) goes on the storage partition | compiled, **untested on hardware**; off by default: binds only with `linux.enable=nouveau`. For development, `tools/vfio-run.sh` passes the card through to QEMU |
+| Intel integrated GPUs through Linux i915 with display: Skylake (Gen9) through Meteor Lake, in release images; GuC/HuC/DMC firmware on the storage partition | compiled, **untested on hardware**; off by default: binds only with `linux.enable=i915` |
+| Intel Xe2 GPUs (Lunar Lake, Battlemage) through Linux xe | compiled only (`linux-drm-xe`, not in release images): built in, xe has no display (Linux allows xe display only as a module) |
 
 ## Audio
 
@@ -158,7 +160,7 @@ and is read at boot once the storage partition is mounted;
 | `iwlwifi.debug=1` | log every Wi-Fi firmware command and notification |
 | `net.debug=1` | log a one-line summary of every Ethernet frame sent and received |
 | `bt.h4=com2` | start a Bluetooth H4 (UART) controller on a serial port at boot |
-| `linux.enable=amdgpu,nouveau` | let drivers that are compiled but untested on hardware bind their devices (comma-separated: `amdgpu`, `nouveau`). Without it the log names the driver a device could use |
+| `linux.enable=amdgpu,nouveau,i915` | let drivers that are compiled but untested on hardware bind their devices (comma-separated: `amdgpu`, `nouveau`, `i915`, `xe`). Without it the log names the driver a device could use |
 | `linux.debug=1` | show Linux drivers' `KERN_DEBUG` messages |
 
 A Wi-Fi firmware crash always dumps the firmware's LMAC/UMAC error tables

@@ -74,16 +74,24 @@ stages the result in `target/ports/NAME` (laid out like `/usr/local`).
 | `quickjs` | QuickJS-ng 0.16.2 (from the `rquickjs-sys` crate's vendored copy): `qjs`, `qjsc`, `run-test262`, and `libquickjs.a` + headers for embedding |
 | `wpa_supplicant`, `hostapd` | 2.11 with OpenSSL and libnl (nl80211) |
 | `libcxx` | libc++/libc++abi/libunwind 18 into the sysroot, and `cxxtest` |
-| `weston` | Weston 14 (DRM and headless backends, pixman renderer, desktop and kiosk shells, `weston-terminal`) and its stack, shared: wayland 1.23, wayland-protocols, libxkbcommon + xkeyboard-config, pixman, cairo, freetype, fontconfig, libpng, zlib, expat, libffi, libdrm (with `modetest`), libevdev, mtdev, libudev-zero, libinput, seatd/libseat, libdisplay-info. Needs meson, ninja, gperf, bison and hwdata on the build host |
+| `weston` | Weston 14 (DRM and headless backends, pixman and GL renderers, desktop and kiosk shells, `weston-terminal`), Mesa 26.2 (EGL on GBM and Wayland, GLES 3.1; softpipe, virgl, zink, iris, RADV, ANV), the Vulkan loader and `vulkaninfo`, `kmscube`, and their stack, shared: wayland 1.23, wayland-protocols, libxkbcommon + xkeyboard-config, pixman, cairo, freetype, fontconfig, libpng, zlib, expat, libffi, libdrm 2.4.134 (amdgpu, nouveau; `modetest`), libevdev, mtdev, libudev-zero, libinput, seatd/libseat, libdisplay-info. Needs meson, ninja, cmake, gperf, bison, flex, hwdata, glslang-tools, Python mako/pyyaml/ply and LLVM 18 with clang, libclc and SPIRV-LLVM-Translator on the build host (Mesa's `mesa_clc` is built for the host) |
+| `labwc` | labwc 0.20 (on wlroots 0.20) and the foot terminal, with GLib, Pango, HarfBuzz, FriBidi, libxml2, PCRE2, fcft, utf8proc and tllist; builds on the `weston` port's libraries (build that first) |
 
 Running Weston (kernel with a DRM driver, e.g. `--features linux-drivers`):
 
 ```sh
 mkdir -p /tmp/xdg; chmod 700 /tmp/xdg
 export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin
-weston --backend=drm --renderer=pixman &
+weston --backend=drm --renderer=pixman &     # or --renderer=gl (Mesa)
 WAYLAND_DISPLAY=wayland-1 weston-terminal &
 ```
+
+OpenGL ES and Vulkan come from Mesa: `kmscube` draws on a KMS display
+with EGL/GBM (softpipe through kms_swrast where there is no supported
+GPU: the `gl-kmscube` scenario), and `weston --renderer=gl` composites
+with it (`desktop-gl`). On AMD and Intel GPUs Mesa's RADV/ANV, iris and
+zink (OpenGL on Vulkan) take over once the kernel drives the GPU
+(`linux.enable=amdgpu` / `i915`).
 
 libseat's embedded seat takes the console (VT_PROCESS, `K_OFF`) and DRM
 master; libinput finds input devices through libudev-zero, which reads

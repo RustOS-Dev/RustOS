@@ -163,6 +163,7 @@ type Callback = extern "C" fn(*mut c_void, u64);
 
 struct KpiTimer {
     id: u64,
+    deadline_ns: u64,
     f: Callback,
     arg: usize,
     cancelled: AtomicBool,
@@ -191,6 +192,7 @@ extern "C" fn rustos_kpi_timer_start(deadline_ns: u64, f: Callback, arg: *mut c_
     let id = NEXT_TIMER.fetch_add(1, Ordering::Relaxed);
     let t = Arc::new(KpiTimer {
         id,
+        deadline_ns,
         f,
         arg: arg as usize,
         cancelled: AtomicBool::new(false),
@@ -212,6 +214,34 @@ extern "C" fn rustos_kpi_timer_cancel(handle: u64) -> c_int {
     }
 }
 
+/// LinuxKPI deferred-work state for the sysrq dump: timers waiting (and
+/// how many are overdue, which would mean a lost RustOS timer), callbacks
+/// queued for the softirq thread, and work items queued per workqueue.
+pub fn dump_state() {
+    let now = crate::time::nanos();
+    let (n, overdue, worst) = match TIMERS.try_lock() {
+        Some(t) => {
+            let late: alloc::vec::Vec<u64> = t
+                .values()
+                .filter(|k| k.deadline_ns + 100_000_000 < now)
+                .map(|k| (now - k.deadline_ns) / 1_000_000)
+                .collect();
+            (t.len(), late.len(), late.iter().copied().max().unwrap_or(0))
+        }
+        None => (usize::MAX, 0, 0),
+    };
+    let queued = SOFTIRQ_QUEUE.try_lock().map_or(usize::MAX, |q| q.len());
+    crate::println!(
+        "[sysrq] linuxkpi timers {} (overdue {}, worst {} ms), softirq queue {}, pending {}",
+        n,
+        overdue,
+        worst,
+        queued,
+        SOFTIRQ_PENDING.load(Ordering::SeqCst)
+    );
+    unsafe { kpi_wq_dump() };
+}
+
 fn raise() {
     SOFTIRQ_PENDING.store(true, Ordering::SeqCst);
     SOFTIRQ_WQ.wake_all();
@@ -225,6 +255,8 @@ extern "C" fn rustos_kpi_softirq_raise() {
 unsafe extern "C" {
     /// src/linuxkpi/c/softirq.c: tasklets, NAPI and other deferred work.
     fn kpi_softirq_run();
+    /// src/linuxkpi/c/time.c: queued work per workqueue, for the sysrq dump.
+    fn kpi_wq_dump();
 }
 
 fn softirq_thread() {

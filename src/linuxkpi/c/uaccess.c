@@ -83,3 +83,46 @@ void __copy_overflow(int size, unsigned long count)
 {
 	WARN(1, "Buffer overflow detected (%d < %lu)!\n", size, count);
 }
+
+/*
+ * rep_movs_alternative (arch/x86/lib/copy_user_64.S), which the inline
+ * copy_user_generic() calls on CPUs without fast short rep movsb: copy
+ * %rcx bytes from %rsi to %rdi, either side possibly user memory, and
+ * return the bytes not copied in %rcx with %rdi/%rsi advanced past the
+ * copied ones. Only %rax may be clobbered besides those.
+ */
+unsigned long kpi_copy_user_any(void *to, const void *from, unsigned long n);
+
+unsigned long kpi_copy_user_any(void *to, const void *from, unsigned long n)
+{
+	/* User addresses are the lower canonical half. */
+	if ((long)to >= 0)
+		return rustos_kpi_copy_to_user(to, from, n);
+	if ((long)from >= 0)
+		return rustos_kpi_copy_from_user(to, from, n);
+	memcpy(to, from, n);
+	return 0;
+}
+
+/* Eight pushes and an 8-byte slot keep the call 16-byte aligned. */
+asm(".text\n.globl rep_movs_alternative\n.type rep_movs_alternative,@function\n"
+    "rep_movs_alternative:\n"
+    "push %rcx\npush %rsi\npush %rdi\npush %rdx\n"
+    "push %r8\npush %r9\npush %r10\npush %r11\n"
+    "sub $8, %rsp\n"
+    "mov %rcx, %rdx\n"
+    "call kpi_copy_user_any\n"
+    "add $8, %rsp\n"
+    "pop %r11\npop %r10\npop %r9\npop %r8\n"
+    "pop %rdx\npop %rdi\npop %rsi\npop %rcx\n"
+    "sub %rax, %rcx\n"		/* copied */
+    "add %rcx, %rdi\nadd %rcx, %rsi\n"
+    "mov %rax, %rcx\nret\n"
+    ".size rep_movs_alternative, .-rep_movs_alternative\n");
+
+/* Non-temporal stores are a cache hint: an ordinary copy from user space
+ * (copy_from_user_inatomic_nocache) is equivalent. */
+size_t copy_to_nontemporal(void *dst, const void *src, size_t size)
+{
+	return kpi_copy_user_any(dst, src, size);
+}

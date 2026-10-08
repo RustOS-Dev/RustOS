@@ -492,6 +492,83 @@ int kpi_file_mmap(struct file *file, u64 off, u64 len, u32 prot, int *kind, u64 
  * The driver sees it relative to the vma's vm_pgoff, which its mmap may
  * have changed (drm_gem_prime_mmap() moves it to the GEM fake offset).
  */
+/*
+ * Faults in progress, so apply_to_page_range() (which gets an mm, not a
+ * vma) can find the vma and the page that faulted.
+ */
+#define KPI_MAX_FAULTS 32
+static struct {
+	struct task_struct *task;
+	struct kpi_vma *kv;
+	unsigned long addr;
+} kpi_faults[KPI_MAX_FAULTS];
+static DEFINE_SPINLOCK(kpi_faults_lock);
+
+static int kpi_fault_enter(struct kpi_vma *kv, unsigned long addr)
+{
+	int slot = -1;
+
+	spin_lock(&kpi_faults_lock);
+	for (int i = 0; i < KPI_MAX_FAULTS; i++) {
+		if (!kpi_faults[i].task) {
+			kpi_faults[i].task = current;
+			kpi_faults[i].kv = kv;
+			kpi_faults[i].addr = addr;
+			slot = i;
+			break;
+		}
+	}
+	spin_unlock(&kpi_faults_lock);
+	return slot;
+}
+
+static void kpi_fault_exit(int slot)
+{
+	if (slot >= 0)
+		WRITE_ONCE(kpi_faults[slot].task, NULL);
+}
+
+/*
+ * Drivers that fill page tables themselves (i915's remap_io_mapping) get a
+ * temporary PTE per page from this; the one for the page that faulted is
+ * mapped, and the others are mapped when they fault in turn.
+ */
+int apply_to_page_range(struct mm_struct *mm, unsigned long address, unsigned long size,
+			pte_fn_t fn, void *data)
+{
+	struct kpi_vma *kv = NULL;
+	unsigned long fault_addr = 0;
+	int ret;
+
+	spin_lock(&kpi_faults_lock);
+	for (int i = 0; i < KPI_MAX_FAULTS; i++) {
+		if (kpi_faults[i].task == current) {
+			kv = kpi_faults[i].kv;
+			fault_addr = kpi_faults[i].addr;
+		}
+	}
+	spin_unlock(&kpi_faults_lock);
+	for (unsigned long a = address; a < address + size; a += PAGE_SIZE) {
+		pte_t pte = __pte(0);
+
+		ret = fn(&pte, a, data);
+		if (ret)
+			return ret;
+		if (kv && a == fault_addr && pte_present(pte)) {
+			kv->pfn = pte_pfn(pte);
+			kv->prot = pte_pgprot(pte);
+			kv->inserted = true;
+		}
+	}
+	return 0;
+}
+
+/* Pages already faulted in stay mapped until the vma goes away: RustOS
+ * does not yet let drivers revoke them (see LIMITATIONS: TTM eviction). */
+void zap_vma_ptes(struct vm_area_struct *vma, unsigned long address, unsigned long size)
+{
+}
+
 int kpi_vma_fault(void *handle, u64 file_pgoff, int write, u64 *phys, int *cache)
 {
 	struct kpi_vma *kv = handle;
@@ -503,6 +580,7 @@ int kpi_vma_fault(void *handle, u64 file_pgoff, int write, u64 *phys, int *cache
 		.flags = write ? FAULT_FLAG_WRITE : 0,
 	};
 	vm_fault_t r;
+	int slot;
 
 	if (kv->vmalloc_base) {
 		u64 off = (pgoff - kv->vma.vm_pgoff) << PAGE_SHIFT;
@@ -514,7 +592,9 @@ int kpi_vma_fault(void *handle, u64 file_pgoff, int write, u64 *phys, int *cache
 		return *phys ? 0 : -EFAULT;
 	}
 	kv->inserted = false;
+	slot = kpi_fault_enter(kv, vmf.address);
 	r = kv->vma.vm_ops->fault(&vmf);
+	kpi_fault_exit(slot);
 	if (r & VM_FAULT_ERROR)
 		return -EFAULT;
 	if (!kv->inserted && vmf.page) {

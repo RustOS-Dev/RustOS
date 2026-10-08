@@ -1,0 +1,25 @@
+# OpenGL ES through Mesa on KMS (M41): kmscube draws a spinning cube with
+# EGL/GBM and GLES2 on /dev/dri/card0 (QEMU standard VGA, Linux bochs),
+# rendered by softpipe through kms_swrast, which needs no GPU. Needs the
+# weston port in the image (tools/install-port.sh --initramfs weston) and
+# a kernel built with --features linux-drivers. The screendump shows
+# kmscube's grey clear colour with the cube on it (neither the console nor
+# an empty clear).
+hostrun rm -rf /tmp/rustos-gl && mkdir -p /tmp/rustos-gl
+wait # $ 240
+send kmscube -D /dev/dri/card0 -c 60 > /tmp/kmscube.txt 2>&1 &
+sleep 12
+monitor screendump /tmp/rustos-gl/cube.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-gl/cube.ppm 'count:128,128,128>=500000' 'count:128,128,128<=1000000'
+send wait; cat /tmp/kmscube.txt
+wait renderer: "softpipe" 120
+wait Rendered \d+ frames 60
+wait # $
+# The Vulkan loader finds Mesa's RADV and ANV drivers (there is no AMD or
+# Intel GPU here, so neither has a device to offer).
+send VK_LOADER_DEBUG=driver vulkaninfo --summary 2>&1 | grep -a -c "Found ICD manifest file .*/\(radeon\|intel\)_icd" | sed 's/^/icds=/'
+wait icds=[1-9] 120
+wait # $
+send vulkaninfo --summary 2>&1 | grep -a -e "Failed to detect any valid GPUs" -e "GPU0"
+wait Failed to detect any valid GPUs 60
+wait # $

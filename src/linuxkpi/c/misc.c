@@ -531,18 +531,19 @@ bool dmi_match(enum dmi_field f, const char *str)
 	return false;
 }
 
-/* The Intel SoC sideband bus (IOSF MBI) is not available. */
-bool iosf_mbi_available(void)
+/* The Intel SoC sideband bus (IOSF MBI) is not available, unless the
+ * Intel graphics group brings the real driver. */
+bool __weak iosf_mbi_available(void)
 {
 	return false;
 }
 
-int iosf_mbi_read(u8 port, u8 opcode, u32 offset, u32 *mdr)
+int __weak iosf_mbi_read(u8 port, u8 opcode, u32 offset, u32 *mdr)
 {
 	return -ENODEV;
 }
 
-int iosf_mbi_write(u8 port, u8 opcode, u32 offset, u32 mdr)
+int __weak iosf_mbi_write(u8 port, u8 opcode, u32 offset, u32 mdr)
 {
 	return -ENODEV;
 }

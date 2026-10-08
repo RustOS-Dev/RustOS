@@ -33,6 +33,8 @@ const FEATURES: &[(&str, &[&str])] = &[
     ("LINUX_DRM_VIRTIO", &["virtio", "virtiogpu"]),
     ("LINUX_DRM_AMD", &["drmgpu", "amdgpu"]),
     ("LINUX_DRM_NOUVEAU", &["drmgpu", "nouveau"]),
+    ("LINUX_DRM_I915", &["drmgpu", "intelgfx", "i915"]),
+    ("LINUX_DRM_XE", &["regmap", "drmgpu", "intelgfx", "xe"]),
     ("LINUX_PHY", &["phy"]),
     ("LINUX_ETH", &["eth"]),
     ("LINUX_MT7921", &["mt7921", "mt7921u"]),

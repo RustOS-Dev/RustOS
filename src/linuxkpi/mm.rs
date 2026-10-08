@@ -48,6 +48,12 @@ extern "C" fn rustos_kpi_mem_pages(free: *mut u64) -> u64 {
     total / mm::FRAME_SIZE
 }
 
+/// The TSC frequency in kHz (0 if not calibrated).
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_tsc_khz() -> u64 {
+    crate::time::tsc_hz() / 1000
+}
+
 /// A Linux driver asked to power the machine off (`reboot` = 0) or to
 /// restart it (thermal shutdown, emergency_restart).
 #[unsafe(no_mangle)]

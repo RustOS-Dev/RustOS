@@ -19,3 +19,15 @@ fetch_git() {
     fi
     [ "$(git -C "$4" rev-parse HEAD)" = "$3" ] || { echo "commit mismatch: $4" >&2; exit 1; }
 }
+
+# fetch_git_commit URL COMMIT DIR: one exact commit of an untagged project.
+fetch_git_commit() {
+    if [ ! -d "$3/.git" ]; then
+        rm -rf "$3.part"
+        git init -q "$3.part"
+        git -C "$3.part" fetch -q --depth 1 "$1" "$2"
+        git -C "$3.part" checkout -q FETCH_HEAD
+        mv "$3.part" "$3"
+    fi
+    [ "$(git -C "$3" rev-parse HEAD)" = "$2" ] || { echo "commit mismatch: $3" >&2; exit 1; }
+}

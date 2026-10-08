@@ -9,7 +9,9 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * Most drivers are verified only under QEMU. The Intel AX210 Wi-Fi,
   I219/I225/RTL8168 Ethernet and CDC NCM drivers are written against
   reference drivers and specifications but have not yet run on hardware.
-* No GPU acceleration in user space (no Mesa yet), Thunderbolt management,
+* GPU acceleration in user space is Mesa's RADV/ANV/iris/zink, untested on
+  hardware; in QEMU and on unsupported GPUs, OpenGL ES runs on softpipe (a
+  few frames per second). No llvmpipe, radeonsi or NVK. No Thunderbolt management,
   or suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
 * AMD GPUs (Linux amdgpu) are compiled into release images but untested on
   hardware and off unless `kernel.conf` has `linux.enable=amdgpu`. Without a
@@ -22,6 +24,11 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   GSP firmware lives on the storage partition, so a drive written without
   it (or a full storage partition) leaves nouveau without firmware; SVM
   and the WMI/MXM interface are absent.
+* Intel GPUs (Linux i915) are compiled in, untested on hardware and off
+  unless `kernel.conf` has `linux.enable=i915`; xe (Lunar Lake,
+  Battlemage) is compiled without display and not in release images. For
+  all GPU drivers, user mappings of buffers that move (TTM eviction, i915
+  GGTT rebinding) are not revoked, and userptr buffers are unsupported.
 * ATAPI optical drives are detected but not usable.
 
 ## Kernel
@@ -55,7 +62,8 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * Files written to tmpfs (`/`, `/tmp`, `/dev/shm`) live on the kernel heap
   (a quarter of RAM at boot); files from the boot image do not (they stay
   in the kernel image until written), and memfds use page frames.
-* No OpenGL or Vulkan yet: Weston uses its software (pixman) renderer.
+* OpenGL is GLES through EGL (no GLX or desktop libGL); without a supported
+  GPU it is softpipe, so GL clients and Weston's GL renderer are slow.
 * Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

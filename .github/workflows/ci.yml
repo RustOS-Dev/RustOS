@@ -145,6 +145,10 @@ jobs:
           # C++ runtime and desktop ports (tools/rustos-c++, ports/libcxx,
           # ports/weston)
           sudo apt-get install -y g++ cmake ninja-build meson gperf bison flex pkg-config libexpat1-dev libffi-dev hwdata
+          # Mesa (ports/weston): Python modules for its generators, glslang,
+          # and LLVM/clang/libclc/SPIRV-LLVM-Translator for the host mesa_clc
+          sudo apt-get install -y python3-mako python3-yaml python3-ply glslang-tools spirv-tools \
+            llvm-18-dev libclang-18-dev libclang-cpp18-dev libclc-18-dev libllvmspirvlib-18-dev
 
       - name: Make runner script executable
         run: chmod +x run-qemu-uefi.sh
@@ -226,11 +230,12 @@ jobs:
           tools/install-port.sh --initramfs libcxx
           cargo build
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/cxx.txt
-      - name: Wayland desktop (desktop)
+      - name: Wayland desktop and Mesa (desktop, desktop-gl, gl-kmscube)
         run: |
           tools/install-port.sh --initramfs weston
           cargo build --features linux-drivers
-          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop.txt
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop.txt \
+            tests/scenarios/linux/desktop-gl.txt tests/scenarios/linux/gl-kmscube.txt
       - name: eDEX compositor on the Wayland stack (desktop-edex)
         run: |
           # The edex-de port builds the pinned eDEX-DE commit (EDEX_SRC=DIR for

@@ -452,6 +452,11 @@ struct kmem_cache {
 	void (*ctor)(void *);
 };
 
+unsigned int kmem_cache_size(struct kmem_cache *s)
+{
+	return s->size;
+}
+
 struct kmem_cache *__kmem_cache_create_args(const char *name, unsigned int object_size,
 					    struct kmem_cache_args *args, slab_flags_t flags)
 {

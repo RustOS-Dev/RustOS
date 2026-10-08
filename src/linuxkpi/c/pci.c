@@ -1638,3 +1638,111 @@ void pci_ignore_hotplug(struct pci_dev *dev)
 {
 	dev->ignore_hotplug = 1;
 }
+
+struct pci_dev *pci_get_class(unsigned int class, struct pci_dev *from)
+{
+	u32 start = 0;
+
+	if (from) {
+		start = kpi_idx(from) + 1;
+		pci_dev_put(from);
+	}
+	for (u32 i = start; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && d->class == class)
+			return pci_dev_get(d);
+	}
+	return NULL;
+}
+
+/* Config access by bus and devfn, for a function LinuxKPI knows. */
+static struct pci_dev *kpi_bus_dev(struct pci_bus *bus, unsigned int devfn)
+{
+	for (u32 i = 0; i < kpi_pci_n; i++) {
+		struct pci_dev *d = kpi_pci[i] ? &kpi_pci[i]->pdev : NULL;
+
+		if (d && d->bus->number == bus->number && d->devfn == devfn)
+			return d;
+	}
+	return NULL;
+}
+
+int pci_bus_read_config_byte(struct pci_bus *bus, unsigned int devfn, int where, u8 *val)
+{
+	struct pci_dev *d = kpi_bus_dev(bus, devfn);
+
+	if (!d) {
+		*val = 0xff;
+		return PCIBIOS_DEVICE_NOT_FOUND;
+	}
+	return pci_read_config_byte(d, where, val);
+}
+
+int pci_bus_read_config_word(struct pci_bus *bus, unsigned int devfn, int where, u16 *val)
+{
+	struct pci_dev *d = kpi_bus_dev(bus, devfn);
+
+	if (!d) {
+		*val = 0xffff;
+		return PCIBIOS_DEVICE_NOT_FOUND;
+	}
+	return pci_read_config_word(d, where, val);
+}
+
+int pci_bus_write_config_byte(struct pci_bus *bus, unsigned int devfn, int where, u8 val)
+{
+	struct pci_dev *d = kpi_bus_dev(bus, devfn);
+
+	return d ? pci_write_config_byte(d, where, val) : PCIBIOS_DEVICE_NOT_FOUND;
+}
+
+/* Devices never enter D3cold (no runtime PM). */
+void pci_d3cold_enable(struct pci_dev *dev)
+{
+}
+
+void pci_d3cold_disable(struct pci_dev *dev)
+{
+}
+
+/* Free bus address space is not tracked, so none can be handed out:
+ * the Intel MCHBAR then stays as firmware set it. */
+unsigned long pci_mem_start;
+
+int pci_bus_alloc_resource(struct pci_bus *bus, struct resource *res, resource_size_t size,
+			   resource_size_t align, resource_size_t min, unsigned long type_mask,
+			   resource_alignf alignf, void *alignf_data)
+{
+	return -ENOMEM;
+}
+
+resource_size_t pcibios_align_resource(void *data, const struct resource *res,
+				       resource_size_t size, resource_size_t align)
+{
+	return res->start;
+}
+
+/* Bus addresses equal CPU physical addresses on x86. */
+void pcibios_resource_to_bus(struct pci_bus *bus, struct pci_bus_region *region,
+			     struct resource *res)
+{
+	region->start = res->start;
+	region->end = res->end;
+}
+
+int pci_msix_vec_count(struct pci_dev *dev)
+{
+	u16 ctl;
+
+	if (!dev->msix_cap)
+		return -EINVAL;
+	pci_read_config_word(dev, dev->msix_cap + PCI_MSIX_FLAGS, &ctl);
+	return (ctl & PCI_MSIX_FLAGS_QSIZE) + 1;
+}
+
+/* No wake from low-power states (no runtime PM). */
+bool pci_pme_capable(struct pci_dev *dev, pci_power_t state)
+{
+	return false;
+}

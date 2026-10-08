@@ -12,25 +12,41 @@ pub struct RealTimer {
     /// Next expiry (monotonic ns), 0 = disarmed.
     deadline: AtomicU64,
     interval: AtomicU64,
+    /// Bumped by every set(): heap entries of an earlier arming are stale.
+    generation: AtomicU64,
 }
 
-impl TimerTarget for RealTimer {
+/// One heap entry: the timer as armed by one set() (or periodic re-arm).
+/// Without the generation, an entry left from an earlier arming that fires
+/// after a re-arm to an earlier deadline would look current and start a
+/// second periodic chain; X servers re-arm constantly (smart scheduler).
+struct Arm {
+    timer: Arc<RealTimer>,
+    generation: u64,
+}
+
+impl TimerTarget for Arm {
     fn fire(self: Arc<Self>, now: u64) {
-        let d = self.deadline.load(Ordering::SeqCst);
-        if d == 0 || now < d {
-            return; // disarmed or re-armed later: a stale entry
+        let t = &self.timer;
+        let d = t.deadline.load(Ordering::SeqCst);
+        if t.generation.load(Ordering::SeqCst) != self.generation || d == 0 || now < d {
+            return; // stale entry
         }
-        let iv = self.interval.load(Ordering::SeqCst);
+        let iv = t.interval.load(Ordering::SeqCst);
         if iv > 0 {
             let next = d + iv * ((now - d) / iv + 1);
-            self.deadline.store(next, Ordering::SeqCst);
+            t.deadline.store(next, Ordering::SeqCst);
             sched::add_timer(next, self.clone());
         } else {
-            self.deadline.store(0, Ordering::SeqCst);
+            t.deadline.store(0, Ordering::SeqCst);
         }
-        let pid = self.pid;
+        let (timer, generation) = (t.clone(), self.generation);
         sched::defer(move || {
-            if let Some(p) = crate::process::find(pid) {
+            // Disarmed or re-armed since: no signal from the old arming.
+            if timer.generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            if let Some(p) = crate::process::find(timer.pid) {
                 signal::send(&p, signal::SIGALRM);
             }
         });
@@ -49,6 +65,7 @@ fn timer(pid: u32) -> Arc<RealTimer> {
                     pid,
                     deadline: AtomicU64::new(0),
                     interval: AtomicU64::new(0),
+                    generation: AtomicU64::new(0),
                 })
             })
             .clone()
@@ -71,13 +88,20 @@ pub fn get(pid: u32) -> (u64, u64) {
 pub fn set(pid: u32, value_ns: u64, interval_ns: u64) -> (u64, u64) {
     let old = get(pid);
     let t = timer(pid);
+    let generation = t.generation.fetch_add(1, Ordering::SeqCst) + 1;
     t.interval.store(interval_ns, Ordering::SeqCst);
     if value_ns == 0 {
         t.deadline.store(0, Ordering::SeqCst);
     } else {
         let d = crate::time::nanos() + value_ns;
         t.deadline.store(d, Ordering::SeqCst);
-        sched::add_timer(d, t);
+        sched::add_timer(
+            d,
+            Arc::new(Arm {
+                timer: t,
+                generation,
+            }),
+        );
     }
     old
 }
@@ -86,6 +110,7 @@ pub fn set(pid: u32, value_ns: u64, interval_ns: u64) -> (u64, u64) {
 pub fn remove(pid: u32) {
     let t = x86_64::instructions::interrupts::without_interrupts(|| TIMERS.lock().remove(&pid));
     if let Some(t) = t {
+        t.generation.fetch_add(1, Ordering::SeqCst);
         t.deadline.store(0, Ordering::SeqCst);
     }
 }

@@ -72,6 +72,7 @@ This document is the single source for round 4; `docs/ROADMAP.md` carries the ch
 | **M40** | Intel i915/xe | M35, M36 | hardware |
 | **M41** | Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM | M37 + M38/39/40 | optional (venus) |
 | **M42** | Desktops: Weston → labwc/Sway → Xwayland → GTK → Qt/KDE | M37, M41 | yes (virtio-gpu) |
+| **M43** | eDEX-DE (RustOS-Dev/eDEX-DE-RS) as the RustOS desktop, on labwc | M42 | yes (virtio-gpu/bochs) |
 
 **Execution order:**
 1. M27 → M28 → M29: the user's Wi-Fi.
@@ -562,6 +563,67 @@ means RustOS lacks it today and M27 adds it.
 
 **Test:** a `desktop-labwc` scenario on virtio-gpu (labwc, foot, a GTK app, screenshot check).
 
+### M43 — eDEX-DE as the RustOS desktop
+
+**Goal:** RustOS's default graphical session is [eDEX-DE](https://github.com/RustOS-Dev/eDEX-DE-RS):
+the sci-fi desktop shell in Rust (wgpu, smithay-client-toolkit, `alacritty_terminal`), with its
+terminal, file browser, system dashboard, launcher, settings, notifications and power menu. One command
+(`desktop`), or `desktop=edex` in `kernel.conf` for autostart on tty1, starts the session on any machine
+M35/M41 can drive: efidrm/bochs/virtio-gpu with softpipe, amdgpu/i915 with zink/RADV/iris.
+
+**What upstream assumes, and what RustOS uses instead** (surveyed at eDEX-DE-RS `3a83822`, v3.2.0):
+
+| Upstream | RustOS | Notes |
+|---|---|---|
+| Hyprland 0.55 (layer shell, IPC sockets, Lua config) | **labwc** (M42) | labwc already has wlr-layer-shell, foreign-toplevel, viewporter, cursor-shape and fractional-scale, all of which the `platform` crate binds. `edex-de run --no-hypr` already runs on wlr compositors. Porting Hyprland means C++26, hyprutils, hyprlang, aquamarine, hyprcursor, hyprgraphics and Lua: a later option, not M43 |
+| `hypr` crate (Hyprland IPC: window list, dispatch, workspaces) | new **`wm` backend trait**: Hyprland IPC, or wlr-foreign-toplevel-management-v1 plus wlr-output-management | Gives the centre tab strip (window tabs, minimize, maximize, close, activate) on labwc. Settings → Window manager writes labwc `rc.xml` instead of `generated.lua` |
+| wgpu Vulkan/GLES | wgpu **GLES** over EGL on Wayland (Mesa, `platforms=wayland`) | softpipe in QEMU. On hardware: zink→RADV (AMD), iris (Intel). wgpu's Vulkan backend where RADV/ANV run |
+| Rust std on glibc/Linux | **Rust std programs for RustOS:** `x86_64-unknown-linux-musl` linked dynamically against RustOS musl (`-C target-feature=-crt-static`, `tools/rustos-cc` as linker, the port stage as sysroot), wrapped as `tools/rustos-cargo` | RustOS userland is `no_std` today. This is the first std port; the gaps it finds become kernel items |
+| D-Bus session bus (zbus: notifications server, upower/logind/fprintd clients) | `dbus` 1.16 port; `dbus-daemon --session` started by the session script | Notifications server works unchanged. logind/upower/fprintd calls are replaced (below) |
+| `system` crate backends: wpctl, nmcli, bluetoothctl, upower/logind, systemd, brightnessctl, fprintd, tor, tailscale | a **`rustos` backend set** behind the existing `CommandRunner` abstraction | Audio: ALSA mixer (M34) via an `amixer`-style tool. Network: `wifi`/`ip` (wpa_supplicant ctrl). Bluetooth: RustOS `bt`. Power: `/sys/class/power_supply`, `poweroff`/`reboot` (no suspend, so it is hidden). Brightness: `/sys/class/backlight`. Users: `/etc/passwd`. Services: `/etc/rc` list. Display: wlr-output-management. Tor, Tailscale and fprint are hidden with "not available on RustOS" |
+| `sysmon` (sysinfo crate on /proc and /sys) | RustOS `/proc` and `/sys` | Audit and fill: per-CPU `/proc/stat`, `/proc/meminfo`, `/proc/[pid]/{stat,status,cmdline}`, `/proc/net/dev`, `/proc/mounts` + statvfs, `/sys/block/*/stat`, power_supply |
+| greetd + cage + PAM (`edex-greeter`) | autologin session first; later the greeter in kiosk mode under labwc with a RustOS password check (`/etc/shadow`, crypt) | No PAM or greetd on RustOS |
+| systemd user unit with `Restart=on-failure` | session script loop (`edex-session`): restarts edex-de if it crashes | |
+| kitty as the launcher terminal | foot (M42) | `[launcher] terminal_command = "foot"` in RustOS's default config |
+| JetBrains Mono Nerd Font | fetched by the port (OFL, pinned sha256) | |
+
+**Steps:**
+1. **M43.1 Rust std on RustOS.**
+   - `tools/rustos-cargo` (target, linker, rpath-link, pkg-config wrapper).
+   - A `ports/rust-hello` test program covering threads, files, process spawn, pty, epoll/calloop, signals and `dlopen("libEGL.so.1")`; a `rust-std` scenario.
+   - Fix the kernel gaps it finds.
+2. **M43.2 Build eDEX-DE for RustOS.** `ports/edex-de` builds a pinned commit of RustOS-Dev/eDEX-DE-RS with `tools/rustos-cargo` against the labwc stage (libwayland, libxkbcommon, Mesa EGL), and installs the binaries, `share/` (themes, assets) and fonts.
+3. **M43.3 Upstream changes in eDEX-DE-RS** (branch there, merged by the user):
+   - the `wm` backend trait with a foreign-toplevel implementation (`--wm labwc|hyprland|none`, auto-detected);
+   - the `rustos` `system` backends;
+   - labwc `rc.xml` export;
+   - hiding settings whose backend is missing;
+   - optional D-Bus (the shell runs without a bus, with no notifications server).
+   - Upstream CI stays green on Linux.
+4. **M43.4 Session.**
+   - `desktop` command / `edex-session`: seatd builtin, XDG_RUNTIME_DIR, `dbus-daemon --session`, then `labwc -s edex-de run --wm labwc`.
+   - labwc config for eDEX: no decorations on the canvas, keybinds mirroring `binds.lua` (SUPER launcher, SUPER+Return terminal, …).
+   - `kernel.conf desktop=edex` autostarts it on tty1.
+5. **M43.5 Kernel and sysfs/proc gaps** found by sysmon, the terminal and the settings backends. The suspend/hibernate rows stay hidden until RustOS has S3.
+6. **M43.6 Greeter:** `edex-greeter` against a RustOS login backend (optional autologin user in `kernel.conf`).
+7. **M43.7 Docs and tests:**
+   - Docs: `docs/DESKTOP.md` (session, keys, config, what is hidden on RustOS), HARDWARE/LIMITATIONS updates.
+   - `desktop-edex` scenario (QEMU bochs, softpipe, 1.5 GiB):
+     - the session starts and edex-de logs its canvas;
+     - a screendump shows the Tron theme colours in the panels and terminal;
+     - text typed with `sendkey` reaches the eDEX terminal and writes a file;
+     - `edex-de ipc launcher` opens the launcher, and starting foot from it tiles foot into the terminal slot.
+   - CI step.
+
+**Acceptance:** `desktop-edex` passes on 2 and 4 CPUs. On hardware, "compiled, untested" until the user runs it on the
+MT7921K laptop (Intel/AMD iGPU) or AriPC (Raphael).
+
+**Risks:**
+- wgpu on softpipe is slow: the tests turn animations and scanlines off.
+- The first Rust std port may surface several kernel gaps: futex variants, statx, `/proc` details.
+- Upstream churn: the port pins a commit.
+- Licence: eDEX-DE is GPL-3.0. It ships as a separate program in the image (mere aggregation); the RustOS kernel stays GPL-2.0-or-later. The licence text is installed to `/usr/local/share/licenses/edex-de`.
+
 ---
 
 ## 9. Firmware provisioning (`write_to_drive.sh`)
@@ -612,7 +674,8 @@ means RustOS lacks it today and M27 adds it.
   - M35: `drm-bochs`, `drm-virtio`, `drm-efidrm`;
   - M36: `desktop-kernel`;
   - M37: `desktop`;
-  - M42: `desktop-labwc`.
+  - M42: `desktop-labwc`;
+  - M43: `rust-std`, `desktop-edex`.
 - **Hardware:**
   - `hwcheck wifi` on the MT7921K laptop (M29) and an MT7921AU via passthrough (M30);
   - `hwcheck display`/`gpu` on AriPC: Raphael on bare metal (M38), RTX 5070 via VFIO (M39);

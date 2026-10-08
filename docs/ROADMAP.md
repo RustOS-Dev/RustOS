@@ -189,6 +189,7 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] Mesa 26.2 in `ports/weston`: EGL (GBM, Wayland), GLES 3.1, softpipe through kms_swrast on any KMS display (`gl-kmscube`), Weston's GL renderer (`desktop-gl`); virgl, zink, iris, RADV and ANV built (host `mesa_clc` for Intel); Vulkan loader and `vulkaninfo` (`gl-kmscube`). GPU drivers untested on hardware
   - [ ] Not built: llvmpipe/lavapipe (LLVM not ported), radeonsi (libelf; AMD OpenGL is zink on RADV), NVK (Rust not cross-built for RustOS), desktop GL through GLX/glvnd
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
+- [ ] **M43** eDEX-DE as the RustOS desktop: Rust std programs, eDEX-DE on labwc (wm backend, RustOS system backends), session, `desktop-edex`
 
 ## Context
 

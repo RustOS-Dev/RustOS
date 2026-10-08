@@ -53,3 +53,13 @@ send cat /tmp/k
 wait labwc-typed
 wait # $
 monitor screendump /tmp/rustos-labwc/typed.ppm
+# Xwayland: labwc starts it when the first X11 client connects to :0;
+# xhello (ports/labwc/xhello.c) opens a blue 400x300 window.
+send DISPLAY=:0 xhello >/tmp/xhello.log 2>&1 &
+sleep 40
+send cat /tmp/xhello.log
+wait xhello: connected, vendor The X.Org Foundation
+wait xhello: mapped
+wait # $
+monitor screendump /tmp/rustos-labwc/xwayland.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-labwc/xwayland.ppm 'count:32,96,192>=100000'

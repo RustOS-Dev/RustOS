@@ -201,8 +201,9 @@ pub fn sigaction(sig: u32, act: u64, old: u64) -> SysResult {
 }
 
 pub fn sigprocmask(how: u32, set: u64, old: u64) -> SysResult {
-    let p = cur()?;
-    let prev = p.signals.blocked.load(Ordering::SeqCst);
+    cur()?;
+    let t = crate::sched::current();
+    let prev = t.sigmask.load(Ordering::SeqCst);
     if set != 0 {
         let s: u64 = uaccess::read_user(set)?;
         let new = match how {
@@ -212,7 +213,7 @@ pub fn sigprocmask(how: u32, set: u64, old: u64) -> SysResult {
             _ => return Err(EINVAL),
         };
         let never = (1u64 << (signal::SIGKILL - 1)) | (1u64 << (signal::SIGSTOP - 1));
-        p.signals.blocked.store(new & !never, Ordering::SeqCst);
+        t.sigmask.store(new & !never, Ordering::SeqCst);
     }
     if old != 0 {
         uaccess::write_user(old, &prev)?;
@@ -222,20 +223,19 @@ pub fn sigprocmask(how: u32, set: u64, old: u64) -> SysResult {
 
 pub fn sigpending(set: u64) -> SysResult {
     let p = cur()?;
-    let v = p.signals.pending.load(Ordering::SeqCst) & p.signals.blocked.load(Ordering::SeqCst);
+    let v = p.signals.pending.load(Ordering::SeqCst)
+        & crate::sched::current().sigmask.load(Ordering::SeqCst);
     uaccess::write_user(set, &v)?;
     Ok(0)
 }
 
 pub fn sigsuspend(mask: u64) -> SysResult {
-    let p = cur()?;
+    cur()?;
     let m: u64 = uaccess::read_user(mask)?;
-    let old = p.signals.blocked.swap(m, Ordering::SeqCst);
+    // The caller's mask comes back after the handler runs.
+    signal::set_temp_mask(m);
     let wq = crate::sched::WaitQueue::new();
     wq.wait_interruptible(signal::has_pending);
-    // The original mask is restored after the handler runs; approximate by
-    // restoring now (the handler frame records the suspended mask).
-    let _ = old;
     Err(EINTR)
 }
 

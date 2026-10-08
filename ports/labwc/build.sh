@@ -66,7 +66,8 @@ meson_pkg() {
 }
 autotools_pkg() {
     name="$1"; dir="$2"; shift 2
-    (cd "$dir" && ./configure --host=x86_64-linux-musl CC="$CC" --prefix=/usr/local \
+    (cd "$dir" && PKG_CONFIG="$ROOT/tools/cross/rustos-pkg-config" CC_FOR_BUILD=cc \
+        ./configure --host=x86_64-linux-musl CC="$CC" --prefix=/usr/local \
         --sysconfdir=/usr/local/etc "$@" >"$BUILD/$name.log" 2>&1 &&
         make $J >>"$BUILD/$name.log" 2>&1 &&
         make install DESTDIR="$STAGE" >>"$BUILD/$name.log" 2>&1) ||
@@ -100,6 +101,45 @@ fetch https://codeberg.org/dnkl/fcft/archive/3.3.3.tar.gz \
 fetch https://codeberg.org/dnkl/foot/archive/1.28.0.tar.gz \
     4296be402b5684d049534598e69db92b918f92beac9dab76b585207045f0b037 "$SRC/foot-1.28.0.tar.gz"
 
+fetch https://www.x.org/releases/individual/proto/xorgproto-2026.1.tar.xz \
+    f9bfe4a9ed8c8ab9d2a3b0d49797f046052dadd06b7a8b45dbffaffb137e8290 "$SRC/xorgproto-2026.1.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libXau-1.0.12.tar.xz \
+    74d0e4dfa3d39ad8939e99bda37f5967aba528211076828464d2777d477fc0fb "$SRC/libXau-1.0.12.tar.xz"
+fetch https://www.x.org/releases/individual/proto/xcb-proto-1.17.0.tar.xz \
+    2c1bacd2110f4799f74de6ebb714b94cf6f80fb112316b1219480fd22562148c "$SRC/xcb-proto-1.17.0.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libxcb-1.17.0.tar.xz \
+    599ebf9996710fea71622e6e184f3a8ad5b43d0e5fa8c4e407123c88a59a6d55 "$SRC/libxcb-1.17.0.tar.xz"
+fetch https://www.x.org/releases/individual/lib/xcb-util-0.4.1.tar.xz \
+    5abe3bbbd8e54f0fa3ec945291b7e8fa8cfd3cccc43718f8758430f94126e512 "$SRC/xcb-util-0.4.1.tar.xz"
+fetch https://www.x.org/releases/individual/lib/xcb-util-wm-0.4.2.tar.xz \
+    62c34e21d06264687faea7edbf63632c9f04d55e72114aa4a57bb95e4f888a0b "$SRC/xcb-util-wm-0.4.2.tar.xz"
+fetch https://www.x.org/releases/individual/lib/xtrans-1.6.0.tar.xz \
+    faafea166bf2451a173d9d593352940ec6404145c5d1da5c213423ce4d359e92 "$SRC/xtrans-1.6.0.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libX11-1.8.13.tar.xz \
+    69606f485c2c07c14ef64f75b7bb326d48587af33795d9ab3e607c0b5f94f11c "$SRC/libX11-1.8.13.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libXext-1.3.7.tar.xz \
+    6c643c7035cdacf67afd68f25d01b90ef889d546c9fcd7c0adf7c2cf91e3a32d "$SRC/libXext-1.3.7.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libXfixes-6.0.2.tar.xz \
+    39f115d72d9c5f8111e4684164d3d68cc1fd21f9b27ff2401b08fddfc0f409ba "$SRC/libXfixes-6.0.2.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libxkbfile-1.2.0.tar.xz \
+    7f71884e5faf56fb0e823f3848599cf9b5a9afce51c90982baeb64f635233ebf "$SRC/libxkbfile-1.2.0.tar.xz"
+fetch https://www.x.org/releases/individual/app/xkbcomp-1.5.0.tar.xz \
+    2ac31f26600776db6d9cd79b3fcd272263faebac7eb85fb2f33c7141b8486060 "$SRC/xkbcomp-1.5.0.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libxshmfence-1.3.3.tar.xz \
+    d4a4df096aba96fea02c029ee3a44e11a47eb7f7213c1a729be83e85ec3fde10 "$SRC/libxshmfence-1.3.3.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libxcvt-0.1.3.tar.xz \
+    a929998a8767de7dfa36d6da4751cdbeef34ed630714f2f4a767b351f2442e01 "$SRC/libxcvt-0.1.3.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libfontenc-1.1.9.tar.xz \
+    9d8392705cb10803d5fe1d27d236cbab3f664e26841ce01916bbbe430cf273e2 "$SRC/libfontenc-1.1.9.tar.xz"
+fetch https://www.x.org/releases/individual/lib/libXfont2-2.0.9.tar.xz \
+    f042a370666815e7b941e9b7019024755bd1c6c2954afbfa515af378251799e2 "$SRC/libXfont2-2.0.9.tar.xz"
+fetch https://www.x.org/releases/individual/xserver/xwayland-24.1.14.tar.xz \
+    4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a "$SRC/xwayland-24.1.14.tar.xz"
+fetch https://archive.hadrons.org/software/libmd/libmd-1.3.0.tar.xz \
+    fc0f1eb6b6766470326f2c014693809190e67dba84274a6fbae9d4912d066706 "$SRC/libmd-1.3.0.tar.xz"
+fetch https://download.gnome.org/sources/libepoxy/1.5/libepoxy-1.5.10.tar.xz \
+    072cda4b59dd098bba8c2363a6247299db1fa89411dc221c8b81b8ee8192e623 "$SRC/libepoxy-1.5.10.tar.xz"
+
 built pcre2 || autotools_pkg pcre2 "$(unpack "$SRC/pcre2-10.49.tar.bz2")" \
     --disable-static --enable-pcre2-16=no --enable-pcre2-32=no
 built glib || meson_pkg glib "$(unpack "$SRC/glib-2.88.3.tar.xz")" \
@@ -119,14 +159,54 @@ built pango || meson_pkg pango "$(unpack "$SRC/pango-1.56.4.tar.xz")" \
 built libxml2 || meson_pkg libxml2 "$(unpack "$SRC/libxml2-2.15.4.tar.xz")" \
     -Dpython=disabled -Dicu=disabled -Dzlib=enabled -Dhttp=disabled -Ddocs=disabled \
     -Dreadline=disabled -Dhistory=disabled
-built wlroots || meson_pkg wlroots "$(unpack "$SRC/wlroots-0.20.1.tar.gz")" \
-    -Dxwayland=disabled -Dbackends=drm,libinput -Drenderers=gles2 -Dallocators=gbm \
-    -Dsession=enabled -Dexamples=false -Dxcb-errors=disabled -Dcolor-management=disabled \
-    -Dlibliftoff=disabled
+# Xwayland and the X11 client libraries wlroots' XWayland support needs.
+# The autotools packages' cross checks: musl's malloc(0) returns a pointer.
+XA="--disable-static --disable-specs --disable-malloc0returnsnull"
+built xorgproto || meson_pkg xorgproto "$(unpack "$SRC/xorgproto-2026.1.tar.xz")" -Dlegacy=false
+built libXau || meson_pkg libXau "$(unpack "$SRC/libXau-1.0.12.tar.xz")"
+built xcb-proto || autotools_pkg xcb-proto "$(unpack "$SRC/xcb-proto-1.17.0.tar.xz")"
+built libxcb || autotools_pkg libxcb "$(unpack "$SRC/libxcb-1.17.0.tar.xz")" \
+    --disable-static --disable-devel-docs --without-doxygen \
+    XCBPROTO_XCBINCLUDEDIR="$STAGE/usr/local/share/xcb" \
+    XCBPROTO_XCBPYTHONDIR="$(echo "$STAGE"/usr/local/lib/python3*/site-packages)"
+built xcb-util || autotools_pkg xcb-util "$(unpack "$SRC/xcb-util-0.4.1.tar.xz")" --disable-static
+built xcb-util-wm || autotools_pkg xcb-util-wm "$(unpack "$SRC/xcb-util-wm-0.4.2.tar.xz")" --disable-static
+built xtrans || autotools_pkg xtrans "$(unpack "$SRC/xtrans-1.6.0.tar.xz")" --disable-docs
+built libX11 || autotools_pkg libX11 "$(unpack "$SRC/libX11-1.8.13.tar.xz")" $XA \
+    --disable-xf86bigfont --without-xmlto --without-fop
+built libXext || autotools_pkg libXext "$(unpack "$SRC/libXext-1.3.7.tar.xz")" $XA --without-xmlto
+built libXfixes || meson_pkg libXfixes "$(unpack "$SRC/libXfixes-6.0.2.tar.xz")"
+built libxkbfile || meson_pkg libxkbfile "$(unpack "$SRC/libxkbfile-1.2.0.tar.xz")"
+built xkbcomp || meson_pkg xkbcomp "$(unpack "$SRC/xkbcomp-1.5.0.tar.xz")"
+built libxshmfence || autotools_pkg libxshmfence "$(unpack "$SRC/libxshmfence-1.3.3.tar.xz")" \
+    --disable-static --disable-futex
+built libxcvt || meson_pkg libxcvt "$(unpack "$SRC/libxcvt-0.1.3.tar.xz")"
+built libfontenc || meson_pkg libfontenc "$(unpack "$SRC/libfontenc-1.1.9.tar.xz")"
+built libXfont2 || autotools_pkg libXfont2 "$(unpack "$SRC/libXfont2-2.0.9.tar.xz")" \
+    --disable-static --disable-devel-docs --without-xmlto --without-fop
+built libmd || autotools_pkg libmd "$(unpack "$SRC/libmd-1.3.0.tar.xz")" --disable-static
+built libepoxy || meson_pkg libepoxy "$(unpack "$SRC/libepoxy-1.5.10.tar.xz")" \
+    -Dglx=no -Dx11=false -Degl=yes -Dtests=false -Ddocs=false
+built xwayland || meson_pkg xwayland "$(unpack "$SRC/xwayland-24.1.14.tar.xz")" \
+    -Dglamor=true -Dglx=false -Dxvfb=false -Dxdmcp=false -Dxdm-auth-1=false \
+    -Dsecure-rpc=false -Dsha1=libmd -Dlibdecor=false -Dxwayland_ei=false -Ddocs=false \
+    -Ddevel-docs=false -Dxselinux=false -Dsystemd_notify=false -Dlibunwind=false \
+    -Dxkb_dir=/usr/local/share/X11/xkb -Dxkb_bin_dir=/usr/local/bin \
+    -Dxkb_output_dir=/tmp -Ddefault_font_path=/usr/local/share/fonts
+if ! built wlroots; then
+    d=$(unpack "$SRC/wlroots-0.20.1.tar.gz")
+    # pkg-config returns the Xwayland path inside the stage; use the
+    # installed one.
+    sed -i "s|xwayland.get_variable('xwayland')|'/usr/local/bin/Xwayland'|" "$d/xwayland/meson.build"
+    meson_pkg wlroots "$d" \
+        -Dxwayland=enabled -Dbackends=drm,libinput -Drenderers=gles2 -Dallocators=gbm \
+        -Dsession=enabled -Dexamples=false -Dxcb-errors=disabled -Dcolor-management=disabled \
+        -Dlibliftoff=disabled
+fi
 if ! built labwc; then
     rm -rf "$BUILD/src/labwc"
     cp -r "$SRC/labwc-0.20.2" "$BUILD/src/labwc"
-    meson_pkg labwc "$BUILD/src/labwc" -Dxwayland=disabled -Dsvg=disabled -Dicon=disabled \
+    meson_pkg labwc "$BUILD/src/labwc" -Dxwayland=enabled -Dsvg=disabled -Dicon=disabled \
         -Dnls=disabled -Dman-pages=disabled -Dtest=disabled
 fi
 if ! built utf8proc; then
@@ -143,6 +223,9 @@ built fcft || meson_pkg fcft "$(unpack "$SRC/fcft-3.3.3.tar.gz" fcft)" \
 built foot || meson_pkg foot "$(unpack "$SRC/foot-1.28.0.tar.gz" foot)" \
     -Ddocs=disabled -Dtests=false -Dthemes=false -Dime=true -Dgrapheme-clustering=enabled \
     -Dterminfo=disabled -Dutmp-backend=none -Dsystemd-units-dir=
+
+# A tiny X11 client for checking Xwayland (tests/scenarios/linux/desktop-labwc.txt).
+"$CC" -O2 -o "$STAGE/usr/local/bin/xhello" "$ROOT/ports/labwc/xhello.c" $CPPFLAGS $LDFLAGS -lxcb
 
 # A default session: foot on Super+Return / Alt+Return and in the root menu.
 mkdir -p "$STAGE/usr/local/etc/xdg/labwc"

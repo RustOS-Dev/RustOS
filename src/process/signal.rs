@@ -57,7 +57,6 @@ pub struct SigAction {
 pub struct SignalState {
     pub actions: Mutex<[SigAction; NSIG]>,
     pub pending: AtomicU64,
-    pub blocked: AtomicU64,
     /// Stopped threads wait here for SIGCONT.
     pub cont_wq: WaitQueue,
 }
@@ -67,15 +66,12 @@ impl SignalState {
         SignalState {
             actions: Mutex::new([SigAction::default(); NSIG]),
             pending: AtomicU64::new(0),
-            blocked: AtomicU64::new(0),
             cont_wq: WaitQueue::new(),
         }
     }
 
     pub fn inherit_from(&self, other: &SignalState) {
         *self.actions.lock() = *other.actions.lock();
-        self.blocked
-            .store(other.blocked.load(Ordering::SeqCst), Ordering::SeqCst);
     }
 
     /// Handlers revert to default on exec; ignored signals stay ignored.
@@ -186,9 +182,23 @@ pub fn send(p: &Arc<Process>, sig: u32) {
         return;
     }
     p.signals.pending.fetch_or(bit(sig), Ordering::SeqCst);
-    if p.signals.blocked.load(Ordering::SeqCst) & bit(sig) == 0 || sig == SIGKILL {
-        for t in p.live_threads() {
-            kill_thread(&t);
+    let threads = p.live_threads();
+    if sig == SIGKILL {
+        for t in &threads {
+            kill_thread(t);
+        }
+    } else {
+        // Like Linux, wake one thread that does not block the signal,
+        // preferring the sender if it is one of them; the others' waits
+        // must not see a spurious EINTR.
+        let wants = |t: &Arc<Thread>| t.sigmask.load(Ordering::SeqCst) & bit(sig) == 0;
+        let me = sched::current();
+        if let Some(t) = threads
+            .iter()
+            .find(|t| t.tid == me.tid && wants(t))
+            .or_else(|| threads.iter().find(|t| wants(t)))
+        {
+            kill_thread(t);
         }
     }
     // signalfd readers.
@@ -217,12 +227,15 @@ pub fn send_to_current(sig: u32) {
 pub fn force_signal(p: &Arc<Process>, sig: u32) {
     {
         let mut actions = p.signals.actions.lock();
-        let blocked = p.signals.blocked.load(Ordering::SeqCst) & bit(sig) != 0;
+        // The faulting thread is the current one.
+        let blocked = sched::current().sigmask.load(Ordering::SeqCst) & bit(sig) != 0;
         if actions[sig as usize].handler == SIG_IGN || blocked {
             actions[sig as usize] = SigAction::default();
         }
     }
-    p.signals.blocked.fetch_and(!bit(sig), Ordering::SeqCst);
+    sched::current()
+        .sigmask
+        .fetch_and(!bit(sig), Ordering::SeqCst);
     p.signals.pending.fetch_or(bit(sig), Ordering::SeqCst);
 }
 
@@ -231,9 +244,32 @@ pub fn has_pending() -> bool {
     match current() {
         Some(p) => {
             let pend = p.signals.pending.load(Ordering::SeqCst);
-            pend & !p.signals.blocked.load(Ordering::SeqCst) != 0 || pend & bit(SIGKILL) != 0
+            pend & !sched::current().sigmask.load(Ordering::SeqCst) != 0 || pend & bit(SIGKILL) != 0
         }
         None => false,
+    }
+}
+
+/// Wait with `mask` as the signal mask for the rest of this syscall (Linux's
+/// set_restore_sigmask): the caller's mask comes back on return to user
+/// mode, or after the handler of a signal delivered on that return.
+pub fn set_temp_mask(mask: u64) {
+    let t = sched::current();
+    let old = t
+        .sigmask
+        .swap(mask & !(bit(SIGKILL) | bit(SIGSTOP)), Ordering::SeqCst);
+    if !t.restore_sigmask.swap(true, Ordering::SeqCst) {
+        t.saved_sigmask.store(old, Ordering::SeqCst);
+    }
+}
+
+/// The mask a syscall should restore, clearing the pending restore.
+fn take_saved_mask() -> Option<u64> {
+    let t = sched::current();
+    if t.restore_sigmask.swap(false, Ordering::SeqCst) {
+        Some(t.saved_sigmask.load(Ordering::SeqCst))
+    } else {
+        None
     }
 }
 
@@ -278,6 +314,10 @@ fn deliver_inner(frame: &mut TrapFrame) -> Option<i32> {
     if r.is_none() {
         finish_restart(frame, true);
     }
+    // No handler took the saved mask: restore it now.
+    if let Some(m) = take_saved_mask() {
+        sched::current().sigmask.store(m, Ordering::SeqCst);
+    }
     r
 }
 
@@ -289,7 +329,7 @@ fn deliver_signals(frame: &mut TrapFrame) -> Option<i32> {
     sched::current().interrupted.store(false, Ordering::SeqCst);
     loop {
         let pending = p.signals.pending.load(Ordering::SeqCst);
-        let blocked = p.signals.blocked.load(Ordering::SeqCst);
+        let blocked = sched::current().sigmask.load(Ordering::SeqCst);
         let deliverable = pending & !(blocked & !(bit(SIGKILL) | bit(SIGSTOP)));
         if deliverable == 0 {
             return None;
@@ -312,7 +352,7 @@ fn deliver_signals(frame: &mut TrapFrame) -> Option<i32> {
             continue;
         }
         finish_restart(frame, action.flags & SA_RESTART != 0);
-        if setup_frame(&p, frame, sig, &action).is_err() {
+        if setup_frame(frame, sig, &action).is_err() {
             return Some(SIGSEGV as i32);
         }
         let mut actions = p.signals.actions.lock();
@@ -342,13 +382,10 @@ fn stop_current(p: &Arc<Process>, sig: u32) {
     });
 }
 
-fn setup_frame(
-    p: &Arc<Process>,
-    frame: &mut TrapFrame,
-    sig: u32,
-    action: &SigAction,
-) -> KResult<()> {
-    let old_mask = p.signals.blocked.load(Ordering::SeqCst);
+fn setup_frame(frame: &mut TrapFrame, sig: u32, action: &SigAction) -> KResult<()> {
+    let cur_mask = sched::current().sigmask.load(Ordering::SeqCst);
+    // After a temporary-mask wait the handler returns to the caller's mask.
+    let old_mask = take_saved_mask().unwrap_or(cur_mask);
     let mut sf = SigFrame {
         restorer: action.restorer,
         sig: sig as u64,
@@ -366,12 +403,12 @@ fn setup_frame(
     let size = core::mem::size_of::<SigFrame>() as u64;
     let sp = ((frame.rsp - 128 - size) & !0xF) - 8;
     uaccess::write_user(sp, &sf)?;
-    let mut mask = old_mask | action.mask;
+    let mut mask = cur_mask | action.mask;
     if action.flags & SA_NODEFER == 0 {
         mask |= bit(sig);
     }
-    p.signals
-        .blocked
+    sched::current()
+        .sigmask
         .store(mask & !(bit(SIGKILL) | bit(SIGSTOP)), Ordering::SeqCst);
     frame.rsp = sp;
     frame.rip = action.handler;
@@ -384,7 +421,7 @@ fn setup_frame(
 
 /// rt_sigreturn: restore the context saved by `setup_frame`.
 pub fn sigreturn(frame: &mut TrapFrame) -> KResult<()> {
-    let p = current().ok_or(ESRCH)?;
+    current().ok_or(ESRCH)?;
     // The handler's `ret` popped the restorer address.
     let sp = frame.rsp - 8;
     let sf: SigFrame = uaccess::read_user(sp)?;
@@ -397,7 +434,7 @@ pub fn sigreturn(frame: &mut TrapFrame) -> KResult<()> {
         return Err(EFAULT);
     }
     *frame = restored;
-    p.signals.blocked.store(
+    sched::current().sigmask.store(
         sf.old_mask & !(bit(SIGKILL) | bit(SIGSTOP)),
         Ordering::SeqCst,
     );

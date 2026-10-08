@@ -80,6 +80,14 @@ pub struct Thread {
     pub interrupted: AtomicBool,
     /// Absolute deadline of an interrupted nanosleep (for restart).
     pub restart_deadline: AtomicU64,
+    /// The signal mask to restore on return to user mode after a syscall
+    /// that waited with a temporary one (ppoll, pselect6, epoll_pwait,
+    /// sigsuspend), valid while `restore_sigmask` is set.
+    pub saved_sigmask: AtomicU64,
+    pub restore_sigmask: AtomicBool,
+    /// Blocked signals (per thread, as in Linux; pending ones are shared by
+    /// the process).
+    pub sigmask: AtomicU64,
     /// CPU this thread last ran on.
     last_cpu: AtomicU32,
     /// CPUs this thread may run on (bit per CPU).
@@ -395,6 +403,9 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         quantum: AtomicU8::new(QUANTUM_TICKS as u8),
         interrupted: AtomicBool::new(false),
         restart_deadline: AtomicU64::new(0),
+        saved_sigmask: AtomicU64::new(0),
+        restore_sigmask: AtomicBool::new(false),
+        sigmask: AtomicU64::new(0),
         last_cpu: AtomicU32::new(this_cpu()),
         affinity: AtomicU64::new(u64::MAX),
         nice: AtomicI8::new(0),

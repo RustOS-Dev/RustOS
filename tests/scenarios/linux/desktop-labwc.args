@@ -1,0 +1,3 @@
+# labwc, foot and Xwayland with the full port set in the boot image need
+# more than the default 512 MiB (QEMU takes the last -m).
+-m 1536M

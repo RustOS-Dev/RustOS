@@ -347,6 +347,19 @@ pub enum Ret {
     Frame,
 }
 
+/// ppoll/pselect6/epoll_pwait: wait with the user's signal mask, if given.
+fn wait_sigmask(ptr: u64, len: u64) -> KResult<()> {
+    if ptr == 0 {
+        return Ok(());
+    }
+    if len != 8 {
+        return Err(EINVAL);
+    }
+    let mask: u64 = crate::process::uaccess::read_user(ptr)?;
+    crate::process::signal::set_temp_mask(mask);
+    Ok(())
+}
+
 fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
     use nr::*;
     let v = |r: SysResult| r.map(Ret::Value);
@@ -431,9 +444,19 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         LLISTXATTR => v(fs::listxattr(a[0], a[1], a[2], false)),
         FLISTXATTR => v(fs::flistxattr(a[0] as i32, a[1], a[2])),
         POLL => v(fs::poll(a[0], a[1], a[2] as i32 as i64)),
-        PPOLL => v(fs::ppoll(a[0], a[1], a[2])),
+        PPOLL => {
+            wait_sigmask(a[3], a[4])?;
+            v(fs::ppoll(a[0], a[1], a[2]))
+        }
         SELECT => v(fs::select(a[0] as i32, a[1], a[2], a[3], a[4], false)),
-        PSELECT6 => v(fs::select(a[0] as i32, a[1], a[2], a[3], a[4], true)),
+        PSELECT6 => {
+            // The sixth argument points at { const sigset_t *ss; size_t len; }.
+            if a[5] != 0 {
+                let ss: [u64; 2] = crate::process::uaccess::read_user(a[5])?;
+                wait_sigmask(ss[0], ss[1])?;
+            }
+            v(fs::select(a[0] as i32, a[1], a[2], a[3], a[4], true))
+        }
         SENDFILE => v(fs::sendfile(a[0] as i32, a[1] as i32, a[2], a[3])),
         MOUNT => v(fs::mount(a[0], a[1], a[2], a[3], a[4])),
         UMOUNT2 => v(fs::umount(a[0])),
@@ -565,13 +588,25 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
             a[2] as i32,
             a[3],
         )),
-        EPOLL_WAIT | EPOLL_PWAIT => v(event::epoll_wait(
+        EPOLL_WAIT => v(event::epoll_wait(
             a[0] as i32,
             a[1],
             a[2] as i32,
             a[3] as i32 as i64,
         )),
-        EPOLL_PWAIT2 => v(event::epoll_pwait2(a[0] as i32, a[1], a[2] as i32, a[3])),
+        EPOLL_PWAIT => {
+            wait_sigmask(a[4], a[5])?;
+            v(event::epoll_wait(
+                a[0] as i32,
+                a[1],
+                a[2] as i32,
+                a[3] as i32 as i64,
+            ))
+        }
+        EPOLL_PWAIT2 => {
+            wait_sigmask(a[4], a[5])?;
+            v(event::epoll_pwait2(a[0] as i32, a[1], a[2] as i32, a[3]))
+        }
         EVENTFD => v(event::eventfd2(a[0], 0)),
         EVENTFD2 => v(event::eventfd2(a[0], a[1] as u32)),
         TIMERFD_CREATE => v(event::timerfd_create(a[0], a[1] as u32)),

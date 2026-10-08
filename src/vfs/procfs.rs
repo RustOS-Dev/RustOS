@@ -341,7 +341,10 @@ fn gen_pid_status(p: Option<&Arc<Process>>) -> String {
         rss * 4,
         p.live_threads().len(),
         p.signals.pending.load(Ordering::SeqCst),
-        p.signals.blocked.load(Ordering::SeqCst),
+        p.live_threads()
+            .first()
+            .map(|t| t.sigmask.load(Ordering::SeqCst))
+            .unwrap_or(0),
     )
 }
 

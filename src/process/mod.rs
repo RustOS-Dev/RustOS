@@ -200,15 +200,35 @@ pub fn user_fault(frame: &mut TrapFrame, sig: u32, addr: u64) {
                 alloc::format!(" in {} {:#x}-{:#x} prot {}", a.name, a.start, a.end, a.prot)
             })
         });
+        // Where the faulting code lives: file offset and size identify the
+        // binary or library (for addr2line).
+        let code = p.vm().and_then(|vm| {
+            vm.lock()
+                .find_area(frame.rip)
+                .and_then(|a| match &a.backing {
+                    vm::Backing::File { inode, offset } => Some(alloc::format!(
+                        " (code: file offset {:#x}, size {})",
+                        offset + (frame.rip - a.start),
+                        inode.metadata().map(|m| m.size).unwrap_or(0)
+                    )),
+                    _ => Some(alloc::format!(
+                        " (code in {} {:#x}-{:#x})",
+                        a.name,
+                        a.start,
+                        a.end
+                    )),
+                })
+        });
         crate::serial_println!(
-            "[proc] pid {} ({}) {} at rip {:#x} addr {:#x} err {:#x}{}",
+            "[proc] pid {} ({}) {} at rip {:#x} addr {:#x} err {:#x}{}{}",
             p.pid,
             p.name.lock(),
             signal::signal_name(sig),
             frame.rip,
             addr,
             frame.error_code,
-            area.as_deref().unwrap_or(" (no mapping)")
+            area.as_deref().unwrap_or(" (no mapping)"),
+            code.as_deref().unwrap_or("")
         );
         signal::force_signal(&p, sig);
     } else {
@@ -287,7 +307,8 @@ pub fn fork(frame: &TrapFrame) -> KResult<Pid> {
         // Inherit the FPU/SSE state.
         core::arch::asm!("fxsave64 [{}]", in(reg) t.fpu.get(), options(nostack));
     }
-    let _ = cur;
+    t.sigmask
+        .store(cur.sigmask.load(Ordering::SeqCst), Ordering::SeqCst);
     *t.process.lock() = Some(child.clone());
     child.threads.lock().push(Arc::downgrade(&t));
     sched::make_ready(t);
@@ -312,6 +333,10 @@ pub fn clone_thread(
     let t = sched::new_user_thread(&p.name.lock(), &cf, pml4);
     t.fs_base.store(
         tls.unwrap_or_else(|| x86_64::registers::model_specific::FsBase::read().as_u64()),
+        Ordering::SeqCst,
+    );
+    t.sigmask.store(
+        sched::current().sigmask.load(Ordering::SeqCst),
         Ordering::SeqCst,
     );
     *t.process.lock() = Some(p.clone());
@@ -411,7 +436,11 @@ fn do_exit(p: &Arc<Process>, status: i32) {
     if p.zombie.swap(true, Ordering::SeqCst) {
         return;
     }
-    // Other threads of the process are told to die.
+    // Other threads of the process are told to die. A pending SIGKILL makes
+    // every interruptible wait (futex, poll, …) end, as Linux's group exit.
+    p.signals
+        .pending
+        .fetch_or(1 << (signal::SIGKILL - 1), Ordering::SeqCst);
     let me = sched::current();
     for t in p.live_threads() {
         if !Arc::ptr_eq(&t, &me) {

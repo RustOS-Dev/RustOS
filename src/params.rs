@@ -2,7 +2,9 @@
 //!
 //! RustOS has no bootloader command line, so parameters come from a file:
 //! `/storage/etc/kernel.conf` (persistent, edited on the machine) or else
-//! `/etc/kernel.conf` from the initramfs. Each line holds `key=value`
+//! `/etc/kernel.conf` from the initramfs, then, in QEMU, the fw_cfg file
+//! `opt/rustos/kernel.conf` on top (the test harness passes switches that
+//! way). Each line holds `key=value`
 //! pairs (or a bare `key`, meaning `1`) separated by spaces; `#` starts a
 //! comment. The file is read once storage is mounted, so the switches only
 //! affect code that runs afterwards (drivers keep checking them at run
@@ -15,6 +17,9 @@
 //! * `iwlwifi.agg=0` — no A-MPDU aggregation (block ack).
 //! * `net.debug=1` — log a one-line summary of every frame sent/received.
 //! * `log.persist=1` — mirror the kernel log to `/storage/log/kernel.log`.
+//! * `desktop=none` — no eDEX-DE session on the first console at boot
+//!   (read by `/etc/rc` through `/proc/cmdline`; `desktop.login=1` asks
+//!   for a login first, `desktop.user=NAME` picks the account).
 
 use crate::sync::RwLock;
 use alloc::collections::BTreeMap;
@@ -44,17 +49,29 @@ pub fn parse(text: &str) -> BTreeMap<String, String> {
     out
 }
 
-/// Load the first parameter file that exists. Returns its path.
-pub fn load() -> Option<&'static str> {
-    for path in FILES {
-        if let Ok(data) = crate::vfs::read_all(path) {
-            let map = parse(&String::from_utf8_lossy(&data));
-            *PARAMS.write() = map;
-            refresh();
-            return Some(path);
-        }
+pub const FW_CFG_FILE: &str = "opt/rustos/kernel.conf";
+
+/// Load the first parameter file that exists, then the fw_cfg file over it.
+/// Returns where the parameters came from.
+pub fn load() -> Option<String> {
+    let mut map = BTreeMap::new();
+    let mut from = FILES.iter().find_map(|&path| {
+        let data = crate::vfs::read_all(path).ok()?;
+        map = parse(&String::from_utf8_lossy(&data));
+        Some(path.to_string())
+    });
+    if let Some(data) = crate::arch::x86_64::fwcfg::read_file(FW_CFG_FILE) {
+        map.extend(parse(&String::from_utf8_lossy(&data)));
+        let fw = alloc::format!("fw_cfg {FW_CFG_FILE}");
+        from = Some(match from {
+            Some(f) => alloc::format!("{f} and {fw}"),
+            None => fw,
+        });
     }
-    None
+    from.as_ref()?;
+    *PARAMS.write() = map;
+    refresh();
+    from
 }
 
 fn refresh() {

@@ -118,6 +118,10 @@ if ovmf is None:
 cmd = ["qemu-system-x86_64", "-drive", f"if=pflash,format=raw,readonly=on,file={ovmf}",
        "-drive", f"format=raw,file={img}", "-machine", "q35", "-m", "512M", "-cpu", "max", "-smp", os.environ.get("RUSTOS_SMP", "2"),
        "-serial", "stdio", "-display", "none", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"] + extra
+# Kernel parameters reach the kernel as a fw_cfg file. The eDEX-DE session starts at boot when
+# its port is in the image; scenarios run without it unless their .args pass their own.
+if not any("opt/rustos/kernel.conf" in a for a in extra):
+    cmd += ["-fw_cfg", "name=opt/rustos/kernel.conf,string=desktop=none"]
 mon_path = tempfile.mktemp(suffix=".mon")
 cmd += ["-monitor", f"unix:{mon_path},server,nowait"]
 p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

@@ -2,6 +2,7 @@ pub mod acpi;
 pub mod apic;
 pub mod cpu;
 pub mod exceptions;
+pub mod fwcfg;
 pub mod gdt;
 pub mod idt;
 pub mod rtc;

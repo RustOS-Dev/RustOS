@@ -189,11 +189,15 @@ built libepoxy || meson_pkg libepoxy "$(unpack "$SRC/libepoxy-1.5.10.tar.xz")" \
     -Dglx=no -Dx11=false -Degl=yes -Dtests=false -Ddocs=false
 if ! built xwayland; then
     d=$(unpack "$SRC/xwayland-24.1.14.tar.xz")
-    # The X server's smart scheduler (SIGALRM every 5 ms while clients are
-    # busy) leaves Xwayland unable to finish mapping windows on very slow
-    # (software-rendered) systems; schedule by the clock instead, as
-    # -dumbSched does. TESTING
-    sed -i 's/^Bool SmartScheduleSignalEnable = TRUE;/Bool SmartScheduleSignalEnable = FALSE;/' "$d/dix/dispatch.c"
+    # The X server's smart scheduler time-slices busy clients (SIGALRM, or
+    # the clock with -dumbSched). On RustOS, a yield in the middle of a
+    # client's requests leaves new windows unmapped (Xwayland and labwc's
+    # XWM both idle, nothing readable); without slicing it works. Never
+    # arm the timer, so Xwayland serves each client until it has no more
+    # requests, as when SIGALRM is blocked. Root cause not found yet
+    # (docs/LIMITATIONS.md).
+    sed -i '/^SmartScheduleStartTimer(void)$/,/^{$/ s/^{$/{\n    return; \/* RustOS: no time slicing *\//' "$d/os/utils.c"
+    grep -q 'RustOS: no time slicing' "$d/os/utils.c"
     meson_pkg xwayland "$d" \
         -Dglamor=true -Dglx=false -Dxvfb=false -Dxdmcp=false -Dxdm-auth-1=false \
         -Dsecure-rpc=false -Dsha1=libmd -Dlibdecor=false -Dxwayland_ei=false -Ddocs=false \

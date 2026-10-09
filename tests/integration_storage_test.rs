@@ -148,6 +148,8 @@ fn test_initramfs_unpack() {
     add("tmp/cpio", 0o040755, b"");
     add("tmp/cpio/f", 0o100644, b"cpio data");
     add("TRAILER!!!", 0, b"");
-    assert_eq!(rustos::initramfs::unpack_archive(&ar), 2);
+    // The kernel keeps references into its boot archive: it lives for good.
+    let ar: &'static [u8] = alloc::boxed::Box::leak(ar.into_boxed_slice());
+    assert_eq!(rustos::initramfs::unpack_archive(ar), 2);
     assert_eq!(vfs::read_all("/tmp/cpio/f").unwrap(), b"cpio data");
 }

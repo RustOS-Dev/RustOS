@@ -6,6 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=../write_to_drive.sh
 source "$ROOT/write_to_drive.sh"
+# Everything here is in a temporary directory: no sudo (root-owned files
+# would outlive the cleanup).
+run_as_root() { "$@"; }
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }

@@ -187,11 +187,14 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [ ] Bring-up on Intel hardware: needs hardware
 - [ ] **M41** Mesa: RADV/radeonsi, NVK, iris/ANV, zink, EGL/GBM
   - [x] Mesa 26.2 in `ports/weston`: EGL (GBM, Wayland), GLES 3.1, softpipe through kms_swrast on any KMS display (`gl-kmscube`), Weston's GL renderer (`desktop-gl`); virgl, zink, iris, RADV and ANV built (host `mesa_clc` for Intel); Vulkan loader and `vulkaninfo` (`gl-kmscube`). GPU drivers untested on hardware
-  - [ ] Not built: llvmpipe/lavapipe (LLVM not ported), radeonsi (libelf; AMD OpenGL is zink on RADV), NVK (Rust not cross-built for RustOS), desktop GL through GLX/glvnd
+  - [ ] Not built: llvmpipe/lavapipe (LLVM not ported), radeonsi (libelf; AMD OpenGL is zink on RADV), NVK (not attempted; Rust std programs build for RustOS since M43), desktop GL through GLX/glvnd
 - [ ] **M42** Desktop environments: Weston, labwc/Sway, Xwayland, GTK, Qt/KDE
   - [x] labwc 0.20 on wlroots 0.20 with the GLES2 renderer (softpipe in QEMU) and foot (`ports/labwc`); Xwayland 24.1 with the X11 client libraries, labwc's XWM decorating X windows (`xhello`); GTK 3 on Wayland (`ports/gtk`); `desktop-labwc` checks all three. Kernel fixes found on the way: dma-buf `lseek`, temporary signal masks for ppoll/pselect/epoll_pwait/sigsuspend, per-thread signal masks, group exit with SIGKILL, setitimer re-arming, epoll ADD after a close
-  - [ ] Qt 6/KDE, a D-Bus session bus, Sway and the wlroots tools, an icon theme; Xwayland runs without the X server's time slicing (LIMITATIONS)
-- [ ] **M43** eDEX-DE as the RustOS desktop: Rust std programs, eDEX-DE on labwc (wm backend, RustOS system backends), session, `desktop-edex`
+  - [ ] Qt 6/KDE, Sway and the wlroots tools, an icon theme; Xwayland runs without the X server's time slicing (LIMITATIONS)
+- [x] **M43** eDEX-DE as the RustOS desktop: Rust std programs, eDEX-DE on labwc (wm backend, RustOS system backends), session, `desktop-edex`
+  - [x] Rust std on RustOS: `tools/rustos-cargo` (x86_64-unknown-linux-musl, dynamic), `ports/rust-hello` and `rust-std`. Kernel fixes: Linux `rt_sigframe` with siginfo/ucontext, `waitid`, `TIOCGPTPEER`, `mincore`, blocked-but-ignored signals kept pending, per-CPU `/proc/stat`, full `/proc/PID/stat`, `getrusage`/`times`, real load averages, mapping names in `/proc/PID/maps`, and a deadlock (signal frames written with interrupts off while a fork held the address space)
+  - [x] `ports/edex-de`: eDEX-DE with the labwc window-manager backend (wlr-foreign-toplevel), RustOS system backends, local greeter backend and the GLES renderer on softpipe; D-Bus 1.16 session bus; the Nerd Font; `edex-session`/`desktop`; autostart from `/etc/rc` (`desktop=none` to skip, `desktop.login=1` for the greeter); kernel parameters from QEMU fw_cfg for tests
+  - [x] Release images (`write_to_drive.sh`, `tools/release-ports.sh`) boot into eDEX-DE; `desktop-edex` in CI. Untested on hardware ([DESKTOP.md](DESKTOP.md))
 
 ## Context
 

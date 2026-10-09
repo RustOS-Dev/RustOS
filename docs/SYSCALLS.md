@@ -183,6 +183,7 @@ an evdev file off.
 | 11 | `munmap` |
 | 12 | `brk` |
 | 26 | `msync` |
+| 27 | `mincore` (pages of mappings count as resident) |
 | 28 | `madvise` |
 
 File mappings come from the page cache: `MAP_SHARED` writes reach the

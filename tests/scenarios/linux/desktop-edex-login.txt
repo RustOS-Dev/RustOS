@@ -1,0 +1,27 @@
+# eDEX-DE's greeter (M43, docs/DESKTOP.md): with desktop.login=1 the session
+# runs edex-greeter (local passwd/shadow backend) fullscreen under labwc
+# first. root has no password: Enter logs in, the greeter exits and the
+# desktop starts as root. Same ports and kernel as desktop-edex.
+hostrun rm -rf /tmp/rustos-edex-login && mkdir -p /tmp/rustos-edex-login
+wait # $ 300
+send for i in $(seq 1 60); do ps | grep -q edex-greeter && break; sleep 3; done; echo "greeter-$i"
+wait greeter-\d+ 300
+wait # $
+# The greeter draws (softpipe) before it reads keys.
+sleep 60
+monitor screendump /tmp/rustos-edex-login/greeter.ppm
+# Fullscreen without a title bar: the Tron background reaches the top edge.
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-login/greeter.ppm size=1280x800 'count:3,6,19>=500000' 640,4=3,6,19~12 'count:225,222,219<=2000'
+monitor sendkey ret
+send export XDG_RUNTIME_DIR=/tmp/xdg-runtime-0; for i in $(seq 1 120); do edex-de ipc state >/tmp/st 2>/dev/null && grep -q '"frames":[1-9]' /tmp/st && break; sleep 5; done; echo "edex-up $i"; echo "greeters-$(ps | grep -c edex-greeter)"
+wait edex-up \d+ 700
+wait greeters-0
+wait # $
+send grep -a -e 'logged in' /var/log/edex-session.log
+# (grep colours the match.)
+wait edex-session: root \S*logged in
+wait # $
+# labwc composites eDEX's first frame (softpipe).
+sleep 30
+monitor screendump /tmp/rustos-edex-login/desktop.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-login/desktop.ppm 255,300=2,181,217~30 997,300=2,181,217~30

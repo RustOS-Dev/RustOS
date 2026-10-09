@@ -99,6 +99,8 @@ desktop() {
     uid="$(id -u 2>/dev/null || echo 0)"
     export XDG_RUNTIME_DIR="$(runtime_dir "$uid")"
     export HOME="${HOME:-/root}"
+    [ -n "$USER" ] || export USER="$(id -un 2>/dev/null || echo root)"
+    export LOGNAME="$USER"
     conf="${XDG_CONFIG_HOME:-$HOME/.config}/edex-de/labwc"
     if [ ! -f "$conf/rc.xml" ]; then
         edex-de labwc-config "$conf"

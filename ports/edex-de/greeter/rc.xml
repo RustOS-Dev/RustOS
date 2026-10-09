@@ -14,8 +14,7 @@
     <default />
   </mouse>
   <windowRules>
-    <windowRule identifier="edex-greeter" serverDecoration="no">
-      <action name="ToggleFullscreen" />
-    </windowRule>
+    <!-- The greeter asks for fullscreen itself (a ToggleFullscreen action here would undo it). -->
+    <windowRule identifier="edex-greeter" serverDecoration="no" />
   </windowRules>
 </labwc_config>

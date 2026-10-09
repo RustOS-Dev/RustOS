@@ -90,6 +90,7 @@ devices are cached (write-back buffer cache, `sync`).
 | UEFI GOP framebuffer (console, `/dev/fb0`) | CI |
 | UEFI GOP framebuffer through Linux simpledrm (DRM/KMS, `/dev/dri/card0`, console as a DRM client), in release images | CI (`drm-simpledrm`, and handover to bochs in `drm-bochs`); untested on hardware |
 | QEMU standard VGA through Linux bochs (DRM/KMS, `/dev/dri/card0`), in release images | CI (`drm-bochs`) |
+| The eDEX-DE desktop on labwc (wgpu GLES on Mesa softpipe) over bochs DRM | CI (`desktop-edex`, release image on `-machine pc` and q35); **untested on hardware** (no GPU, efidrm or iris/zink run yet) |
 | virtio-gpu through Linux virtio-gpu (2D), in release images | CI (`drm-virtio`) |
 | AMD GPUs through Linux amdgpu with the display core (DC), RDNA1+ and Vega APUs (`DRM_AMDGPU_SI`/`CIK` off), in release images; firmware for the Raphael iGPU (Ryzen 7000, `1002:164e`) ships | compiled, **untested on hardware**; off by default: binds only with `linux.enable=amdgpu` in `kernel.conf` |
 | NVIDIA GPUs through Linux nouveau with GSP-RM 570.144: Turing, Ampere, Ada and Blackwell GB20x (RTX 5070 = GB205, `10de:2f04`), in release images; GSP firmware (about 90 MB) goes on the storage partition | compiled, **untested on hardware**; off by default: binds only with `linux.enable=nouveau`. For development, `tools/vfio-run.sh` passes the card through to QEMU |

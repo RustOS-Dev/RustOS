@@ -8,9 +8,10 @@
 # Ports: libcxx (C++ runtime), weston (the Wayland, Mesa and input stack;
 # Weston itself is left out), labwc (wlroots, labwc, foot, Xwayland) and
 # edex-de (eDEX-DE, D-Bus, the session). Test programs and demos (Weston's
-# desktop and terminal, kmscube, the DRM and GL test tools, xhello) and the
-# Vulkan drivers (no RustOS GPU driver can use them) stay out; they remain
-# available as test ports (tools/install-port.sh --initramfs NAME).
+# desktop and terminal, kmscube, the DRM and GL test tools, xhello) stay
+# out; they remain available as test ports (tools/install-port.sh
+# --initramfs NAME). Mesa keeps softpipe, iris, zink and the AMD and Intel
+# Vulkan drivers (zink on RADV is the AMD path).
 #
 # Replaces target/ports-root.
 set -e
@@ -42,7 +43,7 @@ for f in weston weston-terminal weston-simple-shm weston-screenshooter kmscube \
 done
 rm -rf libexec/weston-desktop-shell libexec/weston-keyboard libexec/libinput lib/libweston-14 \
     lib/libweston-14.so* share/weston share/wayland-sessions/weston.desktop share/libweston-14 \
-    lib/libvulkan_*.so share/vulkan lib/libcairo-script-interpreter.so* \
+    lib/libcairo-script-interpreter.so* \
     include lib/pkgconfig lib/cmake share/pkgconfig share/aclocal share/man share/doc \
     share/gtk-doc share/gettext share/zsh share/fish share/bash-completion share/gdb \
     share/glib-2.0/gdb share/cmake

@@ -26,10 +26,11 @@ wait \r\n1\r\n
 wait # $
 # Boot-time parameters: persistent log and frame tracing survive a reboot
 send mkdir -p /storage/etc && echo "log.persist=1 net.debug  # test" > /storage/etc/kernel.conf && sync && reboot
-wait kernel parameters from /storage/etc/kernel.conf: log.persist=1 net.debug=1 240
+# (The harness adds desktop=none through QEMU's fw_cfg.)
+wait kernel parameters from /storage/etc/kernel\.conf.*: (desktop=none )?log\.persist=1 net\.debug=1 240
 wait # $ 240
 send cat /proc/cmdline; sleep 3; grep -c "boot at unix time" /storage/log/kernel.log
-wait root=auto log\.persist=1 net\.debug=1
+wait root=auto (desktop=none )?log\.persist=1 net\.debug=1
 wait \r\n[1-9]\r\n
 wait # $
 send ping -c 1 10.0.2.2 >/dev/null; dmesg | grep -c "\[net\] [rt]x .*icmp"

@@ -21,7 +21,10 @@ impl Rgba {
     pub const BLACK: Rgba = Rgba::new(0, 0, 0, 255);
 
     pub fn with_alpha(self, a: f32) -> Rgba {
-        Rgba { a: (self.a as f32 * a.clamp(0.0, 1.0) + 0.5) as u8, ..self }
+        Rgba {
+            a: (self.a as f32 * a.clamp(0.0, 1.0) + 0.5) as u8,
+            ..self
+        }
     }
 }
 
@@ -42,7 +45,12 @@ pub struct Clip {
 
 impl Clip {
     pub fn intersect(self, o: Clip) -> Clip {
-        Clip { x0: self.x0.max(o.x0), y0: self.y0.max(o.y0), x1: self.x1.min(o.x1), y1: self.y1.min(o.y1) }
+        Clip {
+            x0: self.x0.max(o.x0),
+            y0: self.y0.max(o.y0),
+            x1: self.x1.min(o.x1),
+            y1: self.y1.min(o.y1),
+        }
     }
     pub fn is_empty(&self) -> bool {
         self.x0 >= self.x1 || self.y0 >= self.y1
@@ -59,7 +67,11 @@ pub struct Image {
 
 impl Image {
     pub fn new(width: u32, height: u32) -> Image {
-        Image { width, height, pixels: vec![Rgba::default(); (width * height) as usize] }
+        Image {
+            width,
+            height,
+            pixels: vec![Rgba::default(); (width * height) as usize],
+        }
     }
     pub fn get(&self, x: u32, y: u32) -> Rgba {
         self.pixels[(y * self.width + x) as usize]
@@ -87,7 +99,12 @@ impl Canvas {
             width,
             height,
             pixels: vec![bg; (width * height) as usize],
-            clip: Clip { x0: 0, y0: 0, x1: width as i32, y1: height as i32 },
+            clip: Clip {
+                x0: 0,
+                y0: 0,
+                x1: width as i32,
+                y1: height as i32,
+            },
             alpha: 1.0,
         }
     }
@@ -98,7 +115,12 @@ impl Canvas {
 
     /// Replace the clip (returns the old one to restore later).
     pub fn set_clip(&mut self, c: Clip) -> Clip {
-        let full = Clip { x0: 0, y0: 0, x1: self.width as i32, y1: self.height as i32 };
+        let full = Clip {
+            x0: 0,
+            y0: 0,
+            x1: self.width as i32,
+            y1: self.height as i32,
+        };
         core::mem::replace(&mut self.clip, c.intersect(full))
     }
 
@@ -112,7 +134,11 @@ impl Canvas {
         if x < self.clip.x0 || y < self.clip.y0 || x >= self.clip.x1 || y >= self.clip.y1 {
             return;
         }
-        let a = if self.alpha >= 1.0 { c.a as u32 * cov / 255 } else { ((c.a as u32 * cov / 255) as f32 * self.alpha) as u32 };
+        let a = if self.alpha >= 1.0 {
+            c.a as u32 * cov / 255
+        } else {
+            ((c.a as u32 * cov / 255) as f32 * self.alpha) as u32
+        };
         if a == 0 {
             return;
         }
@@ -120,7 +146,12 @@ impl Canvas {
         if a >= 255 {
             *p = Rgba::new(c.r, c.g, c.b, 255);
         } else {
-            *p = Rgba::new(blend_ch(p.r, c.r, a), blend_ch(p.g, c.g, a), blend_ch(p.b, c.b, a), 255);
+            *p = Rgba::new(
+                blend_ch(p.r, c.r, a),
+                blend_ch(p.g, c.g, a),
+                blend_ch(p.b, c.b, a),
+                255,
+            );
         }
     }
 
@@ -132,8 +163,14 @@ impl Canvas {
         let (x0, y0, x1, y1) = (x, y, x + w, y + h);
         // Opaque interior: plain stores; only the edges are blended.
         if c.a == 255 && self.alpha >= 1.0 {
-            let (ax0, ay0) = ((x0.cl() as i32).max(self.clip.x0), (y0.cl() as i32).max(self.clip.y0));
-            let (ax1, ay1) = ((x1.fl() as i32).min(self.clip.x1), (y1.fl() as i32).min(self.clip.y1));
+            let (ax0, ay0) = (
+                (x0.cl() as i32).max(self.clip.x0),
+                (y0.cl() as i32).max(self.clip.y0),
+            );
+            let (ax1, ay1) = (
+                (x1.fl() as i32).min(self.clip.x1),
+                (y1.fl() as i32).min(self.clip.y1),
+            );
             if ax1 > ax0 && ay1 > ay0 {
                 let px = Rgba::new(c.r, c.g, c.b, 255);
                 for py in ay0..ay1 {
@@ -151,7 +188,13 @@ impl Canvas {
                     self.fill_rect_blend(ax0 as f32, y0, (ax1 - ax0) as f32, ay0 as f32 - y0, c);
                 }
                 if y1 > ay1 as f32 {
-                    self.fill_rect_blend(ax0 as f32, ay1 as f32, (ax1 - ax0) as f32, y1 - ay1 as f32, c);
+                    self.fill_rect_blend(
+                        ax0 as f32,
+                        ay1 as f32,
+                        (ax1 - ax0) as f32,
+                        y1 - ay1 as f32,
+                        c,
+                    );
                 }
                 return;
             }
@@ -198,7 +241,15 @@ impl Canvas {
     }
 
     /// A gradient fill: `color_at(t)` for t along the gradient line.
-    pub fn fill_gradient(&mut self, x: f32, y: f32, w: f32, h: f32, angle_deg: f32, color_at: &dyn Fn(f32) -> Rgba) {
+    pub fn fill_gradient(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        angle_deg: f32,
+        color_at: &dyn Fn(f32) -> Rgba,
+    ) {
         let a = angle_deg.to_radians();
         let (dx, dy) = (libm_sin(a), -libm_cos(a));
         // Gradient length: the box's extent along the direction.
@@ -238,7 +289,14 @@ impl Canvas {
                 let x0 = fx as u32;
                 let x1 = (x0 + 1).min(img.width - 1);
                 let tx = fx - x0 as f32;
-                let c = bilerp(img.get(x0, y0), img.get(x1, y0), img.get(x0, y1), img.get(x1, y1), tx, ty);
+                let c = bilerp(
+                    img.get(x0, y0),
+                    img.get(x1, y0),
+                    img.get(x0, y1),
+                    img.get(x1, y1),
+                    tx,
+                    ty,
+                );
                 self.blend(px, py, c, 255);
             }
         }
@@ -300,8 +358,18 @@ impl Canvas {
         if pts.len() < 3 {
             return;
         }
-        let miny = pts.iter().map(|p| p.1).fold(f32::MAX, f32::min).fl().max(self.clip.y0 as f32) as i32;
-        let maxy = pts.iter().map(|p| p.1).fold(f32::MIN, f32::max).cl().min(self.clip.y1 as f32) as i32;
+        let miny = pts
+            .iter()
+            .map(|p| p.1)
+            .fold(f32::MAX, f32::min)
+            .fl()
+            .max(self.clip.y0 as f32) as i32;
+        let maxy = pts
+            .iter()
+            .map(|p| p.1)
+            .fold(f32::MIN, f32::max)
+            .cl()
+            .min(self.clip.y1 as f32) as i32;
         let w = (self.clip.x1 - self.clip.x0).max(0) as usize;
         let mut acc = vec![0f32; w];
         const S: usize = 4;
@@ -335,7 +403,10 @@ impl Canvas {
                                 break;
                             }
                         }
-                        let (xa, xb) = (xs[k].0.max(self.clip.x0 as f32), end.min(self.clip.x1 as f32));
+                        let (xa, xb) = (
+                            xs[k].0.max(self.clip.x0 as f32),
+                            end.min(self.clip.x1 as f32),
+                        );
                         let mut x = xa;
                         while x < xb {
                             let px = x.fl();
@@ -359,7 +430,11 @@ impl Canvas {
 
     /// The canvas as an image (copy).
     pub fn to_image(&self) -> Image {
-        Image { width: self.width, height: self.height, pixels: self.pixels.clone() }
+        Image {
+            width: self.width,
+            height: self.height,
+            pixels: self.pixels.clone(),
+        }
     }
 }
 
@@ -383,7 +458,12 @@ fn round_rect_coverage(px: f32, py: f32, x: f32, y: f32, w: f32, h: f32, r: [f32
         return 0.0;
     }
     // Which corner region?
-    let corners = [(x + r[0], y + r[0], r[0]), (x + w - r[1], y + r[1], r[1]), (x + w - r[2], y + h - r[2], r[2]), (x + r[3], y + h - r[3], r[3])];
+    let corners = [
+        (x + r[0], y + r[0], r[0]),
+        (x + w - r[1], y + r[1], r[1]),
+        (x + w - r[2], y + h - r[2], r[2]),
+        (x + r[3], y + h - r[3], r[3]),
+    ];
     let (cx, cy, rad) = if px < corners[0].0 && py < corners[0].1 {
         corners[0]
     } else if px > corners[1].0 && py < corners[1].1 {

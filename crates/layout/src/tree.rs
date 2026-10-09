@@ -684,7 +684,10 @@ impl Ctx<'_, '_> {
             // A canvas whose pixels the browser has (a script drew it) is
             // shown as an image; otherwise it is an empty box.
             "canvas" => match doc.attr(id, "src").filter(|s| s.starts_with("canvas:")) {
-                Some(src) => ReplacedKind::Image { src: String::from(src), alt: String::new() },
+                Some(src) => ReplacedKind::Image {
+                    src: String::from(src),
+                    alt: String::new(),
+                },
                 None => ReplacedKind::Placeholder(String::new()),
             },
             "svg" => {

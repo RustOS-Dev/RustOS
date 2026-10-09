@@ -96,7 +96,10 @@ impl IpAddr {
         if let Some(v4) = Ipv4::parse(s) {
             return Some(IpAddr::V4(v4));
         }
-        let s = s.strip_prefix('[').and_then(|x| x.strip_suffix(']')).unwrap_or(s);
+        let s = s
+            .strip_prefix('[')
+            .and_then(|x| x.strip_suffix(']'))
+            .unwrap_or(s);
         // Drop a zone index ("fe80::1%eth0").
         let s = s.split('%').next().unwrap_or(s);
         if !s.contains(':') {
@@ -168,7 +171,9 @@ impl core::fmt::Display for IpAddr {
         match self {
             IpAddr::V4(v) => write!(f, "{}", v),
             IpAddr::V6(a) => {
-                let g: Vec<u16> = (0..8).map(|i| u16::from_be_bytes([a[2 * i], a[2 * i + 1]])).collect();
+                let g: Vec<u16> = (0..8)
+                    .map(|i| u16::from_be_bytes([a[2 * i], a[2 * i + 1]]))
+                    .collect();
                 let (mut best, mut best_len, mut i) = (8, 0, 0);
                 while i < 8 {
                     if g[i] == 0 {
@@ -307,7 +312,14 @@ impl Socket {
                 };
                 sys::check(sys::syscall(
                     nr::SENDTO,
-                    &[self.fd as usize, buf.as_ptr() as usize, buf.len(), 0, &sa as *const _ as usize, 28],
+                    &[
+                        self.fd as usize,
+                        buf.as_ptr() as usize,
+                        buf.len(),
+                        0,
+                        &sa as *const _ as usize,
+                        28,
+                    ],
                 ))
                 .map(|n| n as usize)
             }
@@ -700,7 +712,10 @@ pub fn resolve_all(host: &str) -> Result<Vec<IpAddr>> {
         return Ok(alloc::vec![ip]);
     }
     if host.eq_ignore_ascii_case("localhost") {
-        return Ok(alloc::vec![IpAddr::V4(Ipv4([127, 0, 0, 1])), IpAddr::V6(LOOPBACK6)]);
+        return Ok(alloc::vec![
+            IpAddr::V4(Ipv4([127, 0, 0, 1])),
+            IpAddr::V6(LOOPBACK6)
+        ]);
     }
     let from_hosts = hosts_lookup(host);
     if !from_hosts.is_empty() {
@@ -717,7 +732,9 @@ pub fn resolve_all(host: &str) -> Result<Vec<IpAddr>> {
     let mut last_err = Error(110);
     'servers: for server in nameservers_all() {
         let family = if server.is_v6() { AF_INET6 } else { AF_INET };
-        let Ok(sock) = Socket::new(family, SOCK_DGRAM, 0) else { continue };
+        let Ok(sock) = Socket::new(family, SOCK_DGRAM, 0) else {
+            continue;
+        };
         sock.set_timeout(2000)?;
         for _ in 0..2 {
             if v4.is_none() {
@@ -728,7 +745,9 @@ pub fn resolve_all(host: &str) -> Result<Vec<IpAddr>> {
             }
             loop {
                 let mut buf = [0u8; 1500];
-                let Ok(n) = sock.recv_any(&mut buf) else { break };
+                let Ok(n) = sock.recv_any(&mut buf) else {
+                    break;
+                };
                 if let Some(r) = parse_records(&buf[..n], id) {
                     v4 = Some(r);
                 } else if let Some(r) = parse_records(&buf[..n], id.wrapping_add(1)) {
@@ -749,7 +768,12 @@ pub fn resolve_all(host: &str) -> Result<Vec<IpAddr>> {
     if want6 {
         out.extend(v6.unwrap_or_default().into_iter().filter(|a| a.is_v6()));
     }
-    out.extend(v4.clone().unwrap_or_default().into_iter().filter(|a| !a.is_v6()));
+    out.extend(
+        v4.clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| !a.is_v6()),
+    );
     if out.is_empty() {
         return Err(if v4.is_some() { Error(2) } else { last_err });
     }
@@ -861,7 +885,10 @@ pub struct IfReq {
 
 impl IfReq {
     pub fn new(name: &str) -> IfReq {
-        let mut r = IfReq { name: [0; 16], data: [0; 24] };
+        let mut r = IfReq {
+            name: [0; 16],
+            data: [0; 24],
+        };
         let n = name.len().min(15);
         r.name[..n].copy_from_slice(&name.as_bytes()[..n]);
         r
@@ -900,7 +927,11 @@ pub fn set_address(name: &str, ip: Ipv4, prefix: u8) -> Result<()> {
     if ip == Ipv4::ANY {
         return Ok(());
     }
-    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix as u32) };
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix as u32)
+    };
     let mut r = IfReq::new(name);
     r.set_sockaddr(Ipv4(mask.to_be_bytes()));
     if_ioctl(SIOCSIFNETMASK, &mut r)
@@ -921,8 +952,14 @@ pub fn set_dhcp(name: &str, on: bool) -> Result<()> {
 /// Add or delete a route (`dst`/`prefix` via `gw`); prefix 0 = default.
 pub fn route(add: bool, dst: Ipv4, prefix: u8, gw: Ipv4, dev: Option<&str>) -> Result<()> {
     let mut rt = [0u8; 120];
-    let enc = |ip: Ipv4| -> [u8; 16] { unsafe { core::mem::transmute(SockaddrIn::from(SocketAddr { ip, port: 0 })) } };
-    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix as u32) };
+    let enc = |ip: Ipv4| -> [u8; 16] {
+        unsafe { core::mem::transmute(SockaddrIn::from(SocketAddr { ip, port: 0 })) }
+    };
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix as u32)
+    };
     rt[8..24].copy_from_slice(&enc(dst));
     rt[24..40].copy_from_slice(&enc(gw));
     rt[40..56].copy_from_slice(&enc(Ipv4(mask.to_be_bytes())));
@@ -934,8 +971,11 @@ pub fn route(add: bool, dst: Ipv4, prefix: u8, gw: Ipv4, dev: Option<&str>) -> R
         rt[104..112].copy_from_slice(&(devname.as_ptr() as u64).to_ne_bytes());
     }
     let s = Socket::new(AF_INET, SOCK_DGRAM, 0)?;
-    s.ioctl(if add { SIOCADDRT } else { SIOCDELRT }, rt.as_mut_ptr() as usize)
-        .map(|_| ())
+    s.ioctl(
+        if add { SIOCADDRT } else { SIOCDELRT },
+        rt.as_mut_ptr() as usize,
+    )
+    .map(|_| ())
 }
 
 /// Parse "a.b.c.d/p" (prefix defaults to `def`).
@@ -952,7 +992,11 @@ pub fn mask_prefix(mask: Ipv4) -> u8 {
 }
 
 pub fn prefix_mask(p: u8) -> Ipv4 {
-    let m = if p == 0 { 0 } else { u32::MAX << (32 - p as u32) };
+    let m = if p == 0 {
+        0
+    } else {
+        u32::MAX << (32 - p as u32)
+    };
     Ipv4(m.to_be_bytes())
 }
 

@@ -80,7 +80,15 @@ pub fn collect(doc: &Document, clickable: &BTreeSet<NodeId>) -> Controls {
         }
     }
     let mut form_nodes: Vec<NodeId> = Vec::new();
-    walk(doc, 0, &mut c, &mut labels, &mut form_nodes, None, clickable);
+    walk(
+        doc,
+        0,
+        &mut c,
+        &mut labels,
+        &mut form_nodes,
+        None,
+        clickable,
+    );
     for (id, label) in labels {
         if let Some(f) = c
             .fields
@@ -131,7 +139,12 @@ fn walk(
                     });
                 } else if clickable.contains(&ch) {
                     c.link_of.insert(ch, c.links.len());
-                    c.links.push(Link { href: String::new(), node: ch, text: html::collapse_ws(&doc.text_content(ch)), pos: None });
+                    c.links.push(Link {
+                        href: String::new(),
+                        node: ch,
+                        text: html::collapse_ws(&doc.text_content(ch)),
+                        pos: None,
+                    });
                 }
             }
             "label" => {
@@ -250,7 +263,12 @@ fn walk(
                 // A clickable element not inside another link.
                 if clickable.contains(&ch) && !c.link_of.keys().any(|&l| doc.is_ancestor(l, ch)) {
                     c.link_of.insert(ch, c.links.len());
-                    c.links.push(Link { href: String::new(), node: ch, text: html::collapse_ws(&doc.text_content(ch)), pos: None });
+                    c.links.push(Link {
+                        href: String::new(),
+                        node: ch,
+                        text: html::collapse_ws(&doc.text_content(ch)),
+                        pos: None,
+                    });
                 }
             }
         }

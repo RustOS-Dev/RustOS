@@ -41,7 +41,9 @@ struct Lazy {
 
 impl Lazy {
     fn get(&self) -> Option<&Font> {
-        self.font.get_or_init(|| Font::from_bytes(self.data.as_slice(), FontSettings::default()).ok()).as_ref()
+        self.font
+            .get_or_init(|| Font::from_bytes(self.data.as_slice(), FontSettings::default()).ok())
+            .as_ref()
     }
 }
 
@@ -79,7 +81,10 @@ impl Fonts {
         if data.len() < 12 {
             return false;
         }
-        self.faces[slot(family, bold, italic)] = Some(Lazy { data: data.to_vec(), font: core::cell::OnceCell::new() });
+        self.faces[slot(family, bold, italic)] = Some(Lazy {
+            data: data.to_vec(),
+            font: core::cell::OnceCell::new(),
+        });
         true
     }
 
@@ -98,7 +103,8 @@ impl Fonts {
         match Font::from_bytes(data, FontSettings::default()) {
             Ok(f) => {
                 self.web.push(f);
-                self.named.insert(family.to_ascii_lowercase(), 100 + self.web.len() - 1);
+                self.named
+                    .insert(family.to_ascii_lowercase(), 100 + self.web.len() - 1);
                 true
             }
             Err(_) => false,
@@ -127,9 +133,14 @@ impl Fonts {
                 return id;
             }
             let generic = match f.as_str() {
-                "monospace" | "courier" | "courier new" | "consolas" | "menlo" | "monaco" | "dejavu sans mono" | "ui-monospace" => Some(Family::Mono),
-                "serif" | "times" | "times new roman" | "georgia" | "dejavu serif" | "cambria" => Some(Family::Serif),
-                "sans-serif" | "arial" | "helvetica" | "verdana" | "system-ui" | "-apple-system" | "segoe ui" | "roboto" | "dejavu sans" | "ui-sans-serif" | "tahoma" => Some(Family::Sans),
+                "monospace" | "courier" | "courier new" | "consolas" | "menlo" | "monaco"
+                | "dejavu sans mono" | "ui-monospace" => Some(Family::Mono),
+                "serif" | "times" | "times new roman" | "georgia" | "dejavu serif" | "cambria" => {
+                    Some(Family::Serif)
+                }
+                "sans-serif" | "arial" | "helvetica" | "verdana" | "system-ui"
+                | "-apple-system" | "segoe ui" | "roboto" | "dejavu sans" | "ui-sans-serif"
+                | "tahoma" => Some(Family::Sans),
                 _ => None,
             };
             if let Some(g) = generic {
@@ -142,7 +153,14 @@ impl Fonts {
     fn pick(&self, fam: Family, st: &ComputedStyle) -> usize {
         let bold = st.font_weight >= 600;
         let italic = st.font_style != css::style::FontStyle::Normal;
-        for (f, b, i) in [(fam, bold, italic), (fam, bold, false), (fam, false, italic), (fam, false, false), (Family::Sans, bold, italic), (Family::Sans, false, false)] {
+        for (f, b, i) in [
+            (fam, bold, italic),
+            (fam, bold, false),
+            (fam, false, italic),
+            (fam, false, false),
+            (Family::Sans, bold, italic),
+            (Family::Sans, false, false),
+        ] {
             let s = slot(f, b, i);
             if self.faces[s].is_some() {
                 return s;
@@ -211,7 +229,17 @@ impl Fonts {
     }
 
     /// Draw `text` with its baseline at (x, y); returns the advance.
-    pub fn draw(&self, canvas: &mut Canvas, id: usize, text: &str, px: f32, x: f32, y: f32, color: Rgba, letter_spacing: f32) -> f32 {
+    pub fn draw(
+        &self,
+        canvas: &mut Canvas,
+        id: usize,
+        text: &str,
+        px: f32,
+        x: f32,
+        y: f32,
+        color: Rgba,
+        letter_spacing: f32,
+    ) -> f32 {
         let mut pen = x;
         let mut prev: Option<char> = None;
         for c in text.chars() {
@@ -225,9 +253,23 @@ impl Fonts {
                 let g = match self.font(fid) {
                     Some(f) => {
                         let (m, mask) = f.rasterize(c, px);
-                        Glyph { xmin: m.xmin, ymin: m.ymin, width: m.width, height: m.height, advance: m.advance_width, mask }
+                        Glyph {
+                            xmin: m.xmin,
+                            ymin: m.ymin,
+                            width: m.width,
+                            height: m.height,
+                            advance: m.advance_width,
+                            mask,
+                        }
                     }
-                    None => Glyph { xmin: 0, ymin: 0, width: 0, height: 0, advance: px * 0.5, mask: Vec::new() },
+                    None => Glyph {
+                        xmin: 0,
+                        ymin: 0,
+                        width: 0,
+                        height: 0,
+                        advance: px * 0.5,
+                        mask: Vec::new(),
+                    },
                 };
                 let mut cache = self.cache.borrow_mut();
                 if cache.len() > 4096 {
@@ -242,7 +284,14 @@ impl Fonts {
                 let gy = (y - g.ymin as f32 - g.height as f32).fl() as i32;
                 // Round the pen to whole pixels for crisp glyphs.
                 let gx = gx + if pen - pen.fl() >= 0.5 { 1 } else { 0 };
-                canvas.draw_mask(gx, gy + if y - y.fl() >= 0.5 { 1 } else { 0 }, g.width, g.height, &g.mask, color);
+                canvas.draw_mask(
+                    gx,
+                    gy + if y - y.fl() >= 0.5 { 1 } else { 0 },
+                    g.width,
+                    g.height,
+                    &g.mask,
+                    color,
+                );
             }
             pen += g.advance + letter_spacing;
         }

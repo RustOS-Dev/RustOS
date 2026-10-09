@@ -50,13 +50,25 @@ impl Json {
         }
     }
     pub fn as_str(&self) -> Option<&str> {
-        if let Json::Str(s) = self { Some(s) } else { None }
+        if let Json::Str(s) = self {
+            Some(s)
+        } else {
+            None
+        }
     }
     pub fn as_i64(&self) -> Option<i64> {
-        if let Json::Num(n) = self { Some(*n as i64) } else { None }
+        if let Json::Num(n) = self {
+            Some(*n as i64)
+        } else {
+            None
+        }
     }
     pub fn as_arr(&self) -> Option<&[Json]> {
-        if let Json::Arr(a) = self { Some(a) } else { None }
+        if let Json::Arr(a) = self {
+            Some(a)
+        } else {
+            None
+        }
     }
 
     /// Builder: an object from key/value pairs.
@@ -165,7 +177,11 @@ impl Json {
     }
 
     pub fn parse(s: &str) -> Result<Json, String> {
-        let mut p = P { b: s.as_bytes(), i: 0, depth: 0 };
+        let mut p = P {
+            b: s.as_bytes(),
+            i: 0,
+            depth: 0,
+        };
         p.ws();
         let v = p.value()?;
         p.ws();
@@ -279,7 +295,10 @@ impl P<'_> {
     }
 
     fn hex4(&mut self) -> Result<u32, String> {
-        let s = self.b.get(self.i..self.i + 4).ok_or_else(|| String::from("short \\u escape"))?;
+        let s = self
+            .b
+            .get(self.i..self.i + 4)
+            .ok_or_else(|| String::from("short \\u escape"))?;
         let s = core::str::from_utf8(s).map_err(|_| String::from("bad \\u escape"))?;
         let v = u32::from_str_radix(s, 16).map_err(|_| format_err("bad \\u escape", self.i))?;
         self.i += 4;
@@ -294,7 +313,10 @@ impl P<'_> {
             while self.i < self.b.len() && self.b[self.i] != b'"' && self.b[self.i] != b'\\' {
                 self.i += 1;
             }
-            out.push_str(core::str::from_utf8(&self.b[start..self.i]).map_err(|_| String::from("invalid UTF-8"))?);
+            out.push_str(
+                core::str::from_utf8(&self.b[start..self.i])
+                    .map_err(|_| String::from("invalid UTF-8"))?,
+            );
             match self.b.get(self.i) {
                 None => return Err(String::from("unterminated string")),
                 Some(b'"') => {
@@ -303,7 +325,10 @@ impl P<'_> {
                 }
                 _ => {
                     self.i += 1;
-                    let e = *self.b.get(self.i).ok_or_else(|| String::from("bad escape"))?;
+                    let e = *self
+                        .b
+                        .get(self.i)
+                        .ok_or_else(|| String::from("bad escape"))?;
                     self.i += 1;
                     match e {
                         b'"' => out.push('"'),
@@ -316,7 +341,8 @@ impl P<'_> {
                         b't' => out.push('\t'),
                         b'u' => {
                             let mut c = self.hex4()?;
-                            if (0xD800..0xDC00).contains(&c) && self.b[self.i..].starts_with(b"\\u") {
+                            if (0xD800..0xDC00).contains(&c) && self.b[self.i..].starts_with(b"\\u")
+                            {
                                 self.i += 2;
                                 let lo = self.hex4()?;
                                 if (0xDC00..0xE000).contains(&lo) {
@@ -334,10 +360,17 @@ impl P<'_> {
 
     fn number(&mut self) -> Result<Json, String> {
         let start = self.i;
-        while self.i < self.b.len() && matches!(self.b[self.i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+        while self.i < self.b.len()
+            && matches!(
+                self.b[self.i],
+                b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9'
+            )
+        {
             self.i += 1;
         }
         let s = core::str::from_utf8(&self.b[start..self.i]).unwrap_or("");
-        s.parse::<f64>().map(Json::Num).map_err(|_| format_err("bad number", start))
+        s.parse::<f64>()
+            .map(Json::Num)
+            .map_err(|_| format_err("bad number", start))
     }
 }

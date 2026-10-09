@@ -46,7 +46,15 @@ pub struct PixelPage {
 
 /// The device for a window `w`×`h` px.
 pub fn device(w: f32, h: f32, scripting: bool) -> Device {
-    Device { width: w, height: h, hover: true, pointer: css::Pointer::Fine, color_bits: 8, scripting, ..Device::default() }
+    Device {
+        width: w,
+        height: h,
+        hover: true,
+        pointer: css::Pointer::Fine,
+        color_bits: 8,
+        scripting,
+        ..Device::default()
+    }
 }
 
 /// Lay out `doc` for a viewport of `w`×`h` px.
@@ -63,7 +71,11 @@ pub fn layout_page(
     scripting: bool,
 ) -> PixelPage {
     let styles = layout::style_set(device(w, h, scripting), author, &mut |_| None);
-    let m = PixelMetrics { fonts, images: image_sizes, resolve };
+    let m = PixelMetrics {
+        fonts,
+        images: image_sizes,
+        resolve,
+    };
     let (root, controls, anchor_names) = layout::layout(doc, &styles, &m, (w, h), state, false);
     let mut anchors = Vec::new();
     collect_anchors(&root, &anchor_names, &mut anchors);
@@ -77,7 +89,10 @@ pub fn layout_page(
         field_of: controls.field_of,
         anchors,
         height,
-        title: doc.find("title").map(|t| html::collapse_ws(&doc.text_content(t))).unwrap_or_else(|| doc.title.clone()),
+        title: doc
+            .find("title")
+            .map(|t| html::collapse_ws(&doc.text_content(t)))
+            .unwrap_or_else(|| doc.title.clone()),
     }
 }
 

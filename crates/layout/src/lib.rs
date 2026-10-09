@@ -240,7 +240,10 @@ pub fn render_with(
     );
     let mut page = Page {
         // From the DOM (scripts may have changed it).
-        title: doc.find("title").map(|t| html::collapse_ws(&doc.text_content(t))).unwrap_or_else(|| doc.title.clone()),
+        title: doc
+            .find("title")
+            .map(|t| html::collapse_ws(&doc.text_content(t)))
+            .unwrap_or_else(|| doc.title.clone()),
         lines: Vec::new(),
         links: controls.links,
         fields: controls.fields,
@@ -258,7 +261,9 @@ pub fn render_with(
 
 fn collect_boxes(f: &fragment::Fragment, out: &mut BTreeMap<html::NodeId, Vec<[f32; 4]>>) {
     if let Some(n) = f.node {
-        out.entry(n).or_default().push([f.rect.x, f.rect.y, f.rect.w, f.rect.h]);
+        out.entry(n)
+            .or_default()
+            .push([f.rect.x, f.rect.y, f.rect.w, f.rect.h]);
     }
     for c in &f.children {
         collect_boxes(c, out);
@@ -285,7 +290,10 @@ pub fn rects_of(page: &Page, doc: &Document, id: html::NodeId) -> Vec<[f32; 4]> 
 pub fn hit_test(page: &Page, doc: &Document, x: f32, y: f32) -> Option<html::NodeId> {
     let mut best: Option<(html::NodeId, f32)> = None;
     for (&n, rects) in &page.boxes {
-        if !matches!(doc.nodes.get(n).map(|x| &x.kind), Some(html::NodeKind::Element { .. })) {
+        if !matches!(
+            doc.nodes.get(n).map(|x| &x.kind),
+            Some(html::NodeKind::Element { .. })
+        ) {
             continue;
         }
         for r in rects {
@@ -302,9 +310,18 @@ pub fn hit_test(page: &Page, doc: &Document, x: f32, y: f32) -> Option<html::Nod
 
 /// Computed values of element `id` for `getComputedStyle` (the
 /// properties scripts commonly read), with `author` sheets applied.
-pub fn computed_style(doc: &Document, opts: &Options, author: &[String], id: html::NodeId) -> Vec<(String, String)> {
+pub fn computed_style(
+    doc: &Document,
+    opts: &Options,
+    author: &[String],
+    id: html::NodeId,
+) -> Vec<(String, String)> {
     let device = cell_device(opts);
-    let sheets: Vec<String> = if opts.author_css { author.to_vec() } else { Vec::new() };
+    let sheets: Vec<String> = if opts.author_css {
+        author.to_vec()
+    } else {
+        Vec::new()
+    };
     let styles = style_set(device, &sheets, &mut |_| None);
     let nav = dom::Nav::new(doc, &opts.state);
     // The chain from the root element down to `id`.
@@ -321,7 +338,9 @@ pub fn computed_style(doc: &Document, opts: &Options, author: &[String], id: htm
     let mut st: Option<css::ComputedStyle> = None;
     let mut hidden = false;
     for &n in &chain {
-        let Some((tag, attrs)) = doc.element(n) else { return Vec::new() };
+        let Some((tag, attrs)) = doc.element(n) else {
+            return Vec::new();
+        };
         let table_attr = |_: &str| None;
         let hints = css::hints::presentational_hints(tag, attrs, &table_attr);
         let s = styles.compute(&nav.el(n), st.as_ref(), doc.attr(n, "style"), &hints, None);
@@ -347,7 +366,13 @@ pub fn computed_style(doc: &Document, opts: &Options, author: &[String], id: htm
         if c.a == 255 {
             format!("rgb({}, {}, {})", c.r, c.g, c.b)
         } else {
-            format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, css::math::roundf(c.a as f32 / 255.0 * 100.0) / 100.0)
+            format!(
+                "rgba({}, {}, {}, {})",
+                c.r,
+                c.g,
+                c.b,
+                css::math::roundf(c.a as f32 / 255.0 * 100.0) / 100.0
+            )
         }
     };
     let px = |v: f32| format!("{}px", css::math::roundf(v * 100.0) / 100.0);

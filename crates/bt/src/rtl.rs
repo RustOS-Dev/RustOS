@@ -87,21 +87,126 @@ pub const CHIPS: &[Chip] = &[
         fw: "rtl_bt/rtl8723a_fw",
         cfg: None,
     },
-    chip(LMP_8723B, 0xb, 0x6, false, "rtl_bt/rtl8723b_fw", "rtl_bt/rtl8723b_config"),
-    chip(LMP_8723B, 0xd, 0x8, true, "rtl_bt/rtl8723d_fw", "rtl_bt/rtl8723d_config"),
-    chip(LMP_8821A, 0xa, 0x6, false, "rtl_bt/rtl8821a_fw", "rtl_bt/rtl8821a_config"),
-    chip(LMP_8821A, 0xc, 0x8, false, "rtl_bt/rtl8821c_fw", "rtl_bt/rtl8821c_config"),
-    chip(LMP_8761A, 0xa, 0x6, false, "rtl_bt/rtl8761a_fw", "rtl_bt/rtl8761a_config"),
-    chip(LMP_8761A, 0xb, 0xa, false, "rtl_bt/rtl8761bu_fw", "rtl_bt/rtl8761bu_config"),
-    chip(LMP_8761A, 0xe, 0, false, "rtl_bt/rtl8761cu_fw", "rtl_bt/rtl8761cu_config"),
-    chip(LMP_8822B, 0xc, 0xa, false, "rtl_bt/rtl8822cu_fw", "rtl_bt/rtl8822cu_config"),
-    chip(LMP_8822B, 0xb, 0x7, true, "rtl_bt/rtl8822b_fw", "rtl_bt/rtl8822b_config"),
-    chip(LMP_8852A, 0xa, 0xb, false, "rtl_bt/rtl8852au_fw", "rtl_bt/rtl8852au_config"),
-    chip(LMP_8852A, 0xb, 0xb, false, "rtl_bt/rtl8852bu_fw", "rtl_bt/rtl8852bu_config"),
-    chip(LMP_8852A, 0xc, 0xc, false, "rtl_bt/rtl8852cu_fw", "rtl_bt/rtl8852cu_config"),
-    chip(LMP_8851B, 0xb, 0xc, false, "rtl_bt/rtl8851bu_fw", "rtl_bt/rtl8851bu_config"),
-    chip(LMP_8922A, 0xa, 0xc, false, "rtl_bt/rtl8922au_fw", "rtl_bt/rtl8922au_config"),
-    chip(LMP_8852A, 0x87, 0xc, false, "rtl_bt/rtl8852btu_fw", "rtl_bt/rtl8852btu_config"),
+    chip(
+        LMP_8723B,
+        0xb,
+        0x6,
+        false,
+        "rtl_bt/rtl8723b_fw",
+        "rtl_bt/rtl8723b_config",
+    ),
+    chip(
+        LMP_8723B,
+        0xd,
+        0x8,
+        true,
+        "rtl_bt/rtl8723d_fw",
+        "rtl_bt/rtl8723d_config",
+    ),
+    chip(
+        LMP_8821A,
+        0xa,
+        0x6,
+        false,
+        "rtl_bt/rtl8821a_fw",
+        "rtl_bt/rtl8821a_config",
+    ),
+    chip(
+        LMP_8821A,
+        0xc,
+        0x8,
+        false,
+        "rtl_bt/rtl8821c_fw",
+        "rtl_bt/rtl8821c_config",
+    ),
+    chip(
+        LMP_8761A,
+        0xa,
+        0x6,
+        false,
+        "rtl_bt/rtl8761a_fw",
+        "rtl_bt/rtl8761a_config",
+    ),
+    chip(
+        LMP_8761A,
+        0xb,
+        0xa,
+        false,
+        "rtl_bt/rtl8761bu_fw",
+        "rtl_bt/rtl8761bu_config",
+    ),
+    chip(
+        LMP_8761A,
+        0xe,
+        0,
+        false,
+        "rtl_bt/rtl8761cu_fw",
+        "rtl_bt/rtl8761cu_config",
+    ),
+    chip(
+        LMP_8822B,
+        0xc,
+        0xa,
+        false,
+        "rtl_bt/rtl8822cu_fw",
+        "rtl_bt/rtl8822cu_config",
+    ),
+    chip(
+        LMP_8822B,
+        0xb,
+        0x7,
+        true,
+        "rtl_bt/rtl8822b_fw",
+        "rtl_bt/rtl8822b_config",
+    ),
+    chip(
+        LMP_8852A,
+        0xa,
+        0xb,
+        false,
+        "rtl_bt/rtl8852au_fw",
+        "rtl_bt/rtl8852au_config",
+    ),
+    chip(
+        LMP_8852A,
+        0xb,
+        0xb,
+        false,
+        "rtl_bt/rtl8852bu_fw",
+        "rtl_bt/rtl8852bu_config",
+    ),
+    chip(
+        LMP_8852A,
+        0xc,
+        0xc,
+        false,
+        "rtl_bt/rtl8852cu_fw",
+        "rtl_bt/rtl8852cu_config",
+    ),
+    chip(
+        LMP_8851B,
+        0xb,
+        0xc,
+        false,
+        "rtl_bt/rtl8851bu_fw",
+        "rtl_bt/rtl8851bu_config",
+    ),
+    chip(
+        LMP_8922A,
+        0xa,
+        0xc,
+        false,
+        "rtl_bt/rtl8922au_fw",
+        "rtl_bt/rtl8922au_config",
+    ),
+    chip(
+        LMP_8852A,
+        0x87,
+        0xc,
+        false,
+        "rtl_bt/rtl8852btu_fw",
+        "rtl_bt/rtl8852btu_config",
+    ),
 ];
 
 /// The chip with this identity (HCI Read Local Version fields).
@@ -187,7 +292,12 @@ fn project_id(fw: &[u8], header_len: usize) -> Option<u8> {
 /// The patch to download for a controller of family `lmp_subver` with
 /// `rom_version` and security `key_id`, from patch file `fw` (without the
 /// config file).
-pub fn select_patch(fw: &[u8], lmp_subver: u16, rom_version: u8, key_id: u8) -> Result<Vec<u8>, Error> {
+pub fn select_patch(
+    fw: &[u8],
+    lmp_subver: u16,
+    rom_version: u8,
+    key_id: u8,
+) -> Result<Vec<u8>, Error> {
     let v1 = fw.starts_with(SIG_V1);
     let v2 = fw.starts_with(SIG_V2);
     if !v1 && !v2 {
@@ -284,7 +394,10 @@ fn select_v2(fw: &[u8], rom_version: u8, key_id: u8) -> Result<Vec<u8>, Error> {
     if picked.is_empty() {
         return Err(Error::NoPatch);
     }
-    Ok(picked.into_iter().flat_map(|(_, d)| d.iter().copied()).collect())
+    Ok(picked
+        .into_iter()
+        .flat_map(|(_, d)| d.iter().copied())
+        .collect())
 }
 
 /// The OP_DOWNLOAD parameters for `image` (patch plus config), in order.
@@ -326,13 +439,25 @@ mod tests {
 
     #[test]
     fn identifies_chips() {
-        assert_eq!(identify(0x8822, 0xc, 0xa).unwrap().fw, "rtl_bt/rtl8822cu_fw");
-        assert_eq!(identify(0x8852, 0xc, 0xc).unwrap().fw, "rtl_bt/rtl8852cu_fw");
+        assert_eq!(
+            identify(0x8822, 0xc, 0xa).unwrap().fw,
+            "rtl_bt/rtl8822cu_fw"
+        );
+        assert_eq!(
+            identify(0x8852, 0xc, 0xc).unwrap().fw,
+            "rtl_bt/rtl8852cu_fw"
+        );
         // hci_ver 0 in the table matches any version.
-        assert_eq!(identify(0x8761, 0xe, 0x3).unwrap().fw, "rtl_bt/rtl8761cu_fw");
+        assert_eq!(
+            identify(0x8761, 0xe, 0x3).unwrap().fw,
+            "rtl_bt/rtl8761cu_fw"
+        );
         assert!(identify(0x1234, 1, 1).is_none());
         let c = identify(0x8852, 0xc, 0xc).unwrap();
-        assert_eq!(firmware_names(c), ["rtl_bt/rtl8852cu_fw_v2.bin", "rtl_bt/rtl8852cu_fw.bin"]);
+        assert_eq!(
+            firmware_names(c),
+            ["rtl_bt/rtl8852cu_fw_v2.bin", "rtl_bt/rtl8852cu_fw.bin"]
+        );
         assert_eq!(config_name(c).unwrap(), "rtl_bt/rtl8852cu_config.bin");
     }
 
@@ -365,7 +490,10 @@ mod tests {
         );
         assert_eq!(select_patch(&fw, 0x8822, 5, 0), Err(Error::NoPatch));
         assert_eq!(select_patch(&fw, 0x8852, 0, 0), Err(Error::WrongChip));
-        assert_eq!(select_patch(b"nonsense-file....", 0x8822, 0, 0), Err(Error::Format));
+        assert_eq!(
+            select_patch(b"nonsense-file....", 0x8822, 0, 0),
+            Err(Error::Format)
+        );
     }
 
     #[test]
@@ -392,8 +520,18 @@ mod tests {
         fw.extend_from_slice(&3u32.to_le_bytes());
         // ROM version 1 (eco 2): priorities 5 and 1 in one section, a
         // subsection for another ROM, and a security header for key 7.
-        fw.extend(section(OP_SNIPPETS, &[sub(2, 5, 0, b"late"), sub(2, 1, 0, b"early"), sub(3, 0, 0, b"other")]));
-        fw.extend(section(OP_SECURITY_HEADER, &[sub(2, 3, 7, b"key7"), sub(2, 2, 8, b"key8")]));
+        fw.extend(section(
+            OP_SNIPPETS,
+            &[
+                sub(2, 5, 0, b"late"),
+                sub(2, 1, 0, b"early"),
+                sub(3, 0, 0, b"other"),
+            ],
+        ));
+        fw.extend(section(
+            OP_SECURITY_HEADER,
+            &[sub(2, 3, 7, b"key7"), sub(2, 2, 8, b"key8")],
+        ));
         fw.extend(section(9, &[sub(2, 0, 0, b"unknown")]));
         fw.extend(extension(25)); // 8852C
         assert_eq!(select_patch(&fw, 0x8852, 1, 7).unwrap(), b"earlykey7late");

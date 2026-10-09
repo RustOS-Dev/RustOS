@@ -422,9 +422,17 @@ impl Document {
     /// in between are filled with empty detached text nodes).
     pub fn create_with_id(&mut self, id: NodeId, kind: NodeKind) {
         while self.nodes.len() < id {
-            self.nodes.push(Node { kind: NodeKind::Text(String::new()), parent: None, children: Vec::new() });
+            self.nodes.push(Node {
+                kind: NodeKind::Text(String::new()),
+                parent: None,
+                children: Vec::new(),
+            });
         }
-        let node = Node { kind, parent: None, children: Vec::new() };
+        let node = Node {
+            kind,
+            parent: None,
+            children: Vec::new(),
+        };
         if id == self.nodes.len() {
             self.nodes.push(node);
         } else {
@@ -456,7 +464,9 @@ impl Document {
             p = self.nodes[x].parent;
         }
         self.detach(child);
-        let pos = before.and_then(|b| self.nodes[parent].children.iter().position(|&c| c == b)).unwrap_or(self.nodes[parent].children.len());
+        let pos = before
+            .and_then(|b| self.nodes[parent].children.iter().position(|&c| c == b))
+            .unwrap_or(self.nodes[parent].children.len());
         self.nodes[parent].children.insert(pos, child);
         self.nodes[child].parent = Some(parent);
         true

@@ -37,7 +37,10 @@ const USB_CHIPS: &[(u16, &str)] = &[
 
 /// The chip name for an LMP subversion.
 pub fn chip_name(lmp_subver: u16) -> Option<&'static str> {
-    USB_CHIPS.iter().find(|&&(s, _)| s == lmp_subver).map(|&(_, n)| n)
+    USB_CHIPS
+        .iter()
+        .find(|&&(s, _)| s == lmp_subver)
+        .map(|&(_, n)| n)
 }
 
 /// Patch file names to try, in order.
@@ -77,7 +80,10 @@ mod tests {
             firmware_names(0x2118, 0x0a5c, 0x21e8),
             ["brcm/BCM20702A0-0a5c-21e8.hcd", "brcm/BCM-0a5c-21e8.hcd"]
         );
-        assert_eq!(firmware_names(0x9999, 0x0a5c, 0x1), ["brcm/BCM-0a5c-0001.hcd"]);
+        assert_eq!(
+            firmware_names(0x9999, 0x0a5c, 0x1),
+            ["brcm/BCM-0a5c-0001.hcd"]
+        );
     }
 
     #[test]

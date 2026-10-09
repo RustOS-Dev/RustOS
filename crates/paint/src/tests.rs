@@ -1,7 +1,7 @@
 use crate::canvas::{Canvas, Rgba};
 use crate::fonts::{Family, Fonts};
 use crate::image::{decode, encode_png};
-use crate::painter::{paint, Scene};
+use crate::painter::{Scene, paint};
 use crate::*;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -34,7 +34,12 @@ fn canvas_fill_and_blend() {
     c.fill_rect(0.0, 0.0, 1.0, 1.0, Rgba::new(0, 0, 255, 128));
     assert_eq!(c.get(0, 0), Rgba::new(127, 127, 255, 255));
     // Clipping.
-    let old = c.set_clip(Clip { x0: 0, y0: 0, x1: 2, y1: 2 });
+    let old = c.set_clip(Clip {
+        x0: 0,
+        y0: 0,
+        x1: 2,
+        y1: 2,
+    });
     c.fill_rect(0.0, 0.0, 10.0, 10.0, Rgba::BLACK);
     c.set_clip(old);
     assert_eq!(c.get(1, 1), Rgba::BLACK);
@@ -70,7 +75,8 @@ fn png_roundtrip() {
 fn gif_decodes() {
     // A 2x2 GIF: red, green / blue, white (LZW min code size 2).
     let gif: &[u8] = &[
-        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 2, 0, 0x81, 0, 0, // header, 4-color global table
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 2, 0, 0x81, 0,
+        0, // header, 4-color global table
         255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, //
         0x2C, 0, 0, 0, 0, 2, 0, 2, 0, 0, // image descriptor
         2, 3, 0x44, 0x34, 0x05, 0, // LZW min 2; data: clear 0 1 2 3 end
@@ -113,33 +119,54 @@ fn page_paints() {
     );
     let sizes = BTreeMap::new();
     let resolve = |s: &str| String::from(s);
-    let page = layout_page(&doc, &[], &f, &sizes, &resolve, 320.0, 240.0, &layout::DomState::default(), false);
+    let page = layout_page(
+        &doc,
+        &[],
+        &f,
+        &sizes,
+        &resolve,
+        320.0,
+        240.0,
+        &layout::DomState::default(),
+        false,
+    );
     assert_eq!(page.links.len(), 1);
     assert_eq!(page.fields.len(), 2);
     let bg = page_background(&page.root);
     assert_eq!(bg, Rgba::new(0xee, 0xee, 0xee, 255));
     let mut c = Canvas::new(320, 240, bg);
     let images = BTreeMap::new();
-    let scene = Scene { fonts: &f, fields: &page.fields, images: &images, resolve: &resolve, scroll: (0.0, 0.0), focus: None, hover: None };
+    let scene = Scene {
+        fonts: &f,
+        fields: &page.fields,
+        images: &images,
+        resolve: &resolve,
+        scroll: (0.0, 0.0),
+        focus: None,
+        hover: None,
+    };
     paint(&mut c, &page.root, &scene);
     assert_eq!(c.get(50, 25), Rgba::new(200, 0, 0, 255));
     assert_eq!(c.get(0, 0), Rgba::new(0xee, 0xee, 0xee, 255)); // rounded corner
     assert_eq!(c.get(150, 25), Rgba::new(0xee, 0xee, 0xee, 255));
     // Blue text somewhere below the box.
-    let blue = (50..120).flat_map(|y| (0..320).map(move |x| (x, y))).filter(|&(x, y)| {
-        let p = c.get(x, y);
-        p.b > 150 && p.r < 100
-    });
+    let blue = (50..120)
+        .flat_map(|y| (0..320).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let p = c.get(x, y);
+            p.b > 150 && p.r < 100
+        });
     assert!(blue.count() > 30);
     if std::env::var("PAINT_PNG").is_ok() {
         std::fs::write("/tmp/paint-test.png", encode_png(&c.to_image())).unwrap();
     }
 }
 
-
 #[test]
 fn woff1_unpacks() {
-    let Ok(ttf) = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf") else { return };
+    let Ok(ttf) = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf") else {
+        return;
+    };
     // Wrap the TrueType tables in a WOFF 1.0 container (stored tables).
     let n = u16::from_be_bytes([ttf[4], ttf[5]]) as usize;
     let mut dir = Vec::new();

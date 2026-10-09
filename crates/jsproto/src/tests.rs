@@ -42,7 +42,10 @@ fn dom_mutations_apply() {
     apply_ops(&mut d, ops.as_arr().unwrap());
     assert_eq!(d.text_content(p), "hi");
     let s = serialize_document(&d).to_json();
-    assert!(s.contains(r#""p",[["id","x"],["class","k"]],[["#) || s.contains("\"p\""), "{s}");
+    assert!(
+        s.contains(r#""p",[["id","x"],["class","k"]],[["#) || s.contains("\"p\""),
+        "{s}"
+    );
 }
 
 #[test]
@@ -51,7 +54,13 @@ fn fragments_get_fresh_ids() {
     let a = f.as_arr().unwrap();
     assert_eq!(a.len(), 2);
     assert_eq!(a[0].as_arr().unwrap()[0].as_i64(), Some(100));
-    assert_eq!(a[0].as_arr().unwrap()[3].as_arr().unwrap()[0].as_arr().unwrap()[0].as_i64(), Some(101));
+    assert_eq!(
+        a[0].as_arr().unwrap()[3].as_arr().unwrap()[0]
+            .as_arr()
+            .unwrap()[0]
+            .as_i64(),
+        Some(101)
+    );
     assert_eq!(a[1].as_arr().unwrap()[0].as_i64(), Some(102));
     let mut d = html::parse("<div></div>");
     let div = d.find("div").unwrap();

@@ -13,22 +13,50 @@ use html::{Document, NodeId, NodeKind};
 /// `[id, "#text", "data"]` for text.
 pub fn serialize_node(doc: &Document, id: NodeId) -> Json {
     match &doc.nodes[id].kind {
-        NodeKind::Text(t) => Json::Arr(vec![Json::from(id), Json::from("#text"), Json::from(t.as_str())]),
+        NodeKind::Text(t) => Json::Arr(vec![
+            Json::from(id),
+            Json::from("#text"),
+            Json::from(t.as_str()),
+        ]),
         NodeKind::Element { tag, attrs } => {
-            let a = attrs.iter().map(|(k, v)| Json::Arr(vec![Json::from(k.as_str()), Json::from(v.as_str())])).collect();
-            let kids = doc.nodes[id].children.iter().map(|&c| serialize_node(doc, c)).collect();
-            Json::Arr(vec![Json::from(id), Json::from(tag.as_str()), Json::Arr(a), Json::Arr(kids)])
+            let a = attrs
+                .iter()
+                .map(|(k, v)| Json::Arr(vec![Json::from(k.as_str()), Json::from(v.as_str())]))
+                .collect();
+            let kids = doc.nodes[id]
+                .children
+                .iter()
+                .map(|&c| serialize_node(doc, c))
+                .collect();
+            Json::Arr(vec![
+                Json::from(id),
+                Json::from(tag.as_str()),
+                Json::Arr(a),
+                Json::Arr(kids),
+            ])
         }
         NodeKind::Document => {
-            let kids = doc.nodes[id].children.iter().map(|&c| serialize_node(doc, c)).collect();
-            Json::Arr(vec![Json::from(id), Json::from("#document"), Json::Arr(Vec::new()), Json::Arr(kids)])
+            let kids = doc.nodes[id]
+                .children
+                .iter()
+                .map(|&c| serialize_node(doc, c))
+                .collect();
+            Json::Arr(vec![
+                Json::from(id),
+                Json::from("#document"),
+                Json::Arr(Vec::new()),
+                Json::Arr(kids),
+            ])
         }
     }
 }
 
 /// The whole document, with the next free node id.
 pub fn serialize_document(doc: &Document) -> Json {
-    Json::obj([("tree", serialize_node(doc, 0)), ("next", Json::from(doc.nodes.len()))])
+    Json::obj([
+        ("tree", serialize_node(doc, 0)),
+        ("next", Json::from(doc.nodes.len())),
+    ])
 }
 
 /// Apply mutation `ops` from `jsd`:
@@ -47,7 +75,10 @@ pub fn apply_ops<'j>(doc: &mut Document, ops: &'j [Json]) -> Vec<&'j Json> {
                     continue;
                 }
                 let kind = match (op.str("tag"), op.str("text")) {
-                    (Some(t), _) => NodeKind::Element { tag: t.to_ascii_lowercase(), attrs: Vec::new() },
+                    (Some(t), _) => NodeKind::Element {
+                        tag: t.to_ascii_lowercase(),
+                        attrs: Vec::new(),
+                    },
                     (None, Some(t)) => NodeKind::Text(t.to_string()),
                     _ => continue,
                 };
@@ -86,7 +117,9 @@ pub fn apply_ops<'j>(doc: &mut Document, ops: &'j [Json]) -> Vec<&'j Json> {
 /// fresh ids starting at `first_id`.
 pub fn fragment(src: &str, first_id: usize) -> Json {
     let frag = Document::parse_fragment(src);
-    let Some(body) = frag.find("body") else { return Json::Arr(Vec::new()) };
+    let Some(body) = frag.find("body") else {
+        return Json::Arr(Vec::new());
+    };
     renumbered(&frag, body, first_id)
 }
 
@@ -109,14 +142,32 @@ fn renumbered(doc: &Document, root: NodeId, first_id: usize) -> Json {
         match &doc.nodes[id].kind {
             NodeKind::Text(t) => Json::Arr(vec![nid, Json::from("#text"), Json::from(t.as_str())]),
             NodeKind::Element { tag, attrs } => {
-                let a = attrs.iter().map(|(k, v)| Json::Arr(vec![Json::from(k.as_str()), Json::from(v.as_str())])).collect();
-                let kids = doc.nodes[id].children.iter().map(|&c| ser(doc, c, map)).collect();
-                Json::Arr(vec![nid, Json::from(tag.as_str()), Json::Arr(a), Json::Arr(kids)])
+                let a = attrs
+                    .iter()
+                    .map(|(k, v)| Json::Arr(vec![Json::from(k.as_str()), Json::from(v.as_str())]))
+                    .collect();
+                let kids = doc.nodes[id]
+                    .children
+                    .iter()
+                    .map(|&c| ser(doc, c, map))
+                    .collect();
+                Json::Arr(vec![
+                    nid,
+                    Json::from(tag.as_str()),
+                    Json::Arr(a),
+                    Json::Arr(kids),
+                ])
             }
             NodeKind::Document => Json::Null,
         }
     }
-    Json::Arr(doc.nodes[root].children.iter().map(|&c| ser(doc, c, &map)).collect())
+    Json::Arr(
+        doc.nodes[root]
+            .children
+            .iter()
+            .map(|&c| ser(doc, c, &map))
+            .collect(),
+    )
 }
 
 /// Create the nodes of a serialized subtree in `doc` (detached) — used
@@ -129,8 +180,24 @@ pub fn materialize(doc: &mut Document, n: &Json) -> Option<NodeId> {
         doc.create_with_id(id, NodeKind::Text(a.get(2)?.as_str()?.to_string()));
         return Some(id);
     }
-    let attrs = a.get(2)?.as_arr()?.iter().filter_map(|p| Some((p.as_arr()?.first()?.as_str()?.to_string(), p.as_arr()?.get(1)?.as_str()?.to_string()))).collect();
-    doc.create_with_id(id, NodeKind::Element { tag: tag.to_string(), attrs });
+    let attrs = a
+        .get(2)?
+        .as_arr()?
+        .iter()
+        .filter_map(|p| {
+            Some((
+                p.as_arr()?.first()?.as_str()?.to_string(),
+                p.as_arr()?.get(1)?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    doc.create_with_id(
+        id,
+        NodeKind::Element {
+            tag: tag.to_string(),
+            attrs,
+        },
+    );
     for c in a.get(3)?.as_arr()? {
         if let Some(cid) = materialize(doc, c) {
             doc.insert_before(id, cid, None);

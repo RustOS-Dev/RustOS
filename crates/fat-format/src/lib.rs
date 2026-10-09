@@ -147,7 +147,11 @@ pub fn format<E>(
     opts: &Options,
     mut write: impl FnMut(u64, &[u8; SECTOR]) -> Result<(), E>,
 ) -> Result<Layout, Error<E>> {
-    let l = layout(total, opts.fat_type).ok_or(if total < 64 { Error::TooSmall } else { Error::TooLarge })?;
+    let l = layout(total, opts.fat_type).ok_or(if total < 64 {
+        Error::TooSmall
+    } else {
+        Error::TooLarge
+    })?;
     let mut w = |lba: u64, s: &[u8; SECTOR]| write(lba, s).map_err(Error::Io);
     let mut label = [b' '; 11];
     for (i, c) in opts.label.bytes().take(11).enumerate() {
@@ -267,11 +271,18 @@ mod tests {
     fn format_fat32() {
         let total = 600 * 2048u64;
         let mut img = vec![0u8; total as usize * SECTOR];
-        let l = format::<()>(total, &Options { label: "rustos", ..Default::default() }, |lba, s| {
-            let o = lba as usize * SECTOR;
-            img[o..o + SECTOR].copy_from_slice(s);
-            Ok(())
-        })
+        let l = format::<()>(
+            total,
+            &Options {
+                label: "rustos",
+                ..Default::default()
+            },
+            |lba, s| {
+                let o = lba as usize * SECTOR;
+                img[o..o + SECTOR].copy_from_slice(s);
+                Ok(())
+            },
+        )
         .unwrap();
         assert_eq!(&img[510..512], &[0x55, 0xAA]);
         assert_eq!(&img[71..82], b"RUSTOS     ");

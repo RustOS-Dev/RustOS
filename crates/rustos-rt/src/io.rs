@@ -298,6 +298,10 @@ pub struct PollFd {
 pub fn poll(fds: &mut [PollFd], timeout_ms: i32) -> crate::Result<usize> {
     crate::sys::check(crate::sys::syscall(
         crate::sys::nr::POLL,
-        &[fds.as_mut_ptr() as usize, fds.len(), timeout_ms as isize as usize],
+        &[
+            fds.as_mut_ptr() as usize,
+            fds.len(),
+            timeout_ms as isize as usize,
+        ],
     ))
 }

@@ -13,8 +13,8 @@
 extern crate alloc;
 
 pub mod adv;
-pub mod bcm;
 pub mod att;
+pub mod bcm;
 pub mod crypto;
 pub mod gatt;
 pub mod hci;

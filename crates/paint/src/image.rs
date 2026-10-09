@@ -21,16 +21,22 @@ const MAX_PIXELS: usize = 16 << 20;
 
 pub fn decode(data: &[u8]) -> Option<Decoded> {
     if data.starts_with(b"\x89PNG") {
-        return png(data).map(|i| Decoded { frames: vec![(i, 0)] });
+        return png(data).map(|i| Decoded {
+            frames: vec![(i, 0)],
+        });
     }
     if data.starts_with(&[0xFF, 0xD8]) {
-        return jpeg(data).map(|i| Decoded { frames: vec![(i, 0)] });
+        return jpeg(data).map(|i| Decoded {
+            frames: vec![(i, 0)],
+        });
     }
     if data.starts_with(b"GIF8") {
         return gif(data);
     }
     if data.starts_with(b"BM") {
-        return bmp(data).map(|i| Decoded { frames: vec![(i, 0)] });
+        return bmp(data).map(|i| Decoded {
+            frames: vec![(i, 0)],
+        });
     }
     None
 }
@@ -54,8 +60,12 @@ fn from_rgba(w: usize, h: usize, px: &[u8], channels: usize) -> Option<Image> {
 
 fn png(data: &[u8]) -> Option<Image> {
     use zune_core::options::DecoderOptions;
-    let opts = DecoderOptions::default().png_set_strip_to_8bit(true).set_max_width(8192).set_max_height(8192);
-    let mut d = zune_png::PngDecoder::new_with_options(zune_core::bytestream::ZCursor::new(data), opts);
+    let opts = DecoderOptions::default()
+        .png_set_strip_to_8bit(true)
+        .set_max_width(8192)
+        .set_max_height(8192);
+    let mut d =
+        zune_png::PngDecoder::new_with_options(zune_core::bytestream::ZCursor::new(data), opts);
     let px = d.decode_raw().ok()?;
     let (w, h) = d.dimensions()?;
     let ch = d.colorspace()?.num_components();
@@ -65,15 +75,22 @@ fn png(data: &[u8]) -> Option<Image> {
 fn jpeg(data: &[u8]) -> Option<Image> {
     use zune_core::colorspace::ColorSpace;
     use zune_core::options::DecoderOptions;
-    let opts = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGB).set_max_width(8192).set_max_height(8192);
-    let mut d = zune_jpeg::JpegDecoder::new_with_options(zune_core::bytestream::ZCursor::new(data), opts);
+    let opts = DecoderOptions::default()
+        .jpeg_set_out_colorspace(ColorSpace::RGB)
+        .set_max_width(8192)
+        .set_max_height(8192);
+    let mut d =
+        zune_jpeg::JpegDecoder::new_with_options(zune_core::bytestream::ZCursor::new(data), opts);
     let px = d.decode().ok()?;
     let (w, h) = d.dimensions()?;
     from_rgba(w, h, &px, 3)
 }
 
 fn bmp(d: &[u8]) -> Option<Image> {
-    let u32at = |o: usize| d.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let u32at = |o: usize| {
+        d.get(o..o + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
     let off = u32at(10)? as usize;
     let w = u32at(18)? as i32;
     let h = u32at(22)? as i32;
@@ -95,7 +112,12 @@ fn bmp(d: &[u8]) -> Option<Image> {
         for x in 0..w {
             let o = off + row * stride + x * bytes;
             let p = d.get(o..o + bytes)?;
-            img.pixels[y * w + x] = Rgba::new(p[2], p[1], p[0], if bytes == 4 && comp == 3 { p[3] } else { 255 });
+            img.pixels[y * w + x] = Rgba::new(
+                p[2],
+                p[1],
+                p[0],
+                if bytes == 4 && comp == 3 { p[3] } else { 255 },
+            );
         }
     }
     Some(img)
@@ -205,7 +227,11 @@ fn gif(d: &[u8]) -> Option<Decoded> {
                 if label == 0xF9 && d.get(p) == Some(&4) {
                     let pf = *d.get(p + 1)?;
                     delay = u16::from_le_bytes([*d.get(p + 2)?, *d.get(p + 3)?]) as u32 * 10;
-                    transparent = if pf & 1 != 0 { Some(*d.get(p + 4)?) } else { None };
+                    transparent = if pf & 1 != 0 {
+                        Some(*d.get(p + 4)?)
+                    } else {
+                        None
+                    };
                     dispose = (pf >> 2) & 7;
                 }
                 // Skip sub-blocks.
@@ -251,13 +277,20 @@ fn gif(d: &[u8]) -> Option<Decoded> {
                 let before = canvas.clone();
                 // Interlaced rows come in 4 passes.
                 let rows: Vec<usize> = if lf & 0x40 != 0 {
-                    (0..fh).step_by(8).chain((4..fh).step_by(8)).chain((2..fh).step_by(4)).chain((1..fh).step_by(2)).collect()
+                    (0..fh)
+                        .step_by(8)
+                        .chain((4..fh).step_by(8))
+                        .chain((2..fh).step_by(4))
+                        .chain((1..fh).step_by(2))
+                        .collect()
                 } else {
                     (0..fh).collect()
                 };
                 for (k, &row) in rows.iter().enumerate() {
                     for col in 0..fw {
-                        let Some(&ci) = idx.get(k * fw + col) else { break };
+                        let Some(&ci) = idx.get(k * fw + col) else {
+                            break;
+                        };
                         if Some(ci) == transparent {
                             continue;
                         }
@@ -304,7 +337,11 @@ fn crc32(data: &[u8], mut crc: u32) -> u32 {
     for &b in data {
         crc ^= b as u32;
         for _ in 0..8 {
-            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
         }
     }
     !crc
@@ -373,7 +410,10 @@ pub fn font_file(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn woff1(d: &[u8]) -> Option<Vec<u8>> {
-    let be32 = |o: usize| d.get(o..o + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+    let be32 = |o: usize| {
+        d.get(o..o + 4)
+            .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    };
     let be16 = |o: usize| d.get(o..o + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
     let flavor = be32(4)?;
     let n = be16(12)? as usize;
@@ -402,7 +442,10 @@ fn woff1(d: &[u8]) -> Option<Vec<u8>> {
         let csum = be32(e + 16)?;
         let src = d.get(off..off + clen)?;
         let table = if clen < olen {
-            let mut z = zune_inflate::DeflateDecoder::new_with_options(src, zune_inflate::DeflateOptions::default().set_size_hint(olen));
+            let mut z = zune_inflate::DeflateDecoder::new_with_options(
+                src,
+                zune_inflate::DeflateOptions::default().set_size_hint(olen),
+            );
             z.decode_zlib().ok()?
         } else {
             src.to_vec()

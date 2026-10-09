@@ -63,5 +63,9 @@ pub const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"
 /// Set the wall clock (root only).
 pub fn set_time(secs: u64, usecs: u64) -> crate::Result<()> {
     let tv = [secs as i64, usecs as i64];
-    crate::sys::check(crate::sys::syscall(crate::sys::nr::SETTIMEOFDAY, &[tv.as_ptr() as usize, 0])).map(|_| ())
+    crate::sys::check(crate::sys::syscall(
+        crate::sys::nr::SETTIMEOFDAY,
+        &[tv.as_ptr() as usize, 0],
+    ))
+    .map(|_| ())
 }

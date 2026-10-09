@@ -76,6 +76,7 @@ stages the result in `target/ports/NAME` (laid out like `/usr/local`).
 | `libcxx` | libc++/libc++abi/libunwind 18 into the sysroot, and `cxxtest` |
 | `weston` | Weston 14 (DRM and headless backends, pixman and GL renderers, desktop and kiosk shells, `weston-terminal`), Mesa 26.2 (EGL on GBM and Wayland, GLES 3.1; softpipe, virgl, zink, iris, RADV, ANV), the Vulkan loader and `vulkaninfo`, `kmscube`, and their stack, shared: wayland 1.26, wayland-protocols, libxkbcommon + xkeyboard-config, pixman, cairo, freetype, fontconfig, libpng, zlib, expat, libffi, libdrm 2.4.134 (amdgpu, nouveau; `modetest`), libevdev, mtdev, libudev-zero, libinput, seatd/libseat, libdisplay-info. Needs meson, ninja, cmake, gperf, bison, flex, hwdata, glslang-tools, Python mako/pyyaml/ply and LLVM 18 with clang, libclc and SPIRV-LLVM-Translator on the build host (Mesa's `mesa_clc` is built for the host) |
 | `labwc` | labwc 0.20 (on wlroots 0.20: DRM and libinput backends, GLES2 renderer, XWayland) and the foot terminal; Xwayland 24.1 with the X11 client libraries (libxcb, xcb-util(-wm), libX11, libXext, libXfixes, libxkbfile, xkbcomp, libxshmfence, libxcvt, libXfont2, libepoxy, libmd) and `xhello`, a minimal X client; GLib, Pango, HarfBuzz, FriBidi, libxml2, PCRE2, fcft, utf8proc and tllist; builds on the `weston` port's libraries (build that first) |
+| `gtk` | GTK 3.24 with only its Wayland backend (`gtk3-demo`, `gtk3-widget-factory`), gdk-pixbuf (PNG built in), ATK (from at-spi2-core, without D-Bus) and cairo-gobject; builds on the `labwc` port (build that first) |
 
 Running labwc (default config in `/usr/local/etc/xdg/labwc`: its
 autostart opens foot; Super+Return or Alt+Return opens another; X11
@@ -87,6 +88,7 @@ export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin
 export WLR_RENDERER_ALLOW_SOFTWARE=1   # only where GL is softpipe (QEMU, no GPU driver)
 labwc &
 DISPLAY=:0 xhello &                    # an X11 window through Xwayland
+WAYLAND_DISPLAY=wayland-0 gtk3-widget-factory &   # GTK 3 (ports/gtk)
 ```
 
 The desktop ports together need about 1 GiB of RAM when they are in

@@ -82,9 +82,15 @@ fetch https://download.gnome.org/sources/at-spi2-core/2.58/at-spi2-core-2.58.9.t
 fetch https://download.gnome.org/sources/gtk/3.24/gtk-3.24.52.tar.xz \
     80931fa472a77b9a164f6740e3c0b444fac6770054632d35a7ff9d679e5e7b9f "$SRC/gtk-3.24.52.tar.xz"
 
+# cairo again, now with GLib: GTK needs cairo-gobject (the weston port
+# builds cairo before GLib exists). Only libcairo-gobject is new.
+built cairo-gobject || meson_pkg cairo-gobject "$(unpack "$SRC/cairo-1.18.2.tar.xz")" \
+    -Dxlib=disabled -Dxcb=disabled -Dtests=disabled -Dglib=enabled -Dspectre=disabled \
+    -Dsymbol-lookup=disabled -Dgtk2-utils=disabled -Dpng=enabled \
+    -Dfreetype=enabled -Dfontconfig=enabled -Dzlib=enabled -Dquartz=disabled -Ddwrite=disabled
 built gdk-pixbuf || meson_pkg gdk-pixbuf "$(unpack "$SRC/gdk-pixbuf-2.42.12.tar.xz")" \
     -Dpng=enabled -Djpeg=disabled -Dtiff=disabled -Dgif=disabled -Dothers=disabled \
-    -Dbuiltin_loaders=png -Dintrospection=disabled -Dman=false -Dgtk_doc=false \
+    -Dbuiltin_loaders=png -Dgio_sniffing=false -Dintrospection=disabled -Dman=false -Dgtk_doc=false \
     -Dtests=false -Dinstalled_tests=false
 built atk || meson_pkg atk "$(unpack "$SRC/at-spi2-core-2.58.9.tar.xz")" \
     -Datk_only=true -Dintrospection=disabled -Ddocs=false -Dx11=disabled

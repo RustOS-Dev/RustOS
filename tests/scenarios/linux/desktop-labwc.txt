@@ -65,3 +65,12 @@ wait # $
 sleep 15
 monitor screendump /tmp/rustos-labwc/xwayland.ppm
 hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-labwc/xwayland.ppm 'count:32,96,192>=100000'
+# GTK 3 on Wayland (ports/gtk): the widget factory maps as an xdg toplevel.
+send GDK_BACKEND=wayland WAYLAND_DISPLAY=wayland-0 gtk3-widget-factory >/tmp/gtk.log 2>&1 &
+sleep 90
+send grep -a -c "identifier=gtk3-widget-factory" /tmp/labwc.log; cat /tmp/gtk.log | head -n 5
+wait 1
+wait # $
+monitor screendump /tmp/rustos-labwc/gtk.ppm
+# Adwaita's window background and white entry/list areas fill the screen.
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-labwc/gtk.ppm 'count:246,245,244>=250000' 'count:255,255,255>=150000'

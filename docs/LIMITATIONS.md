@@ -58,6 +58,11 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   found yet; kernel signal delivery, syscall restart, setitimer and epoll
   were checked (and two bugs fixed). A busy X client is served until it
   has no more requests.
+* Desktops: Weston, labwc with foot, Xwayland and GTK 3 (Wayland only)
+  are ported. No icon theme is installed (GTK falls back to missing-icon
+  images), and there is no D-Bus session bus, accessibility bus, Qt or KDE
+  yet; GNOME needs systemd. Sway, waybar and the other wlroots tools of
+  the plan are not ported (labwc covers the stacking desktop).
 * Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

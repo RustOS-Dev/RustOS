@@ -98,6 +98,7 @@ pub mod nr {
     pub const EXECVE: u64 = 59;
     pub const EXIT: u64 = 60;
     pub const WAIT4: u64 = 61;
+    pub const WAITID: u64 = 247;
     pub const KILL: u64 = 62;
     pub const UNAME: u64 = 63;
     pub const FCNTL: u64 = 72;
@@ -275,6 +276,7 @@ fn restartable(n: u64) -> bool {
             | PREAD64
             | PWRITE64
             | WAIT4
+            | WAITID
             | NANOSLEEP
             | CLOCK_NANOSLEEP
             | ACCEPT
@@ -506,6 +508,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         EXIT => proc_::exit(a[0] as i32),
         EXIT_GROUP => proc_::exit_group(a[0] as i32),
         WAIT4 => v(proc_::wait4(a[0] as i32, a[1], a[2] as u32)),
+        WAITID => v(proc_::waitid(a[0] as u32, a[1], a[2], a[3] as u32, a[4])),
         KILL => v(proc_::kill(a[0] as i32, a[1] as u32)),
         TKILL => v(proc_::tkill(a[0], a[1] as u32)),
         TGKILL => v(proc_::tkill(a[1], a[2] as u32)),

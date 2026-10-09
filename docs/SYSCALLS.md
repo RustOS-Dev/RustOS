@@ -112,7 +112,7 @@ than once, never less) and `EPOLLONESHOT`. timerfd supports
 ### Terminals
 
 `/dev/ptmx` and `/dev/pts/N` pseudo-terminals (`TIOCGPTN`,
-`TIOCSPTLCK`), controlling terminals (`TIOCSCTTY`, `TIOCNOTTY`, `/dev/tty`),
+`TIOCSPTLCK`, `TIOCGPTPEER`), controlling terminals (`TIOCSCTTY`, `TIOCNOTTY`, `/dev/tty`),
 virtual consoles `/dev/tty1`..`tty4` (`VT_ACTIVATE`, `VT_GETSTATE`,
 `/dev/tty0` is the visible one). Programs that draw on `/dev/fb0` switch
 their console to graphics mode (`KDSETMODE KD_GRAPHICS`, `KDGETMODE`):
@@ -234,6 +234,7 @@ pages. `MAP_SHARED | MAP_ANONYMOUS` memory stays shared across `fork`.
 | 231 | `exit_group` |
 | 273 | `set_robust_list` |
 | 302 | `prlimit64` |
+| 247 | `waitid` (`P_ALL`, `P_PID`, `P_PGID`, `P_PIDFD`; `WNOWAIT`) |
 
 `futex` supports WAIT, WAKE, REQUEUE, CMP_REQUEUE, WAKE_OP and the
 BITSET variants (private and shared, keyed by physical address).
@@ -254,7 +255,7 @@ signalfd sees `SIGCHLD`).
 |---|------|
 | 13 | `rt_sigaction` |
 | 14 | `rt_sigprocmask` |
-| 15 | `rt_sigreturn` |
+| 15 | `rt_sigreturn` (Linux `rt_sigframe`: siginfo and ucontext for `SA_SIGINFO` handlers) |
 | 34 | `pause` |
 | 36 | `getitimer` |
 | 37 | `alarm` |

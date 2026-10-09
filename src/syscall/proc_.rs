@@ -80,6 +80,61 @@ pub fn wait4(pid: i32, status: u64, options: u32) -> SysResult {
     Ok(cpid as i64)
 }
 
+/// waitid(idtype, id, infop, options, rusage).
+pub fn waitid(idtype: u32, id: u64, infop: u64, options: u32, rusage: u64) -> SysResult {
+    const P_ALL: u32 = 0;
+    const P_PID: u32 = 1;
+    const P_PGID: u32 = 2;
+    const P_PIDFD: u32 = 3;
+    const WNOWAIT: u32 = 0x0100_0000;
+    const WSTOPPED: u32 = 2;
+    const WCONTINUED: u32 = 8;
+    const CLD_EXITED: i32 = 1;
+    const CLD_KILLED: i32 = 2;
+    const CLD_DUMPED: i32 = 3;
+    const CLD_STOPPED: i32 = 5;
+    const CLD_CONTINUED: i32 = 6;
+    if options & (process::WEXITED | WSTOPPED | WCONTINUED) == 0 {
+        return Err(EINVAL);
+    }
+    let pid = match idtype {
+        P_ALL => -1,
+        P_PID if id > 0 => id as i32,
+        P_PGID if id == 0 => 0,
+        P_PGID => -(id as i32),
+        P_PIDFD => super::fdobj::pidfd_pid(id as i32)? as i32,
+        _ => return Err(EINVAL),
+    };
+    // WSTOPPED is wait4's WUNTRACED.
+    let (cpid, st) = process::wait_ex(pid, options & !WNOWAIT, options & WNOWAIT == 0)?;
+    // siginfo_t: signo, errno, code, then pid, uid, status at 16, 20, 24.
+    let mut info = [0i32; 32];
+    if cpid != 0 {
+        let (code, status) = if st == 0xffff {
+            (CLD_CONTINUED, signal::SIGCONT as i32)
+        } else if st & 0x7f == 0x7f {
+            (CLD_STOPPED, (st >> 8) & 0xff)
+        } else if st & 0x7f == 0 {
+            (CLD_EXITED, (st >> 8) & 0xff)
+        } else if st & 0x80 != 0 {
+            (CLD_DUMPED, st & 0x7f)
+        } else {
+            (CLD_KILLED, st & 0x7f)
+        };
+        info[0] = signal::SIGCHLD as i32;
+        info[2] = code;
+        info[4] = cpid as i32;
+        info[6] = status;
+    }
+    if infop != 0 {
+        uaccess::write_user(infop, &info)?;
+    }
+    if rusage != 0 {
+        uaccess::copy_to_user(rusage, &[0u8; 144])?;
+    }
+    Ok(0)
+}
+
 pub fn kill(pid: i32, sig: u32) -> SysResult {
     if sig as usize >= signal::NSIG {
         return Err(EINVAL);

@@ -523,6 +523,14 @@ pub const WCONTINUED: u32 = 8;
 
 /// wait4(): returns (pid, status) or 0 with WNOHANG when nothing changed.
 pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
+    wait_ex(pid, options | WEXITED, true)
+}
+
+/// waitid()'s event selection: exited children (with `WEXITED`); `reap`
+/// false leaves a zombie to be waited for again (`WNOWAIT`).
+pub const WEXITED: u32 = 4;
+
+pub fn wait_ex(pid: i32, options: u32, reap_exited: bool) -> KResult<(Pid, i32)> {
     let p = current().ok_or(ESRCH)?;
     loop {
         let result = {
@@ -541,8 +549,11 @@ pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
             }
             let mut found = None;
             for c in matching {
-                if c.zombie.load(Ordering::SeqCst) && c.exit_status.lock().is_some() {
-                    found = Some((c.pid, c.exit_status.lock().unwrap(), true));
+                if options & WEXITED != 0
+                    && c.zombie.load(Ordering::SeqCst)
+                    && c.exit_status.lock().is_some()
+                {
+                    found = Some((c.pid, c.exit_status.lock().unwrap(), reap_exited));
                     break;
                 }
                 if options & WUNTRACED != 0
@@ -579,7 +590,7 @@ pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
         let pp = p.clone();
         let ok = p.child_wq.wait_interruptible(|| {
             pp.children.lock().iter().any(|c| {
-                c.zombie.load(Ordering::SeqCst)
+                (options & WEXITED != 0 && c.zombie.load(Ordering::SeqCst))
                     || (options & WUNTRACED != 0
                         && c.stopped.load(Ordering::SeqCst)
                         && !c.stop_reported.load(Ordering::SeqCst))

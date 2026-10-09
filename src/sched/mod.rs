@@ -832,7 +832,14 @@ pub fn on_trap_exit(frame: &mut TrapFrame) {
         schedule();
     }
     if frame.from_user() {
+        // With interrupts on: writing a signal frame takes the address-space
+        // lock and may fault the user stack in, and a CPU spinning with
+        // interrupts off on a lock whose holder waits in its own run queue
+        // would never get it. Both callers disable interrupts again before
+        // returning to user mode.
+        x86_64::instructions::interrupts::enable();
         crate::process::signal::deliver_pending(frame);
+        x86_64::instructions::interrupts::disable();
     }
 }
 

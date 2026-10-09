@@ -199,6 +199,16 @@ pub fn pidfd_open(pid: i32, flags: u32) -> SysResult {
     install(file, true)
 }
 
+/// The pid a pidfd refers to (waitid's P_PIDFD).
+pub fn pidfd_pid(fd: i32) -> KResult<u32> {
+    let file = cur()?.files.lock().get(fd)?;
+    let FileObject::Stream(s) = &file.object else {
+        return Err(EBADF);
+    };
+    let pf = s.as_any().downcast_ref::<PidFd>().ok_or(EBADF)?;
+    Ok(pf.pid)
+}
+
 pub fn pidfd_send_signal(fd: i32, sig: u32, info: u64, flags: u32) -> SysResult {
     if flags != 0 || info != 0 {
         return Err(EINVAL);

@@ -22,6 +22,8 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 const TIOCGPTN: u64 = 0x8004_5430;
 const TIOCSPTLCK: u64 = 0x4004_5431;
 const TIOCGPTLCK: u64 = 0x8004_5439;
+/// Open the slave from the master (Linux 4.13+; rustix's openpty uses it).
+const TIOCGPTPEER: u64 = 0x5441;
 const MAX_BUFFER: usize = 64 * 1024;
 
 pub struct Pty {
@@ -150,6 +152,21 @@ impl FileLike for Master {
             TIOCGPTLCK => {
                 uaccess::write_user(arg, &(self.0.locked.load(Ordering::SeqCst) as i32))?;
                 Ok(0)
+            }
+            TIOCGPTPEER => {
+                // `arg` holds the open flags (O_RDWR, O_NOCTTY, O_CLOEXEC...).
+                let flags = arg as u32;
+                let slave: Arc<dyn FileLike> = self.0.slave.clone();
+                if let Some(other) = slave.open_instance(flags)? {
+                    // Ttys open themselves; nothing else is expected here.
+                    drop(other);
+                }
+                let path = format!("/dev/pts/{}", self.0.index);
+                let file =
+                    vfs::File::from_stream(slave, flags & !(vfs::O_NOCTTY | vfs::O_CLOEXEC), &path);
+                let p = crate::process::current().ok_or(ESRCH)?;
+                let fd = p.files.lock().install(file, flags & vfs::O_CLOEXEC != 0)?;
+                Ok(fd as i64)
             }
             // Terminal settings and window size act on the slave.
             _ => self.0.slave.ioctl(cmd, arg),

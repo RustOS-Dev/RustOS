@@ -20,6 +20,7 @@ mod nr {
     pub const MMAP: usize = 9;
     pub const MUNMAP: usize = 11;
     pub const MSYNC: usize = 26;
+    pub const MINCORE: usize = 27;
     pub const OPEN: usize = 2;
     pub const PREAD64: usize = 17;
     pub const PWRITE64: usize = 18;
@@ -1347,6 +1348,25 @@ fn memory(r: &mut Report) {
     );
     sc(nr::FTRUNCATE, &[fd as usize, 0]);
     sc(nr::CLOSE, &[fd as usize]);
+
+    // mincore: a touched anonymous page is resident; an unmapped range is ENOMEM.
+    let page = sc(nr::MMAP, &[0, 8192, 3, 0x22, usize::MAX, 0]);
+    unsafe { core::ptr::write_volatile(page as *mut u8, 1) };
+    let mut vec = [0xffu8; 2];
+    let ok = sc(
+        nr::MINCORE,
+        &[page as usize, 8192, vec.as_mut_ptr() as usize],
+    );
+    sc(nr::MUNMAP, &[page as usize, 8192]);
+    let gone = sc(
+        nr::MINCORE,
+        &[page as usize, 4096, vec.as_mut_ptr() as usize],
+    );
+    r.check(
+        "mincore",
+        ok == 0 && vec[0] & 1 == 1 && gone == -12,
+        format!("{} {:?} {}", ok, vec, gone),
+    );
 }
 
 fn read_some(fd: isize, want: usize, ms: u64) -> Vec<u8> {

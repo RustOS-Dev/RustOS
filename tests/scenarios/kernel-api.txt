@@ -24,6 +24,7 @@ wait PASS /proc/stat parses 30
 wait PASS /proc/loadavg parses 30
 wait PASS MAP_SHARED\|MAP_ANONYMOUS across fork 30
 wait PASS msync/munmap wrote the file 30
+wait PASS mincore 30
 wait PASS TIOCGPTPEER opens the slave 30
 wait PASS pty hangup gives EOF 30
 wait PASS epoll edge-triggered: no repeat 30

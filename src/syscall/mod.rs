@@ -51,6 +51,7 @@ pub mod nr {
     pub const ALARM: u64 = 37;
     pub const GETITIMER: u64 = 36;
     pub const MSYNC: u64 = 26;
+    pub const MINCORE: u64 = 27;
     pub const MREMAP: u64 = 25;
     pub const MEMBARRIER: u64 = 324;
     pub const SETITIMER: u64 = 38;
@@ -468,6 +469,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         )),
         MUNMAP => v(mem::munmap(a[0], a[1])),
         MSYNC => v(mem::msync(a[0], a[1], a[2] as u32)),
+        MINCORE => v(mem::mincore(a[0], a[1], a[2])),
         MREMAP => v(mem::mremap(a[0], a[1], a[2], a[3] as u32)),
         MEMBARRIER => v(mem::membarrier(a[0] as u32)),
         MPROTECT => v(mem::mprotect(a[0], a[1], a[2] as u32)),

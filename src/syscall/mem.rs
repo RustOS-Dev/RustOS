@@ -140,6 +140,22 @@ pub fn msync(addr: u64, len: u64, _flags: u32) -> SysResult {
     Ok(0)
 }
 
+/// mincore(2): which pages of a mapped range are in memory. Mesa's EGL uses it to check that a
+/// pointer can be dereferenced.
+pub fn mincore(addr: u64, len: u64, vec: u64) -> SysResult {
+    if !addr.is_multiple_of(FRAME_SIZE) {
+        return Err(EINVAL);
+    }
+    let end = addr
+        .checked_add(len.next_multiple_of(FRAME_SIZE))
+        .ok_or(ENOMEM)?;
+    let p = process::current().ok_or(ESRCH)?;
+    let vm = p.vm().ok_or(EFAULT)?;
+    let pages = vm.lock().residency(addr, end)?;
+    crate::process::uaccess::copy_to_user(vec, &pages)?;
+    Ok(0)
+}
+
 pub fn mprotect(addr: u64, len: u64, prot: u32) -> SysResult {
     if !addr.is_multiple_of(FRAME_SIZE) {
         return Err(EINVAL);

@@ -732,6 +732,22 @@ impl AddressSpace {
     }
 
     /// Resident user pages (for /proc).
+    /// mincore(2): one byte per page of `start..end`, bit 0 set when the page is in memory.
+    /// ENOMEM when part of the range is not mapped.
+    pub fn residency(&self, start: u64, end: u64) -> KResult<alloc::vec::Vec<u8>> {
+        let m = mapper_for(self.pml4);
+        let mut out = alloc::vec::Vec::new();
+        let mut addr = start;
+        while addr < end {
+            if self.find_area(addr).is_none() {
+                return Err(ENOMEM);
+            }
+            out.push(m.translate_addr(VirtAddr::new(addr)).is_some() as u8);
+            addr += FRAME_SIZE;
+        }
+        Ok(out)
+    }
+
     pub fn resident_pages(&self) -> u64 {
         let m = mapper_for(self.pml4);
         let mut n = 0;

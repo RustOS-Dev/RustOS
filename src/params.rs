@@ -4,8 +4,8 @@
 //! `/storage/etc/kernel.conf` (persistent, edited on the machine) or else
 //! `/etc/kernel.conf` from the initramfs, then, in QEMU, the fw_cfg file
 //! `opt/rustos/kernel.conf` on top (the test harness passes switches that
-//! way). Each line holds `key=value`
-//! pairs (or a bare `key`, meaning `1`) separated by spaces; `#` starts a
+//! way). Each line holds `key=value` pairs (or a bare `key`, meaning `1`)
+//! separated by spaces or `;` (for one-line fw_cfg strings); `#` starts a
 //! comment. The file is read once storage is mounted, so the switches only
 //! affect code that runs afterwards (drivers keep checking them at run
 //! time). `/proc/cmdline` shows the active set.
@@ -39,7 +39,10 @@ pub fn parse(text: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for line in text.lines() {
         let line = line.split('#').next().unwrap_or("");
-        for tok in line.split_whitespace() {
+        for tok in line
+            .split(|c: char| c.is_whitespace() || c == ';')
+            .filter(|t| !t.is_empty())
+        {
             let (k, v) = tok.split_once('=').unwrap_or((tok, "1"));
             if !k.is_empty() {
                 out.insert(k.to_string(), v.to_string());

@@ -347,6 +347,8 @@ const _: () = {
 };
 
 /// `si_code` values.
+/// The vector syscall entry paths put in their trap frames.
+const SYSCALL_VECTOR: u64 = 0x80;
 const SI_USER: i32 = 0;
 const SI_KERNEL: i32 = 0x80;
 
@@ -363,7 +365,10 @@ pub fn deliver_pending(frame: &mut TrapFrame) {
 /// report EINTR.
 fn finish_restart(frame: &mut TrapFrame, restart: bool) {
     let code = (-crate::syscall::ERESTARTSYS) as u64;
-    if frame.rax == code {
+    // Only a system call's frame (vector 0x80, `syscall` or `int 0x80`): an
+    // interrupted program may hold that value in rax itself, and rewinding
+    // its rip would land in the middle of an instruction.
+    if frame.vector == SYSCALL_VECTOR && frame.rax == code {
         if restart {
             frame.rax = frame.error_code;
             frame.rip -= 2; // both `syscall` and `int 0x80` are two bytes
@@ -562,7 +567,12 @@ pub fn sigreturn(frame: &mut TrapFrame) -> KResult<()> {
         rcx: m.rcx,
         rbx: m.rbx,
         rax: m.rax,
-        vector: m.trapno,
+        // Never a system call's frame: the restored registers are final.
+        vector: if m.trapno == SYSCALL_VECTOR {
+            0
+        } else {
+            m.trapno
+        },
         error_code: m.err,
         rip: m.rip,
         // Never let user code forge kernel segments or privileged flags.

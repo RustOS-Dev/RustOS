@@ -122,7 +122,7 @@ pinned_cargo() {
         (cd "$src" && as_build_user "$rustup" toolchain install) >&2 ||
             as_build_user "$rustup" toolchain install "$toolchain" --profile minimal \
                 --component rust-src --component llvm-tools \
-                --target x86_64-unknown-none >&2
+                --target x86_64-unknown-none --target x86_64-unknown-linux-musl >&2
     fi
     # Put the toolchain's own binaries first so that cargo, the rustc it
     # runs and the nested cargo builds in build.rs all come from it.
@@ -472,6 +472,22 @@ main() {
             echo "or set RUSTOS_FEATURES= to build without them." >&2
             exit 1
         fi
+    fi
+
+    # The desktop (eDEX-DE on labwc, docs/DESKTOP.md) is part of the stock
+    # image and starts at boot: its ports are built against the musl sysroot
+    # and embedded in the kernel's initramfs. They need the build tools listed
+    # in docs/PORTING.md (meson, ninja, cmake, Mesa's Python modules, LLVM).
+    # RUSTOS_DESKTOP=0 builds an image without it (and keeps target/ports-root
+    # as it is).
+    if [[ "${RUSTOS_DESKTOP:-1}" != "0" ]]; then
+        if [[ -z "$FEATURES" || "$FEATURES" != *linux-drivers* ]]; then
+            echo "Error: the desktop needs the Linux DRM drivers (RUSTOS_FEATURES with linux-drivers)," >&2
+            echo "or set RUSTOS_DESKTOP=0." >&2
+            exit 1
+        fi
+        echo "Building the desktop ports (libcxx, weston, labwc, edex-de; this takes a while)..."
+        as_build_user sh "$SCRIPT_DIR/tools/release-ports.sh"
     fi
 
     echo "Building kernel (release${FEATURES:+, features: $FEATURES})..."

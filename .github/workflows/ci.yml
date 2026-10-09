@@ -256,5 +256,14 @@ jobs:
         run: |
           cargo build --features linux-drivers
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/eth-e1000.txt tests/scenarios/eth-e1000e.txt tests/scenarios/eth-usb.txt tests/scenarios/usb.txt
+      # After the scenarios that run with the default 512 MiB: the eDEX-DE
+      # port makes the boot image larger.
+      - name: Rust std programs and the eDEX-DE desktop (rust-std, desktop-edex)
+        run: |
+          tools/install-port.sh --initramfs rust-hello
+          tools/install-port.sh --initramfs edex-de
+          cargo build --features linux-drivers
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/rust-std.txt \
+            tests/scenarios/linux/desktop-edex.txt
       - name: Release driver set (linux-drivers, as write_to_drive.sh builds it)
         run: cargo build --release --features linux-drivers

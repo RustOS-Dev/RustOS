@@ -1,0 +1,3 @@
+# Mesa, eDEX-DE and its fonts in the initramfs, the compositor, the greeter
+# and the shell need more than the default 512 MiB (the last -m wins).
+-m 1G

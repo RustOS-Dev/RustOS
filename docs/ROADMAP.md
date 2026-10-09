@@ -196,8 +196,8 @@ GPL-2.0-or-later, so Linux drivers are compiled in through a LinuxKPI layer
   - [x] `edex` service (eDEX greeter on tty1, disabled until the desktop is installed)
   - [x] large and multithreaded programs: exec streams segments from the file (no whole-file copy in the kernel heap), and a process's address space is freed only after its last thread is gone
   - [x] Linux signal frames (siginfo, ucontext, sigaltstack) and per-thread signal masks and pending sets, `rt_sigtimedwait`; Go programs run (static Go 1.24 binaries: goroutines, async preemption via SIGURG, nil-pointer panics recovered from SIGSEGV; `kapitest sigframes`, `musl-libctest`)
-  - [x] `edex-de` port built against the weston stage; edex-comp boots with pixman on DRM dumb buffers, tiles a client, takes input and screenshots (`linux/desktop-edex`)
-  - [ ] eDEX's shell, greeter and lock screen (wgpu) and the `edex` greeter service: wait for Mesa (M41)
+  - [x] `edex-de` port built against the weston stage; edex-comp boots with pixman on DRM dumb buffers (`EDEX_RENDERER=pixman`), tiles a client, takes input and screenshots (`linux/desktop-edex`)
+  - [x] eDEX's shell, greeter and lock screen (wgpu on GLES, softpipe) and the `edex` greeter service: edex-comp renders with GLES through GBM/EGL (pixman fallback), login, terminal input, lock, unlock and log-out (`linux/desktop-edex-session`); `TIOCGPTPEER` and `mincore` for the shell and Mesa
   - [x] LinuxKPI `wireguard` group (`drivers/net/wireguard`, `lib/crypto` curve25519/chacha20poly1305/blake2s generic C, `lib/siphash`) behind `linux-wireguard`, on M28's netdev and genetlink glue: `ip link add wg0 type wireguard` (RTM_NEWLINK with IFLA_INFO_KIND through `rtnl_link_ops`), `wg` over generic netlink, tunnels as bare-IP interfaces (smoltcp `Medium::Ip`), UDP tunnel sockets on RustOS UDP (`c/udptunnel.c`, `src/linuxkpi/udp.rs`); the `wireguard` scenario peers two tunnels over 127.0.0.1 (handshake, ping through the tunnel, transfer counters on both ends)
   - [ ] privilege broker for the desktop's system actions (`svc`, Tor helpers, backlight) once sessions run as ordinary users
 

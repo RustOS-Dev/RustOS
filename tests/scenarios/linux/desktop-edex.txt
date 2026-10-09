@@ -1,20 +1,22 @@
-# eDEX-DE's compositor (M43 on M37): edex-comp, built without its `gpu`
-# feature, renders with pixman into DRM dumb buffers on Linux bochs DRM
-# (kernel built with --features linux-drivers; tools/install-port.sh
-# --initramfs weston libunwind edex-de). libseat's embedded seat takes the
-# VT and DRM master, libinput finds the PS/2 keyboard and mouse through
-# libudev-zero. `--run weston-terminal` starts only that client (no shell:
-# edex-de needs Mesa, M41), which edex-comp tiles over the whole output in
-# the theme's background. Keys typed with QEMU's sendkey go evdev ->
-# libinput -> edex-comp -> weston-terminal -> pty -> shell, which writes a
-# file the serial shell then reads; `edex-comp state` lists the output and
-# the window, `edex-comp screenshot` renders the output offscreen (pixman),
-# and `edex-comp msg` makes the compositor exit.
+# eDEX-DE's compositor (M43 on M37) without Mesa: edex-comp, forced to its
+# software renderer with EDEX_RENDERER=pixman (the port builds it with GLES;
+# desktop-edex-session.txt covers that), renders with pixman into DRM dumb
+# buffers on Linux bochs DRM (kernel built with --features linux-drivers;
+# tools/install-port.sh --initramfs weston libunwind edex-de). libseat's
+# embedded seat takes the VT and DRM master, libinput finds the PS/2
+# keyboard and mouse through libudev-zero. `--run weston-terminal` starts
+# only that client (not the eDEX session: desktop-edex-session.txt runs
+# that), which edex-comp tiles over the whole output in the theme's
+# background. Keys typed with QEMU's sendkey go evdev -> libinput ->
+# edex-comp -> weston-terminal -> pty -> shell, which writes a file the
+# serial shell then reads; `edex-comp state` lists the output and the
+# window, `edex-comp screenshot` renders the output offscreen (pixman), and
+# `edex-comp msg` makes the compositor exit.
 hostrun rm -rf /tmp/rustos-desktop-edex && mkdir -p /tmp/rustos-desktop-edex
 wait # $ 300
 send mkdir -p /tmp/xdg; chmod 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin
 wait # $
-send edex-comp run --run weston-terminal > /tmp/edex.log 2>&1 &
+send EDEX_RENDERER=pixman edex-comp run --run weston-terminal > /tmp/edex.log 2>&1 &
 sleep 45
 # (The bracket keeps the echoed command line from matching the waits.)
 send grep -a -e "output Virtual-1 enabled 1280x80[0] .pixman." -e "rendering with pixma[n]" /tmp/edex.log
@@ -67,5 +69,5 @@ send edex-comp msg '{"cmd":"exit"}'
 wait # $
 sleep 10
 send true
-wait \[1\]\+ +Done +edex-comp run
+wait \[1\]\+ +Done +EDEX_RENDERER=pixman edex-comp run
 wait # $

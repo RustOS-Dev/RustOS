@@ -1,0 +1,128 @@
+# The eDEX desktop session (M43 on M41): the `edex` service starts
+# `edex-comp --greeter` on tty1, edex-comp renders with GLES through Mesa
+# (EGL on GBM, softpipe via kms_swrast on Linux bochs DRM), and the login
+# screen (edex-greeter) and the shell (edex-de) draw with wgpu's GL backend
+# on softpipe (there is no Vulkan device: RADV and ANV find no GPU). Needs
+# the weston, libunwind, edex-de and jetbrains-mono-nerd ports in the image
+# and a kernel built with --features linux-drivers.
+#
+# Root's password is set to "edex" with edex-auth (SHA-512 crypt in
+# /storage/etc/shadow). At the greeter, Enter picks root, then the password
+# and Enter log in: edex-comp checks it with edex-auth and starts the session
+# as root (/run/user/0: Wayland and control sockets, edex-de). Keys typed with
+# QEMU's sendkey reach the shell's terminal tab; SUPER+Alt+L locks the session
+# (edex-greeter --lock, ext-session-lock), the password unlocks it, and
+# `{"cmd":"exit"}` ends it, after which the service brings the greeter back.
+#
+# The service's terminal (tty1) is the console, which the serial port
+# mirrors: the waits follow edex-comp's log and its clients'. softpipe under
+# TCG is slow: the first frame of the greeter and of the shell takes about
+# 30 s (shader compilation, glyph rasterization), later frames redraw only
+# what changed (several seconds each).
+hostrun rm -rf /tmp/rustos-edex-session && mkdir -p /tmp/rustos-edex-session
+wait # $ 300
+send printf '\nedex\n' | edex-auth passwd root; echo passwd-$?
+wait passwd-0
+wait # $
+send svc start edex; svc status edex
+wait state: +running
+wait output Virtual-1 enabled 1280x800 \(GLES\) 120
+wait rendering with GLES
+wait gpu adapter selected.*softpipe 300
+wait first frame presented 300
+sleep 20
+monitor screendump /tmp/rustos-edex-session/greeter.ppm
+# The Tron theme's background (#0a0e1a) around the login box, its glowing
+# cyan frame and header, and the highlighted user row (root).
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-session/greeter.ppm size=1280x800 640,10=10,14,26~6 5,400=10,14,26~6 1270,790=10,18,30~12 371,400=7,132,160~40 908,400=7,132,160~40 640,215=11,40,51~20 'count:10,14,26>=400000'
+monitor sendkey ret
+sleep 5
+monitor sendkey e
+monitor sendkey d
+monitor sendkey e
+monitor sendkey x
+monitor sendkey ret
+wait starting session.*root 120
+wait first frame presented 300
+sleep 30
+send XDG_RUNTIME_DIR=/run/user/0 edex-de ipc state | grep -o -e '"connected":true' -e '"gpu":"softpipe (Gl, Other)"' -e '"focus":"terminal"'
+wait "connected":true
+wait "gpu":"softpipe \(Gl, Other\)"
+wait "focus":"terminal"
+wait # $
+send XDG_RUNTIME_DIR=/run/user/0 edex-comp state
+wait output Virtual-1 1280x800
+wait # $
+monitor screendump /tmp/rustos-edex-session/shell.ppm
+# The shell: the top bar on the theme background, the eDEX-DE badge and the
+# active workspace in the accent colour, the side panels (#0d1117) with their
+# cyan frames around the terminal panel, the terminal on the background.
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-session/shell.ppm size=1280x800 640,5=10,14,26~6 236,47=0,212,255~30 2,300=13,17,23~6 1100,300=13,17,23~6 256,300=7,132,160~40 997,300=5,156,189~40 600,400=10,14,26~6 640,600=10,14,26~6 'count:10,14,26>=300000'
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey s
+monitor sendkey h
+monitor sendkey e
+monitor sendkey l
+monitor sendkey l
+monitor sendkey minus
+monitor sendkey t
+monitor sendkey y
+monitor sendkey p
+monitor sendkey e
+monitor sendkey d
+monitor sendkey spc
+monitor sendkey shift-dot
+monitor sendkey spc
+monitor sendkey slash
+monitor sendkey t
+monitor sendkey m
+monitor sendkey p
+monitor sendkey slash
+monitor sendkey s
+monitor sendkey ret
+sleep 20
+send cat /tmp/s
+wait shell-typed 60
+wait # $
+# Lock: the lock screen covers the shell (the theme background where the
+# shell has its panel frame).
+monitor sendkey meta_l-alt-l
+wait session locked 120
+wait first frame presented 300
+sleep 20
+# (The quotes keep the echoed command line from matching the waits.)
+send XDG_RUNTIME_DIR=/run/user/0 edex-comp msg '{"cmd":"state"}' | grep -q '"locked": true' && echo session-lock"ed"
+wait session-locked
+wait # $
+monitor screendump /tmp/rustos-edex-session/locked.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-session/locked.ppm size=1280x800 640,10=10,14,26~6 256,300=10,14,26~12 371,400=7,132,160~40 908,400=7,132,160~40 640,545=10,66,81~20
+monitor sendkey e
+monitor sendkey d
+monitor sendkey e
+monitor sendkey x
+monitor sendkey ret
+wait password accepted; unlocking 120
+wait session unlocked 60
+sleep 20
+send XDG_RUNTIME_DIR=/run/user/0 edex-comp msg '{"cmd":"state"}' | grep -q '"locked": false' && echo session-unlock"ed"
+wait session-unlocked
+wait # $
+monitor screendump /tmp/rustos-edex-session/unlocked.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-session/unlocked.ppm 256,300=7,132,160~40 997,300=5,156,189~40 1100,300=13,17,23~6
+# Log out: edex-comp exits and the service starts it again with the login
+# screen. The new edex-comp takes tty1's foreground from the console shell
+# (init starts it on its own, not from the shell), so the serial console
+# only watches from here on: the log, and a last screendump.
+send XDG_RUNTIME_DIR=/run/user/0 edex-comp msg '{"cmd":"exit"}'
+wait ending the session 60
+wait starting on this seat 60
+wait rendering with GLES 120
+wait started.*greeter 120
+wait first frame presented 300
+sleep 20
+monitor screendump /tmp/rustos-edex-session/greeter2.ppm
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-session/greeter2.ppm 640,10=10,14,26~6 371,400=7,132,160~40 908,400=7,132,160~40 640,215=11,40,51~20

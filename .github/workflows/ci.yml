@@ -236,17 +236,23 @@ jobs:
           cargo build --features linux-drivers
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop.txt \
             tests/scenarios/linux/desktop-gl.txt tests/scenarios/linux/gl-kmscube.txt
-      - name: eDEX compositor on the Wayland stack (desktop-edex)
+      - name: eDEX desktop on Mesa (desktop-edex, desktop-edex-session)
         run: |
           # The edex-de port builds the pinned eDEX-DE commit (EDEX_SRC=DIR for
           # a checkout) with the default toolchain, for musl, against the
-          # weston stage of the step above; edex-comp renders with pixman.
+          # weston stage (Wayland, Mesa) of the step above. desktop-edex runs
+          # edex-comp with pixman; desktop-edex-session logs in at the greeter
+          # and drives the shell and the lock screen, all on softpipe.
           (cd "$RUNNER_TEMP" && rustup target add x86_64-unknown-linux-musl)
           tools/install-port.sh --initramfs libunwind
           tools/install-port.sh --initramfs edex-de
+          tools/install-port.sh --initramfs jetbrains-mono-nerd
           cargo build --features linux-drivers
-          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop-edex.txt
-          rm -rf target/ports/build/edex-de
+          tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop-edex.txt \
+            tests/scenarios/linux/desktop-edex-session.txt
+          # The later steps boot with 512 MiB: keep the fonts out of their images.
+          rm -rf target/ports/build/edex-de target/ports/build/jetbrains-mono-nerd \
+            target/ports-root/usr/local/share/fonts/jetbrains-mono-nerd
       - name: Desktop kernel features (desktop-kernel)
         run: |
           cargo build --features linux-drivers

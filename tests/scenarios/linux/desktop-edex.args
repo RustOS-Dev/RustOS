@@ -1,0 +1,2 @@
+# Mesa and eDEX-DE in the initramfs need more than the default 512 MiB.
+-m 1G

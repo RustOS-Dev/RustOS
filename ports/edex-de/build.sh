@@ -6,23 +6,27 @@
 # Installed under /usr/local (tools/install-port.sh --initramfs edex-de).
 #
 # Built for x86_64-unknown-linux-musl, dynamically linked against musl and
-# the Wayland stack of the weston port's stage (wayland, libxkbcommon,
-# libinput, libseat, libudev-zero, pixman), found through
-# tools/cross/rustos-pkg-config, and the libunwind port's libgcc_s.so.1.
-# Install those two ports first. Needs Rust with the
+# the Wayland stack and Mesa of the weston port's stage (wayland,
+# libxkbcommon, libinput, libseat, libudev-zero, pixman, libgbm), found
+# through tools/cross/rustos-pkg-config, and the libunwind port's
+# libgcc_s.so.1. Install those two ports first. Needs Rust with the
 # x86_64-unknown-linux-musl target.
 #
-# Until Mesa arrives (M41) there is no GBM/EGL: edex-comp is built without
-# its `gpu` feature and renders with pixman into DRM dumb buffers. edex-de
-# and edex-greeter use wgpu, which loads Vulkan or EGL at run time; they
-# build and install, and draw once Mesa is there.
+# Every binary is built with its default features. edex-comp renders with
+# GLES through Mesa's GBM and EGL (libgbm is linked, libEGL is loaded at run
+# time; softpipe through kms_swrast when there is no GPU driver) and falls
+# back to pixman on DRM dumb buffers when GBM/EGL do not come up
+# (EDEX_RENDERER=pixman forces it). edex-de and edex-greeter draw with wgpu,
+# which loads Vulkan or EGL at run time: without a Vulkan device they use
+# GLES (softpipe in QEMU).
 #
 # EDEX_SRC=/path/to/eDEX-DE-RS builds that checkout instead of the pinned
 # commit. RUSTOS_WESTON_STAGE overrides the weston stage's location.
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 set -e
-# eDEX-DE a92e98a or later: edex-comp builds without libgbm (no `gpu`
-# feature) and renders with pixman.
+# The session on Mesa (linux/desktop-edex-session: the shell and the greeter
+# on softpipe, the lock screen, edex-comp's GLES output on bochs) needs
+# eDEX-DE 197938c or later; older commits still pass linux/desktop-edex.
 COMMIT=7daae7ecec54ace772e77e11343a9cb74203e08e
 SHA256=a7d30db0cd97ad7a7c98e614a3e7e3512335dd1cc8bb4dd8136390dabad80d0c
 TARGET=x86_64-unknown-linux-musl
@@ -79,14 +83,11 @@ export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=-crt-
 export CARGO_TARGET_DIR="$BUILD/target"
 cd "$TREE"
 WANT="${EDEX_BINS:-$BINS}"
-# edex-comp without `gpu`: pixman on dumb buffers, no libgbm/libEGL.
-case " $WANT " in
-*" edex-comp "*)
-    cargo build --release --locked --target $TARGET -p edex-comp --no-default-features ;;
-esac
+# Every binary with its default features: edex-comp with `gpu` (GLES
+# through Mesa's GBM/EGL, pixman as the fallback).
 PKGS=""
-for b in $WANT; do [ "$b" = edex-comp ] || PKGS="$PKGS -p $b"; done
-[ -z "$PKGS" ] || cargo build --release --locked --target $TARGET $PKGS
+for b in $WANT; do PKGS="$PKGS -p $b"; done
+cargo build --release --locked --target $TARGET $PKGS
 
 OUT="$BUILD/target/$TARGET/release"
 for b in $WANT; do

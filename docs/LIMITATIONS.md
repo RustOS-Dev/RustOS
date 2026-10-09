@@ -51,6 +51,13 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * Xwayland runs without GLX and, on softpipe, without glamor (X clients
   draw in software); labwc needs `WLR_RENDERER_ALLOW_SOFTWARE=1` to use
   softpipe, otherwise it falls back to its pixman renderer.
+* Xwayland is built without the X server's time slicing (the smart
+  scheduler's timer is never armed): on RustOS a yield in the middle of a
+  client's requests leaves new X windows unmapped, with Xwayland and
+  labwc's window manager both idle and nothing readable. The cause is not
+  found yet; kernel signal delivery, syscall restart, setitimer and epoll
+  were checked (and two bugs fixed). A busy X client is served until it
+  has no more requests.
 * Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

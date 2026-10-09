@@ -1,0 +1,30 @@
+#!/bin/sh
+# desktop [start|stop|status]: the eDEX-DE desktop session (ports/edex-de).
+case "${1:-start}" in
+start)
+    if [ -e /tmp/xdg-runtime-0/wayland-0 ] && ps | grep -q labwc; then
+        echo "desktop: already running"
+        exit 0
+    fi
+    mkdir -p /var/log
+    edex-session >>/var/log/edex-session.log 2>&1 </dev/null &
+    echo "desktop: starting eDEX-DE (log: /var/log/edex-session.log)"
+    ;;
+stop)
+    killall labwc 2>/dev/null || kill $(ps | grep labwc | grep -v grep | cut -c1-6) 2>/dev/null
+    echo "desktop: stopped"
+    ;;
+status)
+    if ps | grep -v grep | grep -q labwc; then
+        echo "desktop: running"
+        EDEX_IPC=1 XDG_RUNTIME_DIR=/tmp/xdg-runtime-0 edex-de ipc ping
+    else
+        echo "desktop: not running"
+        exit 1
+    fi
+    ;;
+*)
+    echo "usage: desktop [start|stop|status]" >&2
+    exit 2
+    ;;
+esac

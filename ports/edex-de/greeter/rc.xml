@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!-- labwc for the eDEX greeter (edex-session, kernel.conf desktop.login=1): one fullscreen
+     window, no key bindings, no menus. -->
+<labwc_config>
+  <core>
+    <decoration>server</decoration>
+  </core>
+  <desktops number="1" />
+  <keyboard>
+    <repeatRate>30</repeatRate>
+    <repeatDelay>300</repeatDelay>
+  </keyboard>
+  <mouse>
+    <default />
+  </mouse>
+  <windowRules>
+    <windowRule identifier="edex-greeter" serverDecoration="no">
+      <action name="ToggleFullscreen" />
+    </windowRule>
+  </windowRules>
+</labwc_config>

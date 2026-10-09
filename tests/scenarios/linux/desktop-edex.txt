@@ -1,0 +1,89 @@
+# eDEX-DE (M43), RustOS's desktop: /etc/rc starts edex-session on the first
+# console at boot (seatd's builtin backend, a D-Bus session bus, labwc with
+# eDEX-DE as its shell), eDEX draws with wgpu's GLES backend on Mesa softpipe
+# (Linux bochs DRM). Kernel built with --features linux-drivers; the weston,
+# labwc, libcxx and edex-de ports staged with tools/install-port.sh
+# --initramfs. The defaults (ports/edex-de/config.toml) turn animations,
+# scanlines and the boot animation off.
+hostrun rm -rf /tmp/rustos-edex && mkdir -p /tmp/rustos-edex
+wait # $ 300
+# eDEX answers on its IPC socket once it has drawn a frame (softpipe is slow).
+send export XDG_RUNTIME_DIR=/tmp/xdg-runtime-0; for i in $(seq 1 120); do edex-de ipc state >/tmp/st 2>/dev/null && grep -q '"frames":[1-9]' /tmp/st && break; sleep 5; done; echo "edex-up $i"
+wait edex-up \d+ 700
+wait # $
+send ps | grep -c -e edex-session -e labwc -e edex-de -e dbus-daemon; grep -o -e '.kind.:.labwc.' -e '.notification_server.:true' -e '.theme.:.tron.' -e '.gpu.:.softpipe[^"]*.' /tmp/st
+wait "gpu":"softpipe
+wait "notification_server":true
+wait "theme":"tron"
+wait "kind":"labwc"
+wait # $
+# The dashboard: CPU load and memory in use, as the system panel shows them.
+send sleep 10; edex-de ipc state >/tmp/st; grep -o -e '"cpu_total":[0-9.e-]*' -e '"ram_used_kb":[0-9]*' -e '"processes":[0-9]*' /tmp/st
+wait "cpu_total":(0\.0*[1-9]|[1-9])
+wait "processes":[1-9]
+wait "ram_used_kb":[1-9]
+wait # $
+monitor screendump /tmp/rustos-edex/desktop.ppm
+# Tron: the dark blue background, cyan panel borders, teal panel headers.
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex/desktop.ppm size=1280x800 'count:4,20,28>=400000' 'count:0,207,249>=300' 255,300=2,181,217~30 997,300=2,181,217~30 1050,77=4,82,100~24
+# Keys typed with QEMU's sendkey reach eDEX's terminal (evdev -> libinput ->
+# labwc -> eDEX -> alacritty_terminal -> pty -> shell).
+send edex-de ipc focus terminal; for i in $(seq 1 60); do edex-de ipc state | grep -q 'shell_focused.:true' && break; sleep 3; done; echo "focused-$i"
+wait focused-\d+ 200
+wait # $
+sleep 10
+monitor sendkey e
+monitor sendkey c
+monitor sendkey h
+monitor sendkey o
+monitor sendkey spc
+monitor sendkey e
+monitor sendkey d
+monitor sendkey e
+monitor sendkey x
+monitor sendkey minus
+monitor sendkey t
+monitor sendkey y
+monitor sendkey p
+monitor sendkey e
+monitor sendkey d
+monitor sendkey spc
+monitor sendkey shift-dot
+monitor sendkey spc
+monitor sendkey slash
+monitor sendkey t
+monitor sendkey m
+monitor sendkey p
+monitor sendkey slash
+monitor sendkey k
+monitor sendkey ret
+# eDEX's main loop handles input between frames, and softpipe frames take
+# seconds under TCG.
+send for i in $(seq 1 60); do [ -e /tmp/k ] && break; sleep 5; done; cat /tmp/k
+wait edex-typed 400
+wait # $
+monitor screendump /tmp/rustos-edex/typed.ppm
+# The launcher opens over IPC; foot, launched from it, tiles into the
+# terminal slot.
+send edex-de ipc show launcher; for i in $(seq 1 30); do edex-de ipc state | grep -q 'overlay.:.launcher' && break; sleep 3; done; edex-de ipc state | grep -o '"overlay":"[a-z]*"'
+wait "overlay":"launcher"
+wait # $
+monitor sendkey f
+monitor sendkey o
+monitor sendkey o
+monitor sendkey t
+sleep 5
+monitor sendkey ret
+send for i in $(seq 1 60); do edex-de ipc state >/tmp/st; grep -q 'class.:.foot' /tmp/st && grep -q 'apps_cover_terminal.:true' /tmp/st && break; sleep 5; done; echo "foot-up $i"; grep -o -e '.class.:.foot.' -e '.floating.:false' -e '.apps_cover_terminal.:true' /tmp/st
+wait foot-up \d+ 400
+wait "apps_cover_terminal":true
+wait "class":"foot"
+wait "floating":false
+wait # $
+sleep 20
+monitor screendump /tmp/rustos-edex/foot.ppm
+# foot's dark grey fills the terminal slot between the side panels.
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex/foot.ppm 'count:36,36,36>=150000' 600,400=36,36,36~8 255,300=2,181,217~30
+send desktop status
+wait desktop: running
+wait # $

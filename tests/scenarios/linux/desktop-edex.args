@@ -1,0 +1,4 @@
+# The desktop ports in the boot image leave little of the default 512 MiB.
+-m 1536M
+# The session starts at boot (the harness passes desktop=none to other scenarios).
+-fw_cfg name=opt/rustos/kernel.conf,string=desktop=edex

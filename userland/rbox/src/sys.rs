@@ -225,13 +225,47 @@ pub fn hostname(args: &[String]) -> i32 {
     }
 }
 
-pub fn id(_: &[String]) -> i32 {
-    println!("uid=0(root) gid=0(root) groups=0(root)");
+/// Name of uid/gid `n` in /etc/passwd or /etc/group (field 3), or the number.
+fn id_name(file: &str, n: usize) -> String {
+    fs::read_to_string(file)
+        .unwrap_or_default()
+        .lines()
+        .find_map(|l| {
+            let f: Vec<&str> = l.split(':').collect();
+            (f.len() > 2 && f[2].parse::<usize>().ok() == Some(n)).then(|| String::from(f[0]))
+        })
+        .unwrap_or_else(|| format!("{}", n))
+}
+
+/// id [-u|-g] [-n]
+pub fn id(args: &[String]) -> i32 {
+    // getuid (102), getgid (104).
+    let uid = rustos_rt::sys::syscall(102, &[]) as usize;
+    let gid = rustos_rt::sys::syscall(104, &[]) as usize;
+    let user = id_name("/etc/passwd", uid);
+    let group = id_name("/etc/group", gid);
+    let has = |f: &str| {
+        args.iter()
+            .skip(1)
+            .any(|a| a == f || (a.starts_with('-') && !a.starts_with("--") && a.contains(&f[1..])))
+    };
+    let name = has("-n");
+    if has("-u") {
+        println!("{}", if name { user } else { format!("{}", uid) });
+    } else if has("-g") {
+        println!("{}", if name { group } else { format!("{}", gid) });
+    } else {
+        println!(
+            "uid={}({}) gid={}({}) groups={}({})",
+            uid, user, gid, group, gid, group
+        );
+    }
     0
 }
 
 pub fn whoami(_: &[String]) -> i32 {
-    println!("root");
+    let uid = rustos_rt::sys::syscall(102, &[]) as usize;
+    println!("{}", id_name("/etc/passwd", uid));
     0
 }
 

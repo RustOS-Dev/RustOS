@@ -1,0 +1,16 @@
+# eDEX-DE defaults on RustOS (first start copies these to ~/.config/edex-de/config.toml).
+[appearance]
+theme = "tron"
+font = "JetBrainsMono Nerd Font"
+# RustOS draws eDEX in software (Mesa softpipe: there are no GPU 3D drivers), where every
+# effect costs CPU time: no scanlines, border pulse or boot animation by default.
+scanlines = false
+animations = false
+boot_animation = false
+
+[launcher]
+# foot (the labwc port) runs a command given after its options.
+terminal_command = "foot"
+
+[wm]
+gaps_out = 0

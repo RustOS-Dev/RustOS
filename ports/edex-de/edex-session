@@ -1,0 +1,169 @@
+#!/bin/sh
+# eDEX-DE session for RustOS (ports/edex-de): labwc with eDEX-DE as its shell.
+#
+#   edex-session            start the desktop on the visible console
+#   edex-session --boot     from /etc/rc: start it unless kernel.conf has desktop=none
+#
+# /etc/rc and `desktop` send its output to /var/log/edex-session.log.
+#
+# Sets up the seat (libseat's builtin backend), XDG_RUNTIME_DIR and a D-Bus session bus
+# (dbus-daemon, for the notifications server), writes eDEX's labwc configuration on first
+# start (edex-de labwc-config: key bindings, the window rule that tiles windows into the
+# terminal slot), then runs `labwc -C <it> -s <edex-de run --wm labwc, restarted if it
+# crashes>`. With kernel.conf desktop.login=1 the eDEX greeter asks for a user and password
+# first (passwd/shadow); otherwise the session logs in as desktop.user (default root).
+# Logging out (power menu) returns to the text console, or to the greeter.
+
+# kernel.conf value of KEY (from /proc/cmdline), or DEFAULT.
+param() {
+    v="$2"
+    for w in $(cat /proc/cmdline 2>/dev/null); do
+        case "$w" in
+        "$1"=*) v="${w#*=}" ;;
+        "$1") v=1 ;;
+        esac
+    done
+    echo "$v"
+}
+
+if [ "$1" = "--boot" ]; then
+    case "$(param desktop edex)" in
+    none | 0 | off | no) exit 0 ;;
+    esac
+    shift
+fi
+
+echo "== eDEX-DE session $(date) =="
+if [ ! -e /dev/dri/card0 ]; then
+    echo "edex-session: no DRM device (/dev/dri/card0): this kernel has no display driver"
+    echo "edex-session: (build it with --features linux-drivers; release images have them)"
+    exit 1
+fi
+
+export PATH=/bin:/sbin:/usr/bin:/usr/local/bin
+export LIBSEAT_BACKEND=builtin
+# labwc and Xwayland may use Mesa's software renderer (softpipe) where there is no GPU driver.
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+# eDEX draws with wgpu's GLES backend on Mesa EGL.
+export WGPU_BACKEND=gl
+# wgpu (29) binds textures with layout qualifiers whenever the GL context offers compute
+# shaders, and Mesa's softpipe advertises GL_ARB_compute_shader in a GLSL 3.30 context that
+# cannot express them: every texture would read unit 0 (no text). Without the extension wgpu
+# assigns the units itself. eDEX and its greeter use no compute.
+[ -n "$MESA_EXTENSION_OVERRIDE" ] || export MESA_EXTENSION_OVERRIDE=-GL_ARB_compute_shader
+export XDG_SESSION_TYPE=wayland XDG_SESSION_DESKTOP=edex-de XDG_CURRENT_DESKTOP=eDEX-DE:labwc
+export XDG_DATA_DIRS=/usr/local/share:/usr/share XDG_CONFIG_DIRS=/usr/local/etc/xdg:/etc/xdg
+export EDEX_SHARE_DIR=/usr/local/share/edex-de
+
+runtime_dir() {
+    d="/tmp/xdg-runtime-$1"
+    mkdir -p "$d"
+    chmod 700 "$d"
+    echo "$d"
+}
+
+# Start a D-Bus session bus in $XDG_RUNTIME_DIR (D-Bus is optional: without it there is no
+# notifications server).
+start_bus() {
+    if command -v dbus-daemon >/dev/null 2>&1; then
+        bus="unix:path=$XDG_RUNTIME_DIR/bus"
+        rm -f "$XDG_RUNTIME_DIR/bus"
+        if dbus-daemon --session --fork --nopidfile --address="$bus" --print-pid=1 >"$XDG_RUNTIME_DIR/dbus.pid"; then
+            export DBUS_SESSION_BUS_ADDRESS="$bus"
+            echo "edex-session: D-Bus session bus at $bus (pid $(cat "$XDG_RUNTIME_DIR/dbus.pid"))"
+        else
+            echo "edex-session: dbus-daemon failed; running without a session bus"
+        fi
+    fi
+}
+
+stop_bus() {
+    if [ -s "$XDG_RUNTIME_DIR/dbus.pid" ]; then
+        kill "$(cat "$XDG_RUNTIME_DIR/dbus.pid")" 2>/dev/null
+        rm -f "$XDG_RUNTIME_DIR/dbus.pid"
+    fi
+}
+
+# The greeter (kernel.conf desktop.login=1): prints the user who logged in.
+greeter() {
+    export XDG_RUNTIME_DIR="$(runtime_dir greeter)"
+    rm -f "$XDG_RUNTIME_DIR/login-user"
+    labwc -C /usr/local/share/edex-de/greeter \
+        -s "sh -c 'edex-greeter --backend local --result $XDG_RUNTIME_DIR/login-user; labwc --exit'" \
+        >"$XDG_RUNTIME_DIR/labwc.log" 2>&1
+    cat "$XDG_RUNTIME_DIR/login-user" 2>/dev/null
+}
+
+# One desktop session as the current user.
+desktop() {
+    uid="$(id -u 2>/dev/null || echo 0)"
+    export XDG_RUNTIME_DIR="$(runtime_dir "$uid")"
+    export HOME="${HOME:-/root}"
+    conf="${XDG_CONFIG_HOME:-$HOME/.config}/edex-de/labwc"
+    if [ ! -f "$conf/rc.xml" ]; then
+        edex-de labwc-config "$conf"
+    fi
+    start_bus
+    # eDEX-DE is labwc's shell: restarted when it crashes (not more than 5 times within a
+    # minute); labwc exits when it gives up or the user logs out.
+    labwc -C "$conf" -s "edex-session --shell-loop" >"$XDG_RUNTIME_DIR/labwc.log" 2>&1
+    status=$?
+    echo "edex-session: labwc exited with $status"
+    stop_bus
+    return $status
+}
+
+if [ "$1" = "--shell-loop" ]; then
+    crashes=0
+    started=$(date +%s)
+    while :; do
+        edex-de run --wm labwc
+        status=$?
+        [ "$status" -eq 0 ] && break
+        now=$(date +%s)
+        if [ $((now - started)) -gt 60 ]; then
+            crashes=0
+            started=$now
+        fi
+        crashes=$((crashes + 1))
+        echo "edex-session: edex-de exited with $status (crash $crashes)"
+        if [ "$crashes" -ge 5 ]; then
+            echo "edex-session: edex-de keeps crashing; ending the session"
+            break
+        fi
+        sleep 1
+    done
+    labwc --exit
+    exit 0
+fi
+
+if [ "$1" = "--desktop" ]; then
+    desktop
+    exit $?
+fi
+
+while :; do
+    if [ "$(param desktop.login 0)" = "1" ] && command -v edex-greeter >/dev/null 2>&1; then
+        user="$(greeter)"
+        if [ -z "$user" ]; then
+            echo "edex-session: greeter ended without a login"
+            exit 1
+        fi
+        echo "edex-session: $user logged in"
+        if [ "$user" = "root" ] || [ "$(id -u)" != 0 ]; then
+            desktop
+        else
+            edex-greeter run-as "$user" -- edex-session --desktop
+        fi
+        # Back to the greeter after logging out.
+        continue
+    fi
+    user="$(param desktop.user root)"
+    if [ "$user" = "root" ] || [ "$(id -u)" != 0 ]; then
+        desktop
+    else
+        edex-greeter run-as "$user" -- edex-session --desktop
+    fi
+    # Logged out: back to the text console (`desktop` starts it again).
+    exit 0
+done

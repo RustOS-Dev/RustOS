@@ -5,3 +5,8 @@ mkdir -p /tmp /var/log /mnt
 ifup -a -q
 # Join a saved wireless network (wifi.conf) in the background.
 wifi auto -q &
+# The desktop: eDEX-DE (ports/edex-de) on the first console, unless
+# kernel.conf has desktop=none. The serial console keeps its shell.
+if [ -x /usr/local/bin/edex-session ]; then
+    edex-session --boot >>/var/log/edex-session.log 2>&1 </dev/null &
+fi

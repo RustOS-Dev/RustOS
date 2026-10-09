@@ -592,6 +592,11 @@ pub fn epoll_ctl(epfd: i32, op: u32, fd: i32, event: u64) -> SysResult {
         let mut items = ep.items.lock();
         match op {
             EPOLL_CTL_ADD => {
+                // Closed files leave epoll as on Linux. Pruned here too, not
+                // only in collect(): a new file at a dead one's address with
+                // the same fd number must not get EEXIST (X servers ignore
+                // the error and never hear from that client).
+                items.retain(|_, it| it.file.strong_count() > 0);
                 if items.contains_key(&key) {
                     return Err(EEXIST);
                 }

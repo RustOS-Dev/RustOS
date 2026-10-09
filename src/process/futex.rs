@@ -1,7 +1,10 @@
 //! Futexes: user-space locks' kernel side.
 //!
-//! Waiters are keyed by the physical address of the futex word, so private
-//! and shared (MAP_SHARED, across fork) futexes both work. Each waiter
+//! Waiters are keyed like Linux keys futexes: by (address space, virtual
+//! address) in private memory, where a fork's copy-on-write moves the word
+//! to a new physical page when it is next written (a physical key there lost
+//! the wakeups of anyone who started waiting before the fork), and by
+//! physical address in MAP_SHARED memory, which other address spaces map. Each waiter
 //! holds a flag that a waker sets; all waiters sleep on one wait queue and
 //! re-check their own flag, which makes requeueing a list operation.
 
@@ -29,21 +32,44 @@ struct Waiter {
     bitset: u32,
 }
 
-/// Waiters per futex key (physical address).
-static TABLE: Mutex<BTreeMap<u64, Vec<Waiter>>> = Mutex::new(BTreeMap::new());
+/// A futex's identity: (page table root, virtual address) for private
+/// memory, (0, physical address) for shared memory.
+type Key = (u64, u64);
+
+/// Waiters per futex key.
+static TABLE: Mutex<BTreeMap<Key, Vec<Waiter>>> = Mutex::new(BTreeMap::new());
 static WQ: WaitQueue = WaitQueue::new();
 
 fn irqsave<R>(f: impl FnOnce() -> R) -> R {
     x86_64::instructions::interrupts::without_interrupts(f)
 }
 
-/// Physical address of the user word at `addr` in the current address
-/// space (faulting it in first).
-fn key(addr: u64) -> KResult<u64> {
+/// The key of the futex word at `addr` in the current address space and the
+/// word's physical address (faulting it in first).
+fn locate(addr: u64) -> KResult<(Key, u64)> {
     if addr & 3 != 0 {
         return Err(EINVAL);
     }
     let _: u32 = uaccess::read_user(addr)?;
+    let p = crate::process::current().ok_or(EFAULT)?;
+    let vm = p.vm().ok_or(EFAULT)?;
+    let (shared, root) = {
+        let space = vm.lock();
+        let shared = space
+            .find_area(addr)
+            .is_some_and(|a| a.flags & crate::process::vm::MAP_SHARED != 0);
+        (shared, space.pml4)
+    };
+    let phys = phys_addr(addr)?;
+    Ok((if shared { (0, phys) } else { (root, addr) }, phys))
+}
+
+fn key(addr: u64) -> KResult<Key> {
+    Ok(locate(addr)?.0)
+}
+
+/// Physical address of the user word at `addr` in the current address space.
+fn phys_addr(addr: u64) -> KResult<u64> {
     let (cr3, _) = x86_64::registers::control::Cr3::read_raw();
     let mut table = cr3.start_address().as_u64();
     for level in (0..4).rev() {
@@ -63,7 +89,7 @@ fn key(addr: u64) -> KResult<u64> {
 }
 
 /// Wake up to `n` waiters on `k` whose bitset intersects `bits`.
-fn wake_key(k: u64, n: u32, bits: u32) -> u32 {
+fn wake_key(k: Key, n: u32, bits: u32) -> u32 {
     let mut woken = 0;
     irqsave(|| {
         let mut t = TABLE.lock();
@@ -94,13 +120,16 @@ fn wait(addr: u64, val: u32, bits: u32, deadline: Option<u64>) -> KResult<i64> {
     if bits == 0 {
         return Err(EINVAL);
     }
-    let k = key(addr)?;
+    let (k, phys) = locate(addr)?;
     let flag = Arc::new(AtomicBool::new(false));
     // Check the value and queue ourselves atomically with respect to wakers
-    // (they take the table lock after changing the word).
+    // (they take the table lock after changing the word). The word is read
+    // through its physical page: no address-space lock or page fault with
+    // interrupts off. If a copy-on-write moved it since, the old page's value
+    // only means a spurious EAGAIN or a wait that the writer's wake ends.
     let queued = irqsave(|| -> KResult<bool> {
         let mut t = TABLE.lock();
-        let cur: u32 = uaccess::read_user(addr)?;
+        let cur: u32 = unsafe { core::ptr::read_volatile(crate::mm::phys_ptr::<u32>(phys)) };
         if cur != val {
             return Ok(false);
         }
@@ -153,7 +182,7 @@ fn wait(addr: u64, val: u32, bits: u32, deadline: Option<u64>) -> KResult<i64> {
 }
 
 /// Move up to `n` waiters from `from` to `to`; returns how many moved.
-fn requeue(from: u64, to: u64, n: u32) -> u32 {
+fn requeue(from: Key, to: Key, n: u32) -> u32 {
     irqsave(|| {
         let mut t = TABLE.lock();
         let Some(mut list) = t.remove(&from) else {

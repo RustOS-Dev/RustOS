@@ -17,8 +17,10 @@ wait "notification_server":true
 wait "theme":"tron"
 wait "kind":"labwc"
 wait # $
-# The dashboard: CPU load and memory in use, as the system panel shows them.
-send sleep 10; edex-de ipc state >/tmp/st; grep -o -e '"cpu_total":[0-9.e-]*' -e '"ram_used_kb":[0-9]*' -e '"processes":[0-9]*' /tmp/st
+# The dashboard: CPU load and memory in use, as the system panel shows them;
+# the RustOS network backend (ip) reports the Ethernet link in the top bar.
+send sleep 10; edex-de ipc state >/tmp/st; grep -o -e '.ethernet.:[a-z]*' -e '"cpu_total":[0-9.e-]*' -e '"ram_used_kb":[0-9]*' -e '"processes":[0-9]*' /tmp/st
+wait "ethernet":true
 wait "cpu_total":(0\.0*[1-9]|[1-9])
 wait "processes":[1-9]
 wait "ram_used_kb":[1-9]

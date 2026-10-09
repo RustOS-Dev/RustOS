@@ -126,7 +126,9 @@ fn pid_file(pid: u32, f: fn(Option<&Arc<Process>>) -> String) -> Arc<dyn Inode> 
     })
 }
 
-const PID_FILES: [&str; 6] = ["stat", "status", "cmdline", "comm", "maps", "environ"];
+const PID_FILES: [&str; 7] = [
+    "stat", "status", "statm", "cmdline", "comm", "maps", "environ",
+];
 
 impl Inode for ProcDir {
     fn metadata(&self) -> KResult<Metadata> {
@@ -176,6 +178,7 @@ impl Inode for ProcDir {
                 match name {
                     "stat" => Ok(pid_file(pid, gen_pid_stat)),
                     "status" => Ok(pid_file(pid, gen_pid_status)),
+                    "statm" => Ok(pid_file(pid, gen_pid_statm)),
                     "cmdline" => Ok(pid_file(pid, gen_pid_cmdline)),
                     "comm" => Ok(pid_file(pid, gen_pid_comm)),
                     "maps" => Ok(pid_file(pid, gen_pid_maps)),
@@ -306,19 +309,52 @@ fn gen_pid_stat(p: Option<&Arc<Process>>) -> String {
             (s.virtual_size(), s.resident_pages())
         })
         .unwrap_or((0, 0));
+    let t = crate::time::to_user_ticks;
+    let (utime, stime) = p.cpu_time();
+    let (cutime, cstime) = p.children_time();
+    let threads = p.live_threads();
+    let nice = threads
+        .first()
+        .map(|t| t.nice.load(Ordering::Relaxed) as i64)
+        .unwrap_or(0);
+    let cpu = threads.first().map(|t| t.last_cpu()).unwrap_or(0);
+    // All 52 fields of Linux's proc(5) layout; the ones RustOS does not
+    // track are 0.
     format!(
-        "{} ({}) {} {} {} {} 0 0 0 0 0 0 0 0 0 0 20 0 {} 0 {} {} {}\n",
+        "{} ({}) {} {} {} {} 0 -1 0 0 0 0 0 {} {} {} {} {} {} {} 0 {} {} {} {} \
+         0 0 0 0 0 0 0 0 0 0 0 0 17 {} 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
         p.pid,
         p.name.lock(),
         state_char(p),
         p.ppid.load(Ordering::SeqCst),
         p.pgid.load(Ordering::SeqCst),
         p.sid.load(Ordering::SeqCst),
-        p.live_threads().len(),
-        p.start_ticks,
+        t(utime),
+        t(stime),
+        t(cutime),
+        t(cstime),
+        20 + nice,
+        nice,
+        threads.len(),
+        t(p.start_ticks),
         vsz,
-        rss
+        rss,
+        u64::MAX,
+        cpu
     )
+}
+
+/// Sizes in pages: total, resident, shared, text, lib, data, dirty.
+fn gen_pid_statm(p: Option<&Arc<Process>>) -> String {
+    let Some(p) = p else { return String::new() };
+    let (vsz, rss) = p
+        .vm()
+        .map(|v| {
+            let s = v.lock();
+            (s.virtual_size(), s.resident_pages())
+        })
+        .unwrap_or((0, 0));
+    format!("{} {} 0 0 0 0 0\n", vsz / 4096, rss)
 }
 
 fn gen_pid_status(p: Option<&Arc<Process>>) -> String {
@@ -331,7 +367,7 @@ fn gen_pid_status(p: Option<&Arc<Process>>) -> String {
         })
         .unwrap_or((0, 0));
     format!(
-        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\nVmSize:\t{} kB\nVmRSS:\t{} kB\nThreads:\t{}\nSigPnd:\t{:016x}\nSigBlk:\t{:016x}\n",
+        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t{gid}\t{gid}\t{gid}\t{gid}\nVmSize:\t{} kB\nVmRSS:\t{} kB\nThreads:\t{}\nSigPnd:\t{:016x}\nSigBlk:\t{:016x}\n",
         p.name.lock(),
         state_char(p),
         p.pid,
@@ -345,6 +381,8 @@ fn gen_pid_status(p: Option<&Arc<Process>>) -> String {
             .first()
             .map(|t| t.sigmask.load(Ordering::SeqCst))
             .unwrap_or(0),
+        uid = p.uid.load(Ordering::SeqCst),
+        gid = p.gid.load(Ordering::SeqCst),
     )
 }
 
@@ -396,10 +434,18 @@ fn gen_version() -> String {
 
 fn gen_uptime() -> String {
     let ns = crate::time::nanos();
+    let cpus = crate::cpu::cpu_count().max(1) as usize;
+    let idle: u64 = crate::sched::CPU_TIME[..cpus]
+        .iter()
+        .map(|c| c.idle.load(Ordering::Relaxed))
+        .sum();
+    let idle = crate::time::to_user_ticks(idle);
     format!(
-        "{}.{:02} 0.00\n",
+        "{}.{:02} {}.{:02}\n",
         ns / 1_000_000_000,
-        (ns / 10_000_000) % 100
+        (ns / 10_000_000) % 100,
+        idle / 100,
+        idle % 100
     )
 }
 
@@ -476,8 +522,35 @@ fn gen_interrupts() -> String {
 }
 
 fn gen_stat() -> String {
+    let cpus = crate::cpu::cpu_count().max(1) as usize;
+    let t = crate::time::to_user_ticks;
+    let mut total = [0u64; 3];
+    let mut lines = String::new();
+    for (i, c) in crate::sched::CPU_TIME[..cpus].iter().enumerate() {
+        let v = [
+            c.user.load(Ordering::Relaxed),
+            c.system.load(Ordering::Relaxed),
+            c.idle.load(Ordering::Relaxed),
+        ];
+        for (a, b) in total.iter_mut().zip(v) {
+            *a += b;
+        }
+        // user nice system idle iowait irq softirq steal guest guest_nice
+        let _ = writeln!(
+            lines,
+            "cpu{} {} 0 {} {} 0 0 0 0 0 0",
+            i,
+            t(v[0]),
+            t(v[1]),
+            t(v[2])
+        );
+    }
     format!(
-        "cpu  0 0 0 0 0 0 0 0 0 0\nctxt {}\nbtime {}\nprocesses {}\n",
+        "cpu  {} 0 {} {} 0 0 0 0 0 0\n{}ctxt {}\nbtime {}\nprocesses {}\n",
+        t(total[0]),
+        t(total[1]),
+        t(total[2]),
+        lines,
         crate::sched::context_switches(),
         crate::time::unix_time() - crate::time::nanos() / 1_000_000_000,
         process::count()

@@ -97,6 +97,9 @@ pub struct Thread {
     /// User address to clear and futex-wake when the thread exits
     /// (`set_tid_address` / `CLONE_CHILD_CLEARTID`).
     pub clear_child_tid: AtomicU64,
+    /// CPU time used in user and kernel mode, in timer ticks (`time::HZ`).
+    pub utime: AtomicU64,
+    pub stime: AtomicU64,
     /// System call in progress (u64::MAX: none) and its first argument,
     /// for state dumps.
     pub syscall: AtomicU64,
@@ -410,6 +413,8 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         affinity: AtomicU64::new(u64::MAX),
         nice: AtomicI8::new(0),
         clear_child_tid: AtomicU64::new(0),
+        utime: AtomicU64::new(0),
+        stime: AtomicU64::new(0),
         syscall: AtomicU64::new(u64::MAX),
         syscall_arg: AtomicU64::new(0),
         wchan: AtomicU64::new(0),
@@ -732,6 +737,13 @@ pub fn yield_now() {
 /// Terminate the current thread.
 pub fn exit_current() -> ! {
     let t = current();
+    // Its CPU time stays with the process (getrusage, /proc/PID/stat).
+    if let Some(p) = t.process.lock().as_ref() {
+        p.add_exited_thread_time(
+            t.utime.load(Ordering::Relaxed),
+            t.stime.load(Ordering::Relaxed),
+        );
+    }
     irqsave(|| {
         t.set_state(State::Dead);
         DEAD.lock().push(t.clone());
@@ -741,8 +753,24 @@ pub fn exit_current() -> ! {
     unreachable!("dead thread rescheduled");
 }
 
-/// Called from the timer interrupt.
-pub fn timer_tick() {
+/// Ticks each CPU spent in user mode, in the kernel and idle (`/proc/stat`).
+pub struct CpuTime {
+    pub user: AtomicU64,
+    pub system: AtomicU64,
+    pub idle: AtomicU64,
+}
+
+pub static CPU_TIME: [CpuTime; cpu::MAX_CPUS] = [const {
+    CpuTime {
+        user: AtomicU64::new(0),
+        system: AtomicU64::new(0),
+        idle: AtomicU64::new(0),
+    }
+}; cpu::MAX_CPUS];
+
+/// Called from the timer interrupt; `user` tells whether it interrupted
+/// user mode.
+pub fn timer_tick(user: bool) {
     if !is_running() {
         return;
     }
@@ -763,6 +791,16 @@ pub fn timer_tick() {
         return;
     }
     let cur = unsafe { &*cur };
+    let times = &CPU_TIME[(pc.cpu_id as usize).min(cpu::MAX_CPUS - 1)];
+    if pc.current.load(Ordering::SeqCst) == pc.idle.load(Ordering::SeqCst) {
+        times.idle.fetch_add(1, Ordering::Relaxed);
+    } else if user {
+        times.user.fetch_add(1, Ordering::Relaxed);
+        cur.utime.fetch_add(1, Ordering::Relaxed);
+    } else {
+        times.system.fetch_add(1, Ordering::Relaxed);
+        cur.stime.fetch_add(1, Ordering::Relaxed);
+    }
     let q = cur.quantum.load(Ordering::Relaxed);
     if q <= 1 || pc.current.load(Ordering::SeqCst) == pc.idle.load(Ordering::SeqCst) {
         pc.need_resched.store(1, Ordering::SeqCst);

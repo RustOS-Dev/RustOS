@@ -1,0 +1,18 @@
+# Rust std programs on RustOS (M43.1): rust-hello (ports/rust-hello, built
+# with tools/rustos-cargo for x86_64-unknown-linux-musl, linked dynamically
+# against RustOS's musl) checks threads, files, processes, a pty, calloop
+# (epoll, timerfd, eventfd), signals (sigaction, signalfd), unwinding,
+# sockets, /proc, dlopen("libEGL.so.1") (Mesa, surfaceless) and a Wayland
+# connection to a headless Weston. Needs the weston and rust-hello ports
+# staged with tools/install-port.sh --initramfs.
+wait # $ 240
+send mkdir -p /tmp/xdg; chmod 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg; weston --backend=headless --socket=wayland-9 --log=/tmp/weston.log &
+sleep 10
+send WAYLAND_DISPLAY=wayland-9 rust-hello
+wait rust-hello: wayland ok 120
+wait rust-hello: \d+ passed, 0 failed, 0 skipped 120
+wait # $
+# Per-CPU lines in /proc/stat (2 CPUs; 4 with RUSTOS_SMP=4).
+send grep -c '^cpu[0-9]' /proc/stat
+wait \r\n[24]\r\n
+wait # $

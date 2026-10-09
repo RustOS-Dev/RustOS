@@ -317,16 +317,51 @@ pub fn getrlimit(n: u64, a: [u64; 6]) -> SysResult {
     Ok(0)
 }
 
-pub fn getrusage(buf: u64) -> SysResult {
-    uaccess::copy_to_user(buf, &[0u8; 144])?;
+/// getrusage(RUSAGE_SELF / RUSAGE_CHILDREN / RUSAGE_THREAD): CPU times
+/// and the maximum resident set size; the other counters are 0.
+pub fn getrusage(who: i64, buf: u64) -> SysResult {
+    const RUSAGE_SELF: i64 = 0;
+    const RUSAGE_CHILDREN: i64 = -1;
+    const RUSAGE_THREAD: i64 = 1;
+    let p = cur()?;
+    let (u, s) = match who {
+        RUSAGE_SELF => p.cpu_time(),
+        RUSAGE_CHILDREN => p.children_time(),
+        RUSAGE_THREAD => {
+            let t = crate::sched::current();
+            (
+                t.utime.load(Ordering::Relaxed),
+                t.stime.load(Ordering::Relaxed),
+            )
+        }
+        _ => return Err(EINVAL),
+    };
+    let rss_kb = if who == RUSAGE_CHILDREN {
+        0
+    } else {
+        p.vm().map(|v| v.lock().resident_pages() * 4).unwrap_or(0)
+    };
+    let tv = |ticks: u64| {
+        let us = ticks * 1_000_000 / crate::time::HZ;
+        [us / 1_000_000, us % 1_000_000]
+    };
+    let mut r = [0u64; 18];
+    r[..2].copy_from_slice(&tv(u));
+    r[2..4].copy_from_slice(&tv(s));
+    r[4] = rss_kb;
+    uaccess::write_user(buf, &r)?;
     Ok(0)
 }
 
 pub fn times(buf: u64) -> SysResult {
+    let t = crate::time::to_user_ticks;
     let ticks = crate::time::millis() / 10;
     if buf != 0 {
-        let t: [u64; 4] = [ticks, 0, 0, 0];
-        uaccess::write_user(buf, &t)?;
+        let p = cur()?;
+        let (u, s) = p.cpu_time();
+        let (cu, cs) = p.children_time();
+        let v: [u64; 4] = [t(u), t(s), t(cu), t(cs)];
+        uaccess::write_user(buf, &v)?;
     }
     Ok(ticks as i64)
 }

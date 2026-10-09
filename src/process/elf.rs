@@ -98,7 +98,7 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
     });
 
     let mut space = AddressSpace::new()?;
-    let (max_end, mut phdr_addr) = map_segments(&mut space, &data, &phdrs, bias, phoff)?;
+    let (max_end, mut phdr_addr) = map_segments(&mut space, &data, &phdrs, bias, phoff, path)?;
     if interp.is_some() && phdr_addr == 0 {
         return Err(ENOEXEC); // ld.so needs the program headers
     }
@@ -111,7 +111,7 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
                 return Err(ELIBBAD);
             }
             let ibias = if itype == ET_DYN { INTERP_BIAS } else { 0 };
-            map_segments(&mut space, &idata, &iphdrs, ibias, iphoff)?;
+            map_segments(&mut space, &idata, &iphdrs, ibias, iphoff, ipath)?;
             if ibias != 0
                 && let Some(dynph) = iphdrs.iter().find(|p| p.kind == PT_DYNAMIC)
             {
@@ -141,7 +141,7 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
         prot: PROT_READ | PROT_WRITE,
         flags: vm::MAP_PRIVATE,
         backing: Backing::Anon,
-        name: "[heap]",
+        name: "[heap]".into(),
     })?;
 
     // Stack.
@@ -159,7 +159,7 @@ pub fn load(path: &str, argv: &[String], envp: &[String]) -> KResult<Image> {
         prot: stack_prot,
         flags: vm::MAP_PRIVATE,
         backing: Backing::Anon,
-        name: "[stack]",
+        name: "[stack]".into(),
     })?;
     let aux = AuxInfo {
         entry,
@@ -217,6 +217,7 @@ fn map_segments(
     phdrs: &[Phdr],
     bias: u64,
     phoff: usize,
+    name: &str,
 ) -> KResult<(u64, u64)> {
     let mut max_end = 0u64;
     let mut phdr_addr = 0u64;
@@ -270,7 +271,7 @@ fn map_segments(
                 prot,
                 flags: vm::MAP_PRIVATE,
                 backing: Backing::Anon,
-                name: "[elf]",
+                name: name.into(),
             })?;
             s = next;
         }

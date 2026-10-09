@@ -1,0 +1,91 @@
+#!/bin/sh
+# cargo for Rust std programs on RustOS: builds for x86_64-unknown-linux-musl
+# linked dynamically against RustOS's musl (/lib/ld-musl-x86_64.so.1),
+# with tools/rustos-cc as the linker.
+#   tools/rustos-cargo build --release            # in a cargo project
+#   RUSTOS_STAGE=target/ports/build/labwc/stage tools/rustos-cargo build
+# With RUSTOS_STAGE set, C libraries come from that port stage (laid out
+# like /usr/local): pkg-config (tools/cross/rustos-pkg-config) finds them,
+# and the linker searches it (-L, -rpath-link). Build scripts' C code
+# (the cc crate) is compiled with tools/rustos-cc / rustos-c++.
+# Uses the nightly pinned in rust-toolchain.toml, which carries the musl
+# target, whatever toolchain the project itself names.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SYSROOT="${RUSTOS_SYSROOT:-$ROOT/target/sysroot}"
+"$ROOT/tools/build-musl.sh" "$SYSROOT" >&2 || exit 1
+T=x86_64-unknown-linux-musl
+TV=X86_64_UNKNOWN_LINUX_MUSL
+# Rust's std asks for -lgcc_s when it is not linked statically. RustOS has
+# no libgcc_s (and the host's libgcc_eh needs glibc), so that resolves to
+# LLVM's libunwind from the libcxx port, linked statically as for C++.
+if [ ! -f "$SYSROOT/usr/lib/libunwind.a" ]; then
+    echo "rustos-cargo: no libunwind in $SYSROOT (run tools/install-port.sh libcxx)" >&2
+    exit 1
+fi
+if [ ! -f "$SYSROOT/usr/lib/libgcc_s.so" ]; then
+    printf '/* RustOS: the unwinder is linked statically (tools/rustos-cargo) */\nINPUT(libunwind.a)\n' \
+        > "$SYSROOT/usr/lib/libgcc_s.so"
+fi
+if [ -z "$RUSTUP_TOOLCHAIN" ]; then
+    RUSTUP_TOOLCHAIN="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$ROOT/rust-toolchain.toml")"
+    export RUSTUP_TOOLCHAIN
+fi
+FLAGS="-C target-feature=-crt-static -C link-self-contained=no"
+if [ -n "$RUSTOS_STAGE" ]; then
+    RUSTOS_STAGE="$(cd "$RUSTOS_STAGE" && pwd)"
+    export RUSTOS_STAGE
+    L="$RUSTOS_STAGE/usr/local/lib"
+    FLAGS="$FLAGS -L native=$L -C link-arg=-Wl,-rpath-link,$L"
+    export PKG_CONFIG="$ROOT/tools/cross/rustos-pkg-config"
+    export PKG_CONFIG_x86_64_unknown_linux_musl="$PKG_CONFIG"
+    export PKG_CONFIG_ALLOW_CROSS=1
+    export CFLAGS_x86_64_unknown_linux_musl="-I$RUSTOS_STAGE/usr/local/include"
+fi
+export CARGO_BUILD_TARGET="$T"
+export "CARGO_TARGET_${TV}_LINKER=$ROOT/tools/rustos-cc"
+export "CARGO_TARGET_${TV}_RUSTFLAGS=$FLAGS ${RUSTOS_RUSTFLAGS:-}"
+export CC_x86_64_unknown_linux_musl="$ROOT/tools/rustos-cc"
+export CXX_x86_64_unknown_linux_musl="$ROOT/tools/rustos-c++"
+export AR_x86_64_unknown_linux_musl="${HOST_AR:-ar}"
+# Not the kernel's configuration (RUSTFLAGS would also reach build scripts).
+unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+# Inside the RustOS checkout (ports build under target/), cargo would also
+# read the kernel's .cargo/config.toml (build-std, the kernel target): run
+# it from outside the checkout with the project's manifest.
+case "$PWD/" in
+"$ROOT"/*)
+    if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+        dir="$PWD"
+        abs() { case "$1" in /*) echo "$1" ;; *) echo "$dir/$1" ;; esac; }
+        sub="$1"
+        shift
+        have_manifest=0
+        n=$#
+        i=0
+        prev=""
+        while [ $i -lt $n ]; do
+            a="$1"
+            shift
+            case "$prev" in --manifest-path|--target-dir) a="$(abs "$a")" ;; esac
+            case "$a" in
+            --manifest-path=*) a="--manifest-path=$(abs "${a#*=}")" ;;
+            --target-dir=*) a="--target-dir=$(abs "${a#*=}")" ;;
+            esac
+            case "$a" in --manifest-path*) have_manifest=1 ;; esac
+            set -- "$@" "$a"
+            prev="$a"
+            i=$((i + 1))
+        done
+        if [ "$have_manifest" = 0 ]; then
+            m="$(cargo locate-project --message-format plain 2>/dev/null)" || {
+                echo "rustos-cargo: no Cargo.toml in $PWD or its parents" >&2
+                exit 1
+            }
+            set -- --manifest-path "$m" "$@"
+        fi
+        cd "${TMPDIR:-/tmp}" || exit 1
+        exec cargo "$sub" "$@"
+    fi
+    ;;
+esac
+exec cargo "$@"

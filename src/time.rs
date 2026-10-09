@@ -46,6 +46,14 @@ pub fn ticks() -> u64 {
     TICKS.load(Ordering::Relaxed)
 }
 
+/// Clock ticks of the user ABI (`sysconf(_SC_CLK_TCK)`, /proc, times()).
+pub const USER_HZ: u64 = 100;
+
+/// Timer ticks (`HZ`) in user clock ticks (`USER_HZ`).
+pub fn to_user_ticks(ticks: u64) -> u64 {
+    ticks * USER_HZ / HZ
+}
+
 pub fn tsc_hz() -> u64 {
     TSC_HZ.load(Ordering::Relaxed)
 }
@@ -245,7 +253,7 @@ fn sysrq_watchdog() {
     }
 }
 
-fn timer_interrupt(_frame: &mut idt::TrapFrame) {
+fn timer_interrupt(frame: &mut idt::TrapFrame) {
     let cpu = crate::arch::x86_64::cpu::this();
     cpu.ticks.fetch_add(1, Ordering::Relaxed);
     if cpu.cpu_id == 0 {
@@ -255,7 +263,7 @@ fn timer_interrupt(_frame: &mut idt::TrapFrame) {
     if cpu.cpu_id == 0 {
         sysrq_watchdog();
     }
-    crate::sched::timer_tick();
+    crate::sched::timer_tick(frame.from_user());
 }
 
 // ---------------------------------------------------------------------------

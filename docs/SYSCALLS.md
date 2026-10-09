@@ -240,7 +240,13 @@ BITSET variants (private and shared, keyed by physical address).
 `exit` ends only the calling thread (clearing and waking its
 `set_tid_address`/`CLONE_CHILD_CLEARTID` word); `exit_group` ends the
 process. Each CPU has its own run queue; idle CPUs steal work;
-`setpriority` scales time slices (nice -20..19).
+`setpriority` scales time slices (nice -20..19). CPU time is sampled
+by the 250 Hz timer (user, kernel, idle per CPU and per thread):
+`getrusage` (`RUSAGE_SELF`, `RUSAGE_CHILDREN`, `RUSAGE_THREAD`; times
+and `ru_maxrss`, other counters 0), `times`, `/proc/stat` (per-CPU
+lines), `/proc/PID/stat` and `/proc/uptime` report it. Signals whose
+default action is to ignore them stay pending while blocked (so a
+signalfd sees `SIGCHLD`).
 
 ### Signals
 

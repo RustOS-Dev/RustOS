@@ -552,7 +552,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
             Ok(Ret::Value(0))
         }
         GETRLIMIT | PRLIMIT64 => v(proc_::getrlimit(n, a)),
-        GETRUSAGE => v(proc_::getrusage(a[1])),
+        GETRUSAGE => v(proc_::getrusage(a[0] as i32 as i64, a[1])),
         TIMES => v(proc_::times(a[0])),
 
         // Time

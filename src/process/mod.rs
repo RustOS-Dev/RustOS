@@ -17,7 +17,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 
 pub type Pid = u32;
 
@@ -51,6 +51,12 @@ pub struct Process {
     pub start_ticks: u64,
     /// Controlling terminal of the process's session.
     pub ctty: Mutex<Option<Arc<crate::tty::Tty>>>,
+    /// CPU time (timer ticks) of threads that have exited, and of
+    /// children that were waited for (with their own children's).
+    exited_utime: AtomicU64,
+    exited_stime: AtomicU64,
+    pub children_utime: AtomicU64,
+    pub children_stime: AtomicU64,
 }
 
 static PROCESSES: Mutex<BTreeMap<Pid, Weak<Process>>> = Mutex::new(BTreeMap::new());
@@ -99,6 +105,10 @@ impl Process {
                 Some(p) => p.ctty.lock().clone(),
                 None => Some(crate::tty::console()),
             }),
+            exited_utime: AtomicU64::new(0),
+            exited_stime: AtomicU64::new(0),
+            children_utime: AtomicU64::new(0),
+            children_stime: AtomicU64::new(0),
         });
         PROCESSES.lock().insert(pid, Arc::downgrade(&p));
         p
@@ -110,6 +120,32 @@ impl Process {
 
     pub fn parent(&self) -> Option<Arc<Process>> {
         find(self.ppid.load(Ordering::SeqCst))
+    }
+
+    pub fn add_exited_thread_time(&self, utime: u64, stime: u64) {
+        self.exited_utime.fetch_add(utime, Ordering::Relaxed);
+        self.exited_stime.fetch_add(stime, Ordering::Relaxed);
+    }
+
+    /// (user, system) CPU time of all its threads, in timer ticks.
+    pub fn cpu_time(&self) -> (u64, u64) {
+        let mut u = self.exited_utime.load(Ordering::Relaxed);
+        let mut s = self.exited_stime.load(Ordering::Relaxed);
+        for t in self.live_threads() {
+            if t.state() != sched::State::Dead {
+                u += t.utime.load(Ordering::Relaxed);
+                s += t.stime.load(Ordering::Relaxed);
+            }
+        }
+        (u, s)
+    }
+
+    /// (user, system) CPU time of waited-for children, in timer ticks.
+    pub fn children_time(&self) -> (u64, u64) {
+        (
+            self.children_utime.load(Ordering::Relaxed),
+            self.children_stime.load(Ordering::Relaxed),
+        )
     }
 
     pub fn main_thread(&self) -> Option<Arc<Thread>> {
@@ -526,7 +562,14 @@ pub fn wait(pid: i32, options: u32) -> KResult<(Pid, i32)> {
         };
         if let Some((cpid, status, reap)) = result {
             if reap {
-                p.children.lock().retain(|c| c.pid != cpid);
+                let mut children = p.children.lock();
+                if let Some(c) = children.iter().find(|c| c.pid == cpid) {
+                    let (u, s) = c.cpu_time();
+                    let (cu, cs) = c.children_time();
+                    p.children_utime.fetch_add(u + cu, Ordering::Relaxed);
+                    p.children_stime.fetch_add(s + cs, Ordering::Relaxed);
+                }
+                children.retain(|c| c.pid != cpid);
             }
             return Ok((cpid, status));
         }

@@ -170,9 +170,16 @@ pub fn send(p: &Arc<Process>, sig: u32) {
     if matches!(sig, SIGSTOP | SIGTSTP | SIGTTIN | SIGTTOU) {
         p.signals.pending.fetch_and(!bit(SIGCONT), Ordering::SeqCst);
     }
-    // Ignored signals are dropped at send time (except KILL/STOP).
+    // Ignored signals are dropped at send time (except KILL/STOP), unless
+    // blocked: like Linux, a blocked signal stays pending, so a signalfd
+    // (or sigwait) still sees e.g. SIGCHLD with its default disposition.
+    let blocked = p
+        .live_threads()
+        .iter()
+        .any(|t| t.sigmask.load(Ordering::SeqCst) & bit(sig) != 0);
     let ignored = sig != SIGKILL
         && sig != SIGSTOP
+        && !blocked
         && (action.handler == SIG_IGN
             || (action.handler == SIG_DFL && matches!(default_action(sig), Default_::Ignore)));
     if ignored {

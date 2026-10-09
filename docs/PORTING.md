@@ -52,6 +52,38 @@ library work; `cxxtest` (installed by the port, run by the `cxx` scenario)
 checks them. The specs add `--eh-frame-hdr` to every link, which unwinding
 needs.
 
+## Rust std programs: `rustos-cargo`
+
+Rust programs that use the standard library build for
+`x86_64-unknown-linux-musl` (in `rust-toolchain.toml`), linked
+dynamically against RustOS's musl: `tools/rustos-cargo` is cargo with
+`-C target-feature=-crt-static`, `tools/rustos-cc` as the linker and the
+pinned nightly, whatever toolchain the project names.
+
+```sh
+tools/install-port.sh libcxx                 # once: LLVM's libunwind for panics
+cd my-project && /path/to/RustOS/tools/rustos-cargo build --release
+# C libraries from a port stage (pkg-config, -L and -rpath-link):
+RUSTOS_STAGE=target/ports/build/labwc/stage tools/rustos-cargo build --release
+```
+
+* The unwinder (std asks for `-lgcc_s`) is LLVM's libunwind from the
+  libcxx port, linked statically; RustOS has no `libgcc_s.so`.
+* Build scripts' C code (the `cc` crate) is compiled with `rustos-cc` /
+  `rustos-c++`; `-sys` crates find their libraries in `$RUSTOS_STAGE`
+  through `tools/cross/rustos-pkg-config`.
+* Inside the RustOS checkout (e.g. ports under `target/`) cargo runs from
+  outside it, so the kernel's `.cargo/config.toml` (build-std, the kernel
+  target) does not apply.
+
+`ports/rust-hello` is the test program: threads, files, processes, a pty,
+calloop (epoll, timerfd, eventfd), signals (sigaction, signalfd), unwinding,
+sockets, `/proc`, CPU-time accounting, `dlopen("libEGL.so.1")` and a Wayland
+connection. The `rust-std` scenario (`tests/scenarios/linux/rust-std.txt`,
+weston and rust-hello ports in the image) runs it against a headless
+Weston. eDEX-DE (`ports/edex-de`, [DESKTOP.md](DESKTOP.md)) is built the
+same way.
+
 ## Meson and pkg-config
 
 `tools/cross/meson-cross.ini.in` is a meson cross file (replace `@ROOT@`
@@ -76,6 +108,7 @@ stages the result in `target/ports/NAME` (laid out like `/usr/local`).
 | `libcxx` | libc++/libc++abi/libunwind 18 into the sysroot, and `cxxtest` |
 | `weston` | Weston 14 (DRM and headless backends, pixman and GL renderers, desktop and kiosk shells, `weston-terminal`), Mesa 26.2 (EGL on GBM and Wayland, GLES 3.1; softpipe, virgl, zink, iris, RADV, ANV), the Vulkan loader and `vulkaninfo`, `kmscube`, and their stack, shared: wayland 1.26, wayland-protocols, libxkbcommon + xkeyboard-config, pixman, cairo, freetype, fontconfig, libpng, zlib, expat, libffi, libdrm 2.4.134 (amdgpu, nouveau; `modetest`), libevdev, mtdev, libudev-zero, libinput, seatd/libseat, libdisplay-info. Needs meson, ninja, cmake, gperf, bison, flex, hwdata, glslang-tools, Python mako/pyyaml/ply and LLVM 18 with clang, libclc and SPIRV-LLVM-Translator on the build host (Mesa's `mesa_clc` is built for the host) |
 | `labwc` | labwc 0.20 (on wlroots 0.20: DRM and libinput backends, GLES2 renderer, XWayland) and the foot terminal; Xwayland 24.1 with the X11 client libraries (libxcb, xcb-util(-wm), libX11, libXext, libXfixes, libxkbfile, xkbcomp, libxshmfence, libxcvt, libXfont2, libepoxy, libmd) and `xhello`, a minimal X client; GLib, Pango, HarfBuzz, FriBidi, libxml2, PCRE2, fcft, utf8proc and tllist; builds on the `weston` port's libraries (build that first) |
+| `rust-hello` | Rust std test program (`tools/rustos-cargo`), on the `weston` port's libwayland |
 | `gtk` | GTK 3.24 with only its Wayland backend (`gtk3-demo`, `gtk3-widget-factory`), gdk-pixbuf (PNG built in), ATK (from at-spi2-core, without D-Bus) and cairo-gobject; builds on the `labwc` port (build that first) |
 
 Running labwc (default config in `/usr/local/etc/xdg/labwc`: its

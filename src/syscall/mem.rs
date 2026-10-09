@@ -60,7 +60,7 @@ pub fn mmap(addr: u64, len: u64, prot: u32, flags: u32, fd: i32, off: u64) -> Sy
             prot,
             flags: flags | MAP_SHARED,
             backing,
-            name: "[device]",
+            name: "[device]".into(),
         })?;
         return Ok(start as i64);
     }
@@ -99,7 +99,11 @@ pub fn mmap(addr: u64, len: u64, prot: u32, flags: u32, fd: i32, off: u64) -> Sy
         prot,
         flags,
         backing,
-        name: if file.is_some() { "[file]" } else { "[anon]" },
+        name: match &file {
+            Some(f) if !f.path.is_empty() => f.path.as_str().into(),
+            Some(_) => "[file]".into(),
+            None => "[anon]".into(),
+        },
     })?;
     Ok(start as i64)
 }
@@ -181,7 +185,7 @@ pub fn brk(new: u64) -> SysResult {
             prot: PROT_READ | PROT_WRITE,
             flags: vm::MAP_PRIVATE,
             backing: Backing::Anon,
-            name: "[heap]",
+            name: "[heap]".into(),
         })?;
     } else if new_end < old_end {
         space.unmap_range(new_end, old_end);

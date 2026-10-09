@@ -1,0 +1,18 @@
+[package]
+name = "rust-hello"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Rust std on RustOS: threads, files, processes, a pty, calloop, signals, dlopen and Wayland"
+publish = false
+
+[dependencies]
+libc = "0.2"
+calloop = { version = "0.14", features = ["signals"] }
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+
+[profile.release]
+opt-level = 2
+debug = false
+strip = true

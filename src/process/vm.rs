@@ -102,7 +102,9 @@ pub struct Area {
     pub prot: u32,
     pub flags: u32,
     pub backing: Backing,
-    pub name: &'static str,
+    /// What /proc/PID/maps shows: the mapped file's path, or `[heap]`,
+    /// `[stack]`, `[anon]`...
+    pub name: Arc<str>,
 }
 
 pub struct AddressSpace {

@@ -203,21 +203,14 @@ pub fn user_fault(frame: &mut TrapFrame, sig: u32, addr: u64) {
         // Where the faulting code lives: file offset and size identify the
         // binary or library (for addr2line).
         let code = p.vm().and_then(|vm| {
-            vm.lock()
-                .find_area(frame.rip)
-                .and_then(|a| match &a.backing {
-                    vm::Backing::File { inode, offset } => Some(alloc::format!(
-                        " (code: file offset {:#x}, size {})",
-                        offset + (frame.rip - a.start),
-                        inode.metadata().map(|m| m.size).unwrap_or(0)
-                    )),
-                    _ => Some(alloc::format!(
-                        " (code in {} {:#x}-{:#x})",
-                        a.name,
-                        a.start,
-                        a.end
-                    )),
-                })
+            vm.lock().find_area(frame.rip).map(|a| match &a.backing {
+                vm::Backing::File { inode, offset } => alloc::format!(
+                    " (code: file offset {:#x}, size {})",
+                    offset + (frame.rip - a.start),
+                    inode.metadata().map(|m| m.size).unwrap_or(0)
+                ),
+                _ => alloc::format!(" (code in {} {:#x}-{:#x})", a.name, a.start, a.end),
+            })
         });
         crate::serial_println!(
             "[proc] pid {} ({}) {} at rip {:#x} addr {:#x} err {:#x}{}{}",

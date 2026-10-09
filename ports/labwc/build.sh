@@ -187,12 +187,20 @@ built libXfont2 || autotools_pkg libXfont2 "$(unpack "$SRC/libXfont2-2.0.9.tar.x
 built libmd || autotools_pkg libmd "$(unpack "$SRC/libmd-1.3.0.tar.xz")" --disable-static
 built libepoxy || meson_pkg libepoxy "$(unpack "$SRC/libepoxy-1.5.10.tar.xz")" \
     -Dglx=no -Dx11=false -Degl=yes -Dtests=false -Ddocs=false
-built xwayland || meson_pkg xwayland "$(unpack "$SRC/xwayland-24.1.14.tar.xz")" \
-    -Dglamor=true -Dglx=false -Dxvfb=false -Dxdmcp=false -Dxdm-auth-1=false \
-    -Dsecure-rpc=false -Dsha1=libmd -Dlibdecor=false -Dxwayland_ei=false -Ddocs=false \
-    -Ddevel-docs=false -Dxselinux=false -Dsystemd_notify=false -Dlibunwind=false \
-    -Dxkb_dir=/usr/local/share/X11/xkb -Dxkb_bin_dir=/usr/local/bin \
-    -Dxkb_output_dir=/tmp -Ddefault_font_path=/usr/local/share/fonts
+if ! built xwayland; then
+    d=$(unpack "$SRC/xwayland-24.1.14.tar.xz")
+    # The X server's smart scheduler (SIGALRM every 5 ms while clients are
+    # busy) leaves Xwayland unable to finish mapping windows on very slow
+    # (software-rendered) systems; schedule by the clock instead, as
+    # -dumbSched does. TESTING
+    sed -i 's/^Bool SmartScheduleSignalEnable = TRUE;/Bool SmartScheduleSignalEnable = FALSE;/' "$d/dix/dispatch.c"
+    meson_pkg xwayland "$d" \
+        -Dglamor=true -Dglx=false -Dxvfb=false -Dxdmcp=false -Dxdm-auth-1=false \
+        -Dsecure-rpc=false -Dsha1=libmd -Dlibdecor=false -Dxwayland_ei=false -Ddocs=false \
+        -Ddevel-docs=false -Dxselinux=false -Dsystemd_notify=false -Dlibunwind=false \
+        -Dxkb_dir=/usr/local/share/X11/xkb -Dxkb_bin_dir=/usr/local/bin \
+        -Dxkb_output_dir=/tmp -Ddefault_font_path=/usr/local/share/fonts
+fi
 if ! built wlroots; then
     d=$(unpack "$SRC/wlroots-0.20.1.tar.gz")
     # pkg-config returns the Xwayland path inside the stage; use the

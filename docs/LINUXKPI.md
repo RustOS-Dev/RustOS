@@ -381,7 +381,13 @@ Cargo features map to groups in `build/linuxkpi.rs` (`FEATURES`):
 
 - **Log output.** Linux messages appear in the kernel log as `[linux] …`.
   `linux.debug` in `kernel.conf` also shows `KERN_DEBUG` messages, including the
-  self-test stages.
+  self-test stages. They go to the serial port only: drawn on a DRM console,
+  each message would cause more (with `drm.debug`, every console flush is an
+  atomic commit that logs).
+- **DRM.** `drm.debug=MASK` in `kernel.conf` sets Linux's `drm.debug` module
+  parameter (`0x2` driver, `0x4` KMS, `0x10` atomic, `0x40` state, decimal or
+  `0x` hex); together with `linux.debug` it logs, for example, why an atomic
+  commit fails with EINVAL.
 - **`WARN_ON` and `BUG`.** `WARN_ON` prints a backtrace and continues. `BUG`
   and `panic()` stop the kernel with the message.
 - **Undefined symbols.** `tools/linux-import.py undefined <archive>` lists what

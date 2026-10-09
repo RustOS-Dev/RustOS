@@ -166,8 +166,27 @@ pub fn run_initcalls() {
 /// enabled (`linux.enable=`), which held back until now.
 pub fn params_loaded() {
     pci::PARAMS_READ.store(true, Ordering::SeqCst);
+    // `drm.debug=MASK` (Linux's drm.debug module parameter: 0x2 KMS, 0x10 atomic, ...); the
+    // messages are KERN_DEBUG, so `linux.debug` must be set too.
+    #[cfg(feature = "linux-drm")]
+    if let Some(mask) = crate::params::get("drm.debug").and_then(|v| parse_mask(&v)) {
+        unsafe extern "C" {
+            static mut __drm_debug: core::ffi::c_ulong;
+        }
+        // SAFETY: a plain word the DRM core only reads; written before userspace starts.
+        unsafe { __drm_debug = mask as core::ffi::c_ulong };
+    }
     if ready() {
         unsafe { kpi_pci_rescan() };
+    }
+}
+
+/// A number in decimal or `0x` hexadecimal.
+#[cfg(feature = "linux-drm")]
+fn parse_mask(v: &str) -> Option<u64> {
+    match v.strip_prefix("0x").or_else(|| v.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => v.parse().ok(),
     }
 }
 
@@ -199,6 +218,12 @@ extern "C" fn rustos_kpi_log(level: c_int, msg: *const u8, len: u64) {
     let text = core::str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
     // KERN_DEBUG (7) only with linux.debug set in kernel.conf.
     if level >= 7 && !crate::params::flag("linux.debug") {
+        return;
+    }
+    if level >= 7 {
+        // Serial only: drawing debug output on a DRM console makes more of it (with drm.debug,
+        // every console flush is an atomic commit that logs).
+        crate::serial_println!("[linux] {}", text);
         return;
     }
     crate::println!("[linux] {}", text);

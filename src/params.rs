@@ -15,6 +15,8 @@
 //! * `iwlwifi.agg=0` — no A-MPDU aggregation (block ack).
 //! * `net.debug=1` — log a one-line summary of every frame sent/received.
 //! * `log.persist=1` — mirror the kernel log to `/storage/log/kernel.log`.
+//! * `linux.debug=1` — show Linux `KERN_DEBUG` messages (serial port only).
+//! * `drm.debug=MASK` — Linux's DRM debug categories (`src/linuxkpi/mod.rs`).
 
 use crate::sync::RwLock;
 use alloc::collections::BTreeMap;

@@ -22,6 +22,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 const TIOCGPTN: u64 = 0x8004_5430;
 const TIOCSPTLCK: u64 = 0x4004_5431;
 const TIOCGPTLCK: u64 = 0x8004_5439;
+const TIOCGPTPEER: u64 = 0x5441;
 const MAX_BUFFER: usize = 64 * 1024;
 
 pub struct Pty {
@@ -150,6 +151,22 @@ impl FileLike for Master {
             TIOCGPTLCK => {
                 uaccess::write_user(arg, &(self.0.locked.load(Ordering::SeqCst) as i32))?;
                 Ok(0)
+            }
+            // Open the slave and return a descriptor for it (the argument holds the open
+            // flags), without a lookup of /dev/pts/N in the caller's view of the file system
+            // (Linux 4.13; rustix's openpty and with it alacritty_terminal use it). Like any
+            // open of the slave it fails while the pair is locked; it never sets the caller's
+            // controlling terminal.
+            TIOCGPTPEER => {
+                let flags = arg as u32 & (vfs::O_ACCMODE | vfs::O_NONBLOCK | vfs::O_CLOEXEC);
+                let file = vfs::open(
+                    &format!("/dev/pts/{}", self.0.index),
+                    flags | vfs::O_NOCTTY,
+                    0,
+                )?;
+                let p = crate::process::current().ok_or(EBADF)?;
+                let fd = p.files.lock().install(file, flags & vfs::O_CLOEXEC != 0)?;
+                Ok(fd as i64)
             }
             // Terminal settings and window size act on the slave.
             _ => self.0.slave.ioctl(cmd, arg),

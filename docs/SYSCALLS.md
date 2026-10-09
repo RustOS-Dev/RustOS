@@ -112,7 +112,7 @@ than once, never less) and `EPOLLONESHOT`. timerfd supports
 ### Terminals
 
 `/dev/ptmx` and `/dev/pts/N` pseudo-terminals (`TIOCGPTN`,
-`TIOCSPTLCK`), controlling terminals (`TIOCSCTTY`, `TIOCNOTTY`, `/dev/tty`),
+`TIOCSPTLCK`, `TIOCGPTPEER`), controlling terminals (`TIOCSCTTY`, `TIOCNOTTY`, `/dev/tty`),
 virtual consoles `/dev/tty1`..`tty4` (`VT_ACTIVATE`, `VT_GETSTATE`,
 `/dev/tty0` is the visible one). Programs that draw on `/dev/fb0` switch
 their console to graphics mode (`KDSETMODE KD_GRAPHICS`, `KDGETMODE`):

@@ -1403,6 +1403,19 @@ fn pty(r: &mut Report) {
         s >= 0,
         format!("{} {}", path.trim_end_matches('\0'), s),
     );
+    // TIOCGPTPEER: a second slave descriptor straight from the master.
+    let peer = sc(nr::IOCTL, &[m as usize, 0x5441, O_RDWR | O_NOCTTY]);
+    r.check("TIOCGPTPEER", peer >= 0, format!("{}", peer));
+    if peer >= 0 {
+        sc(nr::WRITE, &[peer as usize, b"peer\n".as_ptr() as usize, 5]);
+        let got = read_some(m, 6, 1000);
+        r.check(
+            "TIOCGPTPEER opens the slave",
+            got == b"peer\r\n",
+            format!("{:?}", core::str::from_utf8(&got)),
+        );
+        sc(nr::CLOSE, &[peer as usize]);
+    }
     // Typed input: echoed to the master, delivered as a line to the slave.
     sc(nr::WRITE, &[m as usize, b"hello\r".as_ptr() as usize, 6]);
     let echo = read_some(m, 7, 1000);

@@ -27,8 +27,8 @@ set -e
 # The session on Mesa (linux/desktop-edex-session: the shell and the greeter
 # on softpipe, the lock screen, edex-comp's GLES output on bochs) needs
 # eDEX-DE 197938c or later; older commits still pass linux/desktop-edex.
-COMMIT=7daae7ecec54ace772e77e11343a9cb74203e08e
-SHA256=a7d30db0cd97ad7a7c98e614a3e7e3512335dd1cc8bb4dd8136390dabad80d0c
+COMMIT=197938c5a58e63d9ff27104361d0e9f3871a850a
+SHA256=304108090c659fdb9e517521c2a42eb412c0d102e86b0af488adffb78f40085d
 TARGET=x86_64-unknown-linux-musl
 BINS="edex-comp edex-de edex-greeter edex-auth"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

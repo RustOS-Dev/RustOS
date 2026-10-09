@@ -44,6 +44,7 @@ pub mod nr {
     pub const SELECT: u64 = 23;
     pub const SCHED_YIELD: u64 = 24;
     pub const MADVISE: u64 = 28;
+    pub const MINCORE: u64 = 27;
     pub const DUP: u64 = 32;
     pub const DUP2: u64 = 33;
     pub const PAUSE: u64 = 34;
@@ -230,12 +231,13 @@ pub fn dispatch(frame: &mut TrapFrame) {
     let trace = tracing();
     if trace {
         crate::serial_println!(
-            "[strace] pid {} nr {} ({:#x}, {:#x}, {:#x})",
+            "[strace] pid {} nr {} ({:#x}, {:#x}, {:#x}){}",
             crate::process::current_pid(),
             n,
             a1,
             a2,
-            a3
+            a3,
+            trace_path(n, a1, a2)
         );
     }
     // Remember the number for syscall restart (error_code is unused here).
@@ -322,6 +324,22 @@ impl crate::vfs::sysfs::Attr for StraceAttr {
     }
     fn mode(&self) -> u32 {
         0o644
+    }
+}
+
+/// The path argument of path syscalls, for the trace.
+fn trace_path(n: u64, a1: u64, a2: u64) -> String {
+    let ptr = match n {
+        // open, stat, lstat, access, readlink, chdir, mkdir, unlink, statfs
+        2 | 4 | 6 | 21 | 89 | 80 | 83 | 87 | 137 => a1,
+        // openat, mkdirat, newfstatat, unlinkat, readlinkat, faccessat, statx, faccessat2
+        257 | 258 | 262 | 263 | 267 | 269 | 332 | 439 => a2,
+        59 => a1, // execve
+        _ => return String::new(),
+    };
+    match crate::process::uaccess::read_cstr(ptr, 4096) {
+        Ok(p) => alloc::format!(" {p:?}"),
+        Err(_) => String::new(),
     }
 }
 
@@ -500,6 +518,7 @@ fn handle(frame: &mut TrapFrame, n: u64, a: [u64; 6]) -> KResult<Ret> {
         MPROTECT => v(mem::mprotect(a[0], a[1], a[2] as u32)),
         BRK => v(mem::brk(a[0])),
         MADVISE => Ok(Ret::Value(0)),
+        MINCORE => v(mem::mincore(a[0], a[1], a[2])),
 
         // Processes
         FORK | VFORK => v(proc_::fork(frame)),

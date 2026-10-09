@@ -418,7 +418,18 @@ fn deliver_signals(frame: &mut TrapFrame) -> Option<i32> {
             continue;
         }
         finish_restart(frame, action.flags & SA_RESTART != 0);
-        if setup_frame(frame, sig, &action).is_err() {
+        // With interrupts on (signals are delivered on the way back to user
+        // mode, where they are off): writing the frame takes the
+        // address-space lock and may fault the user stack in, and a CPU
+        // spinning with interrupts off on a lock whose holder waits in its own
+        // run queue would never get it.
+        let were_on = x86_64::instructions::interrupts::are_enabled();
+        x86_64::instructions::interrupts::enable();
+        let written = setup_frame(frame, sig, &action);
+        if !were_on {
+            x86_64::instructions::interrupts::disable();
+        }
+        if written.is_err() {
             return Some(SIGSEGV as i32);
         }
         let mut actions = p.signals.actions.lock();

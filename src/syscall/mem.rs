@@ -155,6 +155,30 @@ pub fn mprotect(addr: u64, len: u64, prot: u32) -> SysResult {
     Ok(0)
 }
 
+/// mincore: every page of a mapping counts as resident (pages are faulted in
+/// on demand and never swapped out); ENOMEM where nothing is mapped.
+pub fn mincore(addr: u64, len: u64, vec: u64) -> SysResult {
+    if !addr.is_multiple_of(FRAME_SIZE) {
+        return Err(EINVAL);
+    }
+    let end = addr.checked_add(len).ok_or(ENOMEM)?;
+    let pages = (end.next_multiple_of(FRAME_SIZE) - addr) / FRAME_SIZE;
+    if pages > 1 << 20 {
+        return Err(ENOMEM);
+    }
+    let p = process::current().ok_or(ESRCH)?;
+    let vm = p.vm().ok_or(EFAULT)?;
+    {
+        let space = vm.lock();
+        let mut a = addr;
+        while a < end {
+            a = space.find_area(a).ok_or(ENOMEM)?.end;
+        }
+    }
+    process::uaccess::copy_to_user(vec, &alloc::vec![1u8; pages as usize])?;
+    Ok(0)
+}
+
 pub fn brk(new: u64) -> SysResult {
     let p = process::current().ok_or(ESRCH)?;
     let vm = p.vm().ok_or(EFAULT)?;

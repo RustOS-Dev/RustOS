@@ -62,6 +62,11 @@ pub struct Process {
 static PROCESSES: Mutex<BTreeMap<Pid, Weak<Process>>> = Mutex::new(BTreeMap::new());
 static NEXT_PID: AtomicU32 = AtomicU32::new(1);
 
+/// The most recently assigned process id (`/proc/loadavg`).
+pub fn last_pid() -> u32 {
+    NEXT_PID.load(Ordering::Relaxed).saturating_sub(1)
+}
+
 impl Process {
     fn new(parent: Option<&Arc<Process>>) -> Arc<Process> {
         let pid = NEXT_PID.fetch_add(1, Ordering::SeqCst);

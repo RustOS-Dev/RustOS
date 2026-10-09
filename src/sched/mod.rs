@@ -645,6 +645,64 @@ pub fn is_queued(tid: Tid) -> bool {
 }
 
 /// Number of runnable threads queued on each CPU.
+/// Load average in Linux's fixed point (11 fraction bits): the number of
+/// running and runnable threads, sampled every 5 s and decayed over 1, 5 and
+/// 15 minutes.
+static LOAD: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
+static LOAD_NEXT: AtomicU64 = AtomicU64::new(0);
+const FSHIFT: u32 = 11;
+const FIXED_1: u64 = 1 << FSHIFT;
+/// exp(-5 s / 1 min), exp(-5 s / 5 min), exp(-5 s / 15 min) in fixed point.
+const LOAD_EXP: [u64; 3] = [1884, 2014, 2037];
+
+/// Threads running (not idle) or waiting in a run queue. From the timer, so
+/// queues that are being changed right now are skipped.
+pub fn runnable_threads() -> usize {
+    let n = cpu::cpu_count().clamp(1, cpu::MAX_CPUS as u32);
+    let mut count = 0;
+    for id in 0..n {
+        if let Some(c) = cpu::cpu(id)
+            && c.current.load(Ordering::Relaxed) != c.idle.load(Ordering::Relaxed)
+        {
+            count += 1;
+        }
+        if let Some(q) = RUN_QUEUES[id as usize].try_lock() {
+            count += q.len();
+        }
+    }
+    count
+}
+
+fn sample_load(now: u64) {
+    let next = LOAD_NEXT.load(Ordering::Relaxed);
+    if now < next {
+        return;
+    }
+    LOAD_NEXT.store(now + 5_000_000_000, Ordering::Relaxed);
+    if next == 0 {
+        return;
+    }
+    let active = runnable_threads() as u64 * FIXED_1;
+    for (load, exp) in LOAD.iter().zip(LOAD_EXP) {
+        let l = load.load(Ordering::Relaxed);
+        let mut new = l * exp + active * (FIXED_1 - exp);
+        if active >= l {
+            new += FIXED_1 - 1;
+        }
+        load.store(new >> FSHIFT, Ordering::Relaxed);
+    }
+}
+
+/// The 1, 5 and 15 minute load averages, in hundredths.
+pub fn load_average() -> [u64; 3] {
+    core::array::from_fn(|i| (LOAD[i].load(Ordering::Relaxed) * 100 + FIXED_1 / 2) >> FSHIFT)
+}
+
+/// Threads that exist (kernel and user).
+pub fn thread_count() -> usize {
+    irqsave(|| ALL.lock().iter().filter(|w| w.strong_count() > 0).count())
+}
+
 pub fn queue_lengths() -> Vec<usize> {
     let n = cpu::cpu_count().clamp(1, cpu::MAX_CPUS as u32) as usize;
     irqsave(|| RUN_QUEUES[..n].iter().map(|q| q.lock().len()).collect())
@@ -786,6 +844,9 @@ pub fn timer_tick(user: bool) {
     if pc.cpu_id == 0 {
         crate::linuxkpi::tick();
     }
+    if pc.cpu_id == 0 {
+        sample_load(crate::time::nanos());
+    }
     let cur = pc.current.load(Ordering::SeqCst) as *const Thread;
     if cur.is_null() {
         return;
@@ -832,14 +893,7 @@ pub fn on_trap_exit(frame: &mut TrapFrame) {
         schedule();
     }
     if frame.from_user() {
-        // With interrupts on: writing a signal frame takes the address-space
-        // lock and may fault the user stack in, and a CPU spinning with
-        // interrupts off on a lock whose holder waits in its own run queue
-        // would never get it. Both callers disable interrupts again before
-        // returning to user mode.
-        x86_64::instructions::interrupts::enable();
         crate::process::signal::deliver_pending(frame);
-        x86_64::instructions::interrupts::disable();
     }
 }
 

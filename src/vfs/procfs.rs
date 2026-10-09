@@ -558,10 +558,19 @@ fn gen_stat() -> String {
 }
 
 fn gen_loadavg() -> String {
+    let l = crate::sched::load_average();
+    let threads = crate::sched::thread_count();
     format!(
-        "0.00 0.00 0.00 1/{} {}\n",
-        process::count(),
-        process::current_pid()
+        "{}.{:02} {}.{:02} {}.{:02} {}/{} {}\n",
+        l[0] / 100,
+        l[0] % 100,
+        l[1] / 100,
+        l[1] % 100,
+        l[2] / 100,
+        l[2] % 100,
+        crate::sched::runnable_threads().max(1),
+        threads,
+        process::last_pid()
     )
 }
 

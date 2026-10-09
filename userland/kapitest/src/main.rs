@@ -31,6 +31,7 @@ mod nr {
     pub const CLONE: usize = 56;
     pub const FORK: usize = 57;
     pub const EXIT: usize = 60;
+    pub const EXIT_GROUP: usize = 231;
     pub const WAIT4: usize = 61;
     pub const KILL: usize = 62;
     pub const GETPID: usize = 39;
@@ -1054,6 +1055,49 @@ fn fork_exit(r: &mut Report) {
         w == pid && (st >> 8) & 0xFF == 7,
         format!("wait {} status {:#x}", w, st),
     );
+
+    // exit_group ends a process whose other thread sleeps in futex: the thread dies too and
+    // the process disappears once reaped (it used to stay, a zombie holding its memory).
+    let pid = sc(nr::FORK, &[]);
+    if pid == 0 {
+        let tid = AtomicU32::new(0);
+        spawn_thread(futex_forever, 0, &tid);
+        time::sleep_ms(50);
+        sc(nr::EXIT_GROUP, &[9]);
+    }
+    let mut st = 0i32;
+    let w = sc(
+        nr::WAIT4,
+        &[pid as usize, &mut st as *mut i32 as usize, 0, 0],
+    );
+    let path = format!("/proc/{}/stat\0", pid);
+    let mut gone = false;
+    for _ in 0..50 {
+        let fd = sc(nr::OPEN, &[path.as_ptr() as usize, 0, 0]);
+        if fd < 0 {
+            gone = true;
+            break;
+        }
+        sc(nr::CLOSE, &[fd as usize]);
+        time::sleep_ms(20);
+    }
+    r.check(
+        "exit_group ends threads blocked in futex",
+        w == pid && (st >> 8) & 0xFF == 9 && gone,
+        format!("wait {} status {:#x} gone {}", w, st, gone),
+    );
+}
+
+static FUTEX_WORD: AtomicU32 = AtomicU32::new(0);
+
+/// Thread: wait on a futex nobody wakes.
+extern "C" fn futex_forever(_arg: usize) {
+    loop {
+        sc(
+            nr::FUTEX,
+            &[FUTEX_WORD.as_ptr() as usize, 0 /* FUTEX_WAIT */, 0, 0],
+        );
+    }
 }
 
 const CLOCK_PROCESS_CPUTIME_ID: usize = 2;

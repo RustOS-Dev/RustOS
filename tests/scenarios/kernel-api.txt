@@ -18,6 +18,7 @@ wait PASS tgkill runs the handler on the target thread 30
 wait PASS SIGCHLD siginfo CLD_EXITED 30
 wait PASS futex wake \+ CLEARTID join 30
 wait PASS scheduler fairness 30
+wait PASS exit_group ends threads blocked in futex 30
 wait PASS CPU time advances under a busy loop 30
 wait PASS children CPU time 30
 wait PASS /proc/stat parses 30

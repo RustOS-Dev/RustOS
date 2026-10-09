@@ -745,6 +745,14 @@ pub fn has_pending() -> bool {
     let Some(p) = t.process.lock().clone() else {
         return false;
     };
+    // Another thread is tearing the process down (exit_group, a fatal signal) and told this
+    // one to die (`do_exit`): every sleep that ends on signals must end, so the thread reaches
+    // the return to user mode and exits there. Without this a thread blocked in futex or
+    // epoll_wait slept on, keeping the zombie and its memory forever. (The exiting thread
+    // itself is not interrupted: its own teardown still sleeps normally.)
+    if p.zombie.load(Ordering::SeqCst) && t.interrupted.load(Ordering::SeqCst) {
+        return true;
+    }
     let shared = p.signals.shared.pending();
     (t.sig.pending.pending() | shared) & !t.sig.blocked() != 0 || shared & bit(SIGKILL) != 0
 }

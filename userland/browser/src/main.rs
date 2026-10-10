@@ -1865,11 +1865,17 @@ fn batch_scripts(
         false,
         10_000,
     );
-    // Keep serving timers, requests and sockets until quiet for 300 ms.
+    // Keep serving timers, requests and sockets until quiet for 300 ms, and
+    // no timer of the page is due before the settle limit.
     let mut quiet_since = rustos_rt::time::millis();
     loop {
         let now = rustos_rt::time::millis();
-        if now - start > settle_ms || now - quiet_since > 300 {
+        let timer_due = e
+            .script
+            .as_ref()
+            .and_then(|s| s.next_timer)
+            .is_some_and(|t| t <= start + settle_ms);
+        if now - start > settle_ms || (now - quiet_since > 300 && !timer_due) {
             break;
         }
         if e.script.as_ref().is_some_and(|s| !s.actions.is_empty()) {

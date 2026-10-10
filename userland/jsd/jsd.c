@@ -14,6 +14,7 @@
  *   recv()            block for the next line from the browser
  *   now()             monotonic milliseconds
  *   setTimer(id, ms)  call __onTimer(id) after ms (replaces a timer id)
+ *   nextTimer()       ms until the next timer is due, -1 for none
  *   clearTimer(id)
  *   random()          a random 32-bit integer (for crypto.getRandomValues)
  *   evalScript(code, url)          run a classic script
@@ -185,6 +186,20 @@ static JSValue h_clear_timer(JSContext *c, JSValueConst this, int argc, JSValueC
         }
     }
     return JS_UNDEFINED;
+}
+
+/* nextTimer(): milliseconds until the next timer is due, or -1 if none. */
+static JSValue h_next_timer(JSContext *c, JSValueConst this, int argc, JSValueConst *argv)
+{
+    if (ntimers == 0)
+        return JS_NewInt64(c, -1);
+    double next = timers[0].due;
+    for (int i = 1; i < ntimers; i++) {
+        if (timers[i].due < next)
+            next = timers[i].due;
+    }
+    double left = next - now_ms();
+    return JS_NewInt64(c, left > 0 ? (int64_t)left : 0);
 }
 
 static JSValue h_random(JSContext *c, JSValueConst this, int argc, JSValueConst *argv)
@@ -382,6 +397,7 @@ int main(int argc, char **argv)
     add_fn(host, "now", h_now, 0);
     add_fn(host, "setTimer", h_set_timer, 2);
     add_fn(host, "clearTimer", h_clear_timer, 1);
+    add_fn(host, "nextTimer", h_next_timer, 0);
     add_fn(host, "random", h_random, 0);
     add_fn(host, "log", h_log, 1);
     add_fn(host, "evalScript", h_eval_script, 2);

@@ -54,6 +54,8 @@ pub struct Script {
     pub notice: Option<String>,
     /// Audio clips and players of the page's media elements.
     pub media: crate::media::Media,
+    /// When jsd's next timer is due (ms clock), from its last idle message.
+    pub next_timer: Option<u64>,
     seq: i64,
 }
 
@@ -152,6 +154,7 @@ pub fn start(e: &mut Entry, referrer: &str, cols: usize, rows: usize) -> bool {
         scroll: None,
         notice: None,
         media: crate::media::Media::default(),
+        next_timer: None,
         seq: 0,
     };
     s.js.send(&init);
@@ -372,7 +375,15 @@ fn handle(e: &mut Entry, loader: &mut Loader, sessions: &mut Sessions, ui: &mut 
             crate::sockets::open(e, loader, m);
         }
         "wsSend" | "wsClose" | "esClose" => crate::sockets::command(e, m),
-        "clipboard" | "idle" | "eventDone" | "evalResult" | "unloaded" => {}
+        "idle" => {
+            if let Some(s) = e.script.as_mut() {
+                s.next_timer = m
+                    .int("next")
+                    .filter(|&n| n >= 0)
+                    .map(|n| time::millis() + n as u64);
+            }
+        }
+        "clipboard" | "eventDone" | "evalResult" | "unloaded" => {}
         _ => {}
     }
 }

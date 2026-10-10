@@ -56,7 +56,9 @@
       // Handle messages that arrived during synchronous requests.
       H.setTimer(-1, 0);
     }
-    J.send({ t: "idle" });
+    // `next`: when the next timer is due (ms, -1 for none), so a host that waits
+    // for the page to settle knows a timer is still coming.
+    J.send({ t: "idle", next: H.nextTimer() });
   };
 
   G.__onMessage = function (line) {

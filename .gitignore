@@ -14,3 +14,4 @@ __pycache__/
 crates/*/target
 crates/*/Cargo.lock
 !crates/rustos-rt/Cargo.lock
+/rustos-local.img

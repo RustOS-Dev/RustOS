@@ -3,7 +3,8 @@
 # the serial console. Usage: tools/run-scenarios.sh [kernel-elf] [scenario...]
 # A scenario's QEMU arguments come from the .args file next to it.
 # tests/scenarios/linux/ holds scenarios for kernels built with linux-*
-# features; they run only when named.
+# features, tests/scenarios/ports/ those that need ports in the boot image
+# (tools/install-port.sh --initramfs); they run only when named.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KERNEL="${1:-$ROOT/target/x86_64-rustos/debug/rustos}"

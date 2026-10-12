@@ -115,8 +115,27 @@ ovmf = next((c for c in ["/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVM
              "/usr/share/ovmf/OVMF.fd", "/usr/share/edk2/ovmf/OVMF_CODE.fd"] if os.path.exists(c)), None)
 if ovmf is None:
     sys.exit("OVMF firmware not found")
+def _loaded_mib(path):
+    """MiB the kernel's PT_LOAD segments occupy (its boot image included)."""
+    import struct
+    with open(path, "rb") as f:
+        h = f.read(64)
+        phoff, = struct.unpack_from("<Q", h, 32)
+        phentsize, phnum = struct.unpack_from("<HH", h, 54)
+        f.seek(phoff)
+        ph = f.read(phentsize * phnum)
+    total = 0
+    for i in range(phnum):
+        ptype, = struct.unpack_from("<I", ph, i * phentsize)
+        if ptype == 1:
+            total += struct.unpack_from("<Q", ph, i * phentsize + 40)[0]
+    return total >> 20
+# 512 MiB, or more for a kernel whose boot image carries large ports (the
+# desktop's Mesa with LLVM): the kernel and its boot image stay in memory.
+# A scenario's own -m (in its .args) comes later and wins.
+mem = max(512, -(-(_loaded_mib(elf) * 2 + 256) // 256) * 256)
 cmd = ["qemu-system-x86_64", "-drive", f"if=pflash,format=raw,readonly=on,file={ovmf}",
-       "-drive", f"format=raw,file={img}", "-machine", "q35", "-m", "512M", "-cpu", "max", "-smp", os.environ.get("RUSTOS_SMP", "2"),
+       "-drive", f"format=raw,file={img}", "-machine", "q35", "-m", f"{mem}M", "-cpu", "max", "-smp", os.environ.get("RUSTOS_SMP", "2"),
        "-serial", "stdio", "-display", "none", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"] + extra
 # Kernel parameters reach the kernel as a fw_cfg file. The eDEX-DE session starts at boot when
 # its port is in the image; scenarios run without it unless their .args pass their own.
@@ -216,12 +235,14 @@ for line in open(script):
         time.sleep(0.5)
     elif op == "hostrun":
         # Run a host command; its output goes to the log and must succeed.
+        started = time.monotonic()
         try:
             r = subprocess.run(arg, shell=True, capture_output=True, timeout=60)
             code, out = r.returncode, r.stdout + r.stderr
         except subprocess.TimeoutExpired as e:
             code, out = "timeout", (e.stdout or b"") + (e.stderr or b"")
-        log += f"[host] {arg}\n".encode() + out
+        took = time.monotonic() - started
+        log += f"[host] {arg}\n".encode() + out + f"[host] ({took:.1f} s)\n".encode()
         if code != 0:
             sys.stdout.buffer.write(log + buf)
             print(f"\n*** host command failed: {arg!r} (exit {code})")

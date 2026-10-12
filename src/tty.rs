@@ -1091,11 +1091,21 @@ pub fn debug_dump() {
         };
         if lost {
             dprint!(
-                "[sysrq] {} {} Ready but in no run queue{}",
+                "[sysrq] {} {} {} Ready but in no run queue{}",
                 if user { "thread" } else { "kthread" },
                 tid,
+                name,
                 site()
             );
+            if let Some(t) = crate::sched::find_thread(tid) {
+                let (on_cpu, last_cpu) = t.cpu_state();
+                dprint!(
+                    "[sysrq]   on_cpu {} last_cpu {} history {:?}",
+                    on_cpu,
+                    last_cpu,
+                    t.history()
+                );
+            }
         } else if !user {
             dprint!("[sysrq] kthread {} {:?} {}", tid, state, name);
         }

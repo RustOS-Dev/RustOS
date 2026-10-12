@@ -111,6 +111,28 @@ pub struct Thread {
     pub linux_task: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
     /// `core::panic::Location` of the last state change (state dumps).
     state_site: AtomicUsize,
+    /// The last scheduler events for this thread (state changes, run-queue
+    /// pushes and pops) and where they happened, for state dumps.
+    history: [AtomicUsize; HISTORY],
+    history_ev: [AtomicU8; HISTORY],
+    history_next: AtomicUsize,
+}
+
+const HISTORY: usize = 12;
+
+/// Scheduler events in a thread's history (besides state changes, which
+/// record the new state: 0 Ready, 1 Running, 2 Blocked, 3 Dead).
+#[derive(Clone, Copy)]
+#[repr(u8)]
+enum Ev {
+    Woken = 10,
+    Queued = 11,
+    Requeued = 12,
+    Picked = 13,
+    PushedBack = 14,
+    DroppedStale = 15,
+    Stolen = 16,
+    Preempted = 17,
 }
 
 unsafe impl Send for Thread {}
@@ -130,6 +152,53 @@ impl Thread {
     fn set_state(&self, s: State) {
         self.state.store(s as u8, Ordering::SeqCst);
         self.note_state_site();
+        self.note_event(s as u8);
+    }
+
+    /// Record a scheduler event and where it happened (state dumps).
+    #[track_caller]
+    fn note_event(&self, ev: u8) {
+        let i = self.history_next.fetch_add(1, Ordering::Relaxed) % HISTORY;
+        self.history[i].store(
+            core::panic::Location::caller() as *const _ as usize,
+            Ordering::Relaxed,
+        );
+        self.history_ev[i].store(ev, Ordering::Relaxed);
+    }
+
+    /// The recorded scheduler events, oldest first ("event@file:line").
+    pub fn history(&self) -> Vec<String> {
+        let next = self.history_next.load(Ordering::Relaxed);
+        let start = next.saturating_sub(HISTORY);
+        (start..next)
+            .filter_map(|n| {
+                let i = n % HISTORY;
+                let p = self.history[i].load(Ordering::Relaxed)
+                    as *const core::panic::Location<'static>;
+                let l = unsafe { p.as_ref() }?;
+                let ev = match self.history_ev[i].load(Ordering::Relaxed) {
+                    0 => "ready",
+                    1 => "running",
+                    2 => "blocked",
+                    3 => "dead",
+                    10 => "woken",
+                    11 => "queued",
+                    12 => "requeued",
+                    13 => "picked",
+                    14 => "pushed-back",
+                    15 => "dropped-stale",
+                    16 => "stolen",
+                    17 => "preempted-before-sleep",
+                    _ => "?",
+                };
+                Some(alloc::format!("{ev}@{}:{}", l.file(), l.line()))
+            })
+            .collect()
+    }
+
+    /// on_cpu and last_cpu (state dumps).
+    pub fn cpu_state(&self) -> (u64, u32) {
+        (self.on_cpu.load(Ordering::SeqCst), self.last_cpu())
     }
 
     /// Remember where the state last changed (state dumps).
@@ -420,6 +489,9 @@ fn new_thread(name: &str, entry: u64, arg: u64) -> Arc<Thread> {
         wchan: AtomicU64::new(0),
         linux_task: core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
         state_site: AtomicUsize::new(0),
+        history: [const { AtomicUsize::new(0) }; HISTORY],
+        history_ev: [const { AtomicU8::new(0) }; HISTORY],
+        history_next: AtomicUsize::new(0),
     });
     irqsave(|| ALL.lock().push(Arc::downgrade(&t)));
     t
@@ -577,7 +649,9 @@ fn enable_fpu() {
 
 /// Queue a runnable thread: on its last CPU if that is idle, else on an
 /// idle CPU it may use, else on its last CPU; kick the chosen CPU.
+#[track_caller]
 fn enqueue(t: Arc<Thread>) {
+    t.note_event(Ev::Queued as u8);
     let me = this_cpu();
     let n = cpu::cpu_count().clamp(1, cpu::MAX_CPUS as u32);
     let idle = |id: u32| {
@@ -626,6 +700,7 @@ pub fn wake(t: &Arc<Thread>) {
             .is_ok()
         {
             t.state_site.store(site, Ordering::Relaxed);
+            t.note_event(Ev::Woken as u8);
             enqueue(t.clone());
         } else {
             t.wakeup_pending.store(true, Ordering::SeqCst);
@@ -736,10 +811,29 @@ pub fn set_affinity(t: &Arc<Thread>, mask: u64) {
 /// Returns false if a wakeup already arrived (so the caller should not sleep).
 pub fn prepare_block() -> bool {
     let t = current();
-    if t.wakeup_pending.swap(false, Ordering::SeqCst) {
+    // Blocked first, then look for a wakeup that came earlier: one that
+    // lands between the two steps makes the thread Ready itself. Checking
+    // first lost a wakeup arriving between the check and the state change
+    // (the waker saw a running thread and only set the flag), and the
+    // thread slept with the flag set: a LinuxKPI workqueue worker missed
+    // its work that way and usbnet stalled.
+    irqsave(|| t.set_state(State::Blocked));
+    if t.wakeup_pending.swap(false, Ordering::SeqCst)
+        && t.state
+            .compare_exchange(
+                State::Blocked as u8,
+                State::Running as u8,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
+    {
+        t.note_event(State::Running as u8);
         return false;
     }
-    t.set_state(State::Blocked);
+    // Still Blocked, or a waker already made it Ready and queued it: either
+    // way the caller goes through schedule(), which runs it again when it
+    // is Ready.
     true
 }
 
@@ -882,13 +976,17 @@ pub fn on_trap_exit(frame: &mut TrapFrame) {
         // holding the lock that condition takes) has not gone to sleep
         // yet: preemption keeps it runnable. It re-checks and blocks
         // again itself; if a waker already made it Ready, nothing changes.
-        if let Some(t) = try_current() {
-            let _ = t.state.compare_exchange(
-                State::Blocked as u8,
-                State::Running as u8,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            );
+        if let Some(t) = try_current()
+            && t.state
+                .compare_exchange(
+                    State::Blocked as u8,
+                    State::Running as u8,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+        {
+            t.note_event(Ev::Preempted as u8);
         }
         schedule();
     }
@@ -939,9 +1037,16 @@ fn pick_next(me: u32) -> Option<Arc<Thread>> {
                     enqueue(t);
                     rq = RUN_QUEUES[me as usize].lock();
                 }
-                State::Ready if runnable(&t) => return Some(t),
-                State::Ready => rq.push_back(t), // still switching out elsewhere
-                _ => {}                          // stale entry
+                State::Ready if runnable(&t) => {
+                    t.note_event(Ev::Picked as u8);
+                    return Some(t);
+                }
+                State::Ready => {
+                    // still switching out elsewhere
+                    t.note_event(Ev::PushedBack as u8);
+                    rq.push_back(t);
+                }
+                _ => t.note_event(Ev::DroppedStale as u8), // stale entry
             }
         }
     }
@@ -955,7 +1060,9 @@ fn pick_next(me: u32) -> Option<Arc<Thread>> {
     }
     let mut rq = RUN_QUEUES[busiest.1 as usize].lock();
     let i = rq.iter().rposition(|t| runnable(t) && t.allowed_on(me))?;
-    rq.remove(i)
+    let t = rq.remove(i)?;
+    t.note_event(Ev::Stolen as u8);
+    Some(t)
 }
 
 /// Switch to the next runnable thread (or keep running the current one).
@@ -1006,6 +1113,7 @@ pub fn schedule() {
             unsafe { Arc::increment_strong_count(cur_ptr) };
             let t = unsafe { Arc::from_raw(cur_ptr) };
             if cur.allowed_on(me) {
+                t.note_event(Ev::Requeued as u8);
                 RUN_QUEUES[me as usize].lock().push_back(t);
             } else {
                 enqueue(t);

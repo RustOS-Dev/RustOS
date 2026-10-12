@@ -26,8 +26,9 @@ wait "processes":[1-9]
 wait "ram_used_kb":[1-9]
 wait # $
 monitor screendump /tmp/rustos-edex/desktop.ppm
-# Tron: the dark blue background, cyan panel borders, teal panel headers.
-hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex/desktop.ppm size=1280x800 'count:4,20,28>=400000' 'count:0,207,249>=300' 255,300=2,181,217~30 997,300=2,181,217~30 1050,77=4,82,100~24
+# Tron: the dark blue background, cyan panel borders, teal panel headers, and
+# light text (glyphs are textures: none are drawn if texture binding is wrong).
+hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex/desktop.ppm size=1280x800 'count:4,20,28>=400000' 'count:0,207,249>=300' 255,300=2,181,217~30 997,300=2,181,217~30 1050,77=4,82,100~24 'count:199,229,254>=800'
 # Keys typed with QEMU's sendkey reach eDEX's terminal (evdev -> libinput ->
 # labwc -> eDEX -> alacritty_terminal -> pty -> shell).
 send edex-de ipc focus terminal; for i in $(seq 1 60); do edex-de ipc state | grep -q 'shell_focused.:true' && break; sleep 3; done; echo "focused-$i"

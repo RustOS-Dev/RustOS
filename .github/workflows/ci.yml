@@ -142,8 +142,11 @@ jobs:
             !target/ports/src
           key: ports-built-${{ hashFiles('ports/**', 'tools/cross/**', 'tools/port-lib.sh', 'tools/build-musl.sh', 'tools/rustos-cc', 'tools/rustos-c++', 'tools/rustos-cargo') }}
 
-      - name: Cache port sources and test262
-        uses: actions/cache@v4
+      # Port sources and test262: restored here, saved at the end even when
+      # a step failed (actions/cache saves only after a successful job).
+      - name: Restore port sources and test262
+        id: src-cache
+        uses: actions/cache/restore@v4
         with:
           path: target/ports/src
           key: ports-src-${{ hashFiles('ports/*/build.sh', 'tools/fetch-test262.sh', 'tests/test262.list') }}
@@ -314,6 +317,12 @@ jobs:
           name: scenario-logs
           path: /tmp/scenario-*.log
           if-no-files-found: ignore
+      - name: Save port sources and test262
+        if: ${{ !cancelled() && steps.src-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: target/ports/src
+          key: ${{ steps.src-cache.outputs.cache-primary-key }}
       - name: Save built ports
         if: ${{ !cancelled() && steps.ports-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4

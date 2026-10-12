@@ -15,6 +15,6 @@ wait HASH-OK 180
 wait # $
 send mkdir -p /srv/www && cp /tmp/big.bin /srv/www/ && httpd -p 8080 &
 wait serving /srv/www 60
-hostrun curl -s --retry 5 --retry-connrefused --retry-delay 1 --max-time 60 http://127.0.0.1:18092/big.bin | sha256sum | cut -d' ' -f1 | diff - /tmp/rustos-eth/big.sha
+hostrun curl -s --retry 5 --retry-connrefused --retry-delay 1 --max-time 50 -o /tmp/rustos-eth/up.bin -w 'curl: %{http_code}, %{size_download} bytes in %{time_total} s\n' http://127.0.0.1:18092/big.bin; sha256sum /tmp/rustos-eth/up.bin | cut -d' ' -f1 | diff - /tmp/rustos-eth/big.sha
 send cat /proc/net/dev | grep eth0
 wait # $

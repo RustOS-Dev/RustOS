@@ -164,6 +164,25 @@ def read_until(rx, timeout):
                 break
             buf += chunk
     return None
+def dump_state():
+    """Print the kernel's state (a serial BREAK is SysRq for RustOS)."""
+    global buf
+    try:
+        import socket
+        # Two samples a few seconds apart: a CPU stuck in one place shows
+        # the same location twice.
+        for sample in (1, 2):
+            m = socket.socket(socket.AF_UNIX)
+            m.connect(mon_path)
+            m.sendall(b"chardev-send-break serial0\n")
+            time.sleep(0.3)
+            m.close()
+            buf = b""
+            read_until("(?!x)x", 5)  # never matches: collect 5 s of output
+            dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l or b"[nmi]" in l)
+            print(f"*** kernel state ({sample}):\n" + dump.decode(errors="replace"))
+    except Exception as e:
+        print(f"*** no state dump: {e}")
 ok = True
 log = b""
 hostprocs = []
@@ -182,23 +201,7 @@ for line in open(script):
         if out is None:
             sys.stdout.buffer.write(log + buf)
             print(f"\n*** TIMEOUT waiting for {rx!r}")
-            # Ask the kernel for a state dump (serial BREAK = SysRq).
-            try:
-                import socket
-                # Two samples a few seconds apart: a CPU stuck in one
-                # place shows the same location twice.
-                for sample in (1, 2):
-                    m = socket.socket(socket.AF_UNIX)
-                    m.connect(mon_path)
-                    m.sendall(b"chardev-send-break serial0\n")
-                    time.sleep(0.3)
-                    m.close()
-                    buf = b""
-                    read_until("(?!x)x", 5)  # never matches: collect 5 s of output
-                    dump = b"\n".join(l for l in buf.split(b"\n") if b"[sysrq]" in l or b"[nmi]" in l)
-                    print(f"*** kernel state ({sample}):\n" + dump.decode(errors="replace"))
-            except Exception as e:
-                print(f"*** no state dump: {e}")
+            dump_state()
             ok = False
             break
         log += out
@@ -246,6 +249,7 @@ for line in open(script):
         if code != 0:
             sys.stdout.buffer.write(log + buf)
             print(f"\n*** host command failed: {arg!r} (exit {code})")
+            dump_state()
             ok = False
             break
     elif op == "sleep":

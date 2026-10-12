@@ -126,8 +126,21 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+            !target/ports
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-
+
+      # Built ports (their per-package stamps skip finished packages), only
+      # for exactly the same port scripts: an older build could carry stamps
+      # of packages built with other options.
+      - name: Restore built ports
+        id: ports-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            target/ports
+            !target/ports/src
+          key: ports-built-${{ hashFiles('ports/**', 'tools/cross/**', 'tools/port-lib.sh', 'tools/build-musl.sh', 'tools/rustos-cc', 'tools/rustos-c++', 'tools/rustos-cargo') }}
 
       - name: Cache port sources and test262
         uses: actions/cache@v4
@@ -144,7 +157,9 @@ jobs:
           sudo apt-get install -y qemu-system-x86 ovmf e2fsprogs curl openssl python3 gcc fonts-dejavu-core
           # C++ runtime and desktop ports (tools/rustos-c++, ports/libcxx,
           # ports/weston)
-          sudo apt-get install -y g++ cmake ninja-build meson gperf bison flex pkg-config libexpat1-dev libffi-dev hwdata
+          sudo apt-get install -y g++ cmake ninja-build gperf bison flex pkg-config libexpat1-dev libffi-dev hwdata
+          # Meson 1.4 or newer (libxkbcommon); Ubuntu 24.04 has 1.3.
+          sudo pip3 install --break-system-packages meson==1.12.1
           # Mesa (ports/weston): Python modules for its generators, glslang,
           # and LLVM/clang/libclc/SPIRV-LLVM-Translator for the host mesa_clc
           sudo apt-get install -y python3-mako python3-yaml python3-ply glslang-tools spirv-tools \
@@ -297,3 +312,11 @@ jobs:
           name: scenario-logs
           path: /tmp/scenario-*.log
           if-no-files-found: ignore
+      - name: Save built ports
+        if: ${{ !cancelled() && steps.ports-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            target/ports
+            !target/ports/src
+          key: ${{ steps.ports-cache.outputs.cache-primary-key }}

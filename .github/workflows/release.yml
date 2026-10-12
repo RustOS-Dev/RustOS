@@ -41,10 +41,12 @@ jobs:
       - name: Install port build tools (the desktop ports; docs/PORTING.md)
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang curl python3 g++ cmake ninja-build meson gperf bison flex \
+          sudo apt-get install -y clang curl python3 g++ cmake ninja-build gperf bison flex \
             pkg-config libexpat1-dev libffi-dev hwdata python3-mako python3-yaml python3-ply \
             glslang-tools spirv-tools llvm-18-dev libclang-18-dev libclang-cpp18-dev libclc-18-dev \
             libllvmspirvlib-18-dev
+          # Meson 1.4 or newer (libxkbcommon); Ubuntu 24.04 has 1.3.
+          sudo pip3 install --break-system-packages meson==1.12.1
 
       # The image write_to_drive.sh builds: the desktop (eDEX-DE on labwc,
       # docs/DESKTOP.md) in the initramfs, Linux drivers in the kernel.

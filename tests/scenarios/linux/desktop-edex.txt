@@ -1,18 +1,18 @@
 # eDEX-DE (M43), RustOS's desktop: /etc/rc starts edex-session on the first
 # console at boot (seatd's builtin backend, a D-Bus session bus, labwc with
-# eDEX-DE as its shell), eDEX draws with wgpu's GLES backend on Mesa softpipe
+# eDEX-DE as its shell), eDEX draws with wgpu's GLES backend on Mesa llvmpipe
 # (Linux bochs DRM). Kernel built with --features linux-drivers; the weston,
 # labwc, libcxx and edex-de ports staged with tools/install-port.sh
 # --initramfs. The defaults (ports/edex-de/config.toml) turn animations,
 # scanlines and the boot animation off.
 hostrun rm -rf /tmp/rustos-edex && mkdir -p /tmp/rustos-edex
 wait # $ 300
-# eDEX answers on its IPC socket once it has drawn a frame (softpipe is slow).
+# eDEX answers on its IPC socket once it has drawn a frame (software rendering under TCG is slow).
 send export XDG_RUNTIME_DIR=/tmp/xdg-runtime-0; for i in $(seq 1 120); do edex-de ipc state >/tmp/st 2>/dev/null && grep -q '"frames":[1-9]' /tmp/st && break; sleep 5; done; echo "edex-up $i"
 wait edex-up \d+ 700
 wait # $
-send ps | grep -c -e edex-session -e labwc -e edex-de -e dbus-daemon; grep -o -e '.kind.:.labwc.' -e '.notification_server.:true' -e '.theme.:.tron.' -e '.gpu.:.softpipe[^"]*.' /tmp/st
-wait "gpu":"softpipe
+send ps | grep -c -e edex-session -e labwc -e edex-de -e dbus-daemon; grep -o -e '.kind.:.labwc.' -e '.notification_server.:true' -e '.theme.:.tron.' -e '.gpu.:.llvmpipe[^"]*.' /tmp/st
+wait "gpu":"llvmpipe
 wait "notification_server":true
 wait "theme":"tron"
 wait "kind":"labwc"
@@ -60,8 +60,8 @@ monitor sendkey p
 monitor sendkey slash
 monitor sendkey k
 monitor sendkey ret
-# eDEX's main loop handles input between frames, and softpipe frames take
-# seconds under TCG.
+# eDEX's main loop handles input between frames, and software-rendered
+# frames are slow under TCG.
 send for i in $(seq 1 60); do [ -e /tmp/k ] && break; sleep 5; done; cat /tmp/k
 wait edex-typed 400
 wait # $

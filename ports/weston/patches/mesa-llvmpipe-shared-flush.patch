@@ -1,0 +1,56 @@
+--- a/src/gallium/drivers/llvmpipe/lp_context.c
++++ b/src/gallium/drivers/llvmpipe/lp_context.c
+@@ -42,6 +42,7 @@
+ #include "util/u_upload_mgr.h"
+ #include "lp_clear.h"
+ #include "lp_context.h"
++#include "lp_texture.h"
+ #include "lp_flush.h"
+ #include "lp_perf.h"
+ #include "lp_state.h"
+@@ -119,12 +120,45 @@
+ }
+ 
+ 
++/* Whether a colour buffer is shared outside llvmpipe: a display target or
++ * an imported dma-buf (a compositor's output, a client's window buffer).
++ */
++static bool
++framebuffer_is_shared(const struct llvmpipe_context *llvmpipe)
++{
++   for (unsigned i = 0; i < llvmpipe->framebuffer.nr_cbufs; i++) {
++      const struct pipe_resource *res = llvmpipe->framebuffer.cbufs[i].texture;
++
++      if (res && llvmpipe_resource(res)->dt)
++         return true;
++   }
++   return false;
++}
++
++
+ static void
+ do_flush(struct pipe_context *pipe,
+          struct pipe_fence_handle **fence,
+          unsigned flags)
+ {
++   struct llvmpipe_context *llvmpipe = llvmpipe_context(pipe);
++
+    llvmpipe_flush(pipe, fence, __func__);
++
++   /* A flushed buffer that another process or the display reads is only
++    * complete once the rasterizer threads are done with it, and nothing
++    * makes the reader wait: llvmpipe attaches no kernel fence to the
++    * dma-buf, and a compositor without explicit sync (wlroots on a KMS
++    * device without timeline syncobjs) commits right after glFlush().
++    * Display drivers that copy from shadow buffers at commit time (bochs,
++    * virtio-gpu) then show unfinished tiles. Finish rendering first.
++    */
++   if (!(flags & PIPE_FLUSH_DEFERRED) && framebuffer_is_shared(llvmpipe)) {
++      if (fence && *fence)
++         pipe->screen->fence_finish(pipe->screen, NULL, *fence, OS_TIMEOUT_INFINITE);
++      else
++         llvmpipe_finish(pipe, __func__);
++   }
+ }
+ 
+ 

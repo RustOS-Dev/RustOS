@@ -10,8 +10,9 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   I219/I225/RTL8168 Ethernet and CDC NCM drivers are written against
   reference drivers and specifications but have not yet run on hardware.
 * GPU acceleration in user space is Mesa's RADV/ANV/iris/zink, untested on
-  hardware; in QEMU and on unsupported GPUs, OpenGL ES runs on softpipe (a
-  few frames per second). No llvmpipe, radeonsi or NVK. No Thunderbolt management,
+  hardware; in QEMU and on unsupported GPUs, OpenGL ES runs on llvmpipe
+  (Mesa's software renderer with LLVM 18 built for RustOS; softpipe with
+  `GALLIUM_DRIVER=softpipe`). No lavapipe, radeonsi or NVK. No Thunderbolt management,
   or suspend/resume (S3/S0ix). Power-off (S5) and reboot are supported.
 * AMD GPUs (Linux amdgpu) are compiled into release images but untested on
   hardware and off unless `kernel.conf` has `linux.enable=amdgpu`. Without a
@@ -47,10 +48,14 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   (a quarter of RAM at boot); files from the boot image do not (they stay
   in the kernel image until written), and memfds use page frames.
 * OpenGL is GLES through EGL (no GLX or desktop libGL); without a supported
-  GPU it is softpipe, so GL clients and Weston's GL renderer are slow.
-* Xwayland runs without GLX and, on softpipe, without glamor (X clients
+  GPU it is llvmpipe, which draws on the CPU.
+* Xwayland runs without GLX and, on llvmpipe, without glamor (X clients
   draw in software); labwc needs `WLR_RENDERER_ALLOW_SOFTWARE=1` to use
-  softpipe, otherwise it falls back to its pixman renderer.
+  llvmpipe, otherwise it falls back to its pixman renderer.
+* llvmpipe attaches no kernel fences to the buffers it shares, so Mesa is
+  patched (`ports/weston/patches`) to finish rendering when it flushes a
+  buffer another process or the display reads; otherwise wlroots committed
+  frames whose tiles the rasterizer threads had not drawn yet.
 * Xwayland is built without the X server's time slicing (the smart
   scheduler's timer is never armed): on RustOS a yield in the middle of a
   client's requests leaves new X windows unmapped, with Xwayland and
@@ -68,8 +73,8 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
 * eDEX-DE on RustOS: labwc has no workspaces (the workspace strip is
   hidden); suspend, hibernate, screen lock, Tor, Tailscale, VPNs and
   fingerprint login are hidden for lack of backends; everything is drawn
-  in software (softpipe), and under QEMU's TCG a frame takes seconds.
-  Untested on real hardware.
+  in software (llvmpipe) where there is no GPU driver. Untested on real
+  hardware.
 * Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

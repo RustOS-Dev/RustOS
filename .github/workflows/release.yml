@@ -44,7 +44,7 @@ jobs:
           sudo apt-get install -y clang curl python3 g++ cmake ninja-build gperf bison flex \
             pkg-config libexpat1-dev libffi-dev hwdata python3-mako python3-yaml python3-ply \
             glslang-tools spirv-tools llvm-18-dev libclang-18-dev libclang-cpp18-dev libclc-18-dev \
-            libllvmspirvlib-18-dev
+            libllvmspirvlib-18-dev libglib2.0-dev libglib2.0-dev-bin python3-jinja2 python3-packaging
           # Meson 1.4 or newer (libxkbcommon); Ubuntu 24.04 has 1.3.
           sudo pip3 install --break-system-packages meson==1.12.1
 

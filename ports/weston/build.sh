@@ -7,12 +7,13 @@
 # drivers, XKB data, a fontconfig setup for the fonts in /usr/share/fonts,
 # and modetest (libdrm).
 #
-# Mesa's drivers: softpipe (software GL, also on any KMS display through
-# kms_swrast), virgl (QEMU virtio-gpu 3D), zink (GL on Vulkan: AMD's
-# OpenGL here, on RADV), iris (Intel GL), RADV (AMD Vulkan, ACO) and ANV
-# (Intel Vulkan). Not built: llvmpipe and lavapipe (need LLVM ported to
-# RustOS), radeonsi (needs libelf), NVK (needs Rust cross-compiled for
-# RustOS).
+# Mesa's drivers: llvmpipe (software GL compiled to native code by LLVM,
+# also on any KMS display through kms_swrast; the default where there is no
+# GPU driver), softpipe (the interpreting software renderer,
+# GALLIUM_DRIVER=softpipe), virgl (QEMU virtio-gpu 3D), zink (GL on Vulkan:
+# AMD's OpenGL here, on RADV), iris (Intel GL), RADV (AMD Vulkan, ACO) and
+# ANV (Intel Vulkan). LLVM 18 is built for RustOS here (libLLVM, X86 only).
+# Not built: lavapipe, radeonsi (needs libelf), NVK (not attempted).
 # Called by tools/install-port.sh with: SRC_DIR BUILD_DIR DEST_DIR
 #
 # Needs on the build host: meson, ninja, pkg-config, gperf, bison, flex,
@@ -137,6 +138,16 @@ fetch https://gitlab.freedesktop.org/emersion/libdisplay-info/-/releases/0.2.0/d
     5a2f002a16f42dd3540c8846f80a90b8f4bdcd067a94b9d2087bc2feae974176 "$SRC/libdisplay-info-0.2.0.tar.xz"
 fetch https://archive.mesa3d.org/mesa-26.2.4.tar.xz \
     bce5f7fbebb934373b86c999a064d52fb5065878dc57f287f95346648ec832e9 "$SRC/mesa-26.2.4.tar.xz"
+# LLVM for llvmpipe (Mesa's JIT software renderer): the llvm tree with the
+# cmake modules and third-party headers it builds against.
+LLVM=18.1.8
+LLVM_URL=https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM
+fetch $LLVM_URL/llvm-$LLVM.src.tar.xz \
+    f68cf90f369bc7d0158ba70d860b0cb34dbc163d6ff0ebc6cfa5e515b9b2e28d "$SRC/llvm-$LLVM.src.tar.xz"
+fetch $LLVM_URL/cmake-$LLVM.src.tar.xz \
+    59badef592dd34893cd319d42b323aaa990b452d05c7180ff20f23ab1b41e837 "$SRC/cmake-$LLVM.src.tar.xz"
+fetch $LLVM_URL/third-party-$LLVM.src.tar.xz \
+    b76b810f3d3dc5d08e83c4236cb6e395aa9bd5e3ea861e8c319b216d093db074 "$SRC/third-party-$LLVM.src.tar.xz"
 fetch_git https://github.com/KhronosGroup/Vulkan-Headers v1.4.365 \
     c46850864f4661461b0f6cb9922c058ffea4915e "$SRC/Vulkan-Headers-1.4.365"
 fetch_git https://github.com/KhronosGroup/Vulkan-Loader v1.4.365 \
@@ -240,15 +251,60 @@ if ! built host-mesa-clc; then
         { tail -40 "$BUILD/host-mesa-clc.log" >&2; exit 1; }
     mark host-mesa-clc
 fi
-built mesa || meson_pkg mesa "$(unpack "$SRC/mesa-26.2.4.tar.xz")" \
-    -Dplatforms=wayland -Degl=enabled -Dgbm=enabled -Dglx=disabled -Dopengl=true \
-    -Dgles1=disabled -Dgles2=enabled -Dglvnd=disabled \
-    -Dgallium-drivers=softpipe,virgl,zink,iris \
-    -Dvulkan-drivers=amd,intel -Dllvm=disabled -Damd-use-llvm=false \
-    -Dmesa-clc=system -Dprecomp-compiler=system -Dintel-rt=disabled \
-    -Dvideo-codecs= -Dgallium-va=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
-    -Dlmsensors=disabled -Dzstd=disabled -Dxmlconfig=enabled -Dbuild-tests=false \
-    -Dandroid-libbacktrace=disabled
+# LLVM for RustOS: one shared library (libLLVM) with the X86 target and the
+# components llvmpipe uses, built with the host's llvm-tblgen (LLVM 18, as
+# for mesa_clc). The C++ runtime linked into it stays private.
+if ! built llvm; then
+    rm -rf "$BUILD/src/llvm" "$BUILD/b-llvm"
+    mkdir -p "$BUILD/src/llvm"
+    for p in llvm cmake third-party; do
+        tar -xf "$SRC/$p-$LLVM.src.tar.xz" -C "$BUILD/src/llvm"
+        mv "$BUILD/src/llvm/$p-$LLVM.src" "$BUILD/src/llvm/$p"
+    done
+    TBLGEN_DIR="${LLVM_TBLGEN_DIR:-/usr/lib/llvm-18/bin}"
+    cmake -G Ninja -S "$BUILD/src/llvm/llvm" -B "$BUILD/b-llvm" \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+        -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$ROOT/tools/rustos-c++" \
+        -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--exclude-libs,libc++.a:libc++abi.a:libunwind.a" \
+        -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_HOST_TRIPLE=x86_64-unknown-linux-musl \
+        -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-unknown-linux-musl \
+        -DLLVM_TABLEGEN="$TBLGEN_DIR/llvm-tblgen" -DLLVM_NATIVE_TOOL_DIR="$TBLGEN_DIR" \
+        -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON \
+        "-DLLVM_DYLIB_COMPONENTS=bitwriter;bitreader;executionengine;mcjit;mcdisassembler;core;analysis;target;passes;ipo;scalaropts;transformutils;instcombine;vectorize;native;coroutines;lto" \
+        -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_TERMINFO=OFF \
+        -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBPFM=OFF \
+        -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
+        -DLLVM_INCLUDE_DOCS=OFF -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF \
+        -DLLVM_ENABLE_BINDINGS=OFF -DLLVM_ENABLE_ASSERTIONS=OFF -DLLVM_ENABLE_RTTI=OFF \
+        >"$BUILD/llvm.log" 2>&1 || { tail -30 "$BUILD/llvm.log" >&2; exit 1; }
+    ninja -C "$BUILD/b-llvm" LLVM >>"$BUILD/llvm.log" 2>&1 || { tail -40 "$BUILD/llvm.log" >&2; exit 1; }
+    DESTDIR="$STAGE" ninja -C "$BUILD/b-llvm" install-LLVM install-llvm-headers \
+        >>"$BUILD/llvm.log" 2>&1 || { tail -40 "$BUILD/llvm.log" >&2; exit 1; }
+    rm -rf "$BUILD/b-llvm" "$BUILD/src/llvm"
+    mark llvm
+    echo "weston port: llvm" >&2
+fi
+# Mesa finds it through tools/cross/llvm-config.in.
+sed -e "s|@PREFIX@|$STAGE/usr/local|" -e "s|@VERSION@|$LLVM|" \
+    "$ROOT/tools/cross/llvm-config.in" >"$BUILD/llvm-config"
+chmod +x "$BUILD/llvm-config"
+sed -i "/^\[binaries\]/a llvm-config = '$BUILD/llvm-config'" "$CROSS"
+if ! built mesa; then
+    d=$(unpack "$SRC/mesa-26.2.4.tar.xz")
+    # llvmpipe finishes rendering when flushing a buffer it shares (patches/).
+    patch -d "$d" -p1 <"$ROOT/ports/weston/patches/mesa-llvmpipe-shared-flush.patch" >/dev/null
+    meson_pkg mesa "$d" \
+        -Dplatforms=wayland -Degl=enabled -Dgbm=enabled -Dglx=disabled -Dopengl=true \
+        -Dgles1=disabled -Dgles2=enabled -Dglvnd=disabled \
+        -Dgallium-drivers=llvmpipe,softpipe,virgl,zink,iris \
+        -Dvulkan-drivers=amd,intel -Dllvm=enabled -Dshared-llvm=enabled -Damd-use-llvm=false \
+        -Dcpp_rtti=false \
+        -Dmesa-clc=system -Dprecomp-compiler=system -Dintel-rt=disabled \
+        -Dvideo-codecs= -Dgallium-va=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
+        -Dlmsensors=disabled -Dzstd=disabled -Dxmlconfig=enabled -Dbuild-tests=false \
+        -Dandroid-libbacktrace=disabled
+fi
 # The Vulkan loader (libvulkan.so.1: Vulkan applications, and zink, which
 # runs OpenGL on RADV/ANV) and vulkaninfo.
 built vulkan-headers || cmake_pkg vulkan-headers "$SRC/Vulkan-Headers-1.4.365"

@@ -4,7 +4,9 @@ RustOS's graphical session is [eDEX-DE](https://github.com/RustOS-Dev/eDEX-DE-RS
 desktop shell written in Rust. It provides a terminal, a file browser, a system dashboard, a
 launcher, settings, notifications and a power menu. On RustOS it runs as the shell of the
 [labwc](https://labwc.github.io) Wayland compositor (M42). eDEX draws with wgpu's GLES backend on
-Mesa's EGL. With no GPU 3D driver that means Mesa's software renderer (softpipe).
+Mesa's EGL. With no GPU 3D driver that means llvmpipe, Mesa's software renderer, which compiles
+shaders to x86 code with LLVM (LLVM 18 is built for RustOS in `ports/weston`). softpipe, the
+interpreting renderer, remains available with `GALLIUM_DRIVER=softpipe`.
 
 Images built with `write_to_drive.sh` (and the release workflow) start the desktop at boot on
 the first console. The serial console keeps its shell.
@@ -144,12 +146,12 @@ eDEX-DE is GPL-3.0; its licence and source commit are in
 
 ## Testing
 
-`tests/scenarios/linux/desktop-edex.txt` (QEMU, bochs DRM, softpipe, 1.5 GiB, CI) checks the
+`tests/scenarios/linux/desktop-edex.txt` (QEMU, bochs DRM, llvmpipe, 1.5 GiB, CI) checks the
 following:
 
-* the session starts at boot: labwc backend, D-Bus notifications server, Tron theme, softpipe;
+* the session starts at boot: labwc backend, D-Bus notifications server, Tron theme, llvmpipe;
 * the dashboard shows CPU load, memory in use and processes;
-* a screendump has the Tron colours;
+* a screendump has the Tron colours and text;
 * keys typed with QEMU's `sendkey` reach eDEX's terminal and run a command;
 * the launcher opens over IPC, and foot started from it tiles into the terminal slot.
 
@@ -159,10 +161,17 @@ starts.
 
 ## Performance and limits
 
-* All drawing is in software. Under QEMU's TCG a full eDEX frame takes seconds. eDEX handles input
-  between frames, so typing shows with a delay. labwc, which composites with softpipe too, uses
-  most of a CPU while windows change.
+* All drawing is in software where there is no GPU driver. Under QEMU's TCG (2 virtual CPUs) the
+  whole shell takes about 4 s to draw with llvmpipe, against about 35 s with softpipe
+  (`edex-de ipc state` reports it as `canvas_ms`), and kmscube runs at 16 frames per second against
+  softpipe's 3. eDEX handles input between frames, so typing still shows with a delay there: a
+  command typed in eDEX's terminal ran about 15 s after its first key (21 keys sent by the test
+  harness). On real hardware frames are far shorter, but nothing has been measured there.
+* While a canvas takes longer to draw than the dashboard's one-second refresh, the dashboard
+  redraws at most every two frames.
+* llvmpipe finishes rendering before a buffer it shares leaves it (a patch in `ports/weston`): the
+  compositor and the display read finished frames.
 * Hardware: none of this has run on real hardware yet. The image's Mesa has iris (Intel) and
   zink on the AMD and Intel Vulkan drivers, for the GPUs RustOS drives (amdgpu and i915, opt-in in
   `kernel.conf`). Whether eDEX gets hardware rendering there is untested. On every other display
-  (efidrm, bochs, virtio-gpu) it draws with softpipe.
+  (efidrm, bochs, virtio-gpu) it draws with llvmpipe.

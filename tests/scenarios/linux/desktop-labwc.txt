@@ -1,5 +1,5 @@
 # labwc (M42): a wlroots compositor with the DRM backend and the GLES2
-# renderer (Mesa softpipe through EGL on GBM) on Linux bochs DRM, with foot
+# renderer (Mesa llvmpipe through EGL on GBM) on Linux bochs DRM, with foot
 # as the terminal. Kernel built with --features linux-drivers; the weston
 # and labwc ports staged with tools/install-port.sh --initramfs. labwc's
 # default autostart (ports/labwc/autostart) opens foot; keys typed with
@@ -16,7 +16,7 @@ wait Modesetting with
 wait 1280x800 @ 74
 wait autostart
 wait # $
-send ps | grep -c foot
+send ps | grep -c '[f]oot'
 wait 1
 wait # $
 monitor screendump /tmp/rustos-labwc/desktop.ppm

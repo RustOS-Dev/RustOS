@@ -210,6 +210,8 @@ if ! built wlroots; then
     # pkg-config returns the Xwayland path inside the stage; use the
     # installed one.
     sed -i "s|xwayland.get_variable('xwayland')|'/usr/local/bin/Xwayland'|" "$d/xwayland/meson.build"
+    # Map X windows whose buffer arrived before the WM paired them (patches/).
+    patch -d "$d" -p1 <"$ROOT/ports/labwc/patches/wlroots-xwayland-map-on-associate.patch" >/dev/null
     meson_pkg wlroots "$d" \
         -Dxwayland=enabled -Dbackends=drm,libinput -Drenderers=gles2 -Dallocators=gbm \
         -Dsession=enabled -Dexamples=false -Dxcb-errors=disabled -Dcolor-management=disabled \

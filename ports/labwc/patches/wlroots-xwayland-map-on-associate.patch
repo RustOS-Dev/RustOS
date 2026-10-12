@@ -1,0 +1,20 @@
+--- a/xwayland/xwm.c
++++ b/xwayland/xwm.c
+@@ -1229,6 +1229,17 @@
+ 	}
+ 
+ 	wl_signal_emit_mutable(&xsurface->events.associate, NULL);
++
++	/*
++	 * Xwayland may have committed the window's buffer before the
++	 * association (when the WM handles the serial property late), and it
++	 * then waits for that commit's frame callback before committing again.
++	 * An unmapped surface gets no frame callback, so map it now instead of
++	 * on a next commit that would never come.
++	 */
++	if (wlr_surface_has_buffer(surface)) {
++		wlr_surface_map(surface);
++	}
+ }
+ 
+ static void xwm_handle_create_notify(struct wlr_xwm *xwm,

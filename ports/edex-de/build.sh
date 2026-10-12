@@ -40,7 +40,7 @@ mark() { touch "$STAMPS/$1"; }
 # eDEX-DE-RS: the RustOS port branch (window-manager backends with labwc, the RustOS system
 # backends, the local greeter backend, wgpu-hal patched for GL 3.3 software renderers).
 EDEX_REPO=https://github.com/RustOS-Dev/eDEX-DE-RS
-EDEX_COMMIT=794e4031108d3582b89b2dcbd998ee041f806fca
+EDEX_COMMIT=b16bccfccedfbe46cfbfaf6dbfe5c143229050ea
 DBUS=1.16.2
 NERD=3.4.0
 

@@ -7,7 +7,7 @@ wait # $ 300
 send for i in $(seq 1 60); do ps | grep -q edex-greeter && break; sleep 3; done; echo "greeter-$i"
 wait greeter-\d+ 300
 wait # $
-# The greeter draws (softpipe) before it reads keys.
+# The greeter draws (llvmpipe) before it reads keys.
 sleep 60
 monitor screendump /tmp/rustos-edex-login/greeter.ppm
 # Fullscreen without a title bar: the Tron background reaches the top edge.
@@ -21,7 +21,7 @@ send grep -a -e 'logged in' /var/log/edex-session.log
 # (grep colours the match.)
 wait edex-session: root \S*logged in
 wait # $
-# labwc composites eDEX's first frame (softpipe).
+# labwc composites eDEX's first frame (llvmpipe).
 sleep 30
 monitor screendump /tmp/rustos-edex-login/desktop.ppm
 hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-edex-login/desktop.ppm 255,300=2,181,217~30 997,300=2,181,217~30

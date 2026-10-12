@@ -1,0 +1,36 @@
+#!/bin/sh
+# llvm-config for cross builds against the LLVM that ports/weston stages for
+# RustOS (LLVM's own llvm-config is a RustOS program). The port generates the
+# real file from this template, replacing @PREFIX@ (the staged /usr/local)
+# and @VERSION@. It answers what Meson and Mesa ask: one shared libLLVM with
+# the X86 target, no RTTI. "amdgpu" is listed because Mesa asks for it
+# whenever RADV is built; with -Damd-use-llvm=false nothing uses it.
+P="@PREFIX@"
+for a in "$@"; do
+    case "$a" in
+    --version) echo "@VERSION@" ;;
+    --components)
+        echo all all-targets amdgpu analysis bitreader bitwriter codegen core coroutines engine \
+            executionengine instcombine ipo lto mc mcdisassembler mcjit native nativecodegen \
+            object passes scalaropts support target transformutils x86 x86asmparser x86codegen \
+            x86desc x86disassembler x86info ;;
+    --cppflags)
+        echo "-I$P/include -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS" ;;
+    --cxxflags)
+        echo "-I$P/include -std=c++17 -fno-exceptions -fno-rtti -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS" ;;
+    --ldflags) echo "-L$P/lib" ;;
+    --libdir) echo "$P/lib" ;;
+    --includedir) echo "$P/include" ;;
+    --prefix) echo "$P" ;;
+    --shared-mode) echo shared ;;
+    --libs) echo "-lLLVM" ;;
+    --libfiles) echo "$P/lib/libLLVM.so" ;;
+    --system-libs) echo ;;
+    --has-rtti) echo NO ;;
+    --assertion-mode) echo OFF ;;
+    --targets-built) echo X86 ;;
+    --host-target) echo x86_64-unknown-linux-musl ;;
+    --link-shared | --link-static) ;;
+    -*) echo "llvm-config: $a is not supported" >&2; exit 1 ;;
+    esac
+done

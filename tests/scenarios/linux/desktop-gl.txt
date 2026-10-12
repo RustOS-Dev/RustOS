@@ -1,5 +1,5 @@
 # Weston with its GL renderer (M41): the desktop scenario's session, drawn
-# with OpenGL ES through Mesa (EGL on GBM, softpipe via kms_swrast) instead
+# with OpenGL ES through Mesa (EGL on GBM, llvmpipe via kms_swrast) instead
 # of pixman. Same build as desktop.txt; the screendump checks the panel,
 # the wallpaper and a weston-terminal window, now composited by GL.
 hostrun rm -rf /tmp/rustos-desktop-gl && mkdir -p /tmp/rustos-desktop-gl
@@ -8,7 +8,7 @@ send mkdir -p /tmp/xdg; chmod 700 /tmp/xdg; export XDG_RUNTIME_DIR=/tmp/xdg LIBS
 sleep 30
 send grep -a -e "session control granted" -e "GL ES" -e "GL renderer" -e "glRenderer" -e "Output 'Virtual-1' enabled" /tmp/weston.log
 wait session control granted
-wait softpipe
+wait llvmpipe
 wait # $
 send WAYLAND_DISPLAY=wayland-1 weston-terminal &
 sleep 60

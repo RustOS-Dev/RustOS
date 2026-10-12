@@ -106,8 +106,8 @@ stages the result in `target/ports/NAME` (laid out like `/usr/local`).
 | `quickjs` | QuickJS-ng 0.16.2 (from the `rquickjs-sys` crate's vendored copy): `qjs`, `qjsc`, `run-test262`, and `libquickjs.a` + headers for embedding |
 | `wpa_supplicant`, `hostapd` | 2.11 with OpenSSL and libnl (nl80211) |
 | `libcxx` | libc++/libc++abi/libunwind 18 into the sysroot, and `cxxtest` |
-| `weston` | Weston 14 (DRM and headless backends, pixman and GL renderers, desktop and kiosk shells, `weston-terminal`), Mesa 26.2 (EGL on GBM and Wayland, GLES 3.1; softpipe, virgl, zink, iris, RADV, ANV), the Vulkan loader and `vulkaninfo`, `kmscube`, and their stack, shared: wayland 1.26, wayland-protocols, libxkbcommon + xkeyboard-config, pixman, cairo, freetype, fontconfig, libpng, zlib, expat, libffi, libdrm 2.4.134 (amdgpu, nouveau; `modetest`), libevdev, mtdev, libudev-zero, libinput, seatd/libseat, libdisplay-info. Needs meson, ninja, cmake, gperf, bison, flex, hwdata, glslang-tools, Python mako/pyyaml/ply and LLVM 18 with clang, libclc and SPIRV-LLVM-Translator on the build host (Mesa's `mesa_clc` is built for the host) |
-| `labwc` | labwc 0.20 (on wlroots 0.20: DRM and libinput backends, GLES2 renderer, XWayland) and the foot terminal; Xwayland 24.1 with the X11 client libraries (libxcb, xcb-util(-wm), libX11, libXext, libXfixes, libxkbfile, xkbcomp, libxshmfence, libxcvt, libXfont2, libepoxy, libmd) and `xhello`, a minimal X client; GLib, Pango, HarfBuzz, FriBidi, libxml2, PCRE2, fcft, utf8proc and tllist; builds on the `weston` port's libraries (build that first) |
+| `weston` | Weston 14 (DRM and headless backends, pixman and GL renderers, desktop and kiosk shells, `weston-terminal`), Mesa 26.2 (EGL on GBM and Wayland, GLES 3.2; llvmpipe on LLVM 18.1.8 built for RustOS, softpipe, virgl, zink, iris, RADV, ANV), the Vulkan loader and `vulkaninfo`, `kmscube`, and their stack, shared: wayland 1.26, wayland-protocols, libxkbcommon + xkeyboard-config, pixman, cairo, freetype, fontconfig, libpng, zlib, expat, libffi, libdrm 2.4.134 (amdgpu, nouveau; `modetest`), libevdev, mtdev, libudev-zero, libinput, seatd/libseat, libdisplay-info. Needs meson, ninja, cmake, gperf, bison, flex, hwdata, glslang-tools, Python mako/pyyaml/ply and LLVM 18 with clang, libclc and SPIRV-LLVM-Translator on the build host (Mesa's `mesa_clc` is built for the host; its `llvm-tblgen` builds LLVM 18.1.8 for RustOS, about 40 minutes on 4 cores) |
+| `labwc` | labwc 0.20 (on wlroots 0.20: DRM and libinput backends, GLES2 renderer, XWayland) and the foot terminal; Xwayland 24.1 with the X11 client libraries (libxcb, xcb-util(-wm), libX11, libXext, libXfixes, libxkbfile, xkbcomp, libxshmfence, libxcvt, libXfont2, libepoxy, libmd) and `xhello`, a minimal X client; GLib, Pango, HarfBuzz, FriBidi, libxml2, PCRE2, fcft, utf8proc and tllist; builds on the `weston` port's libraries (build that first). Needs Meson 1.4 or newer and the build host's GLib development files and tools (`libglib2.0-dev`, `libglib2.0-dev-bin`, Python jinja2 and packaging) |
 | `rust-hello` | Rust std test program (`tools/rustos-cargo`), on the `weston` port's libwayland |
 | `edex-de` | eDEX-DE (RustOS-Dev/eDEX-DE-RS, pinned commit; `edex-de`, `edex-greeter`) built with `tools/rustos-cargo`, D-Bus 1.16 (`dbus-daemon`, a session bus), the JetBrains Mono Nerd Font, the session (`edex-session`, `desktop`) and its defaults; builds on the `labwc` port and needs `libcxx` in the sysroot (LLVM libunwind for Rust panics). See [DESKTOP.md](DESKTOP.md) |
 | `gtk` | GTK 3.24 with only its Wayland backend (`gtk3-demo`, `gtk3-widget-factory`), gdk-pixbuf (PNG built in), ATK (from at-spi2-core, without D-Bus) and cairo-gobject; builds on the `labwc` port (build that first) |
@@ -124,7 +124,7 @@ programs start Xwayland on `:0` when they first connect):
 ```sh
 mkdir -p /tmp/xdg; chmod 700 /tmp/xdg
 export XDG_RUNTIME_DIR=/tmp/xdg LIBSEAT_BACKEND=builtin
-export WLR_RENDERER_ALLOW_SOFTWARE=1   # only where GL is softpipe (QEMU, no GPU driver)
+export WLR_RENDERER_ALLOW_SOFTWARE=1   # only where GL is llvmpipe (QEMU, no GPU driver)
 labwc &
 DISPLAY=:0 xhello &                    # an X11 window through Xwayland
 WAYLAND_DISPLAY=wayland-0 gtk3-widget-factory &   # GTK 3 (ports/gtk)
@@ -143,7 +143,7 @@ WAYLAND_DISPLAY=wayland-1 weston-terminal &
 ```
 
 OpenGL ES and Vulkan come from Mesa: `kmscube` draws on a KMS display
-with EGL/GBM (softpipe through kms_swrast where there is no supported
+with EGL/GBM (llvmpipe through kms_swrast where there is no supported
 GPU: the `gl-kmscube` scenario), and `weston --renderer=gl` composites
 with it (`desktop-gl`). On AMD and Intel GPUs Mesa's RADV/ANV, iris and
 zink (OpenGL on Vulkan) take over once the kernel drives the GPU

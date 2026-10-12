@@ -159,12 +159,15 @@ jobs:
         run: cargo test
 
       - name: jsd end-to-end tests (host build of jsd)
+        # Later steps still run after a failure, so one run shows every failure.
+        if: ${{ !cancelled() }}
         run: |
           cargo build
           sh userland/jsd/host-build.sh "$PWD/target/ports/build/quickjs/rquickjs-sys-0.14.0/quickjs" "$PWD/target/jsd-host"
           (cd crates/jsproto && JSD_BIN="$PWD/../../target/jsd-host/jsd" cargo test --test jsd)
 
       - name: Boot scenarios (drive the shell over the serial console)
+        if: ${{ !cancelled() }}
         run: |
           cargo build
           tools/run-scenarios.sh
@@ -173,21 +176,25 @@ jobs:
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/eth-usb.txt
 
       - name: Boot scenarios on 4 CPUs
+        if: ${{ !cancelled() }}
         run: |
           cargo build
           RUSTOS_SMP=4 tools/run-scenarios.sh
 
       - name: Linux drivers through LinuxKPI (Linux e1000, test driver; 2 and 4 CPUs)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-e1000,linux-test
           S="tests/scenarios/linux/eth-linux-e1000.txt tests/scenarios/linux/linuxkpi-chrdev.txt"
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos $S
           RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos $S
       - name: Linux 802.11 stack (cfg80211, mac80211, mac80211_hwsim) with hostapd and wpa_supplicant
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-hwsim
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/wifi-hwsim.txt tests/scenarios/linux/wifi-hwsim-eap.txt
       - name: Linux USB networking (usbnet, cdc_ether, rndis_host) on the LinuxKPI USB core
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-usbnet
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux.txt
@@ -195,70 +202,85 @@ jobs:
           RUSTOS_USB_PREFER_RNDIS=1 cargo build --features linux-usbnet
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-usb-linux-rndis.txt
       - name: Linux Ethernet drivers (igb on QEMU's 82576; e1000e, igc, alx, tg3, atlantic, r8169 compiled)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-eth
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
           RUSTOS_SMP=4 tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/eth-igb.txt
       - name: Linux USB serial (usb-serial + ftdi_sio) on RustOS terminals
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-serial
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/usb-serial.txt
       - name: Linux SD/MMC (MMC core, sdhci-pci) with an SD card
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-mmc
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/sdcard.txt
       - name: ACPI platform devices and IRQ domains (acpi-platform)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-platform
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/acpi-platform.txt
       - name: Linux sound (audio-linux)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-sound
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/audio-linux.txt
       - name: Linux DRM on the firmware framebuffer and QEMU's standard VGA (drm-simpledrm, drm-bochs)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-drm-sysfb,linux-drm-bochs
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-simpledrm.txt tests/scenarios/linux/drm-bochs.txt
       - name: C++ runtime (cxx)
+        if: ${{ !cancelled() }}
         run: |
           tools/install-port.sh --initramfs libcxx
           cargo build
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/ports/cxx.txt
       - name: Wayland desktop and Mesa (desktop, desktop-gl, gl-kmscube)
+        if: ${{ !cancelled() }}
         run: |
           tools/install-port.sh --initramfs weston
           cargo build --features linux-drivers
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop.txt \
             tests/scenarios/linux/desktop-gl.txt tests/scenarios/linux/gl-kmscube.txt
       - name: labwc, foot, Xwayland and GTK 3 (desktop-labwc)
+        if: ${{ !cancelled() }}
         run: |
           tools/install-port.sh --initramfs labwc
           tools/install-port.sh --initramfs gtk
           cargo build --features linux-drivers
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop-labwc.txt
       - name: Desktop kernel features (desktop-kernel)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-drivers
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/desktop-kernel.txt
       - name: Linux virtio-gpu (drm-virtio)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-drm-virtio
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-virtio.txt
       - name: Release driver set with GPU drivers (amdgpu, opt-in; drm-bochs)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-drivers,linux-gpu
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/drm-bochs.txt
       - name: Linux usbhid and input core (usb-hid-linux)
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-usbhid
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/usb-hid-linux.txt
       - name: Native drivers keep their devices in the release driver set
+        if: ${{ !cancelled() }}
         run: |
           cargo build --features linux-drivers
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/eth-e1000.txt tests/scenarios/eth-e1000e.txt tests/scenarios/eth-usb.txt tests/scenarios/usb.txt
       # After the scenarios that run with the default 512 MiB: the eDEX-DE
       # port makes the boot image larger.
       - name: Rust std programs and the eDEX-DE desktop (rust-std, desktop-edex, desktop-edex-login)
+        if: ${{ !cancelled() }}
         run: |
           tools/install-port.sh --initramfs rust-hello
           tools/install-port.sh --initramfs edex-de
@@ -266,4 +288,12 @@ jobs:
           tools/run-scenarios.sh target/x86_64-rustos/debug/rustos tests/scenarios/linux/rust-std.txt \
             tests/scenarios/linux/desktop-edex.txt tests/scenarios/linux/desktop-edex-login.txt
       - name: Release driver set (linux-drivers, as write_to_drive.sh builds it)
+        if: ${{ !cancelled() }}
         run: cargo build --release --features linux-drivers
+      - name: Scenario logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-logs
+          path: /tmp/scenario-*.log
+          if-no-files-found: ignore

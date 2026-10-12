@@ -26,7 +26,15 @@ for s in "${SCENARIOS[@]}"; do
         echo "PASS $name"
     else
         echo "FAIL $name (log: /tmp/scenario-$name.log)"
-        tail -30 "/tmp/scenario-$name.log"
+        # The console up to the step that failed, then the kernel state.
+        log="/tmp/scenario-$name.log"
+        n="$(grep -n -m1 -E '^\*\*\* (TIMEOUT|host command failed)' "$log" | cut -d: -f1)"
+        if [ -n "$n" ]; then
+            head -n "$n" "$log" | tail -n 40
+            tail -n +"$((n + 1))" "$log" | grep -v '^\[sysrq\] wait channels' | head -n 40
+        else
+            tail -n 40 "$log"
+        fi
         fail=1
     fi
 done

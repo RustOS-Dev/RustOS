@@ -2,11 +2,15 @@
 [appearance]
 theme = "tron"
 font = "JetBrainsMono Nerd Font"
-# RustOS draws eDEX in software (Mesa softpipe: there are no GPU 3D drivers), where every
+# RustOS draws eDEX in software where there is no GPU 3D driver (Mesa's software renderer), and every
 # effect costs CPU time: no scanlines, border pulse or boot animation by default.
 scanlines = false
 animations = false
 boot_animation = false
+
+[terminal]
+# A blinking cursor redraws the whole shell twice a second.
+cursor_blink = false
 
 [launcher]
 # foot (the labwc port) runs a command given after its options.

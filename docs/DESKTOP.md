@@ -34,12 +34,7 @@ In QEMU the same keys can come from the host as the fw_cfg file `opt/rustos/kern
 `edex-session` (`ports/edex-de/edex-session`):
 
 1. Exports the environment: `LIBSEAT_BACKEND=builtin` (seatd's built-in backend, no seat
-   daemon), `WLR_RENDERER_ALLOW_SOFTWARE=1`, `WGPU_BACKEND=gl`, `XDG_*`, and
-   `MESA_EXTENSION_OVERRIDE=-GL_ARB_compute_shader`. The last one works around a wgpu 29 bug: wgpu
-   binds textures with layout qualifiers whenever the GL context offers compute shaders, and
-   softpipe offers `GL_ARB_compute_shader` in a GLSL 3.30 context that cannot express them. All
-   textures then read unit 0, and no text is drawn. Programs started from eDEX inherit the
-   override.
+   daemon), `WLR_RENDERER_ALLOW_SOFTWARE=1`, `WGPU_BACKEND=gl` and `XDG_*`.
 2. Creates `XDG_RUNTIME_DIR` (`/tmp/xdg-runtime-UID`).
 3. Starts a D-Bus session bus (`dbus-daemon --session`, D-Bus 1.16) for eDEX's notifications
    server. Without `dbus-daemon` the desktop runs with no notifications. There is no system bus.
@@ -142,6 +137,8 @@ cargo build --features linux-drivers
 desktop and terminal, kmscube and the DRM and GL test tools stay out. This is
 the image `write_to_drive.sh` writes; `RUSTOS_DESKTOP=0` writes one without the desktop.
 `ports/edex-de/build.sh` pins the eDEX-DE commit, D-Bus 1.16.2 and the Nerd Font (sha256).
+That eDEX-DE commit carries a patched wgpu-hal: wgpu 29 drew no text on a GL 3.3 context that
+offers compute shaders, such as softpipe's (`third_party/README.md` in eDEX-DE-RS).
 eDEX-DE is GPL-3.0; its licence and source commit are in
 `/usr/local/share/licenses/edex-de`.
 

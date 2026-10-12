@@ -69,8 +69,7 @@ expected to work; see [ROADMAP.md](ROADMAP.md) for what was built and
   hidden); suspend, hibernate, screen lock, Tor, Tailscale, VPNs and
   fingerprint login are hidden for lack of backends; everything is drawn
   in software (softpipe), and under QEMU's TCG a frame takes seconds.
-  wgpu 29's GL backend needs `MESA_EXTENSION_OVERRIDE=-GL_ARB_compute_shader`
-  on softpipe (set by `edex-session`). Untested on real hardware.
+  Untested on real hardware.
 * Missing system calls: `ptrace`, System V IPC,
   namespaces/cgroups, `ITIMER_VIRTUAL`/`PROF` (see
   [SYSCALLS.md](SYSCALLS.md)).

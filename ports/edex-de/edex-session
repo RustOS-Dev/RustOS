@@ -46,11 +46,6 @@ export LIBSEAT_BACKEND=builtin
 export WLR_RENDERER_ALLOW_SOFTWARE=1
 # eDEX draws with wgpu's GLES backend on Mesa EGL.
 export WGPU_BACKEND=gl
-# wgpu (29) binds textures with layout qualifiers whenever the GL context offers compute
-# shaders, and Mesa's softpipe advertises GL_ARB_compute_shader in a GLSL 3.30 context that
-# cannot express them: every texture would read unit 0 (no text). Without the extension wgpu
-# assigns the units itself. eDEX and its greeter use no compute.
-[ -n "$MESA_EXTENSION_OVERRIDE" ] || export MESA_EXTENSION_OVERRIDE=-GL_ARB_compute_shader
 export XDG_SESSION_TYPE=wayland XDG_SESSION_DESKTOP=edex-de XDG_CURRENT_DESKTOP=eDEX-DE:labwc
 export XDG_DATA_DIRS=/usr/local/share:/usr/share XDG_CONFIG_DIRS=/usr/local/etc/xdg:/etc/xdg
 export EDEX_SHARE_DIR=/usr/local/share/edex-de

@@ -406,6 +406,9 @@ impl AddressSpace {
                 let va = page.start_address().as_u64();
                 let shared = area.flags & MAP_SHARED != 0;
                 let mut flags = leaf_flags(area.prot);
+                // The page cache hands over its frame with a reference
+                // already taken for this mapping.
+                let mut referenced = false;
                 // (frame, owned by this mapping alone, device memory)
                 let (phys, fresh, device) = match &area.backing {
                     Backing::Anon => match mm::with_frames(|f| f.alloc()) {
@@ -433,6 +436,7 @@ impl AddressSpace {
                         let Ok(p) = mm::pagecache::get_page(inode, idx) else {
                             return Err("file page read failed");
                         };
+                        referenced = true;
                         if shared && area.prot & PROT_WRITE != 0 {
                             mm::pagecache::mark_dirty(inode, idx);
                         } else if area.prot & PROT_WRITE != 0 {
@@ -451,7 +455,7 @@ impl AddressSpace {
                 };
                 if device {
                     flags |= DEVICE_BIT;
-                } else if !fresh {
+                } else if !fresh && !referenced {
                     mm::frame_share(phys);
                 }
                 let frame = PhysFrame::containing_address(PhysAddr::new(phys));

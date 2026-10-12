@@ -3,7 +3,32 @@
 
 use crate::vfs;
 
-static ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/initramfs.cpio"));
+// The archive is assembled in with .incbin rather than include_bytes!: rustc
+// turns include_bytes! into a constant it holds several copies of, and a few
+// hundred MiB of ports took more than 13 GiB to compile. build.rs reruns (and
+// so this crate rebuilds) whenever the archive's inputs change.
+core::arch::global_asm!(
+    ".section .rodata.initramfs,\"a\"",
+    ".balign 4096",
+    ".global rustos_initramfs_start",
+    "rustos_initramfs_start:",
+    concat!(".incbin \"", env!("OUT_DIR"), "/initramfs.cpio\""),
+    ".global rustos_initramfs_end",
+    "rustos_initramfs_end:",
+    ".previous",
+);
+
+unsafe extern "C" {
+    static rustos_initramfs_start: u8;
+    static rustos_initramfs_end: u8;
+}
+
+fn archive() -> &'static [u8] {
+    let start = &raw const rustos_initramfs_start;
+    let end = &raw const rustos_initramfs_end;
+    // SAFETY: the two symbols bracket the archive in read-only data.
+    unsafe { core::slice::from_raw_parts(start, end as usize - start as usize) }
+}
 
 fn hex(b: &[u8]) -> Option<u32> {
     u32::from_str_radix(core::str::from_utf8(b).ok()?, 16).ok()
@@ -11,7 +36,7 @@ fn hex(b: &[u8]) -> Option<u32> {
 
 /// Unpack the archive into the VFS root. Returns the number of entries.
 pub fn unpack() -> usize {
-    unpack_archive(ARCHIVE)
+    unpack_archive(archive())
 }
 
 /// Regular files keep pointing into `data` (tmpfs copies one only when it

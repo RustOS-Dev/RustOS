@@ -539,7 +539,11 @@ fn add_tree(dir: &Path, prefix: &str, out: &mut Vec<(String, Entry)>) {
     for e in entries {
         let name = format!("{}{}", prefix, e.file_name().to_string_lossy());
         let p = e.path();
-        if p.is_dir() {
+        // Symlinks stay symlinks (shared libraries' version links would
+        // otherwise each be a full copy).
+        if let Ok(target) = std::fs::read_link(&p) {
+            out.push((name, Entry::Symlink(target.to_string_lossy().into_owned())));
+        } else if p.is_dir() {
             out.push((name.clone(), Entry::Dir));
             add_tree(&p, &format!("{name}/"), out);
         } else if let Ok(data) = std::fs::read(&p) {

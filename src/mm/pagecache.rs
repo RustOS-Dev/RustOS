@@ -20,7 +20,9 @@
 //! `read`/`write` on the file stay coherent with mappings: writes update
 //! cached pages, and reads see data from dirty pages not yet written back.
 
-use super::{FRAME_SIZE, frame_is_shared, frame_release, phys_ptr, with_frames, zero_frame};
+use super::{
+    FRAME_SIZE, frame_is_shared, frame_release, frame_share, phys_ptr, with_frames, zero_frame,
+};
 use crate::errno::*;
 use crate::sync::Mutex;
 use crate::vfs::Inode;
@@ -47,6 +49,9 @@ struct Object {
     /// readahead window (pages).
     ra_next: u64,
     ra_window: u64,
+    /// GEN when this inode was last written or truncated (or when the
+    /// object was created).
+    write_gen: u64,
 }
 
 impl Object {
@@ -57,14 +62,18 @@ impl Object {
             pages: BTreeMap::new(),
             ra_next: 0,
             ra_window: 0,
+            write_gen: GEN.load(Ordering::SeqCst),
         }
     }
 }
 
 static CACHE: Mutex<BTreeMap<usize, Object>> = Mutex::new(BTreeMap::new());
 
-/// Bumped (under the cache lock) by every write and truncate. A miss that
-/// raced with one may have read old data, so it is not cached.
+/// Bumped (under the cache lock) by every write and truncate, which stamp
+/// the inode's object with the new value. A miss that raced with a write to
+/// the same inode may have read old data, so it is not cached. (Writes to
+/// other files do not matter: a global check made page faults on a busy
+/// system lose every race and fail.)
 static GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Largest readahead window, in pages.
@@ -81,8 +90,9 @@ fn page_bytes(phys: u64) -> &'static mut [u8] {
     unsafe { core::slice::from_raw_parts_mut(phys_ptr::<u8>(phys), FRAME_SIZE as usize) }
 }
 
-/// The frame holding page `idx` of `inode`, reading it in if needed. The
-/// cache keeps its own reference; callers that map it must add theirs.
+/// The frame holding page `idx` of `inode`, reading it in if needed, with
+/// a reference for the caller (`frame_share`, taken under the cache lock so
+/// that eviction cannot free the frame first); the cache keeps its own.
 pub fn get_page(inode: &Arc<dyn Inode>, idx: u64) -> KResult<u64> {
     for _ in 0..4 {
         if let Some(p) = CACHE
@@ -90,29 +100,33 @@ pub fn get_page(inode: &Arc<dyn Inode>, idx: u64) -> KResult<u64> {
             .get(&key(inode))
             .and_then(|o| o.pages.get(&idx))
         {
+            frame_share(p.phys);
             return Ok(p.phys);
         }
-        fill(inode, idx, 1)?;
+        if let Some(phys) = fill(inode, idx, 1, true)? {
+            return Ok(phys);
+        }
     }
-    // Lost to concurrent writes every time: read an uncached copy.
+    // Lost to concurrent writes to this file every time.
     Err(EAGAIN)
 }
 
 /// Read pages `idx..idx+count` that are not cached yet (stopping at the
-/// first cached one) with a single filesystem read, and cache them.
-fn fill(inode: &Arc<dyn Inode>, idx: u64, count: u64) -> KResult<()> {
+/// first cached one) with a single filesystem read, and cache them. With
+/// `want`, returns page `idx` with a reference for the caller (None when
+/// the read raced with a write and was dropped).
+fn fill(inode: &Arc<dyn Inode>, idx: u64, count: u64, want: bool) -> KResult<Option<u64>> {
     let k = key(inode);
     let (seen, count) = {
-        let c = CACHE.lock();
+        let mut c = CACHE.lock();
+        // The object exists from here on, so writes racing with the read
+        // below stamp it.
+        let o = c.entry(k).or_insert_with(|| Object::new(inode));
         let mut n = 1;
-        if let Some(o) = c.get(&k) {
-            while n < count && !o.pages.contains_key(&(idx + n)) {
-                n += 1;
-            }
-        } else {
-            n = count;
+        while n < count && !o.pages.contains_key(&(idx + n)) {
+            n += 1;
         }
-        (GEN.load(Ordering::SeqCst), n)
+        (o.write_gen, n)
     };
     // Read outside the lock (the filesystem may sleep).
     let mut buf = alloc::vec![0u8; (count * FRAME_SIZE) as usize];
@@ -130,12 +144,13 @@ fn fill(inode: &Arc<dyn Inode>, idx: u64, count: u64) -> KResult<()> {
         frames.push(phys);
     }
     let mut unused = Vec::new();
+    let mut got = None;
     let total = {
         let mut c = CACHE.lock();
-        if GEN.load(Ordering::SeqCst) != seen {
+        let obj = c.entry(k).or_insert_with(|| Object::new(inode));
+        if obj.write_gen != seen {
             unused = frames; // raced with a write: may be stale
         } else {
-            let obj = c.entry(k).or_insert_with(|| Object::new(inode));
             for (i, phys) in frames.into_iter().enumerate() {
                 match obj.pages.entry(idx + i as u64) {
                     alloc::collections::btree_map::Entry::Occupied(_) => unused.push(phys),
@@ -144,6 +159,10 @@ fn fill(inode: &Arc<dyn Inode>, idx: u64, count: u64) -> KResult<()> {
                     }
                 }
             }
+            if want && let Some(p) = obj.pages.get(&idx) {
+                frame_share(p.phys);
+                got = Some(p.phys);
+            }
         }
         c.values().map(|o| o.pages.len()).sum::<usize>()
     };
@@ -151,9 +170,12 @@ fn fill(inode: &Arc<dyn Inode>, idx: u64, count: u64) -> KResult<()> {
         with_frames(|f| f.free(p));
     }
     if total > SOFT_LIMIT {
-        evict(total - SOFT_LIMIT / 2);
+        // Not the pages just read: a reader copies them next (page faults
+        // that found their page evicted every time failed with EAGAIN once
+        // mapped libraries kept the cache above the limit).
+        evict_except(total - SOFT_LIMIT / 2, Some((k, idx..idx + count)));
     }
-    Ok(())
+    Ok(got)
 }
 
 /// `read()` through the cache: up to `buf.len()` bytes at `off`, clipped
@@ -213,7 +235,7 @@ pub fn read(inode: &Arc<dyn Inode>, off: u64, buf: &mut [u8]) -> KResult<usize> 
         let want = (last - idx + 1 + window)
             .min(eof_page - idx + 1)
             .min(MAX_READAHEAD * 2);
-        fill(inode, idx, want.max(1))?;
+        fill(inode, idx, want.max(1), false)?;
     }
     Ok(len)
 }
@@ -297,9 +319,12 @@ fn purge_dead() {
 
 /// Apply a `write()` of `data` at `off` to the cached pages of `inode`.
 pub fn write_through(inode: &Arc<dyn Inode>, off: u64, data: &[u8]) {
-    let c = CACHE.lock();
-    GEN.fetch_add(1, Ordering::SeqCst);
-    let Some(o) = c.get(&key(inode)) else { return };
+    let mut c = CACHE.lock();
+    let g = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let Some(o) = c.get_mut(&key(inode)) else {
+        return;
+    };
+    o.write_gen = g;
     let (first, last) = (
         off / FRAME_SIZE,
         (off + data.len() as u64).div_ceil(FRAME_SIZE),
@@ -335,10 +360,11 @@ pub fn read_overlay(inode: &Arc<dyn Inode>, off: u64, buf: &mut [u8], n: usize) 
 /// tail of the last one.
 pub fn truncate(inode: &Arc<dyn Inode>, size: u64) {
     let mut c = CACHE.lock();
-    GEN.fetch_add(1, Ordering::SeqCst);
+    let g = GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let Some(o) = c.get_mut(&key(inode)) else {
         return;
     };
+    o.write_gen = g;
     let keep = size.div_ceil(FRAME_SIZE);
     let gone: Vec<u64> = o.pages.range(keep..).map(|(i, _)| *i).collect();
     for i in gone {
@@ -354,14 +380,23 @@ pub fn truncate(inode: &Arc<dyn Inode>, size: u64) {
 
 /// Drop up to `n` clean pages that no address space maps.
 pub fn evict(n: usize) -> usize {
+    evict_except(n, None)
+}
+
+/// `evict`, sparing the pages `keep` names (an object key and page range).
+fn evict_except(n: usize, keep: Option<(usize, core::ops::Range<u64>)>) -> usize {
     let mut freed = Vec::new();
     {
         let mut c = CACHE.lock();
-        for o in c.values_mut() {
+        for (&k, o) in c.iter_mut() {
+            let spare = match &keep {
+                Some((kk, r)) if *kk == k => r.clone(),
+                _ => 0..0,
+            };
             let victims: Vec<u64> = o
                 .pages
                 .iter()
-                .filter(|(_, p)| !p.dirty && !frame_is_shared(p.phys))
+                .filter(|(i, p)| !p.dirty && !frame_is_shared(p.phys) && !spare.contains(i))
                 .map(|(i, _)| *i)
                 .take(n - freed.len())
                 .collect();

@@ -80,7 +80,19 @@ fn main() {
             Entry::File(data, 0o644),
         ));
     }
-    std::fs::write(&cpio, make_cpio(&files)).expect("write initramfs");
+    let archive = make_cpio(&files);
+    // src/initramfs.rs assembles the archive in with .incbin, which rustc
+    // does not track: it include_bytes!()es this stamp instead, so a new
+    // archive rebuilds the crate.
+    let stamp = out_dir.join("initramfs.stamp");
+    let sum = archive.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
+        (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+    });
+    let stamp_data = format!("{} {:016x}\n", archive.len(), sum);
+    if std::fs::read(&stamp).ok().as_deref() != Some(stamp_data.as_bytes()) {
+        std::fs::write(&stamp, stamp_data).expect("write initramfs stamp");
+    }
+    std::fs::write(&cpio, archive).expect("write initramfs");
 }
 
 /// Build (if needed) and add the ports named in ports/default.list. A port

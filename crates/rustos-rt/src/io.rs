@@ -182,14 +182,12 @@ pub fn write_fmt_fd(fd: i32, args: fmt::Arguments) -> fmt::Result {
     if fd == STDOUT {
         Stdout.write_fmt(args)
     } else {
-        struct Fd(i32);
-        impl fmt::Write for Fd {
-            fn write_str(&mut self, s: &str) -> fmt::Result {
-                write_all(self.0, s.as_bytes()).map_err(|_| fmt::Error)
-            }
-        }
+        // One write per message: formatted piece by piece, a line on a
+        // terminal could otherwise be split by another process's output.
+        let mut s = String::new();
+        s.write_fmt(args)?;
         flush();
-        Fd(fd).write_fmt(args)
+        write_all(fd, s.as_bytes()).map_err(|_| fmt::Error)
     }
 }
 

@@ -8,15 +8,16 @@
 # an empty clear).
 hostrun rm -rf /tmp/rustos-gl && mkdir -p /tmp/rustos-gl
 wait # $ 240
-send kmscube -D /dev/dri/card0 -c 600 > /tmp/kmscube.txt 2>&1 &
-# llvmpipe compiles its shaders before the first frame: wait for frames.
-send for i in $(seq 1 120); do grep -q Rendered /tmp/kmscube.txt && break; sleep 1; done; echo kms''cube-up
-wait kmscube-up 150
+# kmscube writes to the serial console (a tty, so line by line): it
+# reports its frame rate every 2 s once frames flow. llvmpipe compiles its
+# shaders before the first frame, which takes a while under TCG.
+send kmscube -D /dev/dri/card0 -c 100000 &
+wait renderer: "llvmpipe 120
+wait Rendered \d+ frames 150
 monitor screendump /tmp/rustos-gl/cube.ppm
 hostrun python3 "$(git rev-parse --show-toplevel)/tools/check-png.py" /tmp/rustos-gl/cube.ppm 'count:128,128,128>=500000' 'count:128,128,128<=1000000'
-send wait; cat /tmp/kmscube.txt
-wait renderer: "llvmpipe 120
-wait Rendered \d+ frames 60
+send kill $!; wait; echo kms''cube-done
+wait kmscube-done
 wait # $
 # softpipe, the interpreting renderer (GALLIUM_DRIVER=softpipe).
 send GALLIUM_DRIVER=softpipe kmscube -D /dev/dri/card0 -c 20 > /tmp/kmscube2.txt 2>&1; cat /tmp/kmscube2.txt

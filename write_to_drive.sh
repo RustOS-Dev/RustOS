@@ -7,7 +7,8 @@
 # Requirements:
 #   - rustup (the nightly pinned in rust-toolchain.toml is installed and used
 #     even when another cargo comes first in PATH)
-#   - dd (coreutils), lsblk, sfdisk, sgdisk, mkfs.fat
+#   - dd (coreutils), lsblk, sfdisk, sgdisk, mkfs.fat, and vfat mount
+#     support or mtools (mcopy)
 #   - Root privileges (or write access to the target drive)
 
 set -euo pipefail
@@ -607,17 +608,29 @@ main() {
     # Populate the FAT32 root filesystem with a standard directory skeleton so
     # that the kernel has a proper persistent root from first boot.
     echo "Populating FAT32 storage partition with initial directory skeleton..."
-    MOUNT_TMP=$(mktemp -d)
-    run_as_root mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"
-    populate_rootfs_skeleton "$MOUNT_TMP"
-    provision_ax210_firmware "$MOUNT_TMP" "$AX210_FIRMWARE_SOURCE"
+    # Staged in a directory first, then copied: through a vfat mount, or with
+    # mtools where vfat cannot be mounted (containers, kernels without it).
+    STAGE_TMP=$(mktemp -d)
+    populate_rootfs_skeleton "$STAGE_TMP"
+    provision_ax210_firmware "$STAGE_TMP" "$AX210_FIRMWARE_SOURCE"
     if [[ -d "$SCRIPT_DIR/target/firmware-storage" ]]; then
-        run_as_root mkdir -p "$MOUNT_TMP/lib/firmware"
-        run_as_root cp -r "$SCRIPT_DIR/target/firmware-storage/." "$MOUNT_TMP/lib/firmware/"
-        echo "Provisioned storage-partition firmware into $MOUNT_TMP/lib/firmware"
+        run_as_root mkdir -p "$STAGE_TMP/lib/firmware"
+        run_as_root cp -r "$SCRIPT_DIR/target/firmware-storage/." "$STAGE_TMP/lib/firmware/"
+        echo "Provisioned storage-partition firmware into /lib/firmware"
     fi
-    run_as_root umount "$MOUNT_TMP"
+    MOUNT_TMP=$(mktemp -d)
+    if run_as_root mount -t vfat "$STORAGE_PART" "$MOUNT_TMP"; then
+        run_as_root cp -r "$STAGE_TMP/." "$MOUNT_TMP/"
+        run_as_root umount "$MOUNT_TMP"
+    elif command -v mcopy >/dev/null 2>&1; then
+        echo "vfat cannot be mounted here: copying with mtools instead."
+        run_as_root env MTOOLS_SKIP_CHECK=1 mcopy -s -Q -i "$STORAGE_PART" "$STAGE_TMP"/* ::/
+    else
+        echo "Error: cannot mount '$STORAGE_PART' as vfat, and mtools (mcopy) is not installed." >&2
+        exit 1
+    fi
     rmdir "$MOUNT_TMP"
+    run_as_root rm -rf "$STAGE_TMP"
 
     echo
     echo "Done! '$DRIVE' is ready:"

@@ -55,4 +55,5 @@ for d in share/applications/*.desktop; do
     [ -z "$exe" ] && continue
     case "$exe" in /*) [ -e ".$exe" ] || [ -e "$exe" ] || rm -f "$d" ;; *) [ -e "bin/$exe" ] || rm -f "$d" ;; esac
 done
+date >"$ROOT/target/ports-root.stamp"
 echo "release-ports: target/ports-root holds the desktop ($(du -sh "$OUT" | cut -f1)); rebuild the kernel"

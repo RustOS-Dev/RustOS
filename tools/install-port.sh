@@ -29,5 +29,7 @@ echo "install-port: $NAME staged in $DEST"
 if [ "$INITRAMFS" = 1 ]; then
     mkdir -p "$ROOT/target/ports-root/usr/local"
     cp -a "$DEST/." "$ROOT/target/ports-root/usr/local/"
+    # The copies keep their mtimes: tell build.rs that ports-root changed.
+    date >"$ROOT/target/ports-root.stamp"
     echo "install-port: $NAME added to target/ports-root (included by the next kernel build)"
 fi

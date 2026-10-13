@@ -46,6 +46,13 @@ fn main() {
     // Ports staged with `tools/install-port.sh --initramfs` (under /usr/local).
     let ports = manifest_dir.join("target/ports-root");
     println!("cargo:rerun-if-changed={}", ports.display());
+    // Cargo goes by the newest file mtime under ports-root, but the port
+    // scripts copy with `cp -a` (old mtimes) and remove files: they write
+    // this stamp instead.
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("target/ports-root.stamp").display()
+    );
     let before = files.len();
     add_tree(&ports, "", &mut files);
     for (name, e) in files[before..].iter_mut() {

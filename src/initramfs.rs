@@ -7,17 +7,30 @@ use crate::vfs;
 // turns include_bytes! into a constant it holds several copies of, and a few
 // hundred MiB of ports took more than 13 GiB to compile. rustc does not see
 // the .incbin input, so the crate depends on build.rs's stamp of the archive
-// (its size and hash) instead.
-const _ARCHIVE_STAMP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/initramfs.stamp"));
+// (its size and hash) instead, and the stamp's hash is part of the assembly:
+// an incremental build would otherwise keep the object holding the old
+// archive, the assembly text being unchanged.
+const ARCHIVE_STAMP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/initramfs.stamp"));
+const ARCHIVE_ID: u32 = {
+    let mut h: u32 = 0x811c_9dc5;
+    let mut i = 0;
+    while i < ARCHIVE_STAMP.len() {
+        h = (h ^ ARCHIVE_STAMP[i] as u32).wrapping_mul(0x0100_0193);
+        i += 1;
+    }
+    h
+};
 core::arch::global_asm!(
     ".section .rodata.initramfs,\"a\"",
     ".balign 4096",
+    ".set rustos_initramfs_id, {id}",
     ".global rustos_initramfs_start",
     "rustos_initramfs_start:",
     concat!(".incbin \"", env!("OUT_DIR"), "/initramfs.cpio\""),
     ".global rustos_initramfs_end",
     "rustos_initramfs_end:",
     ".previous",
+    id = const ARCHIVE_ID,
 );
 
 unsafe extern "C" {

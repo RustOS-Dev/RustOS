@@ -1,7 +1,8 @@
 # Tones through each card's /dev/dsp reach the host as sound.
 hostbg exec python3 "$(git rev-parse --show-toplevel)/tools/test-web-server.py" 18095 /tmp/rustos-webaudio.log
 wait # $ 240
-send dmesg | grep "sound] card" | cat
+# The USB card may enumerate after the shell starts (GitHub's runners).
+send for i in $(seq 1 60); do [ -e /dev/dsp3 ] && break; sleep 1; done; dmesg | grep "sound] card" | cat
 wait card 0: HDA
 wait card 1: virtio-sound
 wait card 2: HDA

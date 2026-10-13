@@ -1,5 +1,6 @@
 wait # $ 240
-send dhcp -t 30
+# The USB device may enumerate after the shell starts (GitHub's runners).
+send for i in $(seq 1 60); do [ -e /sys/class/net/eth0 ] && break; sleep 1; done; dhcp -t 30
 wait leased 10\.0\.2\.15/24 40
 wait # $
 send ip -br addr; cat /proc/net/if_addrs | grep eth0

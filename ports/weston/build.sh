@@ -18,9 +18,11 @@
 #
 # Needs on the build host: meson, ninja, pkg-config, gperf, bison, flex,
 # python3 with mako, pyyaml and ply, hwdata, glslang-tools, expat/libffi
-# development files (for a native wayland-scanner), and LLVM 18 with
-# clang, libclc and SPIRV-LLVM-Translator development files (Mesa's
-# OpenCL-C kernel compiler, mesa_clc, runs on the host).
+# development files (for a native wayland-scanner), and LLVM with clang,
+# libclc and SPIRV-LLVM-Translator development files (Mesa's OpenCL-C
+# kernel compiler, mesa_clc, runs on the host; CI uses LLVM 18). LLVM 18's
+# llvm-tblgen comes from the host when it has LLVM 18, else is built here.
+# tools/check-port-tools.sh checks for these.
 set -e
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$ROOT/tools/port-lib.sh"
@@ -63,7 +65,7 @@ meson_pkg() {
         --wrap-mode=nofallback -Dbuild.pkg_config_path="$PKG_CONFIG_PATH" \
         "$@" >"$BUILD/$name.log" 2>&1 || { tail -30 "$BUILD/$name.log" >&2; exit 1; }
     ninja -C "$b" >>"$BUILD/$name.log" 2>&1 || { tail -40 "$BUILD/$name.log" >&2; exit 1; }
-    DESTDIR="$STAGE" "$MESON" install -C "$b" --no-rebuild >>"$BUILD/$name.log" 2>&1
+    DESTDIR="$STAGE" "$MESON" install -C "$b" --no-rebuild >>"$BUILD/$name.log" 2>&1 || failed "$BUILD/$name.log"
     mark "$name"
     echo "weston port: $name" >&2
 }
@@ -80,7 +82,7 @@ cmake_pkg() {
         -DCMAKE_FIND_ROOT_PATH="$STAGE/usr/local" -DCMAKE_PREFIX_PATH="$STAGE/usr/local" \
         "$@" >"$BUILD/$name.log" 2>&1 || { tail -30 "$BUILD/$name.log" >&2; exit 1; }
     ninja -C "$b" >>"$BUILD/$name.log" 2>&1 || { tail -40 "$BUILD/$name.log" >&2; exit 1; }
-    DESTDIR="$STAGE" ninja -C "$b" install >>"$BUILD/$name.log" 2>&1
+    DESTDIR="$STAGE" ninja -C "$b" install >>"$BUILD/$name.log" 2>&1 || failed "$BUILD/$name.log"
     mark "$name"
     echo "weston port: $name" >&2
 }
@@ -164,8 +166,8 @@ if ! built host-wayland; then
     d=$(unpack "$SRC/wayland-1.26.0.tar.xz")
     rm -rf "$BUILD/b-host-wayland"
     "$MESON" setup "$BUILD/b-host-wayland" "$d" --prefix="$HOST" -Dlibraries=false \
-        -Ddocumentation=false -Dtests=false -Ddtd_validation=false >"$BUILD/host-wayland.log" 2>&1
-    ninja -C "$BUILD/b-host-wayland" install >>"$BUILD/host-wayland.log" 2>&1
+        -Ddocumentation=false -Dtests=false -Ddtd_validation=false >"$BUILD/host-wayland.log" 2>&1 || failed "$BUILD/host-wayland.log"
+    ninja -C "$BUILD/b-host-wayland" install >>"$BUILD/host-wayland.log" 2>&1 || failed "$BUILD/host-wayland.log"
     mark host-wayland
 fi
 export PKG_CONFIG_PATH="$HOST/lib/x86_64-linux-gnu/pkgconfig:$HOST/lib/pkgconfig:$HOST/share/pkgconfig"
@@ -193,7 +195,7 @@ built pixman || meson_pkg pixman "$(unpack "$SRC/pixman-0.46.4.tar.xz")" \
 if ! built zlib; then
     d=$(unpack "$SRC/zlib-1.3.1.tar.gz")
     (cd "$d" && CC="$CC" ./configure --prefix=/usr/local >"$BUILD/zlib.log" 2>&1 &&
-        make $J >>"$BUILD/zlib.log" 2>&1 && make install DESTDIR="$STAGE" >>"$BUILD/zlib.log" 2>&1)
+        make $J >>"$BUILD/zlib.log" 2>&1 && make install DESTDIR="$STAGE" >>"$BUILD/zlib.log" 2>&1) || failed "$BUILD/zlib.log"
     mark zlib
 fi
 built libpng || autotools_pkg libpng "$(unpack "$SRC/libpng-1.6.44.tar.xz")" --disable-static
@@ -217,11 +219,11 @@ built mtdev || autotools_pkg mtdev "$(unpack "$SRC/mtdev-1.1.7.tar.bz2")" --disa
 if ! built libudev-zero; then
     rm -rf "$BUILD/src/libudev-zero"
     cp -r "$SRC/libudev-zero-1.0.3" "$BUILD/src/libudev-zero"
-    make -C "$BUILD/src/libudev-zero" $J CC="$CC" PREFIX=/usr/local >"$BUILD/libudev-zero.log" 2>&1
+    make -C "$BUILD/src/libudev-zero" $J CC="$CC" PREFIX=/usr/local >"$BUILD/libudev-zero.log" 2>&1 || failed "$BUILD/libudev-zero.log"
     make -C "$BUILD/src/libudev-zero" install-shared install-headers DESTDIR="$STAGE" \
         PREFIX=/usr/local >>"$BUILD/libudev-zero.log" 2>&1 ||
         make -C "$BUILD/src/libudev-zero" install DESTDIR="$STAGE" PREFIX=/usr/local \
-            >>"$BUILD/libudev-zero.log" 2>&1
+            >>"$BUILD/libudev-zero.log" 2>&1 || failed "$BUILD/libudev-zero.log"
     mark libudev-zero
 fi
 built libinput || meson_pkg libinput "$(unpack "$SRC/libinput-1.27.0.tar.gz")" \
@@ -261,7 +263,36 @@ if ! built llvm; then
         tar -xf "$SRC/$p-$LLVM.src.tar.xz" -C "$BUILD/src/llvm"
         mv "$BUILD/src/llvm/$p-$LLVM.src" "$BUILD/src/llvm/$p"
     done
-    TBLGEN_DIR="${LLVM_TBLGEN_DIR:-/usr/lib/llvm-18/bin}"
+    # LLVM 18's llvm-tblgen for the host: the host's own, wherever its
+    # distribution installs LLVM 18 (or LLVM_TBLGEN_DIR), else one built
+    # here from the same sources (LLVM_TBLGEN_DIR=build always builds it).
+    TBLGEN_DIR=""
+    if [ "${LLVM_TBLGEN_DIR:-}" != build ]; then
+        for t in "${LLVM_TBLGEN_DIR:-}" /usr/lib/llvm-18/bin /usr/lib/llvm18/bin /usr/lib64/llvm18/bin \
+            "$(llvm-config-18 --bindir 2>/dev/null)" "$(llvm-config --bindir 2>/dev/null)"; do
+            if [ -n "$t" ] && "$t/llvm-tblgen" --version 2>/dev/null | grep -q 'version 18\.'; then
+                TBLGEN_DIR="$t"
+                break
+            fi
+        done
+    fi
+    if [ -z "$TBLGEN_DIR" ]; then
+        echo "weston port: no LLVM 18 llvm-tblgen on the host, building it" >&2
+        # LLVM 18 headers use uint64_t without <cstdint>, which libstdc++
+        # from GCC 15 on no longer includes on the way (fixed in LLVM 19).
+        rm -rf "$BUILD/b-host-tblgen"
+        env -u CC -u CXX -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS \
+            cmake -G Ninja -S "$BUILD/src/llvm/llvm" -B "$BUILD/b-host-tblgen" \
+            -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_LIBEDIT=OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF -DCMAKE_CXX_FLAGS="-include cstdint" \
+            >"$BUILD/host-tblgen.log" 2>&1 || failed "$BUILD/host-tblgen.log"
+        env -u CC -u CXX -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS \
+            ninja -C "$BUILD/b-host-tblgen" llvm-tblgen >>"$BUILD/host-tblgen.log" 2>&1 ||
+            failed "$BUILD/host-tblgen.log"
+        TBLGEN_DIR="$BUILD/b-host-tblgen/bin"
+    fi
     cmake -G Ninja -S "$BUILD/src/llvm/llvm" -B "$BUILD/b-llvm" \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
         -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$ROOT/tools/rustos-c++" \
@@ -281,7 +312,7 @@ if ! built llvm; then
     ninja -C "$BUILD/b-llvm" LLVM >>"$BUILD/llvm.log" 2>&1 || { tail -40 "$BUILD/llvm.log" >&2; exit 1; }
     DESTDIR="$STAGE" ninja -C "$BUILD/b-llvm" install-LLVM install-llvm-headers \
         >>"$BUILD/llvm.log" 2>&1 || { tail -40 "$BUILD/llvm.log" >&2; exit 1; }
-    rm -rf "$BUILD/b-llvm" "$BUILD/src/llvm"
+    rm -rf "$BUILD/b-llvm" "$BUILD/b-host-tblgen" "$BUILD/src/llvm"
     mark llvm
     echo "weston port: llvm" >&2
 fi

@@ -48,7 +48,7 @@ RUSTOS_CXX_BOOTSTRAP=1 cmake -G Ninja -S "$T/runtimes" -B "$BUILD/b" \
     -DLIBUNWIND_ENABLE_SHARED=OFF -DLIBUNWIND_USE_COMPILER_RT=OFF -DLIBUNWIND_INCLUDE_TESTS=OFF \
     >"$BUILD/cmake.log" 2>&1 || { tail -40 "$BUILD/cmake.log" >&2; exit 1; }
 RUSTOS_CXX_BOOTSTRAP=1 ninja -C "$BUILD/b" >"$BUILD/build.log" 2>&1 || { tail -40 "$BUILD/build.log" >&2; exit 1; }
-ninja -C "$BUILD/b" install >>"$BUILD/build.log" 2>&1
+ninja -C "$BUILD/b" install >>"$BUILD/build.log" 2>&1 || failed "$BUILD/build.log"
 mkdir -p "$DEST/bin"
 "$ROOT/tools/rustos-c++" -O2 -std=c++20 -pthread -o "$DEST/bin/cxxtest" "$ROOT/ports/libcxx/cxxtest.cpp"
 strip "$DEST/bin/cxxtest"

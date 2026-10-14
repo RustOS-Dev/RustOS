@@ -60,7 +60,7 @@ meson_pkg() {
         --wrap-mode=nofallback -Dbuild.pkg_config_path="$PKG_CONFIG_PATH" \
         "$@" >"$BUILD/$name.log" 2>&1 || { tail -30 "$BUILD/$name.log" >&2; exit 1; }
     ninja -C "$b" >>"$BUILD/$name.log" 2>&1 || { tail -40 "$BUILD/$name.log" >&2; exit 1; }
-    DESTDIR="$STAGE" "$MESON" install -C "$b" --no-rebuild >>"$BUILD/$name.log" 2>&1
+    DESTDIR="$STAGE" "$MESON" install -C "$b" --no-rebuild >>"$BUILD/$name.log" 2>&1 || failed "$BUILD/$name.log"
     mark "$name"
     echo "labwc port: $name" >&2
 }
@@ -225,8 +225,8 @@ if ! built labwc; then
 fi
 if ! built utf8proc; then
     d=$(unpack "$SRC/utf8proc-2.12.0.tar.gz")
-    make -C "$d" $J CC="$CC" prefix=/usr/local libutf8proc.so >"$BUILD/utf8proc.log" 2>&1
-    make -C "$d" CC="$CC" prefix=/usr/local DESTDIR="$STAGE" install >>"$BUILD/utf8proc.log" 2>&1
+    make -C "$d" $J CC="$CC" prefix=/usr/local libutf8proc.so >"$BUILD/utf8proc.log" 2>&1 || failed "$BUILD/utf8proc.log"
+    make -C "$d" CC="$CC" prefix=/usr/local DESTDIR="$STAGE" install >>"$BUILD/utf8proc.log" 2>&1 || failed "$BUILD/utf8proc.log"
     rm -f "$STAGE/usr/local/lib/libutf8proc.a"
     mark utf8proc
 fi

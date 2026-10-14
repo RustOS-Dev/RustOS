@@ -58,7 +58,7 @@ meson_pkg() {
         --wrap-mode=nofallback -Dbuild.pkg_config_path="$PKG_CONFIG_PATH" \
         "$@" >"$BUILD/$name.log" 2>&1 || { tail -30 "$BUILD/$name.log" >&2; exit 1; }
     ninja -C "$b" >>"$BUILD/$name.log" 2>&1 || { tail -40 "$BUILD/$name.log" >&2; exit 1; }
-    DESTDIR="$STAGE" "$MESON" install -C "$b" --no-rebuild >>"$BUILD/$name.log" 2>&1
+    DESTDIR="$STAGE" "$MESON" install -C "$b" --no-rebuild >>"$BUILD/$name.log" 2>&1 || failed "$BUILD/$name.log"
     mark "$name"
     echo "gtk port: $name" >&2
 }

@@ -436,6 +436,12 @@ main() {
     cd "$SCRIPT_DIR"
     pinned_cargo "$SCRIPT_DIR"
 
+    # The desktop ports' build tools, checked before anything is fetched or
+    # built (release-ports.sh checks again).
+    if [[ "${RUSTOS_DESKTOP:-1}" != "0" ]]; then
+        as_build_user sh "$SCRIPT_DIR/tools/check-port-tools.sh" || exit 1
+    fi
+
     echo "Updating submodules to pinned repository commits..."
     as_build_user git submodule update --init --recursive
 

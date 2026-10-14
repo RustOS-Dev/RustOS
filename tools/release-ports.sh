@@ -17,6 +17,7 @@
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORTS="libcxx weston labwc edex-de"
+"$ROOT/tools/check-port-tools.sh"
 for p in $PORTS; do
     "$ROOT/tools/install-port.sh" "$p"
 done

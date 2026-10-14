@@ -65,7 +65,7 @@ if ! built dbus; then
         -Dsystem_pid_file=/run/dbus.pid -Dsystem_socket=/run/dbus/system_bus_socket \
         >"$BUILD/dbus.log" 2>&1 || { tail -30 "$BUILD/dbus.log" >&2; exit 1; }
     ninja -C "$BUILD/b-dbus" >>"$BUILD/dbus.log" 2>&1 || { tail -40 "$BUILD/dbus.log" >&2; exit 1; }
-    DESTDIR="$STAGE" "$MESON" install -C "$BUILD/b-dbus" --no-rebuild >>"$BUILD/dbus.log" 2>&1
+    DESTDIR="$STAGE" "$MESON" install -C "$BUILD/b-dbus" --no-rebuild >>"$BUILD/dbus.log" 2>&1 || failed "$BUILD/dbus.log"
     mark dbus
     echo "edex-de port: dbus" >&2
 fi

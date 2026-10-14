@@ -1,5 +1,14 @@
 # Helpers for ports/*/build.sh.
 
+# cmd >>LOG 2>&1 || failed LOG: a step that logs to a file shows the end
+# of that log when it fails (a missing tool otherwise stops the build in
+# silence).
+failed() {
+    echo "build step failed (log: $1):" >&2
+    tail -30 "$1" >&2
+    exit 1
+}
+
 # fetch URL SHA256 FILE: download once and verify.
 fetch() {
     if [ ! -f "$3" ]; then

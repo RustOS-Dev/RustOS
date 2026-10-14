@@ -704,6 +704,26 @@ pub fn wake(t: &Arc<Thread>) {
             enqueue(t.clone());
         } else {
             t.wakeup_pending.store(true, Ordering::SeqCst);
+            // prepare_block() on another CPU may have marked the thread
+            // Blocked and found no flag between the exchange above and the
+            // store: it sleeps unless woken here. (A thread that saw the
+            // flag is Running again and the exchange fails; one woken here
+            // finds the flag set at its next wait, a spurious wakeup.)
+            // The lost wakeup hung SD card writes on 2 and 4 vCPUs: an MMC
+            // request's waiter slept through its completion.
+            if t.state
+                .compare_exchange(
+                    State::Blocked as u8,
+                    State::Ready as u8,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                t.state_site.store(site, Ordering::Relaxed);
+                t.note_event(Ev::Woken as u8);
+                enqueue(t.clone());
+            }
         }
     });
 }

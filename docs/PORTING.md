@@ -40,7 +40,9 @@ run); the `musl` boot scenario runs them.
 `tools/rustos-c++` is `g++` on the same sysroot with LLVM's C++ runtime
 (libc++, libc++abi and libunwind 18) instead of the host's libstdc++. The
 `libcxx` port builds that runtime into the sysroot (static, PIC); the
-runtime is linked statically into each program.
+runtime is linked statically into each program. libc++ 18 predates GCC 14:
+the port patches it for newer GCCs (`ports/libcxx/patches`; built with GCC
+13 and 16). `HOST_CC` and `HOST_CXX` choose the host compilers.
 
 ```sh
 tools/install-port.sh libcxx                  # once: runtime into target/sysroot

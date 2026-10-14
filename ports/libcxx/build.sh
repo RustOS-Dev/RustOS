@@ -25,6 +25,11 @@ for p in libcxx libcxxabi libunwind cmake runtimes; do
     tar -xJf "$SRC/$p-$V.src.tar.xz" -C "$T"
     mv "$T/$p-$V.src" "$T/$p"
 done
+# Newer GCCs: GCC 16 refuses the type-trait builtins libc++ 18 uses with
+# it, and GCC 14 and newer call __cxa_call_terminate, which libc++abi
+# gained in LLVM 19.
+patch -d "$T/libcxx" -p1 <"$ROOT/ports/libcxx/patches/libcxx-gcc16.patch" >/dev/null
+patch -d "$T/libcxxabi" -p1 <"$ROOT/ports/libcxx/patches/libcxxabi-cxa-call-terminate.patch" >/dev/null
 tar -xJf "$SRC/llvm-$V.src.tar.xz" -C "$T" "llvm-$V.src/cmake" "llvm-$V.src/utils/llvm-lit" 2>/dev/null ||
     tar -xJf "$SRC/llvm-$V.src.tar.xz" -C "$T" "llvm-$V.src/cmake"
 mv "$T/llvm-$V.src" "$T/llvm"

@@ -23,8 +23,17 @@ add_eh_frame_hdr() {
     grep -q -- '--eh-frame-hdr' "$SPECS" ||
         sed -i 's|-nostdlib %{shared:-shared}|-nostdlib --eh-frame-hdr %{shared:-shared}|' "$SPECS"
 }
+# GCC 16 links -latomic_asneeded into every program (its default
+# link_gcc_c_sequence): that is the host's glibc libatomic, which a musl
+# program cannot use. The sequence as GCC up to 15 defines it, without it.
+no_host_libatomic() {
+    grep -q '^\*link_gcc_c_sequence:' "$SPECS" || printf '%s\n' '*link_gcc_c_sequence:' \
+        '%{static|static-pie:--start-group} %G %{!nolibc:%L}    %{static|static-pie:--end-group}%{!static:%{!static-pie:%G}}' '' \
+        >>"$SPECS"
+}
 if [ -f "$STAMP" ]; then
     add_eh_frame_hdr
+    no_host_libatomic
     exit 0
 fi
 rm -rf "$BUILD" "$SYSROOT"
@@ -50,5 +59,6 @@ done
 sh "$SRC/tools/musl-gcc.specs.sh" "$SYSROOT/usr/include" "$SYSROOT/usr/lib" \
     /lib/ld-musl-x86_64.so.1 > "$SPECS"
 add_eh_frame_hdr
+no_host_libatomic
 touch "$STAMP"
 echo "build-musl: musl $(cat "$SRC/VERSION") installed in $SYSROOT"

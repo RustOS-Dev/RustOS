@@ -1,0 +1,169 @@
+--- a/include/__config
++++ b/include/__config
+@@ -39,6 +39,17 @@
+ #  define _LIBCPP_GCC_VER (__GNUC__ * 100 + __GNUC_MINOR__)
+ #endif
+ 
++// GCC 16 workarounds (libc++ 18 predates it): it rejects its
++// type-transforming built-in traits (__decay, __remove_pointer, ...) in
++// function signatures, where libc++ uses them through aliases such as
++// __decay_t, so the library templates are used instead; and see
++// _LIBCPP_HIDE_FROM_ABI_VIRTUAL.
++#if defined(_LIBCPP_COMPILER_GCC) && _LIBCPP_GCC_VER >= 1600
++#  define _LIBCPP_GCC16_WORKAROUNDS 1
++#else
++#  define _LIBCPP_GCC16_WORKAROUNDS 0
++#endif
++
+ #ifdef __cplusplus
+ 
+ // Warn if a compiler version is used that is not supported anymore
+@@ -858,7 +869,15 @@
+ #  else
+ #    define _LIBCPP_HIDE_FROM_ABI _LIBCPP_HIDDEN _LIBCPP_EXCLUDE_FROM_EXPLICIT_INSTANTIATION
+ #  endif
+-#  define _LIBCPP_HIDE_FROM_ABI_VIRTUAL _LIBCPP_HIDDEN _LIBCPP_EXCLUDE_FROM_EXPLICIT_INSTANTIATION
++#  if _LIBCPP_GCC16_WORKAROUNDS
++// With GCC, _LIBCPP_EXCLUDE_FROM_EXPLICIT_INSTANTIATION is always_inline.
++// GCC 16 fails (an error for always_inline) to inline a virtual function
++// that a devirtualized call reaches recursively, such as std::function
++// calling itself through lambdas (LLVM's ScalarEvolution).
++#    define _LIBCPP_HIDE_FROM_ABI_VIRTUAL _LIBCPP_HIDDEN
++#  else
++#    define _LIBCPP_HIDE_FROM_ABI_VIRTUAL _LIBCPP_HIDDEN _LIBCPP_EXCLUDE_FROM_EXPLICIT_INSTANTIATION
++#  endif
+ 
+ // This macro provides a HIDE_FROM_ABI equivalent that can be applied to extern
+ // "C" function, as those lack mangling.
+--- a/include/__type_traits/add_lvalue_reference.h
++++ b/include/__type_traits/add_lvalue_reference.h
+@@ -18,7 +18,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__add_lvalue_reference)
++#if __has_builtin(__add_lvalue_reference) && !_LIBCPP_GCC16_WORKAROUNDS
+ 
+ template <class _Tp>
+ using __add_lvalue_reference_t = __add_lvalue_reference(_Tp);
+--- a/include/__type_traits/add_pointer.h
++++ b/include/__type_traits/add_pointer.h
+@@ -22,7 +22,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if !defined(_LIBCPP_WORKAROUND_OBJCXX_COMPILER_INTRINSICS) && __has_builtin(__add_pointer)
++#if !defined(_LIBCPP_WORKAROUND_OBJCXX_COMPILER_INTRINSICS) && __has_builtin(__add_pointer) && !_LIBCPP_GCC16_WORKAROUNDS
+ 
+ template <class _Tp>
+ using __add_pointer_t = __add_pointer(_Tp);
+--- a/include/__type_traits/add_rvalue_reference.h
++++ b/include/__type_traits/add_rvalue_reference.h
+@@ -18,7 +18,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__add_rvalue_reference)
++#if __has_builtin(__add_rvalue_reference) && !_LIBCPP_GCC16_WORKAROUNDS
+ 
+ template <class _Tp>
+ using __add_rvalue_reference_t = __add_rvalue_reference(_Tp);
+--- a/include/__type_traits/decay.h
++++ b/include/__type_traits/decay.h
+@@ -25,7 +25,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__decay)
++#if __has_builtin(__decay) && !_LIBCPP_GCC16_WORKAROUNDS
+ template <class _Tp>
+ using __decay_t _LIBCPP_NODEBUG = __decay(_Tp);
+ 
+--- a/include/__type_traits/make_signed.h
++++ b/include/__type_traits/make_signed.h
+@@ -23,7 +23,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__make_signed)
++#if __has_builtin(__make_signed) && !_LIBCPP_GCC16_WORKAROUNDS
+ 
+ template <class _Tp>
+ using __make_signed_t = __make_signed(_Tp);
+--- a/include/__type_traits/make_unsigned.h
++++ b/include/__type_traits/make_unsigned.h
+@@ -25,7 +25,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__make_unsigned)
++#if __has_builtin(__make_unsigned) && !_LIBCPP_GCC16_WORKAROUNDS
+ 
+ template <class _Tp>
+ using __make_unsigned_t = __make_unsigned(_Tp);
+--- a/include/__type_traits/remove_all_extents.h
++++ b/include/__type_traits/remove_all_extents.h
+@@ -18,7 +18,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__remove_all_extents)
++#if __has_builtin(__remove_all_extents) && !_LIBCPP_GCC16_WORKAROUNDS
+ template <class _Tp>
+ struct remove_all_extents {
+   using type _LIBCPP_NODEBUG = __remove_all_extents(_Tp);
+--- a/include/__type_traits/remove_const.h
++++ b/include/__type_traits/remove_const.h
+@@ -17,7 +17,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__remove_const)
++#if __has_builtin(__remove_const) && !_LIBCPP_GCC16_WORKAROUNDS
+ template <class _Tp>
+ struct remove_const {
+   using type _LIBCPP_NODEBUG = __remove_const(_Tp);
+--- a/include/__type_traits/remove_extent.h
++++ b/include/__type_traits/remove_extent.h
+@@ -18,7 +18,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__remove_extent)
++#if __has_builtin(__remove_extent) && !_LIBCPP_GCC16_WORKAROUNDS
+ template <class _Tp>
+ struct remove_extent {
+   using type _LIBCPP_NODEBUG = __remove_extent(_Tp);
+--- a/include/__type_traits/remove_pointer.h
++++ b/include/__type_traits/remove_pointer.h
+@@ -17,7 +17,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if !defined(_LIBCPP_WORKAROUND_OBJCXX_COMPILER_INTRINSICS) && __has_builtin(__remove_pointer)
++#if !defined(_LIBCPP_WORKAROUND_OBJCXX_COMPILER_INTRINSICS) && __has_builtin(__remove_pointer) && !_LIBCPP_GCC16_WORKAROUNDS
+ template <class _Tp>
+ struct remove_pointer {
+   using type _LIBCPP_NODEBUG = __remove_pointer(_Tp);
+--- a/include/__type_traits/remove_reference.h
++++ b/include/__type_traits/remove_reference.h
+@@ -18,7 +18,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__remove_reference_t)
++#if __has_builtin(__remove_reference_t) && !_LIBCPP_GCC16_WORKAROUNDS
+ template <class _Tp>
+ struct remove_reference {
+   using type _LIBCPP_NODEBUG = __remove_reference_t(_Tp);
+--- a/include/__type_traits/remove_volatile.h
++++ b/include/__type_traits/remove_volatile.h
+@@ -17,7 +17,7 @@
+ 
+ _LIBCPP_BEGIN_NAMESPACE_STD
+ 
+-#if __has_builtin(__remove_volatile)
++#if __has_builtin(__remove_volatile) && !_LIBCPP_GCC16_WORKAROUNDS
+ template <class _Tp>
+ struct remove_volatile {
+   using type _LIBCPP_NODEBUG = __remove_volatile(_Tp);

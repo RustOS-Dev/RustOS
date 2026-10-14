@@ -1,0 +1,19 @@
+--- a/src/cxa_personality.cpp
++++ b/src/cxa_personality.cpp
+@@ -1168,6 +1168,16 @@
+ #endif
+ 
+ 
++// GCC 14 and newer call this when an exception leaves a noexcept function
++// (their own runtime defines it; libc++abi does from LLVM 19).
++__attribute__((noreturn))
++_LIBCXXABI_FUNC_VIS void
++__cxa_call_terminate(void* arg) throw()
++{
++    _Unwind_Exception* unwind_exception = static_cast<_Unwind_Exception*>(arg);
++    call_terminate(unwind_exception != 0 && __isOurExceptionClass(unwind_exception), unwind_exception);
++}
++
+ __attribute__((noreturn))
+ _LIBCXXABI_FUNC_VIS void
+ __cxa_call_unexpected(void* arg)

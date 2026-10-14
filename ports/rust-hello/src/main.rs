@@ -36,7 +36,7 @@ fn main() {
         return;
     }
     if only.first().map(String::as_str) == Some("--spin") {
-        spin(Duration::from_millis(400));
+        let _ = spin_cpu(0.3);
         return;
     }
     let checks: [(&str, CheckFn); 14] = [
@@ -760,14 +760,6 @@ fn wayland() -> Check {
 
 // ─── CPU time accounting ────────────────────────────────────────────────────
 
-fn spin(d: Duration) {
-    let t0 = Instant::now();
-    let mut x = 0u64;
-    while t0.elapsed() < d {
-        x = std::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(1));
-    }
-}
-
 fn rusage(who: i32) -> Result<(f64, f64), String> {
     let mut r: libc::rusage = unsafe { std::mem::zeroed() };
     if unsafe { libc::getrusage(who, &mut r) } != 0 {
@@ -777,16 +769,32 @@ fn rusage(who: i32) -> Result<(f64, f64), String> {
     Ok((tv(r.ru_utime), tv(r.ru_stime)))
 }
 
-fn cpu_time() -> Check {
-    // The spin loop reads the clock through a system call (RustOS has no vDSO): count user
-    // and system time together.
+// Spin until this process has used `target` more seconds of CPU time (user and system
+// together: getrusage is a system call), or for 30 s at most; returns the CPU time used.
+// Spinning for a fixed wall time instead measured the machine's load: a child on a busy
+// two-CPU CI runner got 0.02 s of CPU in 0.4 s.
+fn spin_cpu(target: f64) -> Result<f64, String> {
+    let t0 = Instant::now();
     let (u0, s0) = rusage(libc::RUSAGE_SELF)?;
-    spin(Duration::from_millis(400));
+    let mut x = 0u64;
+    loop {
+        for _ in 0..100_000 {
+            x = std::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(1));
+        }
+        let (u, s) = rusage(libc::RUSAGE_SELF)?;
+        let used = (u + s) - (u0 + s0);
+        if used >= target || t0.elapsed() > Duration::from_secs(30) {
+            return Ok(used);
+        }
+    }
+}
+
+fn cpu_time() -> Check {
+    let used = spin_cpu(0.3)?;
     let (u1, s1) = rusage(libc::RUSAGE_SELF)?;
-    let used = (u1 + s1) - (u0 + s0);
     ensure(
-        used >= 0.2,
-        &format!("CPU time grew {used:.2} s in 0.4 s of spinning"),
+        used >= 0.3,
+        &format!("CPU time grew {used:.2} s in 30 s of spinning"),
     )?;
     // /proc/self/stat fields 14 and 15 (clock ticks).
     let stat = fs::read_to_string("/proc/self/stat").map_err(err("/proc/self/stat"))?;
@@ -809,6 +817,6 @@ fn cpu_time() -> Check {
     ensure(st.success(), "spinning child failed")?;
     let (cu, cs) = rusage(libc::RUSAGE_CHILDREN)?;
     let cu = cu + cs;
-    ensure(cu >= 0.2, &format!("children's CPU time {cu:.2} s"))?;
+    ensure(cu >= 0.3, &format!("children's CPU time {cu:.2} s"))?;
     Ok(format!("self {u1:.2}+{s1:.2} s, children {cu:.2} s"))
 }

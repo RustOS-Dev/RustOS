@@ -4,7 +4,8 @@
 # audio tools use ALSA's OSS emulation (/dev/dsp, /dev/dsp1); the host
 # checks the tones QEMU recorded.
 wait # $ 240
-send ls /dev/snd | tr '\n' ' '; echo
+# The USB device can enumerate after the first prompt.
+send for i in $(seq 1 60); do [ -e /dev/snd/pcmC2D0''p ] && break; sleep 1; done; ls /dev/snd | tr '\n' ' '; echo
 wait pcmC0D0p
 wait pcmC1D0c
 wait pcmC2D0p

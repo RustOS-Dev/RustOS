@@ -263,9 +263,15 @@ impl Shell {
                     let _ = process::dup2(f.fd(), 0);
                 }
             }
-            let mut fg = ao.clone();
-            fg.background = false;
-            let st = self.run_andor(&fg);
+            // A lone command is the job itself (exec'd in this child), so
+            // $! is its pid and `kill $!` reaches it, as in other shells.
+            let st = if ao.rest.is_empty() && ao.first.cmds.len() == 1 && !ao.first.negate {
+                self.run_in_child(&ao.first.cmds[0])
+            } else {
+                let mut fg = ao.clone();
+                fg.background = false;
+                self.run_andor(&fg)
+            };
             process::exit(st);
         }
         let _ = process::setpgid(pid, pid);

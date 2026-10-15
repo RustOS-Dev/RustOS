@@ -1,0 +1,8 @@
+[package]
+name = "aml-check"
+version = "0.1.0"
+edition = "2024"
+description = "Run a machine's ACPI tables through RustOS's AML interpreter on the host"
+
+[dependencies]
+acpi = { path = "../../third_party/acpi" }

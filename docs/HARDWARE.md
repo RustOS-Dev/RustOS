@@ -120,8 +120,14 @@ testing on hardware:
    stops if it cannot download them.
 2. Optional: turn on extra logging before the first boot by creating
    `etc/kernel.conf` on the stick's storage partition (see below).
-3. Boot it in UEFI mode (Secure Boot off) and run **`hwcheck`**.
-4. Copy the `hwcheck-DATE/` directory (and any `bugreport-*.txt`) from the
+3. Optional, from Linux on the same machine: check that RustOS's AML
+   interpreter runs its ACPI tables (`sudo cp -r /sys/firmware/acpi/tables
+   /tmp/acpi && sudo chmod -R a+r /tmp/acpi`, then in `crates/aml-check`:
+   `cargo run --release -- /tmp/acpi`). It loads the DSDT and SSDTs and
+   evaluates every device's `_HID`, `_ADR`, `_STA` and `_CRS`, and names
+   whatever fails; the tables never leave the machine.
+4. Boot it in UEFI mode (Secure Boot off) and run **`hwcheck`**.
+5. Copy the `hwcheck-DATE/` directory (and any `bugreport-*.txt`) from the
    storage partition — it is FAT32, readable from any OS — and report the
    results (machine, component, logs) so this table can be updated.
 

@@ -466,7 +466,23 @@ where
                     }
                     Opcode::Increment | Opcode::Decrement => {
                         let [Argument::Object(operand)] = &op.arguments[..] else { return Err(AmlError::LibUnimplemented) };
+                        // A local or argument: its value, changed in place. (RustOS)
+                        let operand = &operand.clone().unwrap_transparent_reference();
                         let token = self.object_token.lock();
+                        // A buffer field: read, modify, write back (ACPICA). (RustOS)
+                        if let Object::BufferField { length, .. } = **operand
+                            && length <= 64
+                        {
+                            let value = operand.as_integer()?;
+                            let new_value = if op.op == Opcode::Increment {
+                                value.wrapping_add(1)
+                            } else {
+                                value.wrapping_sub(1)
+                            };
+                            unsafe { operand.gain_mut(&token) }.write_buffer_field(&new_value.to_le_bytes(), &token)?;
+                            context.retire_op(op);
+                            continue;
+                        }
                         let Object::Integer(operand) = (unsafe { operand.gain_mut(&token) }) else {
                             Err(AmlError::ObjectNotOfExpectedType {
                                 expected: ObjectType::Integer,
@@ -854,18 +870,24 @@ where
                     }
                     Opcode::DerefOf => {
                         let [Argument::Object(object)] = &op.arguments[..] else { return Err(AmlError::LibUnimplemented) };
-                        let result = if object.typ() == ObjectType::Reference {
+                        // `typ()` gives a reference's target type: match the variant. (RustOS)
+                        let target = if matches!(**object, Object::Reference { .. }) {
                             object.clone().unwrap_reference()
                         } else if object.typ() == ObjectType::String {
                             let path = AmlName::from_str(&object.as_string().unwrap())?
                                 .resolve(&context.current_scope)?;
                             self.namespace.lock().get(path)?.clone()
+                        } else if object.typ() == ObjectType::BufferField {
+                            object.clone()
                         } else {
                             return Err(AmlError::ObjectNotOfExpectedType {
                                 expected: ObjectType::Reference,
                                 got: object.typ(),
                             });
                         };
+                        // DerefOf(Index(buffer, n)): the element's value, as ACPICA gives it (an
+                        // integer up to 64 bits, else a buffer). (RustOS)
+                        let result = self.field_value(target)?;
                         context.contribute_arg(Argument::Object(result));
                         context.retire_op(op);
                     }
@@ -946,7 +968,8 @@ where
                     }
                     Opcode::Return => {
                         let [Argument::Object(object)] = &op.arguments[..] else { return Err(AmlError::LibUnimplemented) };
-                        let object = object.clone().unwrap_transparent_reference();
+                        // Returning a buffer field returns its value. (RustOS)
+                        let object = buffer_field_value(object.clone().unwrap_transparent_reference())?;
 
                         if let Some(last) = self.context_stack.lock().pop() {
                             context = last;
@@ -1902,8 +1925,9 @@ where
         }
 
         let [Argument::Object(left), Argument::Object(right)] = &op.arguments[..] else { return Err(AmlError::LibUnimplemented) };
-        let left = left.clone().unwrap_transparent_reference();
-        let right = right.clone().unwrap_transparent_reference();
+        // Buffer fields compare by value. (RustOS)
+        let left = buffer_field_value(left.clone().unwrap_transparent_reference())?;
+        let right = buffer_field_value(right.clone().unwrap_transparent_reference())?;
 
         /*
          * Some of these operations allow strings and buffers to be used as operands. Apparently
@@ -1967,7 +1991,7 @@ where
 
     fn do_to_buffer(&self, context: &mut MethodContext, op: OpInFlight) -> Result<(), AmlError> {
         let [Argument::Object(operand), target] = &op.arguments[..] else { return Err(AmlError::LibUnimplemented) };
-        let operand = operand.clone().unwrap_transparent_reference();
+        let operand = buffer_field_value(operand.clone().unwrap_transparent_reference())?;
 
         let result = match *operand {
             Object::Buffer(ref bytes) => Object::Buffer(bytes.clone()),
@@ -2000,7 +2024,7 @@ where
 
     fn do_to_integer(&self, context: &mut MethodContext, op: OpInFlight) -> Result<(), AmlError> {
         let [Argument::Object(operand), target] = &op.arguments[..] else { return Err(AmlError::LibUnimplemented) };
-        let operand = operand.clone().unwrap_transparent_reference();
+        let operand = buffer_field_value(operand.clone().unwrap_transparent_reference())?;
 
         let result = match *operand {
             Object::Integer(value) => Object::Integer(value),
@@ -2073,7 +2097,7 @@ where
     /// Perform a `ToDecimalString` or `ToHexString` operation
     fn do_to_dec_hex_string(&self, context: &mut MethodContext, op: OpInFlight) -> Result<(), AmlError> {
         let [Argument::Object(operand), target] = &op.arguments[..] else { return Err(AmlError::LibUnimplemented) };
-        let operand = operand.clone().unwrap_transparent_reference();
+        let operand = buffer_field_value(operand.clone().unwrap_transparent_reference())?;
 
         let result = match *operand {
             Object::String(ref value) => Object::String(value.clone()),
@@ -2314,7 +2338,8 @@ where
     }
 
     fn do_store(&self, target: &Argument, object: WrappedObject) -> Result<WrappedObject, AmlError> {
-        let object = object.unwrap_transparent_reference();
+        // Storing a buffer field stores its value (`Local0 = LEN0`). (RustOS)
+        let object = buffer_field_value(object.unwrap_transparent_reference())?;
         let token = self.object_token.lock();
 
         /*
@@ -2422,20 +2447,7 @@ where
             Output::Integer(value) => value,
         };
 
-        let read_region = match field.kind {
-            FieldUnitKind::Normal { ref region } => region,
-            // FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
-            FieldUnitKind::Bank { .. } => {
-                // TODO: put the bank_value in the bank
-                return Err(AmlError::LibUnimplemented);
-            }
-            // FieldUnitKind::Index { ref index, ref data } => {
-            FieldUnitKind::Index { .. } => {
-                // TODO: configure the correct index
-                return Err(AmlError::LibUnimplemented);
-            }
-        };
-        let Object::OpRegion(ref read_region) = **read_region else { return Err(AmlError::LibUnimplemented) };
+        let read_region = self.field_target(field)?;
 
         /*
          * TODO: it might be worth having a fast path here for reads that don't do weird
@@ -2453,7 +2465,7 @@ where
         let mut read_so_far = 0;
         for i in 0..native_accesses_needed {
             let aligned_offset = object::align_down(field.bit_index + i * access_width_bits, access_width_bits);
-            let raw = self.do_native_region_read(read_region, aligned_offset / 8, access_width_bits / 8)?;
+            let raw = self.field_target_read(&read_region, aligned_offset / 8, access_width_bits / 8)?;
             let src_index = if i == 0 { field.bit_index % access_width_bits } else { 0 };
             let remaining_length = field.bit_length - read_so_far;
             let length = if i == 0 {
@@ -2482,20 +2494,7 @@ where
         };
         let access_width_bits = field.flags.access_type_bytes()? * 8;
 
-        let write_region = match field.kind {
-            FieldUnitKind::Normal { ref region } => region,
-            // FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
-            FieldUnitKind::Bank { .. } => {
-                // TODO: put the bank_value in the bank
-                return Err(AmlError::LibUnimplemented);
-            }
-            // FieldUnitKind::Index { ref index, ref data } => {
-            FieldUnitKind::Index { .. } => {
-                // TODO: configure the correct index
-                return Err(AmlError::LibUnimplemented);
-            }
-        };
-        let Object::OpRegion(ref write_region) = **write_region else { return Err(AmlError::LibUnimplemented) };
+        let write_region = self.field_target(field)?;
 
         // TODO: if the region wants locking, do that
 
@@ -2518,7 +2517,7 @@ where
             let mut bytes = if dst_index > 0 || (field.bit_length - written_so_far) < access_width_bits {
                 match field.flags.update_rule() {
                     FieldUpdateRule::Preserve => self
-                        .do_native_region_read(write_region, aligned_offset / 8, access_width_bits / 8)?
+                        .field_target_read(&write_region, aligned_offset / 8, access_width_bits / 8)?
                         .to_le_bytes(),
                     FieldUpdateRule::WriteAsOnes => [0xff; 8],
                     FieldUpdateRule::WriteAsZeros => [0; 8],
@@ -2535,8 +2534,8 @@ where
             };
 
             object::copy_bits(value_bytes, written_so_far, &mut bytes, dst_index, length);
-            self.do_native_region_write(
-                write_region,
+            self.field_target_write(
+                &write_region,
                 aligned_offset / 8,
                 access_width_bits / 8,
                 u64::from_le_bytes(bytes),
@@ -2545,6 +2544,80 @@ where
         }
 
         Ok(())
+    }
+
+    /// A buffer field or field unit used as an operand: its value (a field unit is read from its
+    /// region). Other objects are returned as they are. (RustOS)
+    fn field_value(&self, object: WrappedObject) -> Result<WrappedObject, AmlError> {
+        if let Object::FieldUnit(ref field) = *object {
+            return self.do_field_read(field);
+        }
+        buffer_field_value(object)
+    }
+
+    /// Where a field's accesses go: its operation region, after selecting the bank of a bank
+    /// field, or the data register of an index field. (RustOS: bank and index fields, as ACPICA's
+    /// AcpiExFieldDatumIo.)
+    fn field_target(&self, field: &FieldUnit) -> Result<FieldTarget, AmlError> {
+        match field.kind {
+            FieldUnitKind::Normal { ref region } => Ok(FieldTarget::Region(region.clone())),
+            FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
+                let Object::FieldUnit(ref bank) = **bank else {
+                    return Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::FieldUnit, got: bank.typ() });
+                };
+                self.do_field_write(bank, Object::Integer(bank_value).wrap())?;
+                Ok(FieldTarget::Region(region.clone()))
+            }
+            FieldUnitKind::Index { ref index, ref data } => {
+                Ok(FieldTarget::Index { index: index.clone(), data: data.clone() })
+            }
+        }
+    }
+
+    /// Read `length` bytes at byte `offset` of a field's target.
+    fn field_target_read(&self, target: &FieldTarget, offset: usize, length: usize) -> Result<u64, AmlError> {
+        match target {
+            FieldTarget::Region(region) => {
+                let Object::OpRegion(ref region) = **region else { return Err(AmlError::LibUnimplemented) };
+                self.do_native_region_read(region, offset, length)
+            }
+            FieldTarget::Index { index, data } => {
+                let (Object::FieldUnit(index), Object::FieldUnit(data)) = (&**index, &**data) else {
+                    return Err(AmlError::LibUnimplemented);
+                };
+                // Select the datum, then read it through the data register.
+                self.do_field_write(index, Object::Integer(offset as u64).wrap())?;
+                let value = self.do_field_read(data)?;
+                let value = match *value {
+                    Object::Integer(v) => v,
+                    Object::Buffer(ref b) => {
+                        let mut bytes = [0u8; 8];
+                        let n = b.len().min(8);
+                        bytes[..n].copy_from_slice(&b[..n]);
+                        u64::from_le_bytes(bytes)
+                    }
+                    _ => return Err(AmlError::LibUnimplemented),
+                };
+                Ok(if length >= 8 { value } else { value & ((1u64 << (length * 8)) - 1) })
+            }
+        }
+    }
+
+    /// Write `length` bytes at byte `offset` of a field's target.
+    fn field_target_write(&self, target: &FieldTarget, offset: usize, length: usize, value: u64) -> Result<(), AmlError> {
+        match target {
+            FieldTarget::Region(region) => {
+                let Object::OpRegion(ref region) = **region else { return Err(AmlError::LibUnimplemented) };
+                self.do_native_region_write(region, offset, length, value)
+            }
+            FieldTarget::Index { index, data } => {
+                let (Object::FieldUnit(index), Object::FieldUnit(data)) = (&**index, &**data) else {
+                    return Err(AmlError::LibUnimplemented);
+                };
+                self.do_field_write(index, Object::Integer(offset as u64).wrap())?;
+                self.do_field_write(data, Object::Integer(value).wrap())
+            }
+        }
     }
 
     /// Performs an actual read from an operation region. `offset` and `length` must respect the
@@ -3381,4 +3454,24 @@ pub enum AmlError {
     /// This is emitted to signal that the library does not support the requested behaviour. This
     /// should eventually never be emitted.
     LibUnimplemented,
+}
+
+/// The target of a field's native accesses (see `Interpreter::field_target`). (RustOS)
+enum FieldTarget {
+    Region(WrappedObject),
+    Index { index: WrappedObject, data: WrappedObject },
+}
+
+/// A buffer field used as an operand: its value, as ACPICA resolves it (an integer up to 64 bits,
+/// else a buffer). Other objects are returned as they are. (RustOS)
+fn buffer_field_value(object: WrappedObject) -> Result<WrappedObject, AmlError> {
+    let Object::BufferField { length, .. } = *object else { return Ok(object) };
+    let mut bytes = vec![0u8; length.div_ceil(8).max(8)];
+    object.read_buffer_field(&mut bytes)?;
+    Ok(if length <= 64 {
+        Object::Integer(u64::from_le_bytes(bytes[..8].try_into().unwrap())).wrap()
+    } else {
+        bytes.truncate(length.div_ceil(8));
+        Object::Buffer(bytes).wrap()
+    })
 }

@@ -180,6 +180,13 @@ impl Object {
     pub fn as_integer(&self) -> Result<u64, AmlError> {
         if let Object::Integer(value) = self {
             Ok(*value)
+        } else if let Object::BufferField { length, .. } = self
+            && *length <= 64
+        {
+            // A buffer field of up to 64 bits is an integer operand (ACPICA). (RustOS)
+            let mut bytes = [0u8; 8];
+            self.read_buffer_field(&mut bytes)?;
+            Ok(u64::from_le_bytes(bytes))
         } else {
             Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::Integer, got: self.typ() })
         }
@@ -212,6 +219,15 @@ impl Object {
             }
             // TODO: how should we handle invalid inputs? What does NT do here?
             Object::String(value) => Ok(value.parse::<u64>().unwrap_or(0)),
+            // The field's value (it read as 0 before). (RustOS)
+            Object::BufferField { length, .. } => {
+                let mut bytes = alloc::vec![0u8; length.div_ceil(8).max(8)];
+                self.read_buffer_field(&mut bytes)?;
+                let n = usize::min(length.div_ceil(8), allowed_bytes).min(8);
+                let mut value = [0u8; 8];
+                value[..n].copy_from_slice(&bytes[..n]);
+                Ok(u64::from_le_bytes(value))
+            }
             _ => Ok(0),
         }
     }
@@ -225,6 +241,12 @@ impl Object {
                 _ => return Err(AmlError::LibUnimplemented),
             },
             Object::String(value) => Ok(value.as_bytes().to_vec()),
+            // The field's bytes. (RustOS)
+            Object::BufferField { length, .. } => {
+                let mut bytes = alloc::vec![0u8; length.div_ceil(8)];
+                self.read_buffer_field(&mut bytes)?;
+                Ok(bytes)
+            }
             _ => Err(AmlError::InvalidOperationOnObject { op: Operation::ConvertToBuffer, typ: self.typ() }),
         }
     }

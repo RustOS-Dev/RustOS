@@ -9,4 +9,17 @@ SPECS="$SYSROOT/usr/lib/rustos-gcc.specs"
 if [ ! -f "$SPECS" ]; then
     "$ROOT/tools/build-musl.sh" "$SYSROOT" >&2 || exit 1
 fi
+# Meson's find_library() searches the library directories the compiler
+# reports, and would take a host library from them (Arch keeps libelf.so in
+# /usr/lib, and Mesa then builds code needing libelf's headers). Report only
+# the directories the link actually searches: the sysroot's and GCC's own.
+for a in "$@"; do
+    case "$a" in -print-search-dirs | --print-search-dirs)
+        gccdir=$(dirname "$("${HOST_CC:-gcc}" -print-libgcc-file-name)")
+        "${HOST_CC:-gcc}" -specs "$SPECS" "$@" |
+            sed "s|^libraries: =.*|libraries: =$SYSROOT/usr/lib/:$gccdir/|"
+        exit
+        ;;
+    esac
+done
 exec "${HOST_CC:-gcc}" -specs "$SPECS" "$@"

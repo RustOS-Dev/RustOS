@@ -10,6 +10,9 @@ SPECS="$SYSROOT/usr/lib/rustos-gcc.specs"
 if [ ! -f "$SPECS" ]; then
     "$ROOT/tools/build-musl.sh" "$SYSROOT" >&2 || exit 1
 fi
+for a in "$@"; do
+    case "$a" in -print-search-dirs | --print-search-dirs) exec "$ROOT/tools/rustos-cc" "$@" ;; esac
+done
 CXXINC="$SYSROOT/usr/include/c++/v1"
 # While the libcxx port builds the runtime itself, no runtime is linked.
 if [ -n "$RUSTOS_CXX_BOOTSTRAP" ]; then

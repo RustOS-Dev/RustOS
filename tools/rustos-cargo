@@ -30,6 +30,16 @@ if [ -z "$RUSTUP_TOOLCHAIN" ]; then
     RUSTUP_TOOLCHAIN="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$ROOT/rust-toolchain.toml")"
     export RUSTUP_TOOLCHAIN
 fi
+# The toolchain may predate the musl target in rust-toolchain.toml.
+if [ ! -d "$(rustc --print sysroot)/lib/rustlib/$T/lib" ]; then
+    if command -v rustup >/dev/null 2>&1; then
+        echo "rustos-cargo: adding Rust target $T to $RUSTUP_TOOLCHAIN" >&2
+        rustup target add --toolchain "$RUSTUP_TOOLCHAIN" "$T" >&2 || exit 1
+    else
+        echo "rustos-cargo: Rust's standard library for $T is not installed (rustup target add $T)" >&2
+        exit 1
+    fi
+fi
 FLAGS="-C target-feature=-crt-static -C link-self-contained=no"
 if [ -n "$RUSTOS_STAGE" ]; then
     RUSTOS_STAGE="$(cd "$RUSTOS_STAGE" && pwd)"

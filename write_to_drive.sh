@@ -125,6 +125,17 @@ pinned_cargo() {
                 --component rust-src --component llvm-tools \
                 --target x86_64-unknown-none --target x86_64-unknown-linux-musl >&2
     fi
+    # A toolchain installed before rust-toolchain.toml listed a target lacks
+    # it, and rustup does not add it on its own (the desktop ports need
+    # x86_64-unknown-linux-musl, added with Rust std programs).
+    local targets t
+    targets="$(sed -n 's/^targets *= *\[\(.*\)\]/\1/p' "$src/rust-toolchain.toml" | tr -d '"' | tr ',' ' ')"
+    for t in $targets; do
+        if ! as_build_user "$rustup" target list --installed --toolchain "$toolchain" | grep -qx "$t"; then
+            echo "Adding Rust target $t to $toolchain (from rust-toolchain.toml)..." >&2
+            as_build_user "$rustup" target add --toolchain "$toolchain" "$t" >&2 || exit 1
+        fi
+    done
     # Put the toolchain's own binaries first so that cargo, the rustc it
     # runs and the nested cargo builds in build.rs all come from it.
     local bin

@@ -97,6 +97,10 @@ const ZERO_CELL: Cell = Cell {
     bg: Color::rgb(0, 0, 0),
 };
 
+/// What each cell of the screen shows (`ZERO_CELL`: not known), so a
+/// render draws only the cells that changed.
+static mut DRAWN: [Cell; MAX_COLS * MAX_ROWS] = [ZERO_CELL; MAX_COLS * MAX_ROWS];
+
 /// The normal screen, saved while the alternate screen is active (all
 /// zero so it lives in .bss).
 static mut SAVED_GRID: [Cell; MAX_COLS * MAX_ROWS] = [ZERO_CELL; MAX_COLS * MAX_ROWS];
@@ -220,6 +224,7 @@ pub fn restore_pixels(p: &[u8]) {
         if let Some(c) = CONSOLE.lock().as_mut() {
             let n = c.fb.len().min(p.len());
             c.fb[..n].copy_from_slice(&p[..n]);
+            c.invalidate();
         }
     });
 }
@@ -248,27 +253,61 @@ impl FbConsole {
         }
     }
 
-    fn put_pixel_row(&mut self, x: usize, y: usize, bits: u8, fg: Color, bg: Color) {
-        let bpp = self.info.bytes_per_pixel;
-        let fgb = encode(self.info.pixel_format, fg);
-        let bgb = encode(self.info.pixel_format, bg);
-        let base = (y * self.info.stride + x) * bpp;
+    #[allow(clippy::deref_addrof)]
+    fn drawn(&mut self) -> &mut [Cell] {
+        // SAFETY: only accessed while holding CONSOLE.
+        unsafe { &mut *(&raw mut DRAWN) }
+    }
+
+    /// Forget what the screen shows: the next render draws every dirty
+    /// cell (after something other than `render` drew on the buffer).
+    fn invalidate(&mut self) {
+        for c in self.drawn().iter_mut() {
+            *c = ZERO_CELL;
+        }
+    }
+
+    /// One 8-pixel row of a glyph at pixel (x, y), in already encoded
+    /// colours. Written a row at a time: the buffer may be video memory,
+    /// where each separate write costs.
+    fn glyph_row(&mut self, x: usize, y: usize, bits: u8, fgb: [u8; 4], bgb: [u8; 4]) {
+        let bpp = self.info.bytes_per_pixel.min(4);
+        let base = (y * self.info.stride + x) * self.info.bytes_per_pixel;
+        let mut px = [0u8; FONT_WIDTH * 4];
         for col in 0..FONT_WIDTH {
-            let px = if (bits >> (7 - col)) & 1 == 1 {
+            let c = if (bits >> (7 - col)) & 1 == 1 {
                 &fgb
             } else {
                 &bgb
             };
-            let off = base + col * bpp;
-            if off + bpp <= self.fb.len() {
-                self.fb[off..off + bpp.min(4)].copy_from_slice(&px[..bpp.min(4)]);
+            px[col * bpp..col * bpp + bpp].copy_from_slice(&c[..bpp]);
+        }
+        if self.info.bytes_per_pixel <= 4 {
+            let n = FONT_WIDTH * bpp;
+            if let Some(dst) = self.fb.get_mut(base..base + n) {
+                dst.copy_from_slice(&px[..n]);
+            }
+        } else {
+            for col in 0..FONT_WIDTH {
+                let off = base + col * self.info.bytes_per_pixel;
+                if let Some(dst) = self.fb.get_mut(off..off + bpp) {
+                    dst.copy_from_slice(&px[col * bpp..col * bpp + bpp]);
+                }
             }
         }
+    }
+
+    fn put_pixel_row(&mut self, x: usize, y: usize, bits: u8, fg: Color, bg: Color) {
+        let fgb = encode(self.info.pixel_format, fg);
+        let bgb = encode(self.info.pixel_format, bg);
+        self.glyph_row(x, y, bits, fgb, bgb);
     }
 
     fn render_cell(&mut self, x: usize, y: usize, invert: bool) {
         let c = *self.cell(x, y);
         let (fg, bg) = if invert { (c.bg, c.fg) } else { (c.fg, c.bg) };
+        let fgb = encode(self.info.pixel_format, fg);
+        let bgb = encode(self.info.pixel_format, bg);
         let glyph = if (32..=126).contains(&c.ch) {
             Some((c.ch - 32) as usize * FONT_HEIGHT)
         } else {
@@ -278,7 +317,7 @@ impl FbConsole {
             let bits = glyph
                 .and_then(|g| FONT_8X16.get(g + row).copied())
                 .unwrap_or(0);
-            self.put_pixel_row(x * FONT_WIDTH, y * FONT_HEIGHT + row, bits, fg, bg);
+            self.glyph_row(x * FONT_WIDTH, y * FONT_HEIGHT + row, bits, fgb, bgb);
         }
     }
 
@@ -292,12 +331,23 @@ impl FbConsole {
         {
             self.dirty[y] = true;
         }
+        let cols = self.cols;
         for y in 0..self.rows {
             if self.dirty[y] {
                 self.dirty[y] = false;
-                note_damage(y);
-                for x in 0..self.cols {
-                    self.render_cell(x, y, false);
+                // Only cells whose content changed: a scroll moves every
+                // line, but most of the screen is blank on both sides.
+                let mut any = false;
+                for x in 0..cols {
+                    let c = *self.cell(x, y);
+                    if self.drawn()[y * cols + x] != c {
+                        self.render_cell(x, y, false);
+                        self.drawn()[y * cols + x] = c;
+                        any = true;
+                    }
+                }
+                if any {
+                    note_damage(y);
                 }
                 // Redraws run with interrupts off; keep other CPUs going.
                 crate::arch::x86_64::smp::poll();
@@ -307,6 +357,8 @@ impl FbConsole {
             let (x, y) = (self.cx.min(self.cols - 1), self.cy);
             note_damage(y);
             self.render_cell(x, y, true);
+            // Drawn inverted: redraw it once the cursor moves on.
+            self.drawn()[y * cols + x] = ZERO_CELL;
             self.drawn_cursor = Some((x, y));
         }
     }
@@ -335,10 +387,12 @@ impl FbConsole {
         }
     }
 
+    /// Redraw the whole screen on the next render.
     fn mark_all(&mut self) {
         for d in self.dirty.iter_mut().take(self.rows) {
             *d = true;
         }
+        self.invalidate();
     }
 
     /// Scroll lines [top, bottom] up by `n`.
@@ -770,6 +824,37 @@ impl FbConsole {
         }
     }
 
+    /// Kernel messages: each line starts at the left margin. Programs'
+    /// output reaches `write_bytes` through the TTY, which turns \n into
+    /// \r\n (ONLCR); kernel text does not pass through it, and a bare
+    /// line feed keeps the column.
+    ///
+    /// A burst of messages (driver probes at boot) draws at most every
+    /// `KERNEL_RENDER_NS`: the grid takes every line, the flusher thread
+    /// draws what the last one left pending.
+    pub fn write_kernel(&mut self, bytes: &[u8]) {
+        use core::sync::atomic::Ordering::SeqCst;
+        for &b in bytes {
+            if b == b'\n' {
+                self.feed(b'\r');
+            }
+            self.feed(b);
+        }
+        if !crate::drivers::console::view_is_live() {
+            return;
+        }
+        if FLUSHER.load(SeqCst) && !SYNC_OUTPUT.load(SeqCst) {
+            let now = crate::time::nanos();
+            if now.wrapping_sub(LAST_KERNEL_RENDER.load(SeqCst)) < KERNEL_RENDER_NS {
+                RENDER_PENDING.store(true, SeqCst);
+                return;
+            }
+            LAST_KERNEL_RENDER.store(now, SeqCst);
+        }
+        RENDER_PENDING.store(false, SeqCst);
+        self.render();
+    }
+
     pub fn clear(&mut self) {
         let blank = self.blank();
         for c in self.grid().iter_mut() {
@@ -825,6 +910,7 @@ impl FbConsole {
                 }
             }
         }
+        self.invalidate();
     }
 
     /// Take pending terminal replies (e.g. cursor position reports).
@@ -1043,6 +1129,55 @@ pub unsafe fn init(framebuffer: FrameBuffer) {
     };
     con.clear();
     *CONSOLE.lock() = Some(con);
+}
+
+/// Kernel messages draw at most this often (see `write_kernel`).
+const KERNEL_RENDER_NS: u64 = 16_000_000;
+static LAST_KERNEL_RENDER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// Kernel text is in the grid but not yet drawn.
+static RENDER_PENDING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+/// The flusher thread runs: kernel messages may wait for it.
+static FLUSHER: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+/// Draw every kernel message at once (a panic: no thread will run again).
+static SYNC_OUTPUT: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Start the thread that draws kernel messages a burst left pending.
+pub fn start_flusher() {
+    use core::sync::atomic::Ordering::SeqCst;
+    crate::sched::spawn("fbcon", || {
+        loop {
+            crate::time::sleep_ms(KERNEL_RENDER_NS / 1_000_000);
+            if RENDER_PENDING.swap(false, SeqCst) {
+                x86_64::instructions::interrupts::without_interrupts(|| {
+                    if let Some(c) = CONSOLE.lock().as_mut()
+                        && crate::drivers::console::view_is_live()
+                    {
+                        c.render();
+                    }
+                });
+                LAST_KERNEL_RENDER.store(crate::time::nanos(), SeqCst);
+            }
+        }
+    });
+    FLUSHER.store(true, SeqCst);
+}
+
+/// From now on draw kernel messages as they come (panic handler).
+pub fn sync_output() {
+    SYNC_OUTPUT.store(true, core::sync::atomic::Ordering::SeqCst);
+}
+
+/// Map the firmware framebuffer write-combining (after `mm::init_pat`).
+/// The bootloader maps it write-back, and on real hardware the firmware's
+/// MTRRs make that range uncached: every pixel was then a separate
+/// uncached write, and the console drew a line at a time. Linux maps it
+/// write-combining for the same reason.
+pub fn use_write_combining() {
+    let Some((virt, len, true)) = buffer() else {
+        return;
+    };
+    let pages = crate::mm::set_cache(virt as u64, len, crate::mm::Cache::WriteCombining);
+    crate::println!("[fb] framebuffer mapped write-combining ({pages} pages)");
 }
 
 /// (columns, rows) of the console, if a framebuffer exists.

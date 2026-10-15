@@ -145,7 +145,7 @@ impl LineBuf {
         }
         let bytes = &self.buf[..self.len];
         if let Some(c) = crate::drivers::framebuffer::CONSOLE.lock().as_mut() {
-            c.write_bytes(bytes);
+            c.write_kernel(bytes);
         }
         crate::klog::write_bytes(bytes);
         crate::drivers::serial::write_bytes(bytes);

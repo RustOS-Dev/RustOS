@@ -73,6 +73,7 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
     let boot_info: &'static BootInfo = boot_info;
     unsafe { mm::init(boot_info) };
     mm::init_pat();
+    drivers::framebuffer::use_write_combining();
     let (free, total) = mm::memory_stats();
     println!(
         "[mm] {} MiB usable, {} MiB free, heap {} MiB",
@@ -103,6 +104,7 @@ pub fn kernel_init(boot_info: &'static mut BootInfo) {
 
     vfs::init();
     sched::start_worker();
+    drivers::framebuffer::start_flusher();
     tty::start_input_thread();
     drivers::serial::enable_rx_interrupts();
 }

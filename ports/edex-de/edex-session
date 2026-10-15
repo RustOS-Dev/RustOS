@@ -33,10 +33,24 @@ if [ "$1" = "--boot" ]; then
     shift
 fi
 
+# The desktop could not start or ended with an error: say why on the console (the session
+# log is in /var/log, gone after a reboot) and keep copies of the logs on the storage
+# partition, which any computer can read.
+failed() {
+    echo "edex-session: $1"
+    where="/var/log/edex-session.log"
+    if [ -d /storage ] && mkdir -p /storage/log 2>/dev/null &&
+        cp /var/log/edex-session.log /storage/log/edex-session.log 2>/dev/null; then
+        [ -f "$XDG_RUNTIME_DIR/labwc.log" ] && cp "$XDG_RUNTIME_DIR/labwc.log" /storage/log/labwc.log
+        where="$where, copied to /storage/log"
+    fi
+    echo "eDEX-DE desktop: $1 (log: $where)" >/dev/console 2>/dev/null
+}
+
 echo "== eDEX-DE session $(date) =="
 if [ ! -e /dev/dri/card0 ]; then
-    echo "edex-session: no DRM device (/dev/dri/card0): this kernel has no display driver"
-    echo "edex-session: (build it with --features linux-drivers; release images have them)"
+    echo "edex-session: (build the kernel with --features linux-drivers; release images have it)"
+    failed "no display device (/dev/dri/card0)"
     exit 1
 fi
 
@@ -125,7 +139,7 @@ if [ "$1" = "--shell-loop" ]; then
         crashes=$((crashes + 1))
         echo "edex-session: edex-de exited with $status (crash $crashes)"
         if [ "$crashes" -ge 5 ]; then
-            echo "edex-session: edex-de keeps crashing; ending the session"
+            failed "edex-de keeps crashing (exit status $status); ending the session"
             break
         fi
         sleep 1
@@ -160,6 +174,11 @@ while :; do
         desktop
     else
         edex-greeter run-as "$user" -- edex-session --desktop
+    fi
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        failed "the session ended with status $status"
+        exit "$status"
     fi
     # Logged out: back to the text console (`desktop` starts it again).
     exit 0

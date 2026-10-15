@@ -180,6 +180,51 @@ impl Cache {
     }
 }
 
+/// Give the kernel mapping of `virt..virt+len` the memory type `cache`
+/// (after `init_pat`). Returns the number of pages changed; pages that are
+/// not mapped are skipped.
+pub fn set_cache(virt: u64, len: usize, cache: Cache) -> usize {
+    use x86_64::structures::paging::mapper::{MappedFrame, TranslateResult};
+    use x86_64::structures::paging::{Size1GiB, Size2MiB};
+    let type_bits = PageTableFlags::WRITE_THROUGH | PageTableFlags::NO_CACHE;
+    let end = virt + len as u64;
+    let mut changed = 0;
+    with_mapper(|m| {
+        let mut addr = virt & !(FRAME_SIZE - 1);
+        while addr < end {
+            let va = VirtAddr::new(addr);
+            let TranslateResult::Mapped { frame, flags, .. } = m.translate(va) else {
+                addr += FRAME_SIZE;
+                continue;
+            };
+            let flags = (flags - type_bits) | cache.flags();
+            // SAFETY: only the memory type of an existing mapping changes.
+            let next = unsafe {
+                match frame {
+                    MappedFrame::Size4KiB(_) => {
+                        let p = Page::<Size4KiB>::containing_address(va);
+                        m.update_flags(p, flags).map(|f| f.flush()).ok();
+                        p.start_address().as_u64() + p.size()
+                    }
+                    MappedFrame::Size2MiB(_) => {
+                        let p = Page::<Size2MiB>::containing_address(va);
+                        m.update_flags(p, flags).map(|f| f.flush()).ok();
+                        p.start_address().as_u64() + p.size()
+                    }
+                    MappedFrame::Size1GiB(_) => {
+                        let p = Page::<Size1GiB>::containing_address(va);
+                        m.update_flags(p, flags).map(|f| f.flush()).ok();
+                        p.start_address().as_u64() + p.size()
+                    }
+                }
+            };
+            changed += 1;
+            addr = next;
+        }
+    });
+    changed
+}
+
 /// PAT entries as Linux sets them: WB, WC, UC-, UC, WB, WP, UC-, WT.
 const PAT_VALUE: u64 = 0x0407_0506_0007_0106;
 

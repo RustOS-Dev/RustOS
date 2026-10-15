@@ -173,6 +173,11 @@ jobs:
       - name: Make runner script executable
         run: chmod +x run-qemu-uefi.sh
 
+      # What write_to_drive.sh and release-ports.sh check first, on the
+      # tools installed above.
+      - name: Desktop build tools (tools/check-port-tools.sh)
+        run: tools/check-port-tools.sh
+
       - name: Run tests
         env:
           RUSTOS_TEST_TIMEOUT: "600"

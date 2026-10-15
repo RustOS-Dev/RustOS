@@ -44,7 +44,21 @@ for m in mako yaml ply jinja2 packaging; do
     python3 -c "import $m" 2>/dev/null || problem "Python module $m: missing"
 done
 # Mesa's OpenCL C compiler (mesa_clc) is built for the host against its LLVM.
-runs llvm-config llvm-config --version
+# Meson finds llvm-config or a versioned one (Debian and Ubuntu install
+# llvm-config-18 on PATH and llvm-config only with the llvm package).
+LLVM_CONFIG=""
+for c in llvm-config $(IFS=:; for d in $PATH; do ls "$d" 2>/dev/null; done |
+    grep -x 'llvm-config-[0-9][0-9]*' | sort -t- -k3 -rn | uniq); do
+    if command -v "$c" >/dev/null 2>&1; then
+        LLVM_CONFIG="$c"
+        break
+    fi
+done
+if [ -n "$LLVM_CONFIG" ]; then
+    runs "$LLVM_CONFIG" "$LLVM_CONFIG" --version
+else
+    problem "llvm-config: not found (LLVM development files)"
+fi
 for p in libclc LLVMSPIRVLib hwdata expat libffi glib-2.0; do
     pkg-config --exists "$p" 2>/dev/null || problem "$p development files: not found (pkg-config $p)"
 done

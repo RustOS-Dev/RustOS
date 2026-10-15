@@ -74,11 +74,14 @@ pub fn build(root: &Path, out: &Path) {
     let libdir = out.join("linuxkpi");
     std::fs::create_dir_all(&libdir).unwrap();
     let flags = cflags(root);
-    // Objects depend on the flags and on which override headers exist: a
-    // new header in src/linuxkpi/include shadows a Linux one that the old
-    // dependency files still name.
+    // Objects depend on the compiler, the flags and on which override
+    // headers exist: a new header in src/linuxkpi/include shadows a Linux
+    // one that the old dependency files still name.
     let stamp = {
         let mut h = DefaultHasher::new();
+        if let Ok(o) = Command::new(&clang).arg("--version").output() {
+            o.stdout.hash(&mut h);
+        }
         flags.hash(&mut h);
         let mut overrides = Vec::new();
         list_files(&root.join("src/linuxkpi/include"), &mut overrides);

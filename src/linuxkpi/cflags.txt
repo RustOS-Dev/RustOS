@@ -34,6 +34,7 @@
 -mno-80387
 -mno-fp-ret-in-387
 -fno-common
+-fshort-wchar
 -fno-strict-aliasing
 -fno-strict-overflow
 -fno-delete-null-pointer-checks

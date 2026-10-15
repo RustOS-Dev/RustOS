@@ -127,6 +127,7 @@ pub fn start_userspace() -> ! {
     if params::flag("log.persist") {
         klog::start_persist();
     }
+    params::boot_loaded();
     bluetooth::late_init();
 
     syscall::init();

@@ -96,6 +96,9 @@ pub struct Disk {
 }
 
 static DISKS: Mutex<Vec<Arc<Disk>>> = Mutex::new(Vec::new());
+/// Partitions `automount` left alone and said so (once each).
+static REPORTED_FOREIGN: Mutex<alloc::collections::BTreeSet<String>> =
+    Mutex::new(alloc::collections::BTreeSet::new());
 static SD_COUNT: AtomicU32 = AtomicU32::new(0);
 static VD_COUNT: AtomicU32 = AtomicU32::new(0);
 static NVME_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -325,10 +328,28 @@ pub fn init() {
     });
 }
 
-/// Mount every partition with a recognised filesystem: the RustOS storage
-/// partition at /storage, anything else at /mnt/<name>.
+/// The RustOS storage partition (by GPT name, or a FAT volume labelled
+/// RUSTOS).
+fn is_storage(d: &Disk) -> bool {
+    d.part.as_ref().is_some_and(|p| p.label == "rustos-storage")
+        || crate::fs::volume_label(d.dev.as_ref()).is_some_and(|l| l.eq_ignore_ascii_case("RUSTOS"))
+}
+
+/// Mount the drive RustOS runs from and removable media: the storage
+/// partition at /storage, the boot drive's EFI system partition at
+/// /boot/efi, anything else at /mnt/<name>. Other systems' disks are left
+/// alone (`mount` them by hand): on a partitioned disk that does not hold
+/// the RustOS storage partition only FAT partitions (USB sticks, cards)
+/// mount, never an EFI system partition, and never a Linux filesystem that
+/// mounting would mark for journal recovery.
 pub fn automount() {
-    for d in disks() {
+    let all = disks();
+    let boot_disks: Vec<String> = all
+        .iter()
+        .filter(|d| is_storage(d))
+        .filter_map(|d| d.parent.clone())
+        .collect();
+    for d in all.iter() {
         // Skip whole disks that carry a partition table.
         if d.parent.is_none()
             && disks()
@@ -345,19 +366,33 @@ pub fn automount() {
             continue;
         };
         let is_esp = d.part.as_ref().is_some_and(|p| p.is_esp);
-        let is_storage = d.part.as_ref().is_some_and(|p| p.label == "rustos-storage")
-            || crate::fs::volume_label(d.dev.as_ref())
-                .is_some_and(|l| l.eq_ignore_ascii_case("RUSTOS"));
+        let is_storage = is_storage(d);
+        let foreign = d.parent.as_ref().is_some_and(|p| !boot_disks.contains(p));
+        if foreign && (is_esp || kind != "vfat") {
+            if REPORTED_FOREIGN.lock().insert(dev_path.clone()) {
+                crate::println!(
+                    "[block] {}: {} of another system: not mounted (mount it by hand)",
+                    dev_path,
+                    if is_esp { "EFI system partition" } else { kind }
+                );
+            }
+            continue;
+        }
         let target = if is_storage && !vfs::mounts().iter().any(|(p, _, _)| p == "/storage") {
             String::from("/storage")
-        } else if is_esp {
+        } else if is_esp && !vfs::mounts().iter().any(|(p, _, _)| p == "/boot/efi") {
             String::from("/boot/efi")
         } else {
             format!("/mnt/{}", d.name)
         };
         let _ = vfs::mkdir_p(&target);
         match crate::fs::mount_by_type(kind, &dev_path, &target) {
-            Ok(()) => crate::println!("[block] mounted {} ({}) at {}", dev_path, kind, target),
+            Ok(()) => {
+                crate::println!("[block] mounted {} ({}) at {}", dev_path, kind, target);
+                if target == "/storage" {
+                    crate::params::storage_mounted();
+                }
+            }
             Err(e) => crate::println!("[block] {}: cannot mount {}: {}", dev_path, kind, e),
         }
     }

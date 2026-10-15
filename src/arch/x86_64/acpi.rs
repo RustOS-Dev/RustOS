@@ -318,8 +318,13 @@ fn with_interpreter<R>(f: impl FnOnce(&Interpreter<KernelAcpi>) -> R) -> Option<
     if guard.is_none() {
         let acpi = ACPI.lock();
         let platform = acpi.as_ref()?;
-        match Interpreter::new_from_platform(platform) {
-            Ok(i) => {
+        // A table the interpreter cannot fully run does not cost the rest
+        // of the namespace (laptop firmware often has one).
+        match Interpreter::new_from_platform_lenient(platform) {
+            Ok((i, failed)) => {
+                for (table, e) in &failed {
+                    crate::println!("[acpi] AML: {} not fully loaded: {:?}", table, e);
+                }
                 i.initialize_namespace();
                 // Tell the firmware interrupts go through the IOAPIC, as
                 // Linux does: `_PRT` methods then return APIC routing

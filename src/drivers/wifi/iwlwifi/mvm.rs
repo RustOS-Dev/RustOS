@@ -52,6 +52,10 @@ pub const RX_BAID_ALLOCATION_CONFIG: u8 = 0x16;
 pub const TLC_MNG_UPDATE_NOTIF: u8 = 0xF7;
 // Regulatory/NVM group.
 pub const NVM_ACCESS_COMPLETE: u8 = 0x00;
+pub const NVM_GET_INFO: u8 = 0x02;
+// Long group (debug configuration).
+pub const LONG: u8 = 0x1;
+pub const LDBG_CONFIG: u8 = 0xF6;
 pub const PNVM_INIT_COMPLETE: u8 = 0xFE;
 
 pub const FW_CTXT_ACTION_ADD: u32 = 1;

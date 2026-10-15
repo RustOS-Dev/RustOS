@@ -77,6 +77,33 @@ pub fn load() -> Option<String> {
     from
 }
 
+/// Boot has read kernel.conf (`load`): a storage partition mounted later
+/// brings its own with `storage_mounted`.
+static BOOT_LOADED: AtomicBool = AtomicBool::new(false);
+
+pub fn boot_loaded() {
+    BOOT_LOADED.store(true, Ordering::SeqCst);
+}
+
+/// /storage was mounted after boot read kernel.conf (a USB stick that
+/// enumerated late): read its kernel.conf now. Settings used while booting
+/// (linux.enable, ...) apply from the next boot; log.persist starts now.
+pub fn storage_mounted() {
+    if !BOOT_LOADED.load(Ordering::SeqCst) || !crate::vfs::exists(FILES[0]) {
+        return;
+    }
+    if let Some(path) = load() {
+        crate::println!(
+            "[init] kernel parameters from {} (mounted after boot; boot-time settings apply from the next boot): {}",
+            path,
+            cmdline()
+        );
+        if flag("log.persist") {
+            crate::klog::start_persist();
+        }
+    }
+}
+
 fn refresh() {
     IWL_DEBUG.store(flag("iwlwifi.debug"), Ordering::Relaxed);
     NET_DEBUG.store(flag("net.debug"), Ordering::Relaxed);

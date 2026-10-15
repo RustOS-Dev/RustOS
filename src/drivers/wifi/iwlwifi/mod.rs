@@ -345,6 +345,7 @@ pub fn probe(dev: &PciDevice) {
             last_tick: 0,
             fw_attempts: 0,
             err_tables: (0, 0),
+            nvm_ant: (0, 0),
             profile: Profile::AX210,
             agg: true,
             link: None,
@@ -596,6 +597,8 @@ struct Driver {
     fw_attempts: u32,
     /// SRAM addresses of the LMAC and UMAC error tables (from ALIVE).
     err_tables: (u32, u32),
+    /// TX and RX antennas the module has (NVM_GET_INFO); 0: not known.
+    nvm_ant: (u32, u32),
     /// What we advertise (limited by kernel.conf and firmware support).
     profile: Profile,
     /// Aggregation (block ack) enabled.
@@ -673,6 +676,10 @@ impl Driver {
                 match self.boot() {
                     Ok(()) => {}
                     Err(e) => {
+                        // A firmware assert while starting: say where.
+                        if e == EIO && self.err_tables != (0, 0) && self.fw_attempts < 3 {
+                            self.dump_error_tables();
+                        }
                         self.trans.stop();
                         self.fw = None;
                         self.fw_attempts += 1;
@@ -724,6 +731,7 @@ impl Driver {
 
     fn boot(&mut self) -> KResult<()> {
         self.dev.set_phase(Phase::Starting, "");
+        self.err_tables = (0, 0);
         let names: Vec<String> = [72, 71, 68, 66, 63, 59]
             .iter()
             .map(|v| format!("iwlwifi-{}-{}.ucode", self.family, v))
@@ -831,8 +839,34 @@ impl Driver {
                 crate::println!("[iwlwifi] no INIT_COMPLETE");
             })?;
 
-        let tx_ant = fw.valid_tx_ant();
-        let rx_ant = fw.valid_rx_ant();
+        // The module's own antennas (Linux iwl_get_nvm): a laptop module
+        // may have fewer than the firmware allows.
+        match self.cmd(REGULATORY_NVM, NVM_GET_INFO, &0u32.to_le_bytes()) {
+            Ok(r) if r.len() >= 20 => {
+                let le = |o: usize| u32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+                self.nvm_ant = (le(12) & 0xF, le(16) & 0xF);
+                crate::println!(
+                    "[iwlwifi] NVM: version {:#x}, antennas tx {:#x} rx {:#x} (firmware tx {:#x} rx {:#x})",
+                    u16::from_le_bytes([r[4], r[5]]),
+                    self.nvm_ant.0,
+                    self.nvm_ant.1,
+                    fw.valid_tx_ant(),
+                    fw.valid_rx_ant()
+                );
+            }
+            Ok(r) => crate::println!("[iwlwifi] NVM_GET_INFO: short response ({} bytes)", r.len()),
+            Err(e) => crate::println!("[iwlwifi] NVM_GET_INFO failed: {}", e),
+        }
+        // Firmware debug assertions off, as Linux does once the firmware
+        // runs (iwl_fw_disable_dbg_asserts): otherwise some builds stop on
+        // conditions that are not errors.
+        let _ = self.cmd(
+            LONG,
+            LDBG_CONFIG,
+            Cmd::new().u32(0x2B).u32(0x0001_0001).0.as_slice(),
+        );
+
+        let (tx_ant, rx_ant) = self.valid_ants();
         self.dev.link.lock().tx_ant = tx_ant;
         self.cmd(LEGACY, TX_ANT_CONFIG, &tx_ant.to_le_bytes())?;
         if fw.has_capa(37) {
@@ -986,12 +1020,11 @@ impl Driver {
         if trans::rb_size() < 12288 {
             p.max_mpdu = 3895;
         }
-        p.nss = (self
-            .fw
-            .as_ref()
-            .map_or(3, |f| f.valid_tx_ant() & f.valid_rx_ant())
-            & 3)
-        .count_ones() as u8;
+        p.nss = ({
+            let (t, r) = self.valid_ants();
+            t & r
+        } & 3)
+            .count_ones() as u8;
         p.nss = p.nss.max(1);
         if self.he_ctxt_ver == 0 {
             p.max_mode = Mode::Vht;
@@ -1018,7 +1051,18 @@ impl Driver {
     }
 
     fn rx_ant(&self) -> u32 {
-        self.fw.as_ref().map_or(3, |f| f.valid_rx_ant())
+        self.valid_ants().1
+    }
+
+    /// TX and RX antennas to use: the firmware's, limited to the module's
+    /// (NVM) when that leaves any (Linux iwl_mvm_get_valid_tx_ant).
+    fn valid_ants(&self) -> (u32, u32) {
+        let (ft, fr) = self
+            .fw
+            .as_ref()
+            .map_or((3, 3), |f| (f.valid_tx_ant(), f.valid_rx_ant()));
+        let pick = |f: u32, n: u32| if f & n != 0 { f & n } else { f };
+        (pick(ft, self.nvm_ant.0), pick(fr, self.nvm_ant.1))
     }
 
     /// One round of work: interrupts, received packets, requests, timers.
@@ -2157,7 +2201,7 @@ impl Driver {
             MAC_CONTEXT,
             &self.mac_cmd(FW_CTXT_ACTION_MODIFY, bssid, Some((aid, bi, dtim)), qos),
         )?;
-        let chains = (self.fw.as_ref().map_or(3, |f| f.valid_tx_ant()) & 3) as u8;
+        let chains = (self.valid_ants().0 & 3) as u8;
         let flags = sta_flags(&link, chains.count_ones() as u8);
         self.cmd(
             LEGACY,

@@ -157,6 +157,53 @@ where
         Ok(interpreter)
     }
 
+    /// Like [`Interpreter::new_from_platform`], but a table that fails to load does not stop the
+    /// others (as ACPICA does): what it defined before the failure stays in the namespace. Returns
+    /// the interpreter and, for each table that failed, its name (`DSDT` or `SSDT n`, with the
+    /// OEM table ID) and the error. (RustOS)
+    pub fn new_from_platform_lenient(
+        platform: &AcpiPlatform<H>,
+    ) -> Result<(Interpreter<H>, Vec<(alloc::string::String, AmlError)>), AcpiError> {
+        fn oem_table_id(handler: &impl Handler, table: &AmlTable) -> alloc::string::String {
+            let header = unsafe { handler.map_physical_region::<SdtHeader>(table.phys_address, mem::size_of::<SdtHeader>()) };
+            header.oem_table_id.iter().filter(|b| b.is_ascii_graphic()).map(|&b| b as char).collect()
+        }
+        fn load(interpreter: &Interpreter<impl Handler>, table: &AmlTable) -> Result<(), AmlError> {
+            let mapping = unsafe {
+                interpreter.handler.map_physical_region::<SdtHeader>(table.phys_address, table.length as usize)
+            };
+            let stream = unsafe {
+                slice::from_raw_parts(
+                    mapping.virtual_start.as_ptr().byte_add(mem::size_of::<SdtHeader>()) as *const u8,
+                    table.length as usize - mem::size_of::<SdtHeader>(),
+                )
+            };
+            interpreter.load_table(stream)
+        }
+
+        let registers = platform.registers.clone();
+        let facs = {
+            platform.tables.find_table::<Fadt>().and_then(|fadt| fadt.facs_address().ok()).map(
+                |facs_address| unsafe {
+                    platform.handler.map_physical_region(facs_address, mem::size_of::<Facs>())
+                },
+            )
+        };
+
+        let dsdt = platform.tables.dsdt()?;
+        let interpreter = Interpreter::new(platform.handler.clone(), dsdt.revision, registers, facs);
+        let mut failed = Vec::new();
+        if let Err(e) = load(&interpreter, &dsdt) {
+            failed.push((alloc::format!("DSDT {}", oem_table_id(&platform.handler, &dsdt)), e));
+        }
+        for (n, ssdt) in platform.tables.ssdts().enumerate() {
+            if let Err(e) = load(&interpreter, &ssdt) {
+                failed.push((alloc::format!("SSDT {} {}", n + 1, oem_table_id(&platform.handler, &ssdt)), e));
+            }
+        }
+        Ok((interpreter, failed))
+    }
+
     /// Load the supplied byte stream as an AML table. This should be only the encoded AML stream -
     /// not the header at the start of a table. If you've used [`Interpreter::new_from_tables`],
     /// you'll likely not need to load any tables manually.

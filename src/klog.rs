@@ -94,8 +94,12 @@ const PERSIST_MAX: u64 = 4 << 20;
 /// `kernel.log.1`), flushing to disk every two seconds so the tail
 /// survives a hang or crash (`log.persist=1`).
 pub fn start_persist() {
+    static STARTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
     if !crate::vfs::is_dir("/storage") {
         crate::println!("[klog] log.persist: /storage is not mounted");
+        return;
+    }
+    if STARTED.swap(true, core::sync::atomic::Ordering::SeqCst) {
         return;
     }
     let _ = crate::vfs::mkdir_p(PERSIST_DIR);

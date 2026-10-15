@@ -367,6 +367,13 @@ static void test_acpi(void)
 	acpi_handle sb;
 	union acpi_object *o;
 
+	/* The AML interpreter could not load the firmware's tables (see the
+	 * [acpi] lines): there is no namespace to look things up in. RustOS
+	 * runs without ACPI devices then, and so do Linux drivers. */
+	if (!rustos_kpi_acpi_exists("\\_SB")) {
+		pr_info("linuxkpi self-test: no ACPI namespace; ACPI checks skipped\n");
+		return;
+	}
 	CHECK(ACPI_SUCCESS(acpi_get_handle(NULL, "\\_SB", &sb)) && sb, "acpi_get_handle");
 	CHECK(acpi_get_handle(NULL, "\\_SB.NOPE", &sb) == AE_NOT_FOUND, "acpi_get_handle missing");
 	/* Every x86 machine's DSDT has a PCI root bridge with a _PRT package. */
@@ -485,6 +492,8 @@ static void test_acpi_devices(void)
 	acpi_handle a, b;
 	int seen = 0;
 
+	if (!rustos_kpi_acpi_exists("\\_SB.PCI0"))
+		return;	/* no namespace (above), or another name for the root bridge */
 	CHECK(ACPI_SUCCESS(acpi_get_handle(NULL, "\\_SB.PCI0", &a)) &&
 	      ACPI_SUCCESS(acpi_get_handle(NULL, "\\_SB_.PCI0", &b)) && a == b,
 	      "ACPI path normalisation");

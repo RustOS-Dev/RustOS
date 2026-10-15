@@ -9,10 +9,16 @@ failed() {
     exit 1
 }
 
-# fetch URL SHA256 FILE: download once and verify.
+# fetch URL SHA256 FILE: download once and verify. A www.x.org download
+# that fails is tried again from freedesktop.org's copy of the same tree
+# (www.x.org resets connections from some networks and VPNs).
 fetch() {
     if [ ! -f "$3" ]; then
+        set -- "$1" "$2" "$3" "$(printf '%s\n' "$1" |
+            sed -n 's|^https://www\.x\.org/releases/|https://xorg.freedesktop.org/archive/|p')"
         curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o "$3.part" "$1" ||
+            { [ -n "$4" ] && echo "download failed: $1; trying $4" >&2 &&
+                curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o "$3.part" "$4"; } ||
             { echo "download failed: $1" >&2; rm -f "$3.part"; exit 1; }
         mv "$3.part" "$3"
     fi

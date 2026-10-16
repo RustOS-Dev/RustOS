@@ -490,6 +490,7 @@ static void test_acpi_devices(void)
 {
 	struct acpi_device *kbd = acpi_dev_get_first_match_dev("PNP0303", NULL, -1);
 	acpi_handle a, b;
+	char name[24];
 	int seen = 0;
 
 	if (!rustos_kpi_acpi_exists("\\_SB.PCI0"))
@@ -499,7 +500,10 @@ static void test_acpi_devices(void)
 	      "ACPI path normalisation");
 	if (!kbd)
 		return;	/* not every machine has one */
-	CHECK(!strcmp(dev_name(&kbd->dev), "PNP0303:00"), "ACPI device name");
+	/* Named after its _HID, which a laptop's keyboard has of its own
+	 * (PNP0303 is then its _CID): "MSI0007:00". */
+	snprintf(name, sizeof(name), "%s:%02x", acpi_device_hid(kbd), kbd->pnp.instance_no);
+	CHECK(!strcmp(dev_name(&kbd->dev), name), "ACPI device name");
 	CHECK(acpi_fetch_acpi_dev(kbd->handle) == kbd, "acpi_fetch_acpi_dev");
 	CHECK(ACPI_SUCCESS(acpi_walk_resources(kbd->handle, METHOD_NAME__CRS, test_kbd_res,
 					       &seen)) && seen == 7, "_CRS resources");

@@ -688,7 +688,10 @@ impl Trans {
                 if len_n_flags != 0x5555_0000 && len >= 4 && len + 4 <= rb {
                     self.pending.push_back(Packet {
                         cmd: buf[4],
-                        group: buf[5],
+                        // Group 1 holds the legacy commands with the wide
+                        // header (DEF_ID): they are group 0's (Linux matches
+                        // either way).
+                        group: if buf[5] == 1 { 0 } else { buf[5] },
                         seq: u16::from_le_bytes([buf[6], buf[7]]),
                         data: buf[8..4 + len].to_vec(),
                     });
@@ -724,9 +727,13 @@ impl Trans {
                 &data[..data.len().min(32)]
             );
         }
+        // With the wide command header the firmware takes the legacy
+        // commands in group 1 (Linux iwl_trans_send_cmd: DEF_ID); in group
+        // 0 it asserts BAD_COMMAND. REPLY_ERROR (0x2) keeps group 0.
+        let wire_group = if group == 0 && cmd != 0x2 { 1 } else { group };
         let mut buf = Vec::with_capacity(8 + data.len());
         buf.push(cmd);
-        buf.push(group);
+        buf.push(wire_group);
         buf.extend_from_slice(&seq.to_le_bytes());
         buf.extend_from_slice(&(data.len() as u16).to_le_bytes());
         buf.push(0);

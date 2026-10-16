@@ -690,8 +690,21 @@ impl Driver {
                             );
                         }
                         // Firmware files may appear once storage is
-                        // mounted: retry quickly at first, then on request.
-                        let wait = if self.fw_attempts < 20 { 3000 } else { 60_000 };
+                        // mounted: retry quickly at first. A firmware that
+                        // fails to start fails the same way again: a few
+                        // tries, then only on request (wifi scan/connect).
+                        let wait = match (e, self.fw_attempts) {
+                            (ENOENT, n) if n < 20 => 3000,
+                            (ENOENT, _) => 60_000,
+                            (_, n) if n < 3 => 3000,
+                            (_, 3) => {
+                                crate::println!(
+                                    "[iwlwifi] firmware did not start after 3 attempts; `wifi scan` tries again"
+                                );
+                                86_400_000
+                            }
+                            _ => 86_400_000,
+                        };
                         let d = self.dev.clone();
                         d.wq.wait_timeout(wait, || {
                             let r = d.req.lock();

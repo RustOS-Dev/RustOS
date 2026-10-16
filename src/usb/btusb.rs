@@ -23,6 +23,7 @@ use bt::hci::{self, Event};
 use bt::intel;
 use bt::mtk;
 use bt::{bcm, rtl};
+use core::sync::atomic::{AtomicBool, Ordering};
 use usb_desc::{Endpoint, Interface, TransferType};
 
 struct BtUsb {
@@ -32,14 +33,22 @@ struct BtUsb {
     out_buf: Mutex<DmaBuffer>,
     vendor: u16,
     product: u16,
+    /// An Intel controller in its bootloader: it sends events on the bulk
+    /// IN pipe too (Linux btusb_recv_bulk_intel).
+    intel_boot: Arc<AtomicBool>,
 }
 
 impl Transport for BtUsb {
     fn send(&self, kind: u8, pkt: &[u8]) -> KResult<()> {
         let dev = self.dev.upgrade().ok_or(ENODEV)?;
+        // Intel's bootloader takes Secure Send on the bulk pipe (Linux
+        // btusb_send_frame_intel); a control transfer of it times out.
+        let bulk_cmd = kind == hci::H4_CMD
+            && self.vendor == 0x8087
+            && pkt.get(..2) == Some(&intel::OP_SECURE_SEND.to_le_bytes()[..]);
         match kind {
-            hci::H4_CMD => dev.control_out(0x20, 0, 0, self.iface as u16, pkt),
-            hci::H4_ACL => {
+            hci::H4_CMD if !bulk_cmd => dev.control_out(0x20, 0, 0, self.iface as u16, pkt),
+            hci::H4_CMD | hci::H4_ACL => {
                 let mut b = self.out_buf.lock();
                 if pkt.len() > b.len() {
                     return Err(EMSGSIZE);
@@ -59,7 +68,7 @@ impl Transport for BtUsb {
 
     fn setup(&self, h: &Arc<Hci>) -> KResult<()> {
         if self.vendor == 0x8087 {
-            intel_setup(h)?;
+            intel_setup(h, &self.intel_boot)?;
         } else if let Some(dev) = self.dev.upgrade()
             && let Some(id) = mtk_chip(&dev)
         {
@@ -104,6 +113,7 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
         out_buf: Mutex::new(out_buf),
         vendor: desc.vendor,
         product: desc.product,
+        intel_boot: Arc::new(AtomicBool::new(false)),
     });
     // The readers run before the controller is registered: the first
     // commands' events must get through.
@@ -131,11 +141,21 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
             }
         }
     });
-    let (d, s) = (dev.clone(), slot.clone());
+    let (d, s, boot) = (dev.clone(), slot.clone(), tr.intel_boot.clone());
     crate::sched::spawn("btusb-acl", move || {
         let mut buf = Vec::new();
         while !d.is_gone() {
             match d.transfer(&bin, &acl_buf, acl_buf.len(), None) {
+                Ok(n) if boot.load(Ordering::SeqCst) => {
+                    // Events from Intel's bootloader.
+                    buf.extend_from_slice(&acl_buf.as_slice()[..n]);
+                    while buf.len() >= 2 && buf.len() >= 2 + buf[1] as usize {
+                        let pkt: Vec<u8> = buf.drain(..2 + buf[1] as usize).collect();
+                        if let Some(h) = s.lock().clone() {
+                            h.on_packet(hci::H4_EVENT, &pkt);
+                        }
+                    }
+                }
                 Ok(n) => {
                     buf.extend_from_slice(&acl_buf.as_slice()[..n]);
                     while buf.len() >= 4 {
@@ -172,7 +192,7 @@ pub fn probe(dev: &Arc<UsbDevice>, iface: &Interface) -> bool {
 
 /// Intel: load the operational firmware if the controller is in its
 /// bootloader, then its configuration (DDC).
-fn intel_setup(h: &Arc<Hci>) -> KResult<()> {
+fn intel_setup(h: &Arc<Hci>, boot_mode: &AtomicBool) -> KResult<()> {
     let ret = h.command_ok(hci::cmd(intel::OP_READ_VERSION, &[0xFF]))?;
     let Some(v) = intel::parse_version(&ret) else {
         crate::println!(
@@ -182,37 +202,51 @@ fn intel_setup(h: &Arc<Hci>) -> KResult<()> {
         return Ok(());
     };
     if v.image_type == intel::IMAGE_BOOTLOADER {
-        let name = intel::firmware_name(&v, "sfi");
-        let fw = crate::firmware::load(&name).inspect_err(|_| {
-            crate::println!(
-                "[bt] {}: firmware not found: {}",
-                h.name(),
-                crate::firmware::missing_hint(&name)
-            );
-        })?;
-        let (cmds, boot) = intel::secure_send_plan(&fw, v.sbe_type).ok_or(EINVAL)?;
-        crate::println!(
-            "[bt] {}: downloading {} ({} fragments)",
-            h.name(),
-            name,
-            cmds.len()
-        );
-        for p in cmds {
-            h.command_ok(hci::cmd(intel::OP_SECURE_SEND, &p))?;
-        }
-        // The bootloader resets without completing the command, then
-        // reports that the new image booted.
-        let since = h.ev_seq();
-        h.send_cmd(hci::cmd(intel::OP_RESET, &intel::reset_params(boot)));
-        let booted = h.wait_event(since, 5000, |e| match e {
-            Event::Vendor(p) if p.first() == Some(&intel::EVT_BOOTUP) => Some(()),
-            _ => None,
-        });
-        if booted.is_none() {
-            crate::println!("[bt] {}: no boot notification after the download", h.name());
-        }
-        crate::time::sleep_ms(100);
+        boot_mode.store(true, Ordering::SeqCst);
+        let r = intel_download(h, &v);
+        boot_mode.store(false, Ordering::SeqCst);
+        r?;
     }
+    intel_operational(h, v)
+}
+
+/// Download the operational image into Intel's bootloader and boot it.
+fn intel_download(h: &Arc<Hci>, v: &intel::Version) -> KResult<()> {
+    let name = intel::firmware_name(v, "sfi");
+    let fw = crate::firmware::load(&name).inspect_err(|_| {
+        crate::println!(
+            "[bt] {}: firmware not found: {}",
+            h.name(),
+            crate::firmware::missing_hint(&name)
+        );
+    })?;
+    let (cmds, boot) = intel::secure_send_plan(&fw, v.sbe_type).ok_or(EINVAL)?;
+    crate::println!(
+        "[bt] {}: downloading {} ({} fragments)",
+        h.name(),
+        name,
+        cmds.len()
+    );
+    for p in cmds {
+        h.command_ok(hci::cmd(intel::OP_SECURE_SEND, &p))?;
+    }
+    // The bootloader resets without completing the command, then
+    // reports that the new image booted.
+    let since = h.ev_seq();
+    h.send_cmd(hci::cmd(intel::OP_RESET, &intel::reset_params(boot)));
+    let booted = h.wait_event(since, 5000, |e| match e {
+        Event::Vendor(p) if p.first() == Some(&intel::EVT_BOOTUP) => Some(()),
+        _ => None,
+    });
+    if booted.is_none() {
+        crate::println!("[bt] {}: no boot notification after the download", h.name());
+    }
+    crate::time::sleep_ms(100);
+    Ok(())
+}
+
+/// The operational firmware's checks and configuration (DDC).
+fn intel_operational(h: &Arc<Hci>, v: intel::Version) -> KResult<()> {
     let v = h
         .command_ok(hci::cmd(intel::OP_READ_VERSION, &[0xFF]))
         .ok()

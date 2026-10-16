@@ -122,12 +122,14 @@ pub fn start_userspace() -> ! {
             params::cmdline()
         );
     }
-    #[cfg(feature = "linuxkpi")]
-    linuxkpi::params_loaded();
+    // Before the Linux drivers: a driver that hangs the machine leaves a log.
     if params::flag("log.persist") {
         klog::start_persist();
     }
+    #[cfg(feature = "linuxkpi")]
+    linuxkpi::params_loaded();
     params::boot_loaded();
+    drivers::start_linux();
     bluetooth::late_init();
 
     syscall::init();

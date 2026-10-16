@@ -85,7 +85,21 @@ pub fn probe_all() {
     crate::usb::init();
     // Before the Linux drivers, which load firmware from these drives.
     crate::block::automount();
-    // Linux drivers built in through LinuxKPI (module_init()).
+    // A boot drive on USB (a stick, on most laptops) enumerates after this:
+    // wait for its storage partition, or for USB to settle, so that its
+    // kernel.conf and log.persist apply from the start (Linux waits for
+    // its root device the same way).
+    if !crate::block::storage_mounted()
+        && !crate::usb::wait_settled(10_000, crate::block::storage_mounted)
+        && !crate::usb::controllers().is_empty()
+    {
+        crate::println!("[init] no RustOS storage partition found");
+    }
+}
+
+/// Start the Linux drivers built in through LinuxKPI (module_init()), once
+/// kernel.conf has been read (`linux.disable=`, `linux.enable=`).
+pub fn start_linux() {
     #[cfg(feature = "linuxkpi")]
     crate::linuxkpi::run_initcalls();
 }

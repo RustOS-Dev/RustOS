@@ -24,7 +24,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Write;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub use usb_desc::{Configuration, DeviceDescriptor, Endpoint, Interface, TransferType};
 use xhci::{EpConfig, HubConfig, SlotInfo, Xhci};
 
@@ -670,6 +670,10 @@ fn root_port_changed(hc: &Arc<Xhci>, port: u8) {
     }
 }
 
+/// When a root hub last handled a port change (ms since boot); boot waits
+/// for USB to go quiet (`wait_settled`).
+static LAST_CHANGE_MS: AtomicU64 = AtomicU64::new(0);
+
 fn root_hub_thread(hc: Arc<Xhci>) {
     loop {
         hc.process_events();
@@ -678,6 +682,9 @@ fn root_hub_thread(hc: Arc<Xhci>) {
             if changes & (1 << (p - 1)) != 0 {
                 root_port_changed(&hc, p);
             }
+        }
+        if changes != 0 {
+            LAST_CHANGE_MS.store(crate::time::millis(), Ordering::SeqCst);
         }
         let h = hc.clone();
         hc.wq.wait_timeout(1000, move || h.has_port_changes());
@@ -693,8 +700,29 @@ pub fn init() {
         if let Some(hc) = xhci::probe(&dev, idx) {
             crate::pci::claim(&dev, "xhci");
             CONTROLLERS.lock().push(hc.clone());
+            LAST_CHANGE_MS.store(crate::time::millis(), Ordering::SeqCst);
             crate::sched::spawn(&format!("xhci{}", idx), move || root_hub_thread(hc));
         }
+    }
+}
+
+/// Wait until `done` holds or the devices present at boot have been
+/// enumerated (no root port change for 1 s), at most `max_ms`. Returns
+/// whether `done` held.
+pub fn wait_settled(max_ms: u64, done: impl Fn() -> bool) -> bool {
+    if controllers().is_empty() {
+        return done();
+    }
+    let deadline = crate::time::Deadline::after_ms(max_ms);
+    loop {
+        if done() {
+            return true;
+        }
+        let now = crate::time::millis();
+        if now.saturating_sub(LAST_CHANGE_MS.load(Ordering::SeqCst)) >= 1000 || deadline.expired() {
+            return false;
+        }
+        crate::time::sleep_ms(50);
     }
 }
 

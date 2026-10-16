@@ -335,6 +335,11 @@ fn is_storage(d: &Disk) -> bool {
         || crate::fs::volume_label(d.dev.as_ref()).is_some_and(|l| l.eq_ignore_ascii_case("RUSTOS"))
 }
 
+/// Whether the storage partition is mounted at /storage.
+pub fn storage_mounted() -> bool {
+    vfs::mounts().iter().any(|(p, _, _)| p == "/storage")
+}
+
 /// Mount the drive RustOS runs from and removable media: the storage
 /// partition at /storage, the boot drive's EFI system partition at
 /// /boot/efi, anything else at /mnt/<name>. Other systems' disks are left

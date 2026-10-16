@@ -165,19 +165,24 @@ const OPT_IN: &[&str] = &["amdgpu", "nouveau", "i915", "xe"];
 /// drivers wait for it.
 pub(super) static PARAMS_READ: AtomicBool = AtomicBool::new(false);
 
-/// Whether the Linux driver `name` may bind devices now: opt-in drivers
-/// only after `kernel.conf` enabled them with `linux.enable=`.
+/// Whether the Linux driver `name` may bind devices now (PCI and USB):
+/// not when `kernel.conf` names it in `linux.disable=` (comma-separated),
+/// and opt-in drivers only after `kernel.conf` enabled them with
+/// `linux.enable=`.
 #[unsafe(no_mangle)]
 extern "C" fn rustos_kpi_driver_allowed(name: *const core::ffi::c_char) -> c_int {
     let Ok(name) = unsafe { core::ffi::CStr::from_ptr(name) }.to_str() else {
         return 1;
     };
+    let named =
+        |key: &str| crate::params::get(key).is_some_and(|v| v.split(',').any(|d| d.trim() == name));
+    if named("linux.disable") {
+        return 0;
+    }
     if !OPT_IN.contains(&name) {
         return 1;
     }
-    (PARAMS_READ.load(Ordering::SeqCst)
-        && crate::params::get("linux.enable")
-            .is_some_and(|v| v.split(',').any(|d| d.trim() == name))) as c_int
+    (PARAMS_READ.load(Ordering::SeqCst) && named("linux.enable")) as c_int
 }
 
 #[unsafe(no_mangle)]

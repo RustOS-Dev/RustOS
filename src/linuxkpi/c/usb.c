@@ -1117,6 +1117,8 @@ static int kpi_usb_bus_probe(struct device *dev)
 
 	if (udev->state == USB_STATE_NOTATTACHED)
 		return -ENODEV;
+	if (!rustos_kpi_driver_allowed(driver->name))
+		return -ENODEV;	/* linux.disable= */
 	id = usb_match_id(intf, driver->id_table);
 	if (!id)
 		return -ENODEV;

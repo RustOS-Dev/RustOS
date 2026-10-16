@@ -55,8 +55,18 @@ pub struct Process {
     /// children that were waited for (with their own children's).
     exited_utime: AtomicU64,
     exited_stime: AtomicU64,
+    /// Odd while a thread's time moves to `exited_*` (retire_thread_time).
+    time_seq: AtomicU64,
     pub children_utime: AtomicU64,
     pub children_stime: AtomicU64,
+}
+
+pub struct RetireTime<'a>(&'a Process);
+
+impl Drop for RetireTime<'_> {
+    fn drop(&mut self) {
+        self.0.time_seq.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 static PROCESSES: Mutex<BTreeMap<Pid, Weak<Process>>> = Mutex::new(BTreeMap::new());
@@ -112,6 +122,7 @@ impl Process {
             }),
             exited_utime: AtomicU64::new(0),
             exited_stime: AtomicU64::new(0),
+            time_seq: AtomicU64::new(0),
             children_utime: AtomicU64::new(0),
             children_stime: AtomicU64::new(0),
         });
@@ -134,15 +145,31 @@ impl Process {
 
     /// (user, system) CPU time of all its threads, in timer ticks.
     pub fn cpu_time(&self) -> (u64, u64) {
-        let mut u = self.exited_utime.load(Ordering::Relaxed);
-        let mut s = self.exited_stime.load(Ordering::Relaxed);
-        for t in self.live_threads() {
-            if t.state() != sched::State::Dead {
-                u += t.utime.load(Ordering::Relaxed);
-                s += t.stime.load(Ordering::Relaxed);
+        loop {
+            let seq = self.time_seq.load(Ordering::SeqCst);
+            if seq & 1 != 0 {
+                core::hint::spin_loop();
+                continue;
+            }
+            let mut u = self.exited_utime.load(Ordering::SeqCst);
+            let mut s = self.exited_stime.load(Ordering::SeqCst);
+            for t in self.live_threads() {
+                if t.state() != sched::State::Dead {
+                    u += t.utime.load(Ordering::Relaxed);
+                    s += t.stime.load(Ordering::Relaxed);
+                }
+            }
+            if self.time_seq.load(Ordering::SeqCst) == seq {
+                return (u, s);
             }
         }
-        (u, s)
+    }
+
+    /// Held (with interrupts off) while an exiting thread moves its CPU time
+    /// to `exited_*` and becomes Dead: cpu_time() retries across it.
+    pub fn retire_thread_time(&self) -> RetireTime<'_> {
+        self.time_seq.fetch_add(1, Ordering::SeqCst);
+        RetireTime(self)
     }
 
     /// (user, system) CPU time of waited-for children, in timer ticks.

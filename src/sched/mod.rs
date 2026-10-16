@@ -909,17 +909,22 @@ pub fn yield_now() {
 /// Terminate the current thread.
 pub fn exit_current() -> ! {
     let t = current();
-    // Its CPU time stays with the process (getrusage, /proc/PID/stat).
-    if let Some(p) = t.process.lock().as_ref() {
-        p.add_exited_thread_time(
-            t.utime.load(Ordering::Relaxed),
-            t.stime.load(Ordering::Relaxed),
-        );
-    }
+    let p = t.process.lock().clone();
     irqsave(|| {
+        // Its CPU time stays with the process (getrusage, /proc/PID/stat),
+        // moved in the same step that marks it dead, so Process::cpu_time
+        // (a parent reaping it) never sees the time in neither place.
+        let _retire = p.as_ref().map(|p| p.retire_thread_time());
+        if let Some(p) = &p {
+            p.add_exited_thread_time(
+                t.utime.load(Ordering::Relaxed),
+                t.stime.load(Ordering::Relaxed),
+            );
+        }
         t.set_state(State::Dead);
         DEAD.lock().push(t.clone());
     });
+    drop(p);
     drop(t);
     schedule();
     unreachable!("dead thread rescheduled");

@@ -1,12 +1,13 @@
 //! aml-check DIR: load DIR/DSDT and DIR/SSDT* (as copied from
 //! /sys/firmware/acpi/tables) into RustOS's AML interpreter, initialize the
-//! namespace, and evaluate _HID, _ADR, _STA and _CRS of every device.
+//! namespace, evaluate _HID, _ADR, _STA and _CRS of every device, and
+//! route every PCI interrupt pin its _PRT objects list.
 //! Exits 1 if a table does not load or a method fails.
 //!
 //!   sudo cp -r /sys/firmware/acpi/tables /tmp/acpi && sudo chmod -R a+r /tmp/acpi
 //!   cargo run --release -- /tmp/acpi
 
-use aml_check::{Machine, devices, eval, interpreter, load};
+use aml_check::{Machine, devices, eval, interpreter, load, prt_routes};
 
 fn main() {
     let Some(dir) = std::env::args().nth(1) else {
@@ -76,8 +77,23 @@ fn main() {
             }
         }
     }
+    let (mut prts, mut routes) = (0, 0);
+    for d in &devs {
+        let path = format!("{d}._PRT");
+        match prt_routes(&interp, &path) {
+            Ok(Some(n)) => {
+                prts += 1;
+                routes += n;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                failed += 1;
+                println!("{path}: {e:?}");
+            }
+        }
+    }
     println!(
-        "{} devices: {ok} methods evaluated, {failed} failures",
+        "{} devices: {ok} methods evaluated, {prts} _PRT with {routes} PCI interrupt routes, {failed} failures",
         devs.len()
     );
     std::process::exit(if failed == 0 { 0 } else { 1 });

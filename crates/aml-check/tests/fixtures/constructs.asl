@@ -1,7 +1,8 @@
 /*
  * AML constructs the RustOS interpreter had to learn for real firmware
  * (an AMD Ryzen AI 300 laptop): index and bank fields, DerefOf of buffer
- * elements, references and field units, buffer fields as operands.
+ * elements, references and field units, buffer fields as operands; and a
+ * bridge's _PRT (PCI interrupts behind a root port).
  * Compile with `iasl constructs.asl` (constructs.aml is committed).
  */
 DefinitionBlock ("", "DSDT", 2, "RUSTOS", "AMLTEST", 1)
@@ -93,5 +94,29 @@ DefinitionBlock ("", "DSDT", 2, "RUSTOS", "AMLTEST", 1)
             Return (ToBuffer (LEN1))
         }
         Return (Zero)
+    }
+
+    /* A PCIe root port's _PRT: INTA wired to GSI 28, INTB through a link
+     * device whose _CRS names GSI 30. */
+    Device (LNKA)
+    {
+        Name (_HID, EisaId ("PNP0C0F"))
+        Name (_UID, One)
+        Name (_CRS, ResourceTemplate ()
+        {
+            Interrupt (ResourceConsumer, Level, ActiveLow, Shared, ,, )
+            {
+                0x0000001E,
+            }
+        })
+    }
+    Device (GPPA)
+    {
+        Name (_ADR, 0x00080001)
+        Name (_PRT, Package (0x02)
+        {
+            Package (0x04) { 0xFFFF, Zero, Zero, 0x1C },
+            Package (0x04) { 0xFFFF, One, LNKA, Zero }
+        })
     }
 }

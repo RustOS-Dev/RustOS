@@ -198,3 +198,26 @@ pub fn devices(interp: &Interpreter<Machine>) -> Vec<String> {
     });
     out
 }
+
+/// Route every slot (0-31) and pin of the `_PRT` at `path` (link devices'
+/// `_CRS` evaluated): `Ok(routes)`, or the first error other than a slot
+/// or pin the table does not list. `Ok(None)` if there is no such `_PRT`.
+pub fn prt_routes(interp: &Interpreter<Machine>, path: &str) -> Result<Option<usize>, AmlError> {
+    use acpi::aml::pci_routing::{PciRoutingTable, Pin};
+    let table = match PciRoutingTable::from_prt_path(AmlName::from_str(path)?, interp) {
+        Ok(t) => t,
+        Err(e) if format!("{e:?}").contains("DoesNotExist") => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let mut routes = 0;
+    for device in 0..32 {
+        for pin in [Pin::IntA, Pin::IntB, Pin::IntC, Pin::IntD] {
+            match table.route(device, 0, pin, interp) {
+                Ok(_) => routes += 1,
+                Err(AmlError::PrtNoEntry) => {}
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok(Some(routes))
+}

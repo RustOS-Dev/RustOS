@@ -451,9 +451,30 @@ pub fn reboot() -> ! {
     }
 }
 
-/// Resolve the GSI for a legacy PCI interrupt pin via `_PRT`.
-/// `pin` is 1-based (1 = INTA) as in config space.
-pub fn pci_irq_route(device: u8, function: u8, pin: u8) -> Option<u32> {
+/// Resolve the GSI for legacy PCI interrupt `pin` (1-based, 1 = INTA, as
+/// in config space) of `bus:device.function`, as Linux does
+/// (acpi_pci_irq_lookup): the `_PRT` of the device's bus (the root
+/// bridge's, or the ACPI companion's of the bridge leading to the bus),
+/// else the pin swizzled through each bridge up to a bus whose `_PRT` has
+/// it.
+pub fn pci_irq_route(bus: u8, device: u8, function: u8, pin: u8) -> Option<u32> {
+    let (mut bus, mut device, mut pin) = (bus, device, pin);
+    for _ in 0..8 {
+        if let Some(gsi) = prt_route(bus, device, function, pin) {
+            return Some(gsi);
+        }
+        let (pb, pd, _) = pci_bridge_for_bus(bus)?;
+        // pci_swizzle_interrupt_pin: INTx of a device behind a bridge
+        // arrives on the bridge's pin rotated by the device's slot.
+        pin = ((pin - 1 + device % 4) % 4) + 1;
+        bus = pb;
+        device = pd;
+    }
+    None
+}
+
+/// `_PRT` entry for `device`'s `pin` on `bus`.
+fn prt_route(bus: u8, device: u8, function: u8, pin: u8) -> Option<u32> {
     use acpi::aml::pci_routing::{PciRoutingTable, Pin};
     let pin = match pin {
         1 => Pin::IntA,
@@ -462,9 +483,21 @@ pub fn pci_irq_route(device: u8, function: u8, pin: u8) -> Option<u32> {
         4 => Pin::IntD,
         _ => return None,
     };
+    let tables: Vec<String> = if bus == 0 {
+        let mut v: Vec<String> = cached_devices()
+            .iter()
+            .filter(|d| matches!(d.hid.as_deref(), Some("PNP0A03" | "PNP0A08")))
+            .map(|d| alloc::format!("{}._PRT", d.path))
+            .collect();
+        v.extend(["\\_SB.PCI0._PRT", "\\_SB.PC00._PRT", "\\_SB.PCI1._PRT"].map(String::from));
+        v
+    } else {
+        let (pb, pd, pf) = pci_bridge_for_bus(bus)?;
+        alloc::vec![alloc::format!("{}._PRT", pci_device_path_bdf(pb, pd, pf)?)]
+    };
     with_interpreter(|i| {
-        for root in ["\\_SB.PCI0._PRT", "\\_SB.PC00._PRT", "\\_SB.PCI1._PRT"] {
-            let Ok(path) = AmlName::from_str(root) else {
+        for t in &tables {
+            let Ok(path) = AmlName::from_str(t) else {
                 continue;
             };
             if let Ok(table) = PciRoutingTable::from_prt_path(path, i)
@@ -476,6 +509,60 @@ pub fn pci_irq_route(device: u8, function: u8, pin: u8) -> Option<u32> {
         None
     })
     .flatten()
+}
+
+static DEVICES: spin::Once<Vec<Device>> = spin::Once::new();
+
+/// [`devices`], evaluated once.
+pub fn cached_devices() -> &'static [Device] {
+    DEVICES.call_once(devices)
+}
+
+/// The PCI-to-PCI bridge whose secondary bus is `bus`.
+pub fn pci_bridge_for_bus(bus: u8) -> Option<(u8, u8, u8)> {
+    if bus == 0 {
+        return None;
+    }
+    crate::pci::enumerate()
+        .into_iter()
+        .find(|d| d.header_type & 0x7f == 1 && d.read8(0x19) == bus)
+        .map(|d| (d.bus, d.dev, d.func))
+}
+
+/// The ACPI device of PCI device `bus:dev.func`: under the PCI root
+/// bridge (`PNP0A03`/`PNP0A08`) for bus 0, else under the ACPI device of
+/// the bridge leading to `bus`, the child whose `_ADR` matches.
+pub fn pci_device_path_bdf(bus: u8, dev: u8, func: u8) -> Option<String> {
+    pci_path(bus, dev, func, 0)
+}
+
+fn pci_path(bus: u8, dev: u8, func: u8, depth: u32) -> Option<String> {
+    let devices = cached_devices();
+    let want = ((dev as u64) << 16) | func as u64;
+    let parents: Vec<String> = if bus == 0 {
+        devices
+            .iter()
+            .filter(|d| matches!(d.hid.as_deref(), Some("PNP0A03" | "PNP0A08")))
+            .map(|d| d.path.clone())
+            .collect()
+    } else {
+        let (pb, pd, pf) = pci_bridge_for_bus(bus)?;
+        if depth > 8 {
+            return None;
+        }
+        alloc::vec![pci_path(pb, pd, pf, depth + 1)?]
+    };
+    devices
+        .iter()
+        .find(|d| {
+            d.adr == Some(want)
+                && parents.iter().any(|p| {
+                    d.path
+                        .strip_prefix(p.as_str())
+                        .is_some_and(|rest| rest.starts_with('.') && !rest[1..].contains('.'))
+                })
+        })
+        .map(|d| d.path.clone())
 }
 
 /// True if the machine runs on battery: some AC adapter's `_PSR`

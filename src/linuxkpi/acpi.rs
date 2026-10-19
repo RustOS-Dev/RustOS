@@ -130,44 +130,6 @@ fn copy_out(s: &str, buf: *mut c_char, len: usize) -> c_int {
     0
 }
 
-/// The PCI-to-PCI bridge whose secondary bus is `bus`.
-fn bridge_for_bus(bus: u8) -> Option<(u8, u8, u8)> {
-    crate::pci::enumerate()
-        .into_iter()
-        .find(|d| d.header_type & 0x7f == 1 && d.read8(0x19) == bus && bus != 0)
-        .map(|d| (d.bus, d.dev, d.func))
-}
-
-fn pci_path(bus: u8, dev: u8, func: u8, devices: &[acpi::Device], depth: u32) -> Option<String> {
-    let want = ((dev as u64) << 16) | func as u64;
-    let parents: Vec<String> = if bus == 0 {
-        devices
-            .iter()
-            .filter(|d| matches!(d.hid.as_deref(), Some("PNP0A03" | "PNP0A08")))
-            .map(|d| d.path.clone())
-            .collect()
-    } else {
-        let (pb, pd, pf) = bridge_for_bus(bus)?;
-        if depth > 8 {
-            return None;
-        }
-        alloc::vec![pci_path(pb, pd, pf, devices, depth + 1)?]
-    };
-    devices
-        .iter()
-        .find(|d| {
-            d.adr == Some(want)
-                && parents.iter().any(|p| {
-                    d.path
-                        .strip_prefix(p.as_str())
-                        .is_some_and(|rest| rest.starts_with('.') && !rest[1..].contains('.'))
-                })
-        })
-        .map(|d| d.path.clone())
-}
-
-static DEVICES: spin::Once<Vec<acpi::Device>> = spin::Once::new();
-
 /// The ACPI path of PCI device `bus:dev.func` (following bridges), into
 /// `buf`. Returns 0, -ENOENT or -ENAMETOOLONG.
 #[unsafe(no_mangle)]
@@ -178,8 +140,7 @@ extern "C" fn rustos_kpi_acpi_pci_path(
     buf: *mut c_char,
     len: usize,
 ) -> c_int {
-    let devices = DEVICES.call_once(acpi::devices);
-    match pci_path(bus, dev, func, devices, 0) {
+    match acpi::pci_device_path_bdf(bus, dev, func) {
         Some(p) => copy_out(&p, buf, len),
         None => -ENOENT.0,
     }
@@ -236,8 +197,7 @@ extern "C" fn rustos_kpi_acpi_for_each_device(
     ),
     ctx: *mut c_void,
 ) {
-    let devices = DEVICES.call_once(acpi::devices);
-    for d in devices {
+    for d in acpi::cached_devices() {
         let cids = match acpi::eval(&alloc::format!("{}._CID", d.path), &[]) {
             Ok(Value::Package(p)) => p.iter().filter_map(id_string).collect::<Vec<_>>(),
             Ok(v) => id_string(&v).into_iter().collect(),

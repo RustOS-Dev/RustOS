@@ -1095,6 +1095,7 @@ pub unsafe fn init(framebuffer: FrameBuffer) {
         stride: bi.stride,
     };
     let fb = framebuffer.into_buffer();
+    FIRMWARE_FB.call_once(|| (fb.as_mut_ptr() as usize, fb.len(), info));
     let cols = (info.width / FONT_WIDTH).clamp(1, MAX_COLS);
     let rows = (info.height / FONT_HEIGHT).clamp(1, MAX_ROWS);
     let mut con = FbConsole {
@@ -1165,6 +1166,40 @@ pub fn start_flusher() {
 /// From now on draw kernel messages as they come (panic handler).
 pub fn sync_output() {
     SYNC_OUTPUT.store(true, core::sync::atomic::Ordering::SeqCst);
+}
+
+/// The firmware framebuffer (address, length, geometry), kept for
+/// `panic_takeover`.
+static FIRMWARE_FB: spin::Once<(usize, usize, FbInfo)> = spin::Once::new();
+
+/// Panic handler (other CPUs halted): draw on the firmware framebuffer
+/// again. Once a display driver (Linux DRM) has the screen the console
+/// draws into the driver's buffer, which a worker copies out; after a panic
+/// nothing would, and the screen would keep showing the last copy.
+pub fn panic_takeover() {
+    let Some(&(ptr, len, info)) = FIRMWARE_FB.get() else {
+        return;
+    };
+    // The panic may have come while this CPU, or a halted one, held the
+    // console.
+    let deadline = crate::time::Deadline::after_ms(100);
+    let mut guard = loop {
+        if let Some(g) = CONSOLE.try_lock() {
+            break g;
+        }
+        if deadline.expired() {
+            unsafe { CONSOLE.force_unlock() };
+        }
+        core::hint::spin_loop();
+    };
+    if let Some(c) = guard.as_mut()
+        && !c.firmware
+    {
+        // SAFETY: the bootloader's mapping of the firmware framebuffer
+        // stays for the kernel's lifetime; nothing else draws any more.
+        let fb = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u8, len) };
+        c.retarget(fb, info, true);
+    }
 }
 
 /// Map the firmware framebuffer write-combining (after `mm::init_pat`).

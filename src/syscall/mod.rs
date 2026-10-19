@@ -343,9 +343,29 @@ fn trace_path(n: u64, a1: u64, a2: u64) -> String {
     }
 }
 
-/// Register /sys/kernel/debug/strace.
+/// Writing 1 to /sys/kernel/debug/panic panics the kernel (as Linux's
+/// `echo c > /proc/sysrq-trigger`): tests what a panic shows and leaves.
+struct PanicAttr;
+
+impl crate::vfs::sysfs::Attr for PanicAttr {
+    fn show(&self) -> KResult<alloc::vec::Vec<u8>> {
+        Ok(b"0\n".to_vec())
+    }
+    fn store(&self, data: &[u8]) -> KResult<usize> {
+        if data.trim_ascii() == b"1" {
+            panic!("requested through /sys/kernel/debug/panic");
+        }
+        Err(crate::errno::EINVAL)
+    }
+    fn mode(&self) -> u32 {
+        0o200
+    }
+}
+
+/// Register /sys/kernel/debug/strace and /sys/kernel/debug/panic.
 pub fn init() {
     let _ = crate::vfs::sysfs::add_file("kernel/debug/strace", alloc::sync::Arc::new(StraceAttr));
+    let _ = crate::vfs::sysfs::add_file("kernel/debug/panic", alloc::sync::Arc::new(PanicAttr));
 }
 
 fn tracing() -> bool {

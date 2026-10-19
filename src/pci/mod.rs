@@ -529,9 +529,10 @@ impl PciDevice {
         if self.irq_pin == 0 {
             return None;
         }
-        let gsi = acpi::pci_irq_route(self.dev, self.func, self.irq_pin).or_else(|| {
-            (self.irq_line != 0xFF && self.irq_line != 0).then_some(self.irq_line as u32)
-        })?;
+        let gsi =
+            acpi::pci_irq_route(self.bus, self.dev, self.func, self.irq_pin).or_else(|| {
+                (self.irq_line != 0xFF && self.irq_line != 0).then_some(self.irq_line as u32)
+            })?;
         let v = x86_64::instructions::interrupts::without_interrupts(|| {
             let mut lines = INTX.lock();
             if let Some(line) = lines.get_mut(&gsi) {

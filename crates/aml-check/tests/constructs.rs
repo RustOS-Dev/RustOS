@@ -1,7 +1,7 @@
 //! tests/fixtures/constructs.asl through the interpreter.
 
 use acpi::aml::object::Object;
-use aml_check::{Machine, eval, interpreter, load};
+use aml_check::{Machine, eval, interpreter, load, prt_routes};
 use std::str::FromStr;
 
 fn setup() -> (Machine, acpi::aml::Interpreter<Machine>) {
@@ -78,4 +78,17 @@ fn buffer_fields_as_operands() {
         Object::Buffer(b) => assert_eq!(&b[..2], &[0x10, 0]),
         o => panic!("BFEQ gave {:?}", o.typ()),
     }
+}
+
+#[test]
+fn bridge_prt_routes() {
+    use acpi::aml::namespace::AmlName;
+    use acpi::aml::pci_routing::{PciRoutingTable, Pin};
+    let (_, interp) = setup();
+    assert_eq!(prt_routes(&interp, "\\GPPA._PRT").unwrap(), Some(2));
+    assert_eq!(prt_routes(&interp, "\\LNKA._PRT").unwrap(), None);
+    let t =
+        PciRoutingTable::from_prt_path(AmlName::from_str("\\GPPA._PRT").unwrap(), &interp).unwrap();
+    assert_eq!(t.route(0, 0, Pin::IntA, &interp).unwrap().irq, 0x1c);
+    assert_eq!(t.route(0, 1, Pin::IntB, &interp).unwrap().irq, 0x1e);
 }

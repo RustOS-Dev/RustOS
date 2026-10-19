@@ -501,6 +501,7 @@ static int kpi_pci_bus_probe(struct device *dev)
 	if (!id)
 		return -ENODEV;
 	pdev->driver = drv;
+	rustos_kpi_probe_trace(drv->name, pci_name(pdev));
 	err = drv->probe(pdev, id);
 	if (err)
 		pdev->driver = NULL;

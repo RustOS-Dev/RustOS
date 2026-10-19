@@ -158,7 +158,8 @@ firmware listing, and the tail of the persistent log).
 ### Debug switches (`/storage/etc/kernel.conf`)
 
 The file holds `key=value` words (a bare `key` means `1`; `#` comments)
-and is read at boot once the storage partition is mounted;
+and is read at boot once the storage partition is mounted (boot waits up
+to 10 s for a USB stick to show up), before the Linux drivers start;
 `/proc/cmdline` shows the active set.
 
 | Key | Effect |
@@ -169,6 +170,8 @@ and is read at boot once the storage partition is mounted;
 | `bt.h4=com2` | start a Bluetooth H4 (UART) controller on a serial port at boot |
 | `linux.enable=amdgpu,nouveau,i915` | let drivers that are compiled but untested on hardware bind their devices (comma-separated: `amdgpu`, `nouveau`, `i915`, `xe`). Without it the log names the driver a device could use |
 | `linux.debug=1` | show Linux drivers' `KERN_DEBUG` messages |
+| `linux.initcall_debug=1` | log each Linux initcall (its address in the kernel ELF: `nm target/x86_64-rustos/release/rustos \| grep -i <address>` names it) and each PCI/USB probe before it runs, writing the log to disk first, so with `log.persist=1` the last line of `kernel.log` is the one a machine stopped in; drivers/base also logs each probe's time |
+| `linux.disable=snd_hda_intel,uvcvideo` | keep the named Linux PCI/USB drivers from binding (for one that hangs a machine) |
 
 A Wi-Fi firmware crash always dumps the firmware's LMAC/UMAC error tables
 to the log.

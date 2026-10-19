@@ -88,6 +88,7 @@ int rustos_kpi_pci_irq(u32 idx, int msi, void (*fn)(void *), void *arg);
 int rustos_kpi_pci_has_msi(u32 idx);
 int rustos_kpi_pci_claimed(u32 idx);
 int rustos_kpi_driver_allowed(const char *name);
+void rustos_kpi_probe_trace(const char *drv, const char *dev);
 u64 rustos_kpi_random_u64(void);
 
 /* Network devices (src/linuxkpi/net.rs). */

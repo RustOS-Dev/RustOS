@@ -55,8 +55,17 @@ pub const BOOTLOADER_CONFIG: BootloaderConfig = {
 /// Bring up the core kernel: console, descriptor tables, memory, ACPI,
 /// interrupt controllers, timekeeping and the scheduler. Interrupts are
 /// enabled on return.
+/// Where the bootloader loaded the (position-independent) kernel: a code
+/// address minus this is its address in the ELF (`nm`).
+pub static KERNEL_IMAGE_OFFSET: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 pub fn kernel_init(boot_info: &'static mut BootInfo) {
     x86_64::instructions::interrupts::disable();
+    KERNEL_IMAGE_OFFSET.store(
+        boot_info.kernel_image_offset,
+        core::sync::atomic::Ordering::Relaxed,
+    );
 
     // The GOP framebuffer is the first reliable diagnostic output on real
     // UEFI laptops (which often lack COM1).

@@ -106,32 +106,46 @@ pub fn start_persist() {
     if crate::vfs::stat(PERSIST_FILE).is_ok_and(|m| m.size > PERSIST_MAX) {
         let _ = crate::vfs::rename(PERSIST_FILE, "/storage/log/kernel.log.1");
     }
+    let banner = alloc::format!(
+        "\n===== boot at unix time {} (uptime {} ms) =====\n",
+        crate::time::unix_time(),
+        crate::time::millis()
+    );
+    let _ = crate::vfs::append(PERSIST_FILE, banner.as_bytes());
+    PERSISTING.store(true, core::sync::atomic::Ordering::SeqCst);
     crate::sched::spawn("klogd", || {
-        let banner = alloc::format!(
-            "\n===== boot at unix time {} (uptime {} ms) =====\n",
-            crate::time::unix_time(),
-            crate::time::millis()
-        );
-        let _ = crate::vfs::append(PERSIST_FILE, banner.as_bytes());
-        let mut pos = 0usize;
-        let mut buf = alloc::vec![0u8; 16 * 1024];
         loop {
-            let mut wrote = false;
-            loop {
-                let (next, n) = read_from(pos, &mut buf);
-                pos = next;
-                if n == 0 {
-                    break;
-                }
-                if crate::vfs::append(PERSIST_FILE, &buf[..n]).is_err() {
-                    break;
-                }
-                wrote = true;
-            }
-            if wrote {
-                crate::vfs::sync_all();
-            }
+            sync_persist();
             crate::time::sleep_ms(2000);
         }
     });
+}
+
+/// Set once log.persist has started.
+static PERSISTING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+/// Log position written out so far (held across the disk writes).
+static PERSISTED: crate::sched::mutex::Mutex<usize> = crate::sched::mutex::Mutex::new(0);
+
+/// Write what the log gained since the last write to kernel.log and sync
+/// it to disk now, when log.persist runs (klogd does every two seconds;
+/// `linux.initcall_debug` before each Linux initcall and probe, so the
+/// last line on disk names the one a machine stopped in).
+pub fn sync_persist() {
+    if !PERSISTING.load(core::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let mut pos = PERSISTED.lock();
+    let mut buf = alloc::vec![0u8; 16 * 1024];
+    let mut wrote = false;
+    loop {
+        let (next, n) = read_from(*pos, &mut buf);
+        if n == 0 || crate::vfs::append(PERSIST_FILE, &buf[..n]).is_err() {
+            break;
+        }
+        *pos = next;
+        wrote = true;
+    }
+    if wrote {
+        crate::vfs::sync_all();
+    }
 }

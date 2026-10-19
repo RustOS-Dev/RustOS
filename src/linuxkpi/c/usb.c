@@ -1129,6 +1129,7 @@ static int kpi_usb_bus_probe(struct device *dev)
 			goto fail;
 		intf->needs_altsetting0 = 0;
 	}
+	rustos_kpi_probe_trace(driver->name, dev_name(dev));
 	err = driver->probe(intf, id);
 	if (err)
 		goto fail;

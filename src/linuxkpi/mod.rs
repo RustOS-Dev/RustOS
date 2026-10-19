@@ -147,6 +147,15 @@ pub fn run_initcalls() {
             if off != 0 {
                 let f: extern "C" fn() -> c_int =
                     unsafe { core::mem::transmute((p as isize + off as isize) as *const ()) };
+                if crate::params::flag("linux.initcall_debug") {
+                    // The ELF address (nm), not where the kernel was loaded.
+                    let off = crate::KERNEL_IMAGE_OFFSET.load(Ordering::Relaxed) as usize;
+                    crate::println!(
+                        "[linuxkpi] calling initcall {:#x}",
+                        (f as usize).wrapping_sub(off)
+                    );
+                    crate::klog::sync_persist();
+                }
                 let r = f();
                 if r != 0 {
                     crate::println!("[linuxkpi] initcall at {:#x} returned {}", f as usize, r);
@@ -160,9 +169,30 @@ pub fn run_initcalls() {
     usb::init();
 }
 
+/// A Linux driver is about to probe a device (src/linuxkpi/c/pci.c, usb.c):
+/// with `linux.initcall_debug`, name both and get the log to disk first,
+/// so that a probe that stops the machine is the last line of kernel.log.
+#[unsafe(no_mangle)]
+extern "C" fn rustos_kpi_probe_trace(drv: *const core::ffi::c_char, dev: *const core::ffi::c_char) {
+    if !crate::params::flag("linux.initcall_debug") {
+        return;
+    }
+    let s = |p: *const core::ffi::c_char| unsafe { core::ffi::CStr::from_ptr(p) }.to_string_lossy();
+    crate::println!("[linuxkpi] probing {} on {}", s(drv), s(dev));
+    crate::klog::sync_persist();
+}
+
 /// `kernel.conf` has been read: offer devices to the opt-in drivers it
 /// enabled (`linux.enable=`), which held back until now.
 pub fn params_loaded() {
+    unsafe extern "C" {
+        /// Linux's initcall_debug (src/linuxkpi/c/devcore.c): drivers/base
+        /// then logs every probe and its time.
+        static mut initcall_debug: bool;
+    }
+    if crate::params::flag("linux.initcall_debug") {
+        unsafe { initcall_debug = true };
+    }
     pci::PARAMS_READ.store(true, Ordering::SeqCst);
     if ready() {
         unsafe { kpi_pci_rescan() };
@@ -196,7 +226,10 @@ extern "C" fn rustos_kpi_log(level: c_int, msg: *const u8, len: u64) {
     let bytes = unsafe { core::slice::from_raw_parts(msg, len as usize) };
     let text = core::str::from_utf8(bytes).unwrap_or("<invalid UTF-8>");
     // KERN_DEBUG (7) only with linux.debug set in kernel.conf.
-    if level >= 7 && !crate::params::flag("linux.debug") {
+    if level >= 7
+        && !crate::params::flag("linux.debug")
+        && !crate::params::flag("linux.initcall_debug")
+    {
         return;
     }
     crate::println!("[linux] {}", text);
